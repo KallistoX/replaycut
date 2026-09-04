@@ -10,6 +10,11 @@ contract.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-04
+
+First public release: the Rust service, the installer and the migration
+from the 1.x PowerShell service.
+
 ### Added
 
 - Update hint: a minute after start and then daily the service asks GitHub
@@ -69,3 +74,6 @@ contract.
   `CLIP_DIR`) covering clip discovery, preview range requests, titles, the
   share pipeline, the single-job rule (409), delete, `/api/save` and 404s.
 - CI skeleton (fmt, clippy, build, compile tests).
+
+[Unreleased]: https://github.com/KallistoX/replaycut/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/KallistoX/replaycut/releases/tag/v2.0.0

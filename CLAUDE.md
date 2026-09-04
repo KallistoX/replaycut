@@ -72,3 +72,12 @@ docs/settings.md        settings.json, credentials, command line
   clip folder, on a port of its own.
 - Then `BASE_URL=http://localhost:<port> CLIP_DIR=<that folder> cargo test`.
 - The suite is serial by design (one share slot); do not parallelise it.
+
+## Release process
+
+1. Set the workspace version in `Cargo.toml`, turn the `Unreleased` section
+   of `CHANGELOG.md` into `## [<version>] - <date>`, commit.
+2. `git tag v<version>` and `git push origin v<version>`: `release.yml` builds
+   the EXE, packs `replaycut-<version>-windows-x64.zip` plus `SHA256SUMS`
+   and publishes the GitHub release with that version's CHANGELOG section.
+3. Install from the published ZIP on a real machine before announcing it.

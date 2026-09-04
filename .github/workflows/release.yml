@@ -1,0 +1,63 @@
+# Release: on a tag v<version>, build the Windows executable, pack the ZIP
+# with the files of the release package, write SHA256SUMS and publish a
+# GitHub release whose notes are that version's section of CHANGELOG.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check that the tag matches the workspace version
+        shell: bash
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match Cargo.toml version $version"
+            exit 1
+          fi
+
+      - name: Build
+        run: cargo build --release --locked -p replaycut
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = "$env:GITHUB_REF_NAME".TrimStart('v')
+          $pkg = "replaycut-$version-windows-x64"
+          New-Item -ItemType Directory "$pkg\ui" | Out-Null
+          Copy-Item target\release\replaycut.exe, dist\install.cmd, dist\uninstall.cmd, README.md, LICENSE, CHANGELOG.md $pkg
+          Copy-Item ui\index.html "$pkg\ui"
+          Compress-Archive -Path "$pkg\*" -DestinationPath "$pkg.zip"
+          $hash = (Get-FileHash "$pkg.zip" -Algorithm SHA256).Hash.ToLower()
+          [IO.File]::WriteAllText("SHA256SUMS", "$hash  $pkg.zip`n")
+          Get-Content SHA256SUMS
+
+      - name: Release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          awk -v v="$version" '/^## \[/ { p = (index($0, "## [" v "]") == 1) } /^\[/ { p = 0 } p' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "replaycut $version" > notes.md; fi
+          cat notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: notes.md
+          files: |
+            replaycut-*-windows-x64.zip
+            SHA256SUMS

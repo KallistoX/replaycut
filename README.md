@@ -14,16 +14,12 @@ laptop or a phone in the same network, is only the remote control.
 
 ## Status
 
-Pre-release. replaycut 2.0 is a rewrite in Rust of a PowerShell service that
-is in daily use but was never published. This repository currently holds:
-
-- the HTTP API contract in [`docs/api.md`](docs/api.md), transcribed from the
-  running 1.4 service;
-- a black-box test suite that runs against any implementation of that
-  contract (see below);
-- a placeholder binary crate.
-
-The service itself follows. Until then there is nothing to install.
+replaycut 2.0 is a rewrite in Rust of a PowerShell service (1.x) that was in
+daily use but never published. It keeps that service's HTTP API
+([`docs/api.md`](docs/api.md) is the contract, checked by a black-box test
+suite) and its file formats, so a 1.x installation migrates in place.
+Releases are published on GitHub as a ZIP for Windows x64; see
+[`CHANGELOG.md`](CHANGELOG.md) for what each version brings.
 
 ## Requirements
 

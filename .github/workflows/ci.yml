@@ -1,6 +1,6 @@
 # CI skeleton. Builds and lints the workspace; the API contract tests need a
 # running service and are therefore only compiled here, not executed.
-# A release workflow (tag v*, build the Windows EXE, ZIP + SHA256SUMS) is planned.
+# The release workflow (release.yml) runs on tags v*.
 name: CI
 
 on:
