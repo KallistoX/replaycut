@@ -10,6 +10,13 @@ contract.
 
 ## [Unreleased]
 
+### Changed
+
+- New application and tray icons (play mark with cut marks, amber on a dark
+  tile) in six sizes up to 256 px; the tray states "job running" and "last
+  job failed" carry an amber or a red dot. Rendered from the SVG sources in
+  `docs/design/icons` by `mkico`.
+
 ### Added
 
 - `docs/design`: the design system for the web UI - tokens, component
