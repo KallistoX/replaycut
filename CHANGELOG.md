@@ -20,6 +20,14 @@ contract.
   key press stays as the fallback. `config.obs` reports the connection.
   A saved replay wakes the scanner at once; a stopped buffer raises a
   desktop notification. Contract: docs/api.md "Since 2.2".
+- OBS integration, part 2: the OBS page reads profile, recording folder,
+  format, encoder, video settings and the audio-track layout through the
+  connection and compares them with what replaycut expects - every
+  difference with the OBS menu path, plus the buttons "Start replay buffer"
+  and "Use this folder in replaycut"; the top bar shows OBS, the clips page
+  warns while the buffer is stopped, the wizard uses the connection, the
+  diagnostics row is real. `GET /api/obs`, `POST /api/obs/replay-buffer/start`,
+  `/reconnect`, `/refresh`, `/adopt-folder`. Nothing in OBS is written.
 
 ## [2.1.0] - 2026-09-04
 

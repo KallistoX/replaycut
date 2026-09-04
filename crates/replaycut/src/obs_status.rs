@@ -395,7 +395,11 @@ pub fn checks(facts: &Facts, replay_active: bool, settings: &Settings) -> Vec<Ch
             out.push(c);
         } else if only_role(&t2, Role::Microphone)
             && only_role(&t3, Role::Desktop)
-            && (t4.is_empty() || only_role(&t4, Role::Application))
+            // Voice chat is an application capture or a second output
+            // device (a headset's chat channel); it must not be the game.
+            && (t4.is_empty()
+                || ((only_role(&t4, Role::Application) || only_role(&t4, Role::Desktop))
+                    && !t4.iter().any(|i| t3.iter().any(|g| g.name == i.name))))
         {
             out.push(check(
                 "tracks",
@@ -522,6 +526,23 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("Advanced Audio Properties"));
+    }
+
+    #[test]
+    fn a_headset_chat_device_on_track_4_is_fine() {
+        // Two output captures: the game device on 3, the chat device on 4.
+        let mut f = facts();
+        f.inputs[2] = Input {
+            name: "Discord (Headset Chat)".into(),
+            kind: "wasapi_output_capture".into(),
+            tracks: vec![1, 4],
+        };
+        let c = checks(&f, true, &settings());
+        assert_eq!(c.iter().find(|x| x.id == "tracks").unwrap().status, "ok");
+        // but the same device on 3 and 4 is not
+        f.inputs[1].tracks = vec![1, 3, 4];
+        let c = checks(&f, true, &settings());
+        assert_eq!(c.iter().find(|x| x.id == "tracks").unwrap().status, "warn");
     }
 
     #[test]
