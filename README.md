@@ -55,6 +55,17 @@ Once the 2.0 service is released:
 cargo build --workspace
 ```
 
+Run the service from the repository during development, on its own port and
+with its own folders so it does not interfere with an installed instance:
+
+```bash
+cargo run -p replaycut -- --dry-run --port 8422 --bind 127.0.0.1 --clip-dir <scratch folder> --data-dir <scratch data dir> --ui ui/index.html
+```
+
+`--dry-run` encodes for real but simulates uploads, posts, the replay hotkey
+and the clipboard. Settings live in `<data-dir>/settings.json` and are
+created with defaults on first start; command-line flags override them.
+
 ### API contract tests
 
 The tests in `tests/api` are black-box tests against a running service. They

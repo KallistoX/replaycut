@@ -12,6 +12,13 @@ contract.
 
 ### Added
 
+- Service core, part 1: `replaycut` binary with settings.json, rolling log,
+  folder scanner (change notifications plus polling, 2-second age and
+  exclusive-open rule), preview remux, and the read side of the API:
+  `GET /`, `/api/clips`, `/api/history`, `/api/jobs/<id>`, `/media/<base>.mp4`
+  with range requests, clip titles, delete to the recycle bin, `/api/save`
+  (F9 to OBS), 404 handling. `--dry-run` simulates hotkey and integrations.
+- `ui/index.html`: the browser UI, translated to English, logic unchanged.
 - Repository skeleton: Cargo workspace with the `replaycut` binary crate
   (placeholder) and the `replaycut-api-tests` crate.
 - `docs/api.md`: the HTTP API contract, transcribed from the 1.4 service.

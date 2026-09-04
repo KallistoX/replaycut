@@ -7,7 +7,7 @@ version = "2.0.0-dev"
 edition = "2021"
 license = "AGPL-3.0-only"
 repository = "https://github.com/KallistoX/replaycut"
-rust-version = "1.80"
+rust-version = "1.85"
 
 [workspace.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"] }

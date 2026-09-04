@@ -12,3 +12,22 @@ name = "replaycut"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1.0.104"
+axum = "0.8.9"
+chrono = "0.4.45"
+clap = { version = "4.5.61", features = ["derive"] }
+notify = "8.2.0"
+parking_lot = "0.12.5"
+percent-encoding = "2.3.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json.workspace = true
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "process", "fs", "sync", "time", "io-util", "signal"] }
+tower = { version = "0.5.3", features = ["util"] }
+tower-http = { version = "0.7.1", features = ["fs"] }
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "chrono"] }
+trash = "5.2.3"
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.61.3", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_Threading", "Win32_Foundation"] }
