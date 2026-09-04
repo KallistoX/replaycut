@@ -10,6 +10,12 @@ contract.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-04
+
+Setup in the browser, settings at runtime, an optional password, a
+diagnostics page and the new design. Rollout to the group still waits for
+the one-click update.
+
 ### Added
 
 - Settings change at runtime: `GET/PUT /api/settings` (everything but port,
@@ -114,5 +120,6 @@ from the 1.x PowerShell service.
   share pipeline, the single-job rule (409), delete, `/api/save` and 404s.
 - CI skeleton (fmt, clippy, build, compile tests).
 
-[Unreleased]: https://github.com/KallistoX/replaycut/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/KallistoX/replaycut/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/KallistoX/replaycut/releases/tag/v2.1.0
 [2.0.0]: https://github.com/KallistoX/replaycut/releases/tag/v2.0.0
