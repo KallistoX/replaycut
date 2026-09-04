@@ -1386,7 +1386,7 @@ function showEmpty(kind) {
 
 function renderList() {
   const key = JSON.stringify(clips.map(c => [c.base, c.title, c.tracks])) + (cur ? cur.base : ''); if (key === listKey) return; listKey = key;
-  const list = $('list'); list.innerHTML = clips.length ? '' : '<div class="empty compact"><b>No clips yet</b><br>Press <kbd>F9</kbd> in OBS while the replay buffer runs.</div>';
+  const list = $('list'); list.innerHTML = clips.length ? '' : '<div class="empty compact"><div><b>No clips yet</b><br>Press <kbd>F9</kbd> in OBS while the replay buffer runs.</div></div>';
   clips.forEach(c => {
     const e = document.createElement('div'); e.className = 'clip' + (cur && cur.base === c.base ? ' active' : ''); e.dataset.base = c.base;
     e.innerHTML = `<div class="name"><span></span></div><div class="meta"><span>${fmt(c.duration)}</span><span>${(c.size / 1048576).toFixed(0)} MB</span>${c.tracks ? `<span>${c.tracks} track${c.tracks === 1 ? '' : 's'}</span>` : ''}<span>${esc((c.created || '').slice(11, 16))}</span></div>`;

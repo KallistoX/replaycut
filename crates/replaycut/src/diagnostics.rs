@@ -245,9 +245,17 @@ pub async fn run(state: &AppState) -> Report {
     // scan
     let scan_check = {
         let scan_at = state.inner.lock().scan_at.clone();
+        let just_started = uptime < 60;
         async move {
             match scan_at {
-                None => Check::new("scan", "Folder scan", "warn", "no scan yet"),
+                None if just_started => Check::new(
+                    "scan",
+                    "Folder scan",
+                    "ok",
+                    "first scan running (the service just started)",
+                ),
+                None => Check::new("scan", "Folder scan", "warn", "no scan yet")
+                    .with_fix("Restart replaycut (Settings › Restart now, or the tray)."),
                 Some(at) => {
                     let age = chrono::NaiveDateTime::parse_from_str(&at, "%Y-%m-%dT%H:%M:%S")
                         .ok()
