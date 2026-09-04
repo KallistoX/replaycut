@@ -170,7 +170,7 @@ fn real_main(cli: Cli, console: bool) -> Result<()> {
     match cli.command {
         Some(Command::Setup) => runtime()?.block_on(setup::run(&settings_path, &mut settings)),
         Some(Command::Test) => runtime()?.block_on(setup::test(&settings)),
-        Some(Command::Stop) => stop(),
+        Some(Command::Stop) => stop(settings.port),
         #[cfg(windows)]
         Some(Command::Install) => install::install(
             &runtime()?,
@@ -180,7 +180,9 @@ fn real_main(cli: Cli, console: bool) -> Result<()> {
             settings_existed,
         ),
         #[cfg(windows)]
-        Some(Command::Uninstall { purge }) => install::uninstall(purge, &settings_path, &data_dir),
+        Some(Command::Uninstall { purge }) => {
+            install::uninstall(purge, settings.port, &settings_path, &data_dir)
+        }
         #[cfg(windows)]
         Some(Command::Autostart { mode }) => install::autostart(mode),
         #[cfg(not(windows))]
@@ -200,8 +202,8 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
 }
 
 /// `replaycut stop`: signal the stop event and wait for the instance to go.
-fn stop() -> Result<()> {
-    if platform::stop_instance(Duration::from_secs(15))? {
+fn stop(port: u16) -> Result<()> {
+    if platform::stop_instance(port, Duration::from_secs(15))? {
         println!("replaycut stopped");
     } else {
         println!("replaycut is not running");
@@ -223,7 +225,8 @@ fn run_service(cli: &Cli, settings: Settings, data_dir: &Path, console: bool) ->
     );
 
     let ui_url = format!("http://localhost:{}/", settings.port);
-    let Some(_instance) = platform::claim_single_instance()? else {
+    let port = settings.port;
+    let Some(_instance) = platform::claim_single_instance(port)? else {
         if cli.no_browser {
             tracing::info!("replaycut is already running");
         } else {
@@ -240,7 +243,7 @@ fn run_service(cli: &Cli, settings: Settings, data_dir: &Path, console: bool) ->
     let (state, listener) = runtime.block_on(startup(settings, data_dir, cli.dry_run))?;
 
     // `replaycut stop` sets this event; a plain thread waits on it.
-    let stop_event = platform::StopEvent::create()?;
+    let stop_event = platform::StopEvent::create(port)?;
     {
         let shutdown = shutdown.clone();
         std::thread::Builder::new()

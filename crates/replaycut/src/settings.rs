@@ -122,7 +122,7 @@ impl Settings {
         if path.is_file() {
             let text = std::fs::read_to_string(path)
                 .with_context(|| format!("cannot read {}", path.display()))?;
-            let settings: Settings = serde_json::from_str(&text)
+            let settings: Settings = serde_json::from_str(text.trim_start_matches('\u{feff}'))
                 .with_context(|| format!("{} is not valid settings JSON", path.display()))?;
             return Ok(settings);
         }

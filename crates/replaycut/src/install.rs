@@ -91,15 +91,15 @@ fn copy_package(source_dir: &Path, app: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The elevated PowerShell script: our rule, and the 1.x leftovers when asked.
-pub fn firewall_script(port: u16, exe: &Path, old: Option<(u16, &str)>) -> String {
-    let mut s = String::from("$ErrorActionPreference = 'Continue'\n");
-    if let Some((old_port, old_rule)) = old {
-        s.push_str(&format!(
-            "Remove-NetFirewallRule -DisplayName '{old_rule}' -ErrorAction SilentlyContinue\n\
-             netsh http delete urlacl url=http://+:{old_port}/ | Out-Null\n"
-        ));
-    }
+/// The elevated PowerShell script: our rule, plus the 1.x leftovers (rule and
+/// URL reservation), which are harmless no-ops when they do not exist.
+pub fn firewall_script(port: u16, exe: &Path, old: (u16, &str)) -> String {
+    let (old_port, old_rule) = old;
+    let mut s = format!(
+        "$ErrorActionPreference = 'Continue'\n\
+         Remove-NetFirewallRule -DisplayName '{old_rule}' -ErrorAction SilentlyContinue\n\
+         netsh http delete urlacl url=http://+:{old_port}/ | Out-Null\n"
+    );
     s.push_str(&format!(
         "Remove-NetFirewallRule -DisplayName '{FIREWALL_RULE}' -ErrorAction SilentlyContinue\n\
          New-NetFirewallRule -DisplayName '{FIREWALL_RULE}' -Direction Inbound -Protocol TCP -LocalPort {port} -Profile Private -Action Allow -Program '{}' | Out-Null\n\
@@ -164,7 +164,7 @@ pub fn install(
     let icon = app.join(ICON_NAME);
 
     step("Stopping a running instance");
-    if platform::stop_instance(Duration::from_secs(10))? {
+    if platform::stop_instance(settings.port, Duration::from_secs(10))? {
         println!("  stopped");
     } else {
         println!("  none running");
@@ -222,10 +222,8 @@ pub fn install(
         "  Allow access from other devices in your private network (phone, laptop)?",
         true,
     )? {
-        let old = migration
-            .as_ref()
-            .filter(|r| r.had_task)
-            .map(|r| (r.old_port, migrate::OLD_FIREWALL_RULE));
+        let old_port = migration.as_ref().map_or(settings.port, |r| r.old_port);
+        let old = (old_port, migrate::OLD_FIREWALL_RULE);
         println!("  Windows will ask for administrator permission once.");
         run_elevated(
             &firewall_script(settings.port, &app_exe, old),
@@ -263,12 +261,12 @@ pub fn install(
     Ok(())
 }
 
-pub fn uninstall(purge: bool, settings_path: &Path, data_dir: &Path) -> Result<()> {
+pub fn uninstall(purge: bool, port: u16, settings_path: &Path, data_dir: &Path) -> Result<()> {
     println!("replaycut {VERSION} - uninstall");
     let app = winshell::app_dir();
 
     step("Stopping a running instance");
-    if platform::stop_instance(Duration::from_secs(10))? {
+    if platform::stop_instance(port, Duration::from_secs(10))? {
         println!("  stopped");
     } else {
         println!("  none running");
@@ -391,19 +389,15 @@ mod tests {
 
     #[test]
     fn firewall_script_covers_new_rule_and_old_leftovers() {
-        let s = firewall_script(
-            8420,
-            Path::new(r"C:\app\replaycut.exe"),
-            Some((8420, "Old Rule")),
-        );
+        let s = firewall_script(8420, Path::new(r"C:\app\replaycut.exe"), (8420, "Old Rule"));
         assert!(s.contains("Remove-NetFirewallRule -DisplayName 'Old Rule'"));
         assert!(s.contains("netsh http delete urlacl url=http://+:8420/"));
         assert!(s.contains(
             "-LocalPort 8420 -Profile Private -Action Allow -Program 'C:\\app\\replaycut.exe'"
         ));
         assert!(s.trim_end().ends_with("exit 0"));
-        let plain = firewall_script(9000, Path::new(r"C:\x.exe"), None);
-        assert!(!plain.contains("urlacl"));
+        let plain = firewall_script(9000, Path::new(r"C:\x.exe"), (9000, "Old Rule"));
+        assert!(plain.contains("urlacl url=http://+:9000/"));
         assert!(plain.contains("-LocalPort 9000"));
     }
 }

@@ -12,10 +12,18 @@ use anyhow::Result;
 /// shortcut (both written by `replaycut install`) use the same id.
 pub const APP_ID: &str = "replaycut";
 
+/// Kernel object names carry the port, so a test instance on another port
+/// can run next to the installed one; `replaycut stop` reads the same
+/// settings and therefore uses the same names.
 #[cfg(windows)]
-const MUTEX_NAME: &str = "Global\\replaycut";
+fn mutex_name(port: u16) -> String {
+    format!("Global\\replaycut-{port}")
+}
+
 #[cfg(windows)]
-const STOP_EVENT_NAME: &str = "Global\\replaycut-stop";
+fn stop_event_name(port: u16) -> String {
+    format!("Global\\replaycut-stop-{port}")
+}
 
 /// Move a file to the recycle bin (never a permanent delete).
 pub fn recycle(path: &Path) -> Result<()> {
@@ -69,7 +77,7 @@ mod win {
         MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND, SW_SHOWNORMAL,
     };
 
-    use super::{APP_ID, MUTEX_NAME, STOP_EVENT_NAME};
+    use super::{mutex_name, stop_event_name, APP_ID};
 
     fn wide(s: &str) -> HSTRING {
         HSTRING::from(s)
@@ -155,11 +163,12 @@ mod win {
         }
     }
 
-    pub fn claim_single_instance() -> Result<Option<SingleInstance>> {
-        // SAFETY: CreateMutexW with a constant name and default security.
+    pub fn claim_single_instance(port: u16) -> Result<Option<SingleInstance>> {
+        let name = mutex_name(port);
+        // SAFETY: CreateMutexW with an owned name and default security.
         unsafe {
-            let h = CreateMutexW(None, false, &wide(MUTEX_NAME))
-                .with_context(|| format!("cannot create {MUTEX_NAME}"))?;
+            let h = CreateMutexW(None, false, &wide(&name))
+                .with_context(|| format!("cannot create {name}"))?;
             if GetLastError() == ERROR_ALREADY_EXISTS {
                 let _ = CloseHandle(h);
                 return Ok(None);
@@ -169,13 +178,13 @@ mod win {
     }
 
     /// True while a service process holds the single-instance mutex.
-    pub fn instance_running() -> bool {
-        // SAFETY: OpenMutexW with a constant name; the handle is closed at once.
+    pub fn instance_running(port: u16) -> bool {
+        // SAFETY: OpenMutexW with an owned name; the handle is closed at once.
         unsafe {
             match OpenMutexW(
                 SYNCHRONIZATION_ACCESS_RIGHTS(0x0010_0000),
                 false,
-                &wide(MUTEX_NAME),
+                &wide(&mutex_name(port)),
             ) {
                 Ok(h) => {
                     let _ = CloseHandle(h);
@@ -193,10 +202,11 @@ mod win {
     unsafe impl Send for StopEvent {}
 
     impl StopEvent {
-        pub fn create() -> Result<Self> {
-            // SAFETY: CreateEventW with a constant name; manual reset, not signalled.
-            let h = unsafe { CreateEventW(None, true, false, &wide(STOP_EVENT_NAME)) }
-                .with_context(|| format!("cannot create {STOP_EVENT_NAME}"))?;
+        pub fn create(port: u16) -> Result<Self> {
+            let name = stop_event_name(port);
+            // SAFETY: CreateEventW with an owned name; manual reset, not signalled.
+            let h = unsafe { CreateEventW(None, true, false, &wide(&name)) }
+                .with_context(|| format!("cannot create {name}"))?;
             Ok(Self(h.0 as isize))
         }
 
@@ -223,17 +233,18 @@ mod win {
     }
 
     /// Signal the running service to stop. `Ok(false)` when none is running.
-    pub fn signal_stop() -> Result<bool> {
-        // SAFETY: OpenEventW/SetEvent with a constant name; the handle is closed at once.
+    pub fn signal_stop(port: u16) -> Result<bool> {
+        let name = stop_event_name(port);
+        // SAFETY: OpenEventW/SetEvent with an owned name; the handle is closed at once.
         unsafe {
-            let h = match OpenEventW(EVENT_MODIFY_STATE, false, &wide(STOP_EVENT_NAME)) {
+            let h = match OpenEventW(EVENT_MODIFY_STATE, false, &wide(&name)) {
                 Ok(h) => h,
                 Err(e) if e.code() == ERROR_FILE_NOT_FOUND.to_hresult() => return Ok(false),
-                Err(e) => return Err(anyhow!("cannot open {STOP_EVENT_NAME}: {e}")),
+                Err(e) => return Err(anyhow!("cannot open {name}: {e}")),
             };
             let r = SetEvent(h);
             let _ = CloseHandle(h);
-            r.with_context(|| format!("cannot signal {STOP_EVENT_NAME}"))?;
+            r.with_context(|| format!("cannot signal {name}"))?;
             Ok(true)
         }
     }
@@ -300,18 +311,18 @@ mod other {
 
     pub struct SingleInstance;
 
-    pub fn claim_single_instance() -> Result<Option<SingleInstance>> {
+    pub fn claim_single_instance(_port: u16) -> Result<Option<SingleInstance>> {
         Ok(Some(SingleInstance))
     }
 
-    pub fn instance_running() -> bool {
+    pub fn instance_running(_port: u16) -> bool {
         false
     }
 
     pub struct StopEvent;
 
     impl StopEvent {
-        pub fn create() -> Result<Self> {
+        pub fn create(_port: u16) -> Result<Self> {
             Ok(Self)
         }
         pub fn wait(&self) {
@@ -321,7 +332,7 @@ mod other {
         }
     }
 
-    pub fn signal_stop() -> Result<bool> {
+    pub fn signal_stop(_port: u16) -> Result<bool> {
         anyhow::bail!("`replaycut stop` is only supported on Windows")
     }
 
@@ -342,12 +353,12 @@ pub use other::{
 };
 
 /// Ask a running instance to stop and wait for it. `Ok(false)` when none ran.
-pub fn stop_instance(timeout: std::time::Duration) -> Result<bool> {
-    if !signal_stop()? {
+pub fn stop_instance(port: u16, timeout: std::time::Duration) -> Result<bool> {
+    if !signal_stop(port)? {
         return Ok(false);
     }
     let started = std::time::Instant::now();
-    while instance_running() {
+    while instance_running(port) {
         if started.elapsed() > timeout {
             anyhow::bail!(
                 "replaycut is still running {} s after the stop request",
