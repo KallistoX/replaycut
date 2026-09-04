@@ -83,4 +83,13 @@ docs/design/            design system: tokens, component sheet, page mockups,
 2. `git tag v<version>` and `git push origin v<version>`: `release.yml` builds
    the EXE, packs `replaycut-<version>-windows-x64.zip` plus `SHA256SUMS`
    and publishes the GitHub release with that version's CHANGELOG section.
-3. Install from the published ZIP on a real machine before announcing it.
+   That section is what the UI shows as "What's new": headings, lists,
+   paragraphs, `code`, bold and links render; keep it in that shape.
+3. Sign it: on the machine with the minisign secret key (never in CI), run
+   `dist\sign-release.ps1 v<version>`. It downloads `SHA256SUMS`, signs it,
+   verifies the signature against the public key in
+   `crates/replaycut/src/update.rs` (`PUBLIC_KEYS`) and uploads
+   `SHA256SUMS.minisig` as the third asset. Until that asset exists the
+   one-click updater shows the release but refuses to install it.
+4. Install from the published ZIP on a real machine before announcing it,
+   or let the previous version update itself to it.

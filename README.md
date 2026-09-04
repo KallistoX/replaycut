@@ -89,7 +89,9 @@ web page you visit cannot change your settings.
 replaycut checks GitHub once a day and shows a banner when a newer release
 exists. "Update now" downloads the ZIP, verifies its signature and hash and
 restarts on the new version; settings, titles, history and credentials are
-kept. By hand: unpack the new ZIP and run its `install.cmd`.
+kept. By hand: unpack the new ZIP and run its `install.cmd`. Every release's
+`SHA256SUMS` is signed with the maintainer's minisign key (the public key is
+built into replaycut); an unsigned or foreign release is never installed.
 
 ### Uninstall
 
