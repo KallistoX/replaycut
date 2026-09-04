@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::credentials;
+use crate::obs_status;
 use crate::obs_ws::{self, ObsConfig, ObsEvent, ObsHandle};
 use crate::settings::Settings;
 use crate::state::AppState;
@@ -28,6 +29,21 @@ pub fn config_from(settings: &Settings) -> ObsConfig {
     }
 }
 
+/// Re-reads the facts every 30 s while connected (profile edits in OBS
+/// do not all raise events).
+pub async fn refresh_loop(handle: Arc<ObsHandle>) {
+    let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
+    loop {
+        tick.tick().await;
+        if handle.status().connected {
+            let facts = obs_status::read_facts(&handle).await;
+            if handle.status().connected {
+                handle.set_facts(facts);
+            }
+        }
+    }
+}
+
 /// Reacts to what the client reports. Runs until the process ends.
 pub async fn react(state: Arc<AppState>, handle: Arc<ObsHandle>, mut rx: mpsc::Receiver<ObsEvent>) {
     let mut was_active = false;
@@ -35,6 +51,7 @@ pub async fn react(state: Arc<AppState>, handle: Arc<ObsHandle>, mut rx: mpsc::R
         match event {
             ObsEvent::Connected => {
                 obs_ws::refresh_basics(&handle).await;
+                handle.set_facts(obs_status::read_facts(&handle).await);
                 was_active = handle.status().replay_active;
                 state.tray_changed();
             }
@@ -63,6 +80,7 @@ pub async fn react(state: Arc<AppState>, handle: Arc<ObsHandle>, mut rx: mpsc::R
             }
             ObsEvent::ProfileChanged => {
                 obs_ws::refresh_basics(&handle).await;
+                handle.set_facts(obs_status::read_facts(&handle).await);
             }
         }
     }

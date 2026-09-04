@@ -845,3 +845,25 @@ fn t24_save_reports_how_it_was_sent_and_obs_config() {
     assert_eq!(doc["obs"]["port"], 4455);
     assert!(doc["secrets"]["obs"].is_boolean());
 }
+
+#[test]
+fn t25_obs_document_and_actions_without_obs() {
+    let _g = serial();
+    if !since_22() {
+        return;
+    }
+    let (status, d) = get_json("/api/obs");
+    assert_eq!(status, 200);
+    assert!(d["enabled"].is_boolean(), "{d}");
+    assert!(d["connected"].is_boolean(), "{d}");
+    assert!(d["checks"].is_array(), "{d}");
+    assert_eq!(d["settings"]["port"], 4455);
+    if d["connected"] == false {
+        let (status, body) = post_json("/api/obs/replay-buffer/start", &json!({}));
+        assert_eq!(status, 409, "{body}");
+        let (status, body) = post_json("/api/obs/adopt-folder", &json!({}));
+        assert_eq!(status, 409, "{body}");
+    }
+    let (status, body) = post_json("/api/obs/reconnect", &json!({}));
+    assert_eq!(status, 200, "{body}");
+}

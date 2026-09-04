@@ -21,6 +21,7 @@ mod media;
 mod migrate;
 mod obs;
 mod obs_link;
+mod obs_status;
 mod obs_ws;
 mod platform;
 mod scanner;
@@ -412,6 +413,7 @@ async fn serve(
         state.obs.clone(),
         obs_events,
     ));
+    tokio::spawn(obs_link::refresh_loop(state.obs.clone()));
     if state.settings().check_updates {
         tokio::spawn(update::run(state.clone()));
     }

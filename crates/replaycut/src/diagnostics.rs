@@ -485,12 +485,50 @@ pub async fn run(state: &AppState) -> Report {
     checks.push(nextcloud);
     checks.push(quota);
     checks.push(webhook);
-    checks.push(Check::new(
-        "obs",
-        "OBS",
-        "skip",
-        "not connected - the OBS integration comes with a later release",
-    ));
+    checks.push({
+        let obs = state.obs.status();
+        if !obs.enabled {
+            Check::new("obs", "OBS", "skip", "integration is off (obs.enabled: false)")
+        } else if !obs.connected {
+            Check::new(
+                "obs",
+                "OBS",
+                "fail",
+                format!(
+                    "not connected: {}",
+                    obs.reason.as_deref().unwrap_or("no connection yet")
+                ),
+            )
+            .with_fix("OBS: Tools › WebSocket Server Settings › Enable WebSocket server (port 4455); with a password, enter it on the OBS page. Without OBS running, F9 falls back to a key press.")
+        } else if obs.replay_active {
+            let length = obs
+                .facts
+                .as_ref()
+                .and_then(|f| f.profile.replay_seconds)
+                .map(|s| format!(" ({s} s)"))
+                .unwrap_or_default();
+            Check::new(
+                "obs",
+                "OBS",
+                "ok",
+                format!(
+                    "connected · OBS {} · replay buffer running{length}",
+                    obs.version.as_deref().unwrap_or("?")
+                ),
+            )
+        } else {
+            Check::new(
+                "obs",
+                "OBS",
+                "warn",
+                format!(
+                    "connected · OBS {} · replay buffer stopped - F9 does nothing",
+                    obs.version.as_deref().unwrap_or("?")
+                ),
+            )
+            .with_fix("Start the replay buffer in OBS (Controls › Start Replay Buffer) or on the OBS page.")
+        }
+    });
     checks.push(network);
 
     // the copy for a support message: no secrets, settings line, log tail

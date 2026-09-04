@@ -55,7 +55,13 @@ pub fn router(state: App) -> Router {
         .route("/api/addresses", get(admin::addresses))
         .route("/api/setup/obs", get(admin::setup_obs))
         .route("/api/diagnostics", get(admin::diagnostics))
+        .route("/api/obs", get(admin::obs_status))
         .route("/api/obs/reconnect", post(admin::obs_reconnect))
+        .route(
+            "/api/obs/replay-buffer/start",
+            post(admin::obs_start_replay),
+        )
+        .route("/api/obs/adopt-folder", post(admin::obs_adopt_folder))
         .route("/api/session", get(admin::session))
         .route("/api/login", post(admin::login))
         .route("/api/logout", post(admin::logout))

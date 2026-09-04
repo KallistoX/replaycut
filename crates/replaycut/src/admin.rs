@@ -535,3 +535,89 @@ pub async fn obs_reconnect(State(app): State<App>) -> Json<Value> {
     app.obs.reconnect_now();
     Json(json!({ "ok": true }))
 }
+
+/// `GET /api/obs` (since 2.2): the connection, the facts and the checks.
+pub async fn obs_status(State(app): State<App>) -> Json<Value> {
+    let status = app.obs.status();
+    let settings = app.settings();
+    let checks = status
+        .facts
+        .as_ref()
+        .map(|f| crate::obs_status::checks(f, status.replay_active, &settings))
+        .unwrap_or_default();
+    let mut doc = serde_json::to_value(&status).unwrap_or(Value::Null);
+    doc["checks"] = json!(checks);
+    doc["settings"] = json!({
+        "host": settings.obs.host,
+        "port": settings.obs.port,
+        "enabled": settings.obs.enabled,
+        "passwordSet": credentials::read(credentials::OBS_WEBSOCKET).ok().flatten().is_some(),
+    });
+    Json(doc)
+}
+
+/// `POST /api/obs/replay-buffer/start` (since 2.2)
+pub async fn obs_start_replay(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    let status = app.obs.status();
+    if !status.connected {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            status
+                .reason
+                .map(|r| format!("OBS is not connected: {r}"))
+                .unwrap_or_else(|| "OBS is not connected".into()),
+        ));
+    }
+    if status.replay_active {
+        return Ok(Json(json!({ "ok": true, "note": "already running" })));
+    }
+    if app.dry_run {
+        tracing::info!("dry run: StartReplayBuffer not sent");
+    } else {
+        app.obs
+            .request("StartReplayBuffer", json!({}))
+            .await
+            .map_err(ApiError::internal)?;
+        tracing::info!("StartReplayBuffer sent to OBS");
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `POST /api/obs/adopt-folder` (since 2.2): make the OBS recording folder
+/// the clip folder of replaycut. Changes replaycut only.
+pub async fn obs_adopt_folder(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    let status = app.obs.status();
+    let Some(path) = status
+        .facts
+        .as_ref()
+        .and_then(|f| f.profile.rec_path.clone())
+    else {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "OBS is not connected or did not report a recording folder",
+        ));
+    };
+    if app.inner.lock().current_job.is_some() {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "the clip folder cannot change while a share is running",
+        ));
+    }
+    let patch = json!({ "clipDir": path });
+    let next = app
+        .settings()
+        .with_patch(&patch)
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))?;
+    let disk = Settings::load_or_create(&app.settings_path).map_err(ApiError::internal)?;
+    let disk_next = disk
+        .with_patch(&patch)
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))?;
+    disk_next
+        .save(&app.settings_path)
+        .map_err(ApiError::internal)?;
+    app.apply_settings(next)
+        .await
+        .map_err(|e| ApiError::internal(format!("{e:#}")))?;
+    tracing::info!("clip folder adopted from OBS: {path}");
+    Ok(Json(json!({ "ok": true, "clipDir": path })))
+}

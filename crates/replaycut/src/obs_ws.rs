@@ -69,6 +69,9 @@ pub struct ObsStatus {
     pub last_saved: Option<SavedReplay>,
     /// True right after `ExitStarted`, until the next connection.
     pub obs_closing: bool,
+    /// Profile, video and inputs as last read (see `obs_status`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub facts: Option<crate::obs_status::Facts>,
 }
 
 /// What happened on the connection; the service reacts (scanner, toasts).
@@ -156,6 +159,10 @@ impl ObsHandle {
             Ok(Err(_)) => bail!("OBS connection closed while waiting for {kind}"),
             Err(_) => bail!("OBS did not answer {kind} within 5 s"),
         }
+    }
+
+    pub fn set_facts(&self, facts: crate::obs_status::Facts) {
+        self.status.lock().facts = Some(facts);
     }
 
     fn set<F: FnOnce(&mut ObsStatus)>(&self, f: F) {
@@ -419,6 +426,7 @@ async fn session(handle: &Arc<ObsHandle>, config: &ObsConfig) -> Result<SessionE
     *handle.requests.lock() = None;
     handle.set(|s| {
         s.connected = false;
+        s.facts = None;
     });
     let _ = sink.close().await;
     Ok(end)
@@ -532,7 +540,7 @@ mod tests {
     /// A fake OBS: Hello (with or without auth), checks Identify, answers
     /// GetVersion and GetReplayBufferStatus, sends one event, then closes
     /// when told to. Returns the port and a sender that ends the server.
-    async fn fake_obs(password: Option<&'static str>) -> (u16, oneshot::Sender<()>) {
+    pub(super) async fn fake_obs(password: Option<&'static str>) -> (u16, oneshot::Sender<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
@@ -585,6 +593,41 @@ mod tests {
                             let data = match v["d"]["requestType"].as_str().unwrap_or("") {
                                 "GetVersion" => json!({ "obsVersion": "30.2.3", "obsWebSocketVersion": "5.5.2" }),
                                 "GetReplayBufferStatus" => json!({ "outputActive": true }),
+                                "GetProfileList" => json!({ "currentProfileName": "Gaming", "profiles": ["Gaming"] }),
+                                "GetProfileParameter" => {
+                                    let name = v["d"]["requestData"]["parameterName"].as_str().unwrap_or("");
+                                    let value = match name {
+                                        "Mode" => "Advanced",
+                                        "RecFilePath" => "C:\Users\you\Videos\Clips",
+                                        "RecFormat2" => "mkv",
+                                        "RecEncoder" => "jim_hevc_nvenc",
+                                        "RecTracks" => "15",
+                                        "RecRBTime" => "300",
+                                        _ => "",
+                                    };
+                                    json!({ "parameterValue": value, "defaultParameterValue": null })
+                                }
+                                "GetVideoSettings" => json!({ "baseWidth": 2560, "baseHeight": 1440, "outputWidth": 1920, "outputHeight": 1080, "fpsNumerator": 60, "fpsDenominator": 1 }),
+                                "GetInputList" => json!({ "inputs": [
+                                    { "inputName": "Mic", "inputKind": "wasapi_input_capture" },
+                                    { "inputName": "Desktop", "inputKind": "wasapi_output_capture" },
+                                    { "inputName": "Discord", "inputKind": "wasapi_process_output_capture" },
+                                    { "inputName": "Game", "inputKind": "game_capture" }
+                                ] }),
+                                "GetInputAudioTracks" => {
+                                    let input = v["d"]["requestData"]["inputName"].as_str().unwrap_or("");
+                                    let tracks = match input {
+                                        "Mic" => json!({ "1": true, "2": true, "3": false, "4": false, "5": false, "6": false }),
+                                        "Desktop" => json!({ "1": true, "2": false, "3": true, "4": false, "5": false, "6": false }),
+                                        "Discord" => json!({ "1": true, "2": false, "3": false, "4": true, "5": false, "6": false }),
+                                        _ => {
+                                            let reply = json!({ "op": 7, "d": { "requestType": "GetInputAudioTracks", "requestId": id, "requestStatus": { "result": false, "code": 604, "comment": "The specified input does not support audio." } } });
+                                            sink.send(Message::Text(reply.to_string().into())).await.unwrap();
+                                            continue;
+                                        }
+                                    };
+                                    json!({ "inputAudioTracks": tracks })
+                                }
                                 "SaveReplayBuffer" => {
                                     // answer, then the event OBS sends once the file is written
                                     let reply = json!({ "op": 7, "d": { "requestType": "SaveReplayBuffer", "requestId": id, "requestStatus": { "result": true, "code": 100 } } });
@@ -782,6 +825,55 @@ mod tests {
             password: None,
         });
         wait_until(|| handle.status().connected, "connection").await;
+        task.abort();
+    }
+}
+
+#[cfg(test)]
+mod facts_tests {
+    use super::tests::fake_obs;
+    use super::*;
+    use crate::obs_status::{checks, read_facts};
+
+    #[tokio::test]
+    async fn reads_facts_and_derives_checks() {
+        let (port, _stop) = fake_obs(None).await;
+        let (tx, _rx) = mpsc::channel(16);
+        let handle = ObsHandle::new(
+            ObsConfig {
+                enabled: true,
+                host: "127.0.0.1".into(),
+                port,
+                password: None,
+            },
+            tx,
+        );
+        let task = tokio::spawn(run(handle.clone()));
+        for _ in 0..100 {
+            if handle.status().connected {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let facts = read_facts(&handle).await;
+        assert_eq!(facts.profile.name, "Gaming");
+        assert_eq!(facts.profile.mode, "Advanced");
+        assert_eq!(facts.profile.format.as_deref(), Some("mkv"));
+        assert_eq!(facts.profile.encoder.as_deref(), Some("jim_hevc_nvenc"));
+        assert_eq!(facts.profile.replay_seconds, Some(300));
+        assert_eq!(facts.profile.rec_tracks, 15);
+        assert_eq!((facts.video.width, facts.video.height, facts.video.fps), (1920, 1080, 60.0));
+        assert_eq!(facts.inputs.len(), 4);
+        assert_eq!(facts.inputs[0].tracks, vec![1, 2]);
+        assert!(facts.inputs[3].tracks.is_empty(), "video-only input has no tracks");
+
+        let settings = crate::settings::Settings {
+            clip_dir: "C:\Users\you\Videos\Clips".into(),
+            ..crate::settings::Settings::default()
+        };
+        let rows = checks(&facts, true, &settings);
+        assert!(rows.iter().all(|c| c.status == "ok"), "{rows:?}");
+        assert!(rows.iter().any(|c| c.id == "codec" && c.detail.contains("HEVC")));
         task.abort();
     }
 }

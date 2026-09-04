@@ -476,6 +476,42 @@ to `obs.host:obs.port` from `settings.json` (default `localhost:4455`,
   buffer is not running - ..." }`. Nothing is pressed.
 - Not connected: the key press of 1.x; `200 { ok: true, via: "hotkey" }`.
 
+### `GET /api/obs`
+
+The connection, the facts read from OBS and the checks the OBS page shows:
+
+```json
+{
+  "enabled": true, "connected": true, "version": "30.2.3", "wsVersion": "5.5.2",
+  "replayActive": true, "obsClosing": false,
+  "lastSaved": { "path": "C:\\Users\\you\\Videos\\Clips\\Replay ....mkv", "at": "2026-09-04T21:14:02" },
+  "facts": {
+    "profile": { "name": "Gaming", "mode": "Advanced", "recPath": "...", "format": "mkv", "encoder": "jim_nvenc", "replaySeconds": 300, "recTracks": 15 },
+    "video": { "width": 1920, "height": 1080, "fps": 60 },
+    "inputs": [ { "name": "Mic", "kind": "wasapi_input_capture", "tracks": [1, 2] } ],
+    "checkedAt": "2026-09-04T21:20:00"
+  },
+  "checks": [ { "id": "replay", "label": "Replay buffer", "status": "ok", "detail": "running (300 s)" } ],
+  "settings": { "host": "localhost", "port": 4455, "enabled": true, "passwordSet": true }
+}
+```
+
+Without a connection `connected` is false, `reason` says why in plain
+words, `facts` is absent and `checks` is empty. Check ids: `replay`,
+`folder`, `format`, `codec`, `tracks`; status `ok`, `warn`, `problem`;
+`fix` names the OBS menu path; `action` is `start-replay-buffer` or
+`adopt-folder` when a button applies. Facts are read on connect, on a
+profile change and every 30 s.
+
+### `POST /api/obs/replay-buffer/start`, `/api/obs/reconnect`, `/api/obs/adopt-folder`
+
+- `replay-buffer/start`: `StartReplayBuffer`; `200 { ok }` (also when it
+  already runs), `409` without a connection.
+- `reconnect`: connect now instead of waiting out the backoff; always `200`.
+- `adopt-folder`: makes the OBS recording folder the `clipDir` of replaycut
+  (the same as `PUT /api/settings`); `200 { ok, clipDir }`, `409` without a
+  connection or while a share runs.
+
 ### Additions to `GET /api/clips` and `/api/settings`
 
 `config.obs` = `{ enabled, connected, replayActive }`. The settings
