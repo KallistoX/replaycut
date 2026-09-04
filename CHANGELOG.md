@@ -28,6 +28,17 @@ contract.
 - The UI moves to the design system (docs/design): top bar with the pages,
   banners instead of the status block, the clip list as a collapsed panel
   beside the game, a login page, themes from the data directory.
+- Setup wizard at `/setup` (OBS folder from the profile, live check for the
+  first replay with codec and browser playability, integrations with tests,
+  password, addresses and QR code) and the settings page at `/settings`
+  (General and Integrations, changes apply at once, restart button for port
+  and bind). `GET /api/setup/obs` reads the OBS profiles; clips carry codec,
+  size and frame rate.
+- Diagnostics page at `/diagnostics` and `GET /api/diagnostics`: eleven
+  checks with a fix per problem and a text copy without secrets;
+  `replaycut test` prints that text when the service runs.
+- A fresh installation opens the browser setup; a migrated one counts as set
+  up. `replaycut setup` points at the wizard.
 - `docs/design`: the design system for the web UI - tokens, component sheet,
   page mockups and icon sources - and `docs/themes.md`, the theme format.
 

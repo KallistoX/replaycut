@@ -41,10 +41,13 @@ Releases are published on GitHub as a ZIP for Windows x64; see
    (default: no) and whether other devices in your private network may reach
    it (one administrator prompt for the firewall rule), then starts the
    service and opens the page in your browser. No admin rights otherwise.
-2. Point replaycut at the folder OBS writes replays to and, if you want,
-   enable integrations (Nextcloud upload, Discord webhook). Until the setup
-   page exists this is `replaycut setup` on the console; see
-   [`docs/settings.md`](docs/settings.md).
+2. The browser opens the setup: it suggests the recording folder from your
+   OBS profile, waits for the first replay and reports codec and audio
+   tracks, lets you switch on Nextcloud and Discord with a test each, and
+   offers a password for other devices. Skip what you do not need; without
+   integrations replaycut is a local clip manager. Everything can be changed
+   later under Settings (`replaycut setup` on the console still works; see
+   [`docs/settings.md`](docs/settings.md)).
 3. Play. Press the replay hotkey when something happens, open the page, trim,
    Share.
 
@@ -54,6 +57,23 @@ the shortcut to start it again; if it is already running, that opens the page.
 
 Windows SmartScreen may warn about an unsigned download the first time: click
 "More info", then "Run anyway".
+
+### Pages
+
+- **Clips** (`/`): the list, the player with in/out marks, audio choice,
+  Share with live progress, the result with links or - in local mode - "Open
+  folder" and "Copy file", and the share history.
+- **Settings** (`/settings`): everything in `settings.json`, integrations
+  with their tests, theme, autostart and the password; changes apply at
+  once, port and bind after "Restart now".
+- **Diagnostics** (`/diagnostics`): ffmpeg, encoder, folder, scan,
+  integrations, network as one list with a fix per problem, and "Copy
+  diagnostics" for a support message. `replaycut test` prints the same.
+- **Setup** (`/setup`): the wizard, any time again.
+
+With a password set, phones and other computers see a login page; the PC
+that runs replaycut never needs it. Every cross-site write is refused, so a
+web page you visit cannot change your settings.
 
 ### Update
 

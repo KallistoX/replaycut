@@ -79,6 +79,66 @@ pub fn spawn_self_for_restart() -> Result<()> {
     }
 }
 
+/// Working set of this process in MB (Windows only).
+#[cfg(windows)]
+pub fn process_memory_mb() -> Option<u64> {
+    use windows::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use windows::Win32::System::Threading::GetCurrentProcess;
+    let mut counters = PROCESS_MEMORY_COUNTERS::default();
+    let size = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+    // SAFETY: the struct is sized and zeroed; the call fills it.
+    let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, size) }.as_bool();
+    ok.then_some(counters.WorkingSetSize as u64 / 1_048_576)
+}
+#[cfg(not(windows))]
+pub fn process_memory_mb() -> Option<u64> {
+    None
+}
+
+/// Free bytes on the volume of `dir`.
+#[cfg(windows)]
+pub fn free_space(dir: &Path) -> Option<u64> {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let mut free = 0u64;
+    // SAFETY: out-pointers to locals; the path is a valid wide string.
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(&HSTRING::from(dir.as_os_str()), Some(&mut free), None, None)
+    }
+    .is_ok();
+    ok.then_some(free)
+}
+#[cfg(not(windows))]
+pub fn free_space(_dir: &Path) -> Option<u64> {
+    None
+}
+
+/// Whether the sign-in entry exists (Windows only).
+#[cfg(windows)]
+pub fn autostart_enabled() -> bool {
+    crate::winshell::autostart_entry().is_some()
+}
+#[cfg(not(windows))]
+pub fn autostart_enabled() -> bool {
+    false
+}
+
+/// `Some(true)` when the firewall rule "replaycut" exists, `None` when the
+/// question cannot be answered on this platform.
+#[cfg(windows)]
+pub fn firewall_rule_present() -> Option<bool> {
+    crate::winshell::run_hidden(
+        "netsh",
+        &["advfirewall", "firewall", "show", "rule", "name=replaycut"],
+    )
+    .ok()
+    .map(|(ok, out)| ok && out.to_ascii_lowercase().contains("replaycut"))
+}
+#[cfg(not(windows))]
+pub fn firewall_rule_present() -> Option<bool> {
+    None
+}
+
 /// Lower-case computer name for the address other devices use.
 pub fn hostname() -> String {
     std::env::var("COMPUTERNAME")

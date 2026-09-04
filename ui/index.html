@@ -407,6 +407,8 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 .test-msg.ok { color: var(--ok); } .test-msg.err { color: var(--err); }
 .step .name { white-space: nowrap; }
 
+.summary { display: flex; gap: var(--space-4); flex-wrap: wrap; align-items: center; }
+.summary .n { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-sm); }
 /* ---- page: login and placeholders ---- */
 .centered { min-height: calc(100vh - var(--topbar-h)); display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
 .centered .card { width: 100%; max-width: 380px; }
@@ -727,6 +729,27 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   </div>
 </div>
 
+<!-- ===================== Diagnostics ===================== -->
+<main class="page" id="page-diagnostics" hidden>
+  <div class="page-head"><h1>Diagnostics</h1><span class="muted">Everything that can go wrong, in one list. Paste the copy into a support message.</span></div>
+  <div class="summary" id="dSummary">
+    <span class="n muted" id="dRunning"><span class="spinner"></span> running …</span>
+    <span class="n" id="dFail" hidden><i class="dot err"></i> <span></span></span>
+    <span class="n" id="dWarn" hidden><i class="dot warn"></i> <span></span></span>
+    <span class="n" id="dOk" hidden><i class="dot"></i> <span></span></span>
+    <span class="right row">
+      <button class="btn" id="dAgain"><svg class="icon"><use href="#i-refresh"/></svg> Run again</button>
+      <button class="btn" id="dCopy"><svg class="icon"><use href="#i-copy"/></svg> Copy diagnostics</button>
+    </span>
+  </div>
+  <div class="checks" id="dChecks"></div>
+  <div class="stack">
+    <span class="section-title">What "Copy diagnostics" puts on the clipboard</span>
+    <div class="well" id="dText"></div>
+    <span class="muted xs">No secrets: passwords and the webhook URL are never part of the copy.</span>
+  </div>
+</main>
+
 <!-- ===================== Not built yet ===================== -->
 <div class="centered" id="page-soon" hidden>
   <div class="card">
@@ -755,7 +778,7 @@ const $ = s => document.getElementById(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
 const fmtShort = s => { s = Math.max(0, Math.round(s || 0)); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r; };
-const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup': 'setup', '/settings': 'settings', '/diagnostics': 'soon', '/obs': 'soon' };
+const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup': 'setup', '/settings': 'settings', '/diagnostics': 'diagnostics', '/obs': 'soon' };
 const page = PAGES[location.pathname] || 'clips';
 let cfg = { shareKbps: 6000, expireDays: 0, audio: [{ id: 'mix', label: 'Mix (all)', need: 1 }], displayName: '' };
 
@@ -804,7 +827,7 @@ function banner(id, show, text) { const b = $(id); if (!b) return; b.hidden = !s
 document.querySelectorAll('[data-dismiss]').forEach(b => b.onclick = () => { $(b.dataset.dismiss).hidden = true; if (b.dataset.dismiss === 'b-update') updDismissed = cfg.update && cfg.update.version; if (b.dataset.dismiss === 'b-failed') failedDismissed = cfg._lastFailedId; });
 function setDot(state, title) { $('dot').className = 'dot ' + (state || ''); $('dotWrap').title = title || ''; }
 function showPage(name) {
-  ['clips', 'login', 'soon', 'setup', 'settings'].forEach(p => { $('page-' + p).hidden = p !== name; });
+  ['clips', 'login', 'soon', 'setup', 'settings', 'diagnostics'].forEach(p => { $('page-' + p).hidden = p !== name; });
   document.querySelectorAll('#nav a').forEach(a => { if (a.dataset.page === (name === 'clips' ? 'clips' : location.pathname.slice(1))) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
 }
 
@@ -1064,6 +1087,43 @@ async function initSettings() {
   };
   try { fill(await api('/api/settings', {}, { retries: 0 })); } catch (e) { toast('Cannot load the settings: ' + e.message, 'err'); }
   try { const a = await api('/api/addresses', {}, { retries: 0 }); $('sAddrText').textContent = (a.urls || [])[0] || ''; } catch (e) {}
+}
+
+// ------------------------------------------------------------ diagnostics
+async function initDiagnostics() {
+  showPage('diagnostics');
+  const LINKS = { nextcloud: '/settings#integrations', quota: '/settings#integrations', webhook: '/settings#integrations', folder: '/settings', update: null };
+  let text = '';
+  async function load() {
+    $('dRunning').hidden = false; $('dAgain').disabled = true;
+    ['dFail', 'dWarn', 'dOk'].forEach(id => $(id).hidden = true);
+    if (!$('dChecks').children.length) $('dChecks').innerHTML = ['service', 'update', 'ffmpeg', 'encoder', 'folder', 'scan', 'nextcloud', 'quota', 'webhook', 'obs', 'network'].map(id => `<div class="check-row waiting"><div class="mark"><span class="spinner"></span></div><div><div class="label">${id}</div><div class="detail">checking …</div></div><div class="side"></div></div>`).join('');
+    try {
+      const d = await api('/api/diagnostics', {}, { retries: 0, timeout: 30000 });
+      const counts = { fail: 0, warn: 0, ok: 0 };
+      $('dChecks').innerHTML = '';
+      (d.checks || []).forEach(c => {
+        if (counts[c.status] !== undefined) counts[c.status]++;
+        const row = document.createElement('div'); row.className = 'check-row';
+        row.innerHTML = `<div class="mark"></div><div><div class="label"></div><div class="detail"></div><div class="fix" hidden></div></div><div class="side"></div>`;
+        const state = { ok: 'ok', warn: 'warn', fail: 'problem', skip: 'skipped' }[c.status] || 'idle';
+        setCheck(row, state, c.label, esc(c.detail), c.fix ? esc(c.fix) : '');
+        const side = row.querySelector('.side');
+        if (c.status === 'warn' || c.status === 'fail') side.innerHTML = `<span class="badge ${c.status === 'fail' ? 'err' : 'warn'}">${c.status === 'fail' ? 'fix' : 'check'}</span>`;
+        if (LINKS[c.id] && (c.status === 'warn' || c.status === 'fail')) side.insertAdjacentHTML('beforeend', ` <a class="btn btn-sm" href="${LINKS[c.id]}">Settings</a>`);
+        if (c.id === 'update' && c.status === 'warn' && c.fix) { const m = c.fix.match(/https?:\S+/); if (m) side.innerHTML = `<a class="btn btn-sm" href="${esc(m[0])}" target="_blank" rel="noopener">Release notes</a>`; }
+        $('dChecks').appendChild(row);
+      });
+      text = d.text || ''; $('dText').textContent = text;
+      $('dFail').hidden = !counts.fail; $('dFail').lastElementChild.textContent = `${counts.fail} failure${counts.fail === 1 ? '' : 's'}`;
+      $('dWarn').hidden = !counts.warn; $('dWarn').lastElementChild.textContent = `${counts.warn} warning${counts.warn === 1 ? '' : 's'}`;
+      $('dOk').hidden = false; $('dOk').lastElementChild.textContent = `${counts.ok} ok`;
+    } catch (e) { toast('Diagnostics failed: ' + e.message, 'err'); }
+    $('dRunning').hidden = true; $('dAgain').disabled = false;
+  }
+  $('dAgain').onclick = load;
+  $('dCopy').onclick = () => { if (!text) return; copyText(text).then(() => { toast('Diagnostics copied - paste them into your message', 'ok'); const b = $('dCopy'); b.classList.add('is-copied'); b.innerHTML = '<svg class="icon"><use href="#i-check"/></svg> Copied'; setTimeout(() => { b.classList.remove('is-copied'); b.innerHTML = '<svg class="icon"><use href="#i-copy"/></svg> Copy diagnostics'; }, 2000); }); };
+  load();
 }
 
 // ------------------------------------------------------------ clips
@@ -1391,6 +1451,7 @@ poll.now = () => { clearTimeout(pollT); pollT = setTimeout(poll, 50); };
   if (page === 'login') { initLogin(); return; }
   if (page === 'setup') { initSetup(); poll(); return; }
   if (page === 'settings') { initSettings(); poll(); return; }
+  if (page === 'diagnostics') { initDiagnostics(); poll(); return; }
   if (page === 'soon') {
     const names = { '/setup': ['Setup', 'The browser setup arrives with the next release step. Until then, run "replaycut setup" in a terminal.'], '/settings': ['Settings', 'The settings page arrives with the next release step. Until then, edit settings.json (see docs/settings.md).'], '/diagnostics': ['Diagnostics', 'The diagnostics page arrives with the next release step. Until then, run "replaycut test" in a terminal.'], '/obs': ['OBS', 'The OBS page comes with the OBS integration.'] };
     const [t, x] = names[location.pathname] || ['Not here', 'Nothing at this address.'];

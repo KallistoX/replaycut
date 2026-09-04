@@ -416,6 +416,35 @@ or `null`; `otherFiles` lists up to three non-MKV recordings in the folder
 Clips in `GET /api/clips` carry the same `codec`, `width`, `height` and
 `fps` (empty or 0 when probing failed).
 
+### `GET /api/diagnostics`
+
+Runs every check (each with a 5 s timeout, in parallel) and answers
+
+```json
+{
+  "checks": [
+    { "id": "service",   "label": "replaycut",       "status": "ok",   "detail": "2.1.0 · running since ..." },
+    { "id": "update",    "label": "Update",          "status": "ok",   "detail": "..." },
+    { "id": "ffmpeg",    "label": "ffmpeg",          "status": "ok",   "detail": "7.1 at ..." },
+    { "id": "encoder",   "label": "Encoder",         "status": "ok",   "detail": "h264_nvenc · priority BelowNormal · 8 threads" },
+    { "id": "folder",    "label": "Recording folder","status": "ok",   "detail": "... · 212.0 GB free · 12 clips ..." },
+    { "id": "scan",      "label": "Folder scan",     "status": "ok",   "detail": "last scan 2 s ago · watcher active" },
+    { "id": "nextcloud", "label": "Nextcloud",       "status": "skip", "detail": "integration is off" },
+    { "id": "quota",     "label": "Nextcloud quota", "status": "skip", "detail": "integration is off" },
+    { "id": "webhook",   "label": "Discord webhook", "status": "fail", "detail": "HTTP 404 - ...", "fix": "Discord: Server settings › ..." },
+    { "id": "obs",       "label": "OBS",             "status": "skip", "detail": "not connected - ..." },
+    { "id": "network",   "label": "Network",         "status": "ok",   "detail": "listening on 0.0.0.0:8420 · http://<host>:8420/ ..." }
+  ],
+  "text": "replaycut 2.1.0 - 2026-09-04T21:25:10\nservice   OK    ...\n..."
+}
+```
+
+`status` is `ok`, `warn`, `fail` or `skip`; `fix` accompanies warnings and
+failures with what to do. `text` is the same list as plain text plus a
+settings line and the last 20 log lines, without any secret - meant for
+"Copy diagnostics". The eleven ids are stable; `replaycut test` prints
+`text` when the service runs.
+
 ### `POST /api/jobs/<id>/open-folder`, `POST /api/jobs/<id>/copy-file`
 
 The local mode's way out of the browser: for a finished job with a file in

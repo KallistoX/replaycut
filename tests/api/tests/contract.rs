@@ -751,3 +751,46 @@ fn t22_setup_obs_document() {
         assert_eq!(c["fps"], 30);
     }
 }
+
+#[test]
+fn t23_diagnostics_list_every_check() {
+    let _g = serial();
+    if !since_21() {
+        return;
+    }
+    let (status, d) = get_json("/api/diagnostics");
+    assert_eq!(status, 200);
+    let checks = d["checks"].as_array().cloned().unwrap_or_default();
+    let ids: Vec<&str> = checks.iter().filter_map(|c| c["id"].as_str()).collect();
+    for id in [
+        "service",
+        "update",
+        "ffmpeg",
+        "encoder",
+        "folder",
+        "scan",
+        "nextcloud",
+        "quota",
+        "webhook",
+        "obs",
+        "network",
+    ] {
+        assert!(ids.contains(&id), "missing check {id}: {ids:?}");
+    }
+    for c in &checks {
+        assert!(
+            ["ok", "warn", "fail", "skip"].contains(&c["status"].as_str().unwrap_or("")),
+            "{c}"
+        );
+        assert!(c["detail"].is_string(), "{c}");
+    }
+    let ffmpeg = checks.iter().find(|c| c["id"] == "ffmpeg").unwrap();
+    assert_eq!(ffmpeg["status"], "ok", "{ffmpeg}");
+    let text = d["text"].as_str().unwrap_or("");
+    assert!(text.starts_with("replaycut "), "{text}");
+    assert!(text.contains("settings  clipDir="), "{text}");
+    assert!(
+        !text.to_ascii_lowercase().contains("webhooks/"),
+        "no webhook URL in the copy"
+    );
+}

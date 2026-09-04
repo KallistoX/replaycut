@@ -17,6 +17,10 @@ pub async fn run(settings_path: &Path, settings: &mut Settings) -> Result<()> {
         "replaycut setup - settings file: {}",
         settings_path.display()
     );
+    println!(
+        "The browser setup at http://localhost:{}/setup does the same with live checks.",
+        settings.port
+    );
     println!("Press Enter to keep the value shown in brackets.\n");
 
     let display = ask(
@@ -141,8 +145,33 @@ pub async fn run(settings_path: &Path, settings: &mut Settings) -> Result<()> {
     Ok(())
 }
 
-/// Check the enabled integrations without changing anything.
+/// `replaycut test`: the diagnostics of the running service as text, or -
+/// when no service runs - the integration checks alone.
 pub async fn test(settings: &Settings) -> Result<()> {
+    let url = format!("http://localhost:{}/api/diagnostics", settings.port);
+    if let Ok(client) = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+    {
+        if let Ok(res) = client.get(&url).send().await {
+            if res.status().is_success() {
+                let body: serde_json::Value = res.json().await.unwrap_or_default();
+                if let Some(text) = body["text"].as_str() {
+                    print!("{text}");
+                    return Ok(());
+                }
+            }
+        }
+    }
+    println!(
+        "replaycut is not running on port {} - checking the integrations only",
+        settings.port
+    );
+    test_integrations(settings).await
+}
+
+/// Check the enabled integrations without changing anything.
+async fn test_integrations(settings: &Settings) -> Result<()> {
     let nc = &settings.integrations.nextcloud;
     if nc.enabled {
         match credentials::read(credentials::NEXTCLOUD)? {

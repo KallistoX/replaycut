@@ -244,6 +244,9 @@ pub struct AppState {
     pub media_base: Media,
     runtime: RwLock<Arc<Runtime>>,
     pub dry_run: bool,
+    /// When this process started (uptime and the diagnostics header).
+    pub started: std::time::Instant,
+    pub started_at: String,
     pub sessions: Sessions,
     /// Set by main once the shutdown handle exists (for `POST /api/restart`).
     pub shutdown: std::sync::OnceLock<Shutdown>,
@@ -371,6 +374,8 @@ impl AppState {
             media_base,
             runtime: RwLock::new(Arc::new(runtime)),
             dry_run,
+            started: std::time::Instant::now(),
+            started_at: util::now_local(),
             sessions,
             shutdown: std::sync::OnceLock::new(),
             pending_restart: Mutex::new(Vec::new()),

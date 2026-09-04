@@ -181,7 +181,10 @@ pub fn install(
         for line in &report.lines {
             println!("  - {line}");
         }
-        if report.settings_changed {
+        // A migrated installation is set up: folder and integrations came
+        // from the old service, so the browser setup is not needed.
+        if report.settings_changed || report.had_task {
+            settings.setup_done = true;
             settings.save(settings_path)?;
         }
         migration = Some(report);
@@ -237,9 +240,15 @@ pub fn install(
     winshell::spawn_detached(&app_exe, &["--no-browser"])?;
     let up = runtime.block_on(wait_for_service(settings.port));
     let ui_url = format!("http://localhost:{}/", settings.port);
+    // A fresh installation lands in the browser setup; an updated one on the clips.
+    let open_url = if settings.setup_done {
+        ui_url.clone()
+    } else {
+        format!("{ui_url}setup")
+    };
     if up {
         println!("  running");
-        let _ = platform::open_url(&ui_url);
+        let _ = platform::open_url(&open_url);
     } else {
         println!(
             "  not reachable after 8 s - see the log in {}",
@@ -255,8 +264,10 @@ pub fn install(
         platform::hostname(),
         settings.port
     );
-    if !settings.integrations.nextcloud.enabled && !settings.integrations.discord.enabled {
-        println!("  integrations:  none - run `replaycut setup` to add Nextcloud or Discord");
+    if !settings.setup_done {
+        println!("  setup:         {ui_url}setup (opened in the browser)");
+    } else if !settings.integrations.nextcloud.enabled && !settings.integrations.discord.enabled {
+        println!("  integrations:  none - add Nextcloud or Discord under {ui_url}settings");
     }
     Ok(())
 }

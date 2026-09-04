@@ -502,3 +502,8 @@ pub async fn setup_obs(State(app): State<App>) -> Json<Value> {
         "encoder": app.runtime().encoder.name,
     }))
 }
+
+/// `GET /api/diagnostics`: every check with its status plus the text copy.
+pub async fn diagnostics(State(app): State<App>) -> Json<Value> {
+    Json(crate::diagnostics::run(&app).await.json())
+}

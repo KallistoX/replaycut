@@ -10,6 +10,7 @@
 mod admin;
 mod auth;
 mod credentials;
+mod diagnostics;
 mod http;
 #[cfg(windows)]
 mod install;
