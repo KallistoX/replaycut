@@ -55,6 +55,7 @@ pub fn router(state: App) -> Router {
         .route("/api/addresses", get(admin::addresses))
         .route("/api/setup/obs", get(admin::setup_obs))
         .route("/api/diagnostics", get(admin::diagnostics))
+        .route("/api/obs/reconnect", post(admin::obs_reconnect))
         .route("/api/session", get(admin::session))
         .route("/api/login", post(admin::login))
         .route("/api/logout", post(admin::logout))
@@ -324,7 +325,28 @@ async fn share(State(app): State<App>, body: Bytes) -> Response {
     }
 }
 
+/// `POST /api/save`: through obs-websocket when connected (since 2.2),
+/// else the simulated key press of 1.x.
 async fn save(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    let obs = app.obs.status();
+    if obs.connected {
+        if !obs.replay_active {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "the replay buffer is not running - start it in OBS (or on the OBS page)",
+            ));
+        }
+        if app.dry_run {
+            tracing::info!("dry run: SaveReplayBuffer not sent");
+        } else {
+            app.obs
+                .request("SaveReplayBuffer", json!({}))
+                .await
+                .map_err(ApiError::internal)?;
+            tracing::info!("SaveReplayBuffer sent to OBS");
+        }
+        return Ok(Json(json!({ "ok": true, "via": "obs-websocket" })));
+    }
     if app.dry_run {
         tracing::info!("dry run: replay hotkey not sent");
     } else {
@@ -332,9 +354,9 @@ async fn save(State(app): State<App>) -> Result<Json<Value>, ApiError> {
             .await
             .map_err(ApiError::internal)?
             .map_err(ApiError::internal)?;
-        tracing::info!("replay hotkey sent to OBS");
+        tracing::info!("replay hotkey sent to OBS as a key press");
     }
-    Ok(Json(json!({ "ok": true })))
+    Ok(Json(json!({ "ok": true, "via": "hotkey" })))
 }
 
 async fn media(State(app): State<App>, Path(file): Path<String>, req: Request) -> Response {

@@ -459,6 +459,30 @@ clipboard, so Ctrl+V in Discord attaches it. Response `{ ok: true }`
 `config` gains `setupDone`, `theme`, `passwordSet`, `localMode` (no storage
 integration active) and `displayName`.
 
+## Since 2.2
+
+The OBS integration through obs-websocket 5 (built into OBS 28 and newer).
+Read-only apart from two harmless actions. The service connects on its own
+to `obs.host:obs.port` from `settings.json` (default `localhost:4455`,
+`obs.enabled: true`) with the password stored as the credential
+`replaycut/obs-websocket`, and keeps reconnecting with a backoff of 2 to
+30 s while nothing answers.
+
+### `POST /api/save` with OBS connected
+
+- Connected and the replay buffer running: `SaveReplayBuffer` is sent;
+  `200 { ok: true, via: "obs-websocket" }`.
+- Connected but the buffer stopped: `409 { ok: false, error: "the replay
+  buffer is not running - ..." }`. Nothing is pressed.
+- Not connected: the key press of 1.x; `200 { ok: true, via: "hotkey" }`.
+
+### Additions to `GET /api/clips` and `/api/settings`
+
+`config.obs` = `{ enabled, connected, replayActive }`. The settings
+document carries `obs: { enabled, host, port }` and `secrets.obs`;
+`PUT /api/settings` accepts `obs.enabled`, `obs.host`, `obs.port` and the
+write-only `obsPassword` (`""` removes it). Changing any of them reconnects.
+
 ## Behaviour
 
 ### Folder scan

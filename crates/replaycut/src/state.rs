@@ -244,6 +244,8 @@ pub struct AppState {
     pub media_base: Media,
     runtime: RwLock<Arc<Runtime>>,
     pub dry_run: bool,
+    /// obs-websocket client (status, requests, reconfigure).
+    pub obs: Arc<crate::obs_ws::ObsHandle>,
     /// When this process started (uptime and the diagnostics header).
     pub started: std::time::Instant,
     pub started_at: String,
@@ -290,6 +292,7 @@ pub struct Boot {
     pub media_base: Media,
     pub runtime: Runtime,
     pub dry_run: bool,
+    pub obs: Arc<crate::obs_ws::ObsHandle>,
 }
 
 fn create_dirs(paths: &Paths) -> Result<()> {
@@ -315,6 +318,7 @@ impl AppState {
             media_base,
             runtime,
             dry_run,
+            obs,
         } = boot;
         let paths = Paths::new(&settings.clip_dir, &data_dir, ui_file);
         create_dirs(&paths)?;
@@ -374,6 +378,7 @@ impl AppState {
             media_base,
             runtime: RwLock::new(Arc::new(runtime)),
             dry_run,
+            obs,
             started: std::time::Instant::now(),
             started_at: util::now_local(),
             sessions,
@@ -437,6 +442,9 @@ impl AppState {
             inner.clips.clear();
             inner.scan_at = None;
             tracing::info!("clip folder is now {}", next.clip_dir.display());
+        }
+        if current.obs != next.obs {
+            self.obs.reconfigure(crate::obs_link::config_from(&next));
         }
         *self.settings.write() = next;
         *self.pending_restart.lock() = restart.clone();
@@ -537,6 +545,7 @@ impl AppState {
             .map(|m| json!({ "id": m.id, "label": m.label, "need": m.need }))
             .collect();
         let runtime = self.runtime();
+        let obs = self.obs.status();
         let settings = self.settings.read();
         let nextcloud = runtime.integrations.storage.is_some();
         let webhook = runtime.integrations.notify.is_some();
@@ -562,6 +571,8 @@ impl AppState {
                 "passwordSet": settings.password_hash.is_some(),
                 "localMode": !nextcloud,
                 "displayName": settings.display_name,
+                // since 2.2
+                "obs": { "connected": obs.connected, "replayActive": obs.replay_active, "enabled": obs.enabled },
             }
         })
     }

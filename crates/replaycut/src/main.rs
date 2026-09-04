@@ -20,6 +20,8 @@ mod media;
 #[cfg(windows)]
 mod migrate;
 mod obs;
+mod obs_link;
+mod obs_ws;
 mod platform;
 mod scanner;
 mod settings;
@@ -261,7 +263,11 @@ fn run_service(
 
     let runtime = runtime()?;
     let shutdown = Shutdown::new();
-    let (state, listener) = runtime.block_on(startup(
+    let Startup {
+        state,
+        listener,
+        obs_events,
+    } = runtime.block_on(startup(
         settings,
         settings_path,
         overrides,
@@ -298,7 +304,13 @@ fn run_service(
             std::thread::Builder::new()
                 .name("service".into())
                 .spawn(move || {
-                    let result = runtime.block_on(serve(state, listener, shutdown, open_browser));
+                    let result = runtime.block_on(serve(
+                        state,
+                        listener,
+                        obs_events,
+                        shutdown,
+                        open_browser,
+                    ));
                     tray.quit();
                     result
                 })
@@ -313,7 +325,13 @@ fn run_service(
     }
     #[cfg(not(windows))]
     {
-        runtime.block_on(serve(state.clone(), listener, shutdown, open_browser))?;
+        runtime.block_on(serve(
+            state.clone(),
+            listener,
+            obs_events,
+            shutdown,
+            open_browser,
+        ))?;
     }
     tracing::info!("replaycut stopped");
     Ok(())
@@ -327,9 +345,11 @@ async fn startup(
     overrides: Overrides,
     data_dir: &Path,
     dry_run: bool,
-) -> Result<(Arc<AppState>, tokio::net::TcpListener)> {
+) -> Result<Startup> {
     let media_base = Media::locate()?;
     let runtime = Runtime::build(&media_base, &settings, dry_run, None).await?;
+    let (obs_events_tx, obs_events_rx) = tokio::sync::mpsc::channel(32);
+    let obs = obs_ws::ObsHandle::new(obs_link::config_from(&settings), obs_events_tx);
     let ui_file = resolve_ui_file(&settings.ui_file);
     if !ui_file.is_file() {
         tracing::warn!(
@@ -347,6 +367,7 @@ async fn startup(
         media_base,
         runtime,
         dry_run,
+        obs,
     })?);
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
@@ -361,17 +382,36 @@ async fn startup(
         state.runtime().integrations.describe(),
         if state.dry_run { " [DRY RUN: uploads, posts, hotkey, clipboard and toasts are simulated]" } else { "" }
     );
-    Ok((state, listener))
+    Ok(Startup {
+        state,
+        listener,
+        obs_events: obs_events_rx,
+    })
+}
+
+/// What `startup` hands to the server: the state, the socket and the
+/// receiver of OBS events (consumed by one task in `serve`).
+struct Startup {
+    state: Arc<AppState>,
+    listener: tokio::net::TcpListener,
+    obs_events: tokio::sync::mpsc::Receiver<obs_ws::ObsEvent>,
 }
 
 /// Serve until a shutdown is requested, then give open connections a moment.
 async fn serve(
     state: Arc<AppState>,
     listener: tokio::net::TcpListener,
+    obs_events: tokio::sync::mpsc::Receiver<obs_ws::ObsEvent>,
     shutdown: Shutdown,
     open_browser: bool,
 ) -> Result<()> {
     tokio::spawn(scanner::run(state.clone()));
+    tokio::spawn(obs_ws::run(state.obs.clone()));
+    tokio::spawn(obs_link::react(
+        state.clone(),
+        state.obs.clone(),
+        obs_events,
+    ));
     if state.settings().check_updates {
         tokio::spawn(update::run(state.clone()));
     }

@@ -41,6 +41,26 @@ pub struct Settings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password_hash: Option<String>,
     pub integrations: Integrations,
+    /// obs-websocket on this PC (the password lives in the Credential Manager).
+    pub obs: Obs,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Obs {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+}
+
+impl Default for Obs {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            host: "localhost".into(),
+            port: 4455,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +124,7 @@ impl Default for Settings {
             theme: "wardogs".into(),
             password_hash: None,
             integrations: Integrations::default(),
+            obs: Obs::default(),
         }
     }
 }
@@ -144,7 +165,8 @@ pub fn is_theme_name(name: &str) -> bool {
 
 /// Top-level keys `PUT /api/settings` accepts, and the nested ones below
 /// `integrations`. Anything else is a 400 with the offending name.
-const PATCH_KEYS: [&str; 15] = [
+const PATCH_KEYS: [&str; 16] = [
+    "obs",
     "clipDir",
     "port",
     "bind",
@@ -163,6 +185,7 @@ const PATCH_KEYS: [&str; 15] = [
 ];
 const NEXTCLOUD_KEYS: [&str; 4] = ["enabled", "url", "folder", "expireDays"];
 const DISCORD_KEYS: [&str; 1] = ["enabled"];
+const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
 
 impl Settings {
     /// Apply a partial JSON object (the body of `PUT /api/settings`) and
@@ -177,7 +200,17 @@ impl Settings {
             if !PATCH_KEYS.contains(&key.as_str()) {
                 return Err(format!("unknown field: {key}"));
             }
-            if key == "integrations" {
+            if key == "obs" {
+                let Some(fields) = value.as_object() else {
+                    return Err("obs must be an object".into());
+                };
+                for (field, v) in fields {
+                    if !OBS_KEYS.contains(&field.as_str()) {
+                        return Err(format!("unknown field: obs.{field}"));
+                    }
+                    current["obs"][field] = v.clone();
+                }
+            } else if key == "integrations" {
                 let Some(groups) = value.as_object() else {
                     return Err("integrations must be an object".into());
                 };
@@ -282,6 +315,11 @@ impl Settings {
         anyhow::ensure!(
             is_theme_name(&self.theme),
             "theme must be a name of lower-case letters, digits and dashes"
+        );
+        anyhow::ensure!(self.obs.port != 0, "obs.port must not be 0");
+        anyhow::ensure!(
+            !self.obs.host.trim().is_empty(),
+            "obs.host must not be empty"
         );
         anyhow::ensure!(
             self.ffmpeg_threads <= 256,

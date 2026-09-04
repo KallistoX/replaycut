@@ -78,6 +78,7 @@ fn settings_document(app: &AppState) -> Value {
     doc["secrets"] = json!({
         "nextcloud": credentials::read(credentials::NEXTCLOUD).ok().flatten().is_some(),
         "discord": credentials::read(credentials::DISCORD_WEBHOOK).ok().flatten().is_some(),
+        "obs": credentials::read(credentials::OBS_WEBSOCKET).ok().flatten().is_some(),
     });
     doc["passwordSet"] = json!(settings.password_hash.is_some());
     doc["autostart"] = json!(autostart_enabled());
@@ -116,6 +117,7 @@ pub async fn put_settings(
     let nextcloud_user = obj.remove("nextcloudUser");
     let nextcloud_password = obj.remove("nextcloudPassword");
     let discord_webhook = obj.remove("discordWebhook");
+    let obs_password = obj.remove("obsPassword");
 
     // Fields a running job depends on.
     if app.inner.lock().current_job.is_some() {
@@ -190,6 +192,21 @@ pub async fn put_settings(
         credentials_changed = true;
     }
 
+    let mut obs_changed = false;
+    if let Some(pw) = obs_password.as_ref().and_then(Value::as_str) {
+        if pw.is_empty() {
+            credentials::delete(credentials::OBS_WEBSOCKET).map_err(ApiError::internal)?;
+        } else {
+            credentials::write(credentials::OBS_WEBSOCKET, "obs-websocket", pw)
+                .map_err(ApiError::internal)?;
+        }
+        obs_changed = true;
+        tracing::info!(
+            "OBS password {}",
+            if pw.is_empty() { "removed" } else { "stored" }
+        );
+    }
+
     disk_next
         .save(&app.settings_path)
         .map_err(ApiError::internal)?;
@@ -201,6 +218,10 @@ pub async fn put_settings(
         app.rebuild_runtime()
             .await
             .map_err(|e| ApiError::internal(format!("{e:#}")))?;
+    }
+    if obs_changed {
+        app.obs
+            .reconfigure(crate::obs_link::config_from(&app.settings()));
     }
     if let Some(on) = autostart.as_ref().and_then(Value::as_bool) {
         set_autostart(on).map_err(ApiError::internal)?;
@@ -506,4 +527,11 @@ pub async fn setup_obs(State(app): State<App>) -> Json<Value> {
 /// `GET /api/diagnostics`: every check with its status plus the text copy.
 pub async fn diagnostics(State(app): State<App>) -> Json<Value> {
     Json(crate::diagnostics::run(&app).await.json())
+}
+
+/// `POST /api/obs/reconnect` (since 2.2): connect now instead of waiting
+/// out the backoff, e.g. after the WebSocket server was switched on in OBS.
+pub async fn obs_reconnect(State(app): State<App>) -> Json<Value> {
+    app.obs.reconnect_now();
+    Json(json!({ "ok": true }))
 }

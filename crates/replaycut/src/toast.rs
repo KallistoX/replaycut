@@ -29,6 +29,15 @@ impl Toast {
         }
     }
 
+    /// The replay buffer stopped while OBS keeps running (obs-websocket).
+    pub fn replay_buffer_stopped(ui_url: &str) -> Self {
+        Self {
+            title: "Replay buffer stopped".into(),
+            text: "F9 will do nothing until it runs again".into(),
+            url: Some(format!("{ui_url}obs")),
+        }
+    }
+
     /// A share finished, successfully or not. `uploaded` says whether a
     /// storage integration ran (then the link is in the clipboard).
     pub fn share_result(job: &Job, uploaded: bool, ui_url: &str) -> Self {

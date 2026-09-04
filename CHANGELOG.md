@@ -10,6 +10,17 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- OBS integration, part 1: the service connects to obs-websocket 5 on this PC
+  (`obs` in settings.json, default `localhost:4455`, password as the
+  credential `replaycut/obs-websocket`), keeps reconnecting with a backoff,
+  and answers F9 through `SaveReplayBuffer` when connected - with a clear 409
+  while the replay buffer is stopped - instead of a simulated key press; the
+  key press stays as the fallback. `config.obs` reports the connection.
+  A saved replay wakes the scanner at once; a stopped buffer raises a
+  desktop notification. Contract: docs/api.md "Since 2.2".
+
 ## [2.1.0] - 2026-09-04
 
 Setup in the browser, settings at runtime, an optional password, a

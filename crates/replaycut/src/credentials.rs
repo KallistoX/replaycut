@@ -6,6 +6,7 @@ use anyhow::Result;
 
 pub const NEXTCLOUD: &str = "replaycut/nextcloud";
 pub const DISCORD_WEBHOOK: &str = "replaycut/discord-webhook";
+pub const OBS_WEBSOCKET: &str = "replaycut/obs-websocket";
 
 #[derive(Debug, Clone)]
 pub struct Credential {

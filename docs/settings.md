@@ -68,6 +68,7 @@ fine.
 | `setupDone` | `false` until the browser setup (`/setup`) finished. A file without the field counts as set up, so an installation from 2.0 is not asked again. |
 | `theme` | Name of the UI theme: `wardogs` (built in) or a file `themes\<name>.css` in the data directory. See `docs/themes.md`. |
 | `passwordHash` | Set through the settings page or `PUT /api/settings` with `password`; an argon2id hash, never the password. Absent means no password: every device in the network may use the UI. This PC (loopback) never needs the password. |
+| `obs` | Since 2.2: `{ "enabled": true, "host": "localhost", "port": 4455 }` - where obs-websocket listens (OBS: Tools › WebSocket Server Settings). With `enabled` the service connects on its own and retries quietly while OBS is closed. The password is a credential, see below. |
 
 Since 2.1 the settings page and `PUT /api/settings` change the file at
 runtime; everything but `port`, `bind` and `uiFile` takes effect without a
@@ -85,6 +86,7 @@ in the log; the service still starts.
 |---|---|---|
 | `replaycut/nextcloud` | Nextcloud user | App password (Nextcloud: Settings, Security, Devices & sessions) |
 | `replaycut/discord-webhook` | `webhook` | The webhook URL |
+| `replaycut/obs-websocket` | `obs-websocket` | The obs-websocket server password (OBS: Tools › WebSocket Server Settings › Show Connect Info); since 2.2, written by the OBS page or `PUT /api/settings` with `obsPassword` |
 
 `replaycut setup` writes them; `cmdkey /list` shows them; `cmdkey /delete:replaycut/nextcloud` removes one by hand.
 

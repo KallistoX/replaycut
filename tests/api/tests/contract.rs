@@ -794,3 +794,54 @@ fn t23_diagnostics_list_every_check() {
         "no webhook URL in the copy"
     );
 }
+
+// ---------------------------------------------------------------- since 2.2
+
+fn since_22() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    let ok = (major, minor) >= (2, 2);
+    if !ok {
+        eprintln!("skipped: needs replaycut 2.2, service is {v}");
+    }
+    ok
+}
+
+#[test]
+fn t24_save_reports_how_it_was_sent_and_obs_config() {
+    let _g = serial();
+    if !since_22() {
+        return;
+    }
+    let cfg = state()["config"].clone();
+    assert!(cfg["obs"]["connected"].is_boolean(), "config.obs: {cfg}");
+    assert!(cfg["obs"]["replayActive"].is_boolean());
+    let (status, body) = post_json("/api/save", &json!({}));
+    // without OBS: the key press path answers 200 with via=hotkey; with OBS
+    // connected either 200 via obs-websocket or 409 when the buffer is off
+    match status {
+        200 => assert!(
+            ["hotkey", "obs-websocket"].contains(&body["via"].as_str().unwrap_or("")),
+            "{body}"
+        ),
+        409 => assert!(
+            body["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("replay buffer"),
+            "{body}"
+        ),
+        other => panic!("unexpected status {other}: {body}"),
+    }
+    let (status, body) = put_json("/api/settings", &json!({ "obs": { "port": 0 } }));
+    assert_eq!(status, 400, "{body}");
+    let (status, body) = put_json("/api/settings", &json!({ "obs": { "bogus": 1 } }));
+    assert_eq!(status, 400, "{body}");
+    let (_, doc) = get_json("/api/settings");
+    assert_eq!(doc["obs"]["port"], 4455);
+    assert!(doc["secrets"]["obs"].is_boolean());
+}
