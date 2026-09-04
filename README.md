@@ -63,8 +63,11 @@ with its own folders so it does not interfere with an installed instance:
 cargo run -p replaycut -- --dry-run --port 8422 --bind 127.0.0.1 --clip-dir <scratch folder> --data-dir <scratch data dir> --ui ui/index.html
 ```
 
-`--dry-run` encodes for real but simulates uploads, posts, the replay hotkey
-and the clipboard. Settings live in `<data-dir>/settings.json` and are
+`--dry-run` encodes for real but simulates uploads, posts, the replay hotkey,
+the clipboard and desktop notifications. The executable has no console
+window of its own; from a terminal it attaches to that terminal (see
+"Starting and stopping" in `docs/settings.md`). A running instance is
+stopped with `replaycut stop` or Quit in the tray menu. Settings live in `<data-dir>/settings.json` and are
 created with defaults on first start; command-line flags override them.
 All settings, the credential targets and the command line are documented in
 [`docs/settings.md`](docs/settings.md).
@@ -81,6 +84,10 @@ The service is meant to sit next to a game. Measured on the release build
 | CPU time | 0.11 s in 10 minutes (0.02 % of one core) |
 | Threads / handles | 11 / 333 |
 | Executable | 5.0 MB |
+
+With the tray icon (Windows integration, part 1) the release build sits at
+16.5 MB working set, 8 threads and 0.05 s CPU after one minute idle,
+started without a console.
 
 
 While a clip is shared, ffmpeg runs at below-normal priority with a thread

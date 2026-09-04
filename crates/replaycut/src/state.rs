@@ -13,7 +13,9 @@ use tokio::sync::Notify;
 
 use crate::integrations::Integrations;
 use crate::media::{Encoder, Media};
+use crate::platform;
 use crate::settings::Settings;
+use crate::tray::TrayHandle;
 use crate::util;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -164,6 +166,8 @@ pub struct AppState {
     pub inner: Mutex<Inner>,
     /// Wakes the scanner early (after a delete, for example).
     pub scan_wake: Notify,
+    /// Set once the tray exists; poked whenever clips or jobs change.
+    pub tray: std::sync::OnceLock<TrayHandle>,
 }
 
 #[derive(Debug)]
@@ -253,7 +257,25 @@ impl AppState {
             dry_run,
             inner: Mutex::new(inner),
             scan_wake: Notify::new(),
+            tray: std::sync::OnceLock::new(),
         })
+    }
+
+    /// The UI address on this machine.
+    pub fn ui_url(&self) -> String {
+        format!("http://localhost:{}/", self.settings.port)
+    }
+
+    /// The UI address for other devices in the network.
+    pub fn lan_url(&self) -> String {
+        format!("http://{}:{}/", platform::hostname(), self.settings.port)
+    }
+
+    /// Tell the tray that clips or jobs changed.
+    pub fn tray_changed(&self) {
+        if let Some(tray) = self.tray.get() {
+            tray.refresh();
+        }
     }
 
     // --- persistence (called with the lock held; the files are tiny) ---
@@ -395,6 +417,7 @@ impl AppState {
         if let Some(job) = self.inner.lock().jobs.get_mut(id) {
             f(job);
         }
+        self.tray_changed();
     }
 
     /// Register a new job as the running one and keep only the newest `MAX_JOBS`.
@@ -402,6 +425,7 @@ impl AppState {
         let id = job.id.clone();
         inner.jobs.insert(id.clone(), job);
         inner.current_job = Some(id);
+        self.tray_changed();
         if inner.jobs.len() > MAX_JOBS {
             let mut by_age: Vec<(String, String)> = inner
                 .jobs
@@ -446,6 +470,8 @@ impl AppState {
         if inner.current_job.as_deref() == Some(id) {
             inner.current_job = None;
         }
+        drop(inner);
+        self.tray_changed();
     }
 
     /// Remote paths recorded in history for a clip.

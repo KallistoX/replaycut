@@ -86,6 +86,7 @@ Commands:
   run    Run the service (default)
   setup  Configure display name, Nextcloud and Discord interactively
   test   Check the enabled integrations and their credentials
+  stop   Stop the running service
 
 Options:
   --data-dir <DIR>     Data directory (settings, state, logs)
@@ -95,7 +96,8 @@ Options:
   --bind <ADDRESS>     Override bind
   --ui <FILE>          Override uiFile
   --log-level <LEVEL>  Override logLevel
-  --dry-run            Encode for real, simulate uploads, posts, hotkey and clipboard
+  --dry-run            Encode for real, simulate uploads, posts, hotkey, clipboard and toasts
+  --no-browser         Do not open the browser when the service starts
 ```
 
 Options override the settings file for that run only; they are not written
@@ -117,3 +119,35 @@ polite:
 
 Hardware encoders (`h264_amf`, `h264_nvenc`, `h264_qsv`) do the encoding on
 the GPU; the thread cap then mostly limits decoding and scaling.
+
+## Starting and stopping
+
+The executable has no console window. Started by double-click or from a
+shortcut it runs silently with a tray icon and opens the UI in the browser;
+if the service is already running, the double-click only opens the browser.
+Started from a terminal it attaches to that terminal, so `--help`, `setup`,
+`test`, `stop` and the log lines appear in that window. At an interactive
+`cmd.exe` or PowerShell prompt the shell does not wait for a windowless
+program; the output still appears, but `setup`, which asks questions, needs
+the shell to wait: use `start /wait replaycut setup` in `cmd.exe` and
+`Start-Process -Wait -NoNewWindow replaycut setup` in PowerShell. Batch
+files wait on their own.
+
+The tray icon offers **Open** (the UI in the browser), **Copy address**
+(`http://<computer name>:<port>/` for a phone or laptop in the same network)
+and **Quit**. Its tooltip shows the number of clips or the progress of the
+running share; the icon carries a badge while a share runs and a red badge
+after a failed one.
+
+`replaycut stop` asks the running service to shut down (through a named
+event, not through HTTP, so a web page cannot stop the service) and waits
+for it to exit. Only one instance runs at a time; a second start opens the
+browser and exits.
+
+Desktop notifications ("Clip saved", "Clip shared, link copied", "Share
+failed") need the application registered with Windows, which
+`replaycut install` does; without it they are skipped and a hint is logged
+once. `--dry-run` only logs them.
+
+The log records why the service stopped (Ctrl+C, the console closing, the
+stop event, Quit in the tray menu, sign-out) and any panic with a backtrace.

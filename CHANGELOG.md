@@ -12,6 +12,16 @@ contract.
 
 ### Added
 
+- Windows integration, part 1: the executable runs without a console window
+  and attaches to the terminal it was started from for `--help`, `setup`,
+  `test`, `stop` and log output; only one instance runs at a time (a second
+  start opens the browser); a tray icon with Open, Copy address and Quit,
+  a tooltip with the clip count or share progress and a badge while a share
+  runs or after a failed one; `replaycut stop` ends the running service
+  through a named event; desktop notifications for saved clips and share
+  results (WinRT toasts, shown once the app is registered by the installer);
+  `--no-browser`; the log records the shutdown reason and panics with a
+  backtrace; fatal start-up errors show a dialog when there is no console.
 - Service core, part 4: resource limits for ffmpeg (`ffmpegPriority`,
   default below normal; `ffmpegThreads`, default half the cores) so a share
   does not stall the game; `docs/settings.md`; idle footprint of the release

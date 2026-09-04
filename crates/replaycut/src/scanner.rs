@@ -12,6 +12,7 @@ use notify::{RecursiveMode, Watcher};
 use tokio::sync::mpsc;
 
 use crate::state::{AppState, Clip};
+use crate::toast::{self, Toast};
 use crate::util;
 
 const POLL: Duration = Duration::from_secs(5);
@@ -135,13 +136,17 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
                 clip.name,
                 *size as f64 / 1_048_576.0
             );
-            let mut inner = state.inner.lock();
-            inner.clips.insert(base.clone(), clip);
-            if inner.seen.insert(base.clone()) {
+            let (new_to_seen, ready) = {
+                let mut inner = state.inner.lock();
+                inner.clips.insert(base.clone(), clip.clone());
+                (inner.seen.insert(base.clone()), inner.seen_ready)
+            };
+            if new_to_seen {
                 seen_dirty = true;
-                if inner.seen_ready {
-                    // Desktop notification arrives with the Windows integration; the seen list is kept now.
-                    tracing::info!("clip {base} would be announced");
+                // Announced exactly once per clip; the first scan after a
+                // fresh start only records what is already there.
+                if ready {
+                    toast::show(state, Toast::clip_saved(&clip, &state.ui_url()));
                 }
             }
             Ok(())
@@ -171,6 +176,7 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
         inner.seen_ready = true;
         inner.scan_at = Some(util::now_local());
     }
+    state.tray_changed();
     if let Ok(previews) = std::fs::read_dir(&state.paths.preview_dir) {
         for p in previews.flatten() {
             let path = p.path();

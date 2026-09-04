@@ -12,6 +12,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use crate::integrations::random_token;
 use crate::platform;
 use crate::state::{AppState, Job, AUDIO_MODES};
+use crate::toast::{self, Toast};
 use crate::util;
 
 const ENCODE_TIMEOUT: Duration = Duration::from_secs(900);
@@ -178,6 +179,10 @@ pub async fn run(state: Arc<AppState>, id: String) {
         tracing::error!("share [{id}] failed: {e:#}");
     }
     state.complete_job(&id, result.map_err(|e| format!("{e:#}")));
+    if let Some(job) = state.job(&id) {
+        let uploaded = state.integrations.storage.is_some();
+        toast::show(&state, Toast::share_result(&job, uploaded, &state.ui_url()));
+    }
 }
 
 async fn pipeline(state: &AppState, id: &str) -> Result<()> {
