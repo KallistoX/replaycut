@@ -477,3 +477,20 @@ fn t11_delete_moves_to_recycle_bin() {
         "last still points at the clip"
     );
 }
+
+/// `config.update` (2.0): absent in 1.x, otherwise `null` or `{ version, url }`.
+#[test]
+fn t12_config_update_is_null_or_release() {
+    let _g = serial();
+    let (status, v) = get_json("/api/clips");
+    assert_eq!(status, 200);
+    let config = v["config"].as_object().expect("config object");
+    match config.get("update") {
+        None => eprintln!("config.update absent (pre-2.0 service)"),
+        Some(serde_json::Value::Null) => {}
+        Some(u) => {
+            assert!(u["version"].is_string(), "update.version: {u}");
+            assert!(u["url"].is_string(), "update.url: {u}");
+        }
+    }
+}

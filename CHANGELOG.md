@@ -12,6 +12,11 @@ contract.
 
 ### Added
 
+- Update hint: a minute after start and then daily the service asks GitHub
+  for the latest release; a newer one appears as `config.update` in
+  `/api/clips` (documented in `docs/api.md`, covered by the contract suite)
+  and as a dismissable banner above the clip list. `checkUpdates: false`
+  switches the check off. Nothing is downloaded.
 - Windows integration, part 2: `replaycut install` (idempotent, per user, no
   admin except the optional firewall rule): copies the program to
   `%LOCALAPPDATA%eplaycutpp`, writes start menu and desktop shortcuts

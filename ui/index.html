@@ -57,6 +57,7 @@
 <aside>
   <h1>REPLAYCUT CLIPS <span id="ver" class="info" style="font-size:10px;letter-spacing:0"></span></h1>
   <div class="row" style="margin:0 6px 4px"><button id="btnSave" title="Triggers F9 in OBS (saves the last 5 minutes)">F9: Save replay</button></div>
+  <div id="upd" class="info" style="display:none;margin:0 6px 6px;padding:6px 8px;border:1px solid var(--line);border-radius:6px"></div>
   <div id="list"><div class="info" style="padding:8px">Loading clips …</div></div>
   <h2>Shared</h2>
   <div id="hist"><div class="info" style="padding:4px 8px">Nothing shared yet.</div></div>
@@ -313,6 +314,15 @@ async function watchJob(id) {
 let toastT; function toast(m) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', 3000); }
 
 let pollT = null;
+// Update banner: config.update is null or { version, url }; "dismiss" hides it for this page load.
+let updDismissed = '';
+function showUpdate(u) {
+  const el = $('upd');
+  if (!u || !u.version || updDismissed === u.version) { el.style.display = 'none'; return; }
+  el.innerHTML = `replaycut ${esc(u.version)} is available - <a href="${esc(u.url || '#')}" target="_blank" rel="noopener">release notes</a> <a href="#" id="updX" style="float:right">dismiss</a>`;
+  el.style.display = 'block';
+  $('updX').onclick = e => { e.preventDefault(); updDismissed = u.version; el.style.display = 'none'; };
+}
 async function poll() {
   clearTimeout(pollT);
   try {
@@ -320,6 +330,7 @@ async function poll() {
     failures = 0; setStatus(null);
     cfg = Object.assign(cfg, d.config); clips = d.clips || [];
     $('ver').textContent = (cfg.version ? 'v' + cfg.version : '') + (cfg.encoder ? ' · ' + cfg.encoder : '');
+    showUpdate(cfg.update);
     const list = $('list'); list.innerHTML = clips.length ? '' : '<div class="info" style="padding:8px">No clip yet. Press F9 in the game.</div>';
     clips.forEach(c => { const e = document.createElement('div'); e.className = 'clip' + (cur && cur.base === c.base ? ' active' : ''); e.dataset.base = c.base;
       e.innerHTML = (c.title ? `<b>${esc(c.title)}</b>` : '') + `${esc(short(c.base))}<small>${fmt(c.duration)} · ${(c.size / 1048576).toFixed(1)} MB${c.tracks && c.tracks < 4 ? ' · only ' + c.tracks + ' audio tracks' : ''}</small>`;

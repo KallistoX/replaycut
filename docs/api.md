@@ -169,6 +169,10 @@ reach OBS is not detectable and still answers `ok: true`.
   (`done` or `error`). `last` is cleared when its clip is deleted.
 - `scanAt` is the time of the last completed folder scan. The UI warns when it
   is older than 30 seconds.
+- `config.update` (since 2.0) is `null` or `{ "version": "2.1.0", "url": "<release page>" }`
+  when a newer release exists on GitHub; the service checks a minute after
+  start and then daily unless `checkUpdates` is `false`. 1.x does not send
+  the field; clients treat absent and `null` alike. The UI shows a banner.
 
 ### Clip
 

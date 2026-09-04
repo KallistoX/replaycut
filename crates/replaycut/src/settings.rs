@@ -29,6 +29,8 @@ pub struct Settings {
     /// `-threads` for ffmpeg. 0 = half of the logical cores, at least 2.
     pub ffmpeg_threads: u32,
     pub log_level: String,
+    /// Ask GitHub once a day whether a newer release exists (hint only).
+    pub check_updates: bool,
     pub integrations: Integrations,
 }
 
@@ -88,6 +90,7 @@ impl Default for Settings {
             ffmpeg_priority: FfmpegPriority::BelowNormal,
             ffmpeg_threads: 0,
             log_level: "info".into(),
+            check_updates: true,
             integrations: Integrations::default(),
         }
     }

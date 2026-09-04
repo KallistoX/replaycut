@@ -24,6 +24,7 @@ mod share;
 mod state;
 mod toast;
 mod tray;
+mod update;
 mod util;
 #[cfg(windows)]
 mod winshell;
@@ -343,6 +344,9 @@ async fn serve(
     open_browser: bool,
 ) -> Result<()> {
     tokio::spawn(scanner::run(state.clone()));
+    if state.settings.check_updates {
+        tokio::spawn(update::run(state.clone()));
+    }
     if open_browser {
         let url = state.ui_url();
         if let Err(e) = platform::open_url(&url) {
