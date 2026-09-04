@@ -598,7 +598,7 @@ mod tests {
                                     let name = v["d"]["requestData"]["parameterName"].as_str().unwrap_or("");
                                     let value = match name {
                                         "Mode" => "Advanced",
-                                        "RecFilePath" => "C:\Users\you\Videos\Clips",
+                                        "RecFilePath" => r"C:\Users\you\Videos\Clips",
                                         "RecFormat2" => "mkv",
                                         "RecEncoder" => "jim_hevc_nvenc",
                                         "RecTracks" => "15",
@@ -862,18 +862,26 @@ mod facts_tests {
         assert_eq!(facts.profile.encoder.as_deref(), Some("jim_hevc_nvenc"));
         assert_eq!(facts.profile.replay_seconds, Some(300));
         assert_eq!(facts.profile.rec_tracks, 15);
-        assert_eq!((facts.video.width, facts.video.height, facts.video.fps), (1920, 1080, 60.0));
+        assert_eq!(
+            (facts.video.width, facts.video.height, facts.video.fps),
+            (1920, 1080, 60.0)
+        );
         assert_eq!(facts.inputs.len(), 4);
         assert_eq!(facts.inputs[0].tracks, vec![1, 2]);
-        assert!(facts.inputs[3].tracks.is_empty(), "video-only input has no tracks");
+        assert!(
+            facts.inputs[3].tracks.is_empty(),
+            "video-only input has no tracks"
+        );
 
         let settings = crate::settings::Settings {
-            clip_dir: "C:\Users\you\Videos\Clips".into(),
+            clip_dir: r"C:\Users\you\Videos\Clips".into(),
             ..crate::settings::Settings::default()
         };
         let rows = checks(&facts, true, &settings);
         assert!(rows.iter().all(|c| c.status == "ok"), "{rows:?}");
-        assert!(rows.iter().any(|c| c.id == "codec" && c.detail.contains("HEVC")));
+        assert!(rows
+            .iter()
+            .any(|c| c.id == "codec" && c.detail.contains("HEVC")));
         task.abort();
     }
 }
