@@ -125,6 +125,66 @@ mod win {
         HSTRING::from(s)
     }
 
+    /// Put a file into the clipboard as a file object (CF_HDROP), so Ctrl+V
+    /// in Discord or Explorer pastes the file itself.
+    pub fn copy_file(path: &std::path::Path) -> Result<()> {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::Win32::Foundation::GlobalFree;
+        use windows::Win32::System::DataExchange::{
+            CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        };
+        use windows::Win32::System::Memory::{
+            GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
+        };
+        const CF_HDROP: u32 = 15;
+        const DROPFILES_LEN: usize = 20; // pFiles u32, pt POINT, fNC BOOL, fWide BOOL
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0u16, 0u16]).collect();
+        let bytes = DROPFILES_LEN + wide.len() * 2;
+        // SAFETY: a fresh moveable global block of `bytes` bytes is filled
+        // with a DROPFILES header and the wide path; ownership moves to the
+        // clipboard on success and is freed here on failure.
+        unsafe {
+            let block = GlobalAlloc(GMEM_MOVEABLE, bytes).context("GlobalAlloc")?;
+            let p = GlobalLock(block) as *mut u8;
+            if p.is_null() {
+                let _ = GlobalFree(Some(block));
+                anyhow::bail!("GlobalLock failed");
+            }
+            std::ptr::write_bytes(p, 0, bytes);
+            std::ptr::write_unaligned(p as *mut u32, DROPFILES_LEN as u32);
+            std::ptr::write_unaligned(p.add(16) as *mut i32, 1); // fWide
+            std::ptr::copy_nonoverlapping(
+                wide.as_ptr() as *const u8,
+                p.add(DROPFILES_LEN),
+                wide.len() * 2,
+            );
+            let _ = GlobalUnlock(block);
+            let mut opened = Err(anyhow!("clipboard busy"));
+            for _ in 0..5 {
+                if OpenClipboard(None).is_ok() {
+                    opened = Ok(());
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            if let Err(e) = opened {
+                let _ = GlobalFree(Some(block));
+                return Err(e);
+            }
+            let result = EmptyClipboard().context("EmptyClipboard").and_then(|()| {
+                SetClipboardData(CF_HDROP, Some(HANDLE(block.0)))
+                    .map(|_| ())
+                    .context("SetClipboardData")
+            });
+            let _ = CloseClipboard();
+            if let Err(e) = result {
+                let _ = GlobalFree(Some(block));
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+
     /// Press F9 with a 250 ms hold, which OBS registers as its global hotkey.
     pub fn press_f9() -> Result<()> {
         const VK_F9: u8 = 0x78;
@@ -331,9 +391,25 @@ mod win {
 
 #[cfg(windows)]
 pub use win::{
-    attach_parent_console, claim_single_instance, fatal_dialog, instance_running, open_url,
-    press_f9, set_app_id, signal_stop, StopEvent,
+    attach_parent_console, claim_single_instance, copy_file, fatal_dialog, instance_running,
+    open_url, press_f9, set_app_id, signal_stop, StopEvent,
 };
+
+/// Open Explorer with the file selected.
+#[cfg(windows)]
+pub fn open_folder_select(path: &Path) -> Result<()> {
+    use anyhow::Context as _;
+    std::process::Command::new("explorer.exe")
+        .arg(format!("/select,{}", path.display()))
+        .spawn()
+        .context("cannot start explorer.exe")?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn open_folder_select(_path: &Path) -> Result<()> {
+    anyhow::bail!("opening the folder is only supported on Windows")
+}
 
 // ------------------------------------------------------------ other platforms
 
@@ -343,6 +419,10 @@ mod other {
 
     pub fn press_f9() -> Result<()> {
         anyhow::bail!("sending the replay hotkey is only supported on Windows")
+    }
+
+    pub fn copy_file(_path: &std::path::Path) -> Result<()> {
+        anyhow::bail!("copying a file object is only supported on Windows")
     }
 
     pub fn attach_parent_console() -> bool {
@@ -390,8 +470,8 @@ mod other {
 
 #[cfg(not(windows))]
 pub use other::{
-    attach_parent_console, claim_single_instance, fatal_dialog, instance_running, open_url,
-    press_f9, set_app_id, signal_stop, StopEvent,
+    attach_parent_console, claim_single_instance, copy_file, fatal_dialog, instance_running,
+    open_url, press_f9, set_app_id, signal_stop, StopEvent,
 };
 
 /// Ask a running instance to stop and wait for it. `Ok(false)` when none ran.

@@ -21,6 +21,15 @@ contract.
   cross-site write is refused by an Origin check, password or not.
 - `setupDone` and `theme` in settings.json; the page routes `/setup`,
   `/settings`, `/diagnostics`, `/login` serve the UI file.
+- Local mode without integrations has a way out of the browser: "Open folder"
+  and "Copy file" on the result (`POST /api/jobs/<id>/open-folder` and
+  `/copy-file`; the file lands in the clipboard as a file object, Ctrl+V in
+  Discord attaches it).
+- The UI moves to the design system (docs/design): top bar with the pages,
+  banners instead of the status block, the clip list as a collapsed panel
+  beside the game, a login page, themes from the data directory.
+- `docs/design`: the design system for the web UI - tokens, component sheet,
+  page mockups and icon sources - and `docs/themes.md`, the theme format.
 
 ### Changed
 
@@ -28,13 +37,6 @@ contract.
   tile) in six sizes up to 256 px; the tray states "job running" and "last
   job failed" carry an amber or a red dot. Rendered from the SVG sources in
   `docs/design/icons` by `mkico`.
-
-### Added
-
-- `docs/design`: the design system for the web UI - tokens, component
-  sheet, page mockups and icon sources - and `docs/themes.md`, the theme
-  format. Documentation only; the UI adopts it with the setup and settings
-  pages.
 
 ## [2.0.0] - 2026-09-04
 

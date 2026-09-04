@@ -391,6 +391,15 @@ letters, digits and dashes. Anything else, including a missing file, is
 this one to exit, then shuts down. `409` while a share runs, `503` when the
 process cannot restart itself.
 
+### `POST /api/jobs/<id>/open-folder`, `POST /api/jobs/<id>/copy-file`
+
+The local mode's way out of the browser: for a finished job with a file in
+`shared\`, `open-folder` opens Explorer with that file selected and
+`copy-file` puts the file itself (a file object, `CF_HDROP`) into the
+clipboard, so Ctrl+V in Discord attaches it. Response `{ ok: true }`
+(`copy-file` adds `file`), `404` for an unknown job or a file that is gone,
+`409` for a job without a finished file. In dry run both only log.
+
 ### Additions to `GET /api/clips`
 
 `config` gains `setupDone`, `theme`, `passwordSet`, `localMode` (no storage

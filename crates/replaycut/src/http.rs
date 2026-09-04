@@ -40,6 +40,8 @@ pub fn router(state: App) -> Router {
         )
         .route("/api/history", get(history))
         .route("/api/jobs/{id}", get(job))
+        .route("/api/jobs/{id}/open-folder", post(job_open_folder))
+        .route("/api/jobs/{id}/copy-file", post(job_copy_file))
         .route("/api/share", post(share))
         .route("/api/save", post(save))
         .route("/media/{file}", get(media))
@@ -147,6 +149,66 @@ async fn job(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Valu
         Some(job) => Ok(Json(serde_json::to_value(job).unwrap_or(Value::Null))),
         None => Err(ApiError::new(StatusCode::NOT_FOUND, "unknown job")),
     }
+}
+
+/// The shared file of a finished job, for the local-mode actions (since 2.1).
+fn shared_file_of(app: &AppState, id: &str) -> Result<std::path::PathBuf, ApiError> {
+    let job = app
+        .job(id)
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "unknown job"))?;
+    let Some(file) = job.file.filter(|_| job.ok == Some(true)) else {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "this job has no finished file",
+        ));
+    };
+    let path = app.paths().shared_dir.join(file);
+    if !path.is_file() {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            "the shared file is gone",
+        ));
+    }
+    Ok(path)
+}
+
+/// `POST /api/jobs/<id>/open-folder` (since 2.1): Explorer with the file selected.
+async fn job_open_folder(
+    State(app): State<App>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let path = shared_file_of(&app, &id)?;
+    if app.dry_run {
+        tracing::info!("dry run: would open the folder of {}", path.display());
+    } else {
+        tokio::task::spawn_blocking(move || platform::open_folder_select(&path))
+            .await
+            .map_err(ApiError::internal)?
+            .map_err(ApiError::internal)?;
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `POST /api/jobs/<id>/copy-file` (since 2.1): the file as a clipboard object.
+async fn job_copy_file(
+    State(app): State<App>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let path = shared_file_of(&app, &id)?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if app.dry_run {
+        tracing::info!("dry run: would copy {} to the clipboard", path.display());
+    } else {
+        tokio::task::spawn_blocking(move || platform::copy_file(&path))
+            .await
+            .map_err(ApiError::internal)?
+            .map_err(ApiError::internal)?;
+        tracing::info!("copied {name} to the clipboard as a file");
+    }
+    Ok(Json(json!({ "ok": true, "file": name })))
 }
 
 async fn set_name(

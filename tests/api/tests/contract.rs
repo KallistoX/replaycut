@@ -699,3 +699,30 @@ fn t20_pages_serve_the_ui() {
         assert!(ct.starts_with("text/html"), "{page}: {ct}");
     }
 }
+
+#[test]
+fn t21_local_mode_actions_on_the_last_job() {
+    let _g = serial();
+    if !since_21() {
+        return;
+    }
+    let (status, _) = post_json("/api/jobs/nope/open-folder", &json!({}));
+    assert_eq!(status, 404);
+    let (status, _) = post_json("/api/jobs/nope/copy-file", &json!({}));
+    assert_eq!(status, 404);
+    // t05 left a finished job behind; in dry run the actions only log
+    let last = state()["last"].clone();
+    if let Some(id) = last["id"].as_str() {
+        if last["ok"] == true {
+            let (status, body) = post_json(&format!("/api/jobs/{id}/copy-file"), &json!({}));
+            assert!(status == 200 || status == 404, "{status} {body}");
+            if status == 200 {
+                assert_eq!(body["ok"], true);
+                assert!(
+                    body["file"].as_str().is_some_and(|f| f.ends_with(".mp4")),
+                    "{body}"
+                );
+            }
+        }
+    }
+}

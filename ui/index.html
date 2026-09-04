@@ -3,147 +3,718 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>replaycut Clips</title>
+<title>replaycut</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
-  :root { --bg:#111418; --panel:#1a1f26; --line:#2a313b; --fg:#e6e9ee; --dim:#8a94a3; --acc:#f2b632; --ok:#4cc38a; --err:#f06060; }
-  * { box-sizing:border-box }
-  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif; height:100vh; display:grid; grid-template-columns:280px 1fr; }
-  aside { border-right:1px solid var(--line); overflow:auto; padding:10px; display:flex; flex-direction:column; gap:6px }
-  aside h1 { font-size:15px; margin:4px 6px 6px; color:var(--acc); letter-spacing:.06em }
-  aside h2 { font-size:12px; margin:14px 6px 4px; color:var(--dim); letter-spacing:.08em; text-transform:uppercase }
-  .clip { padding:8px 10px; border-radius:8px; cursor:pointer; border:1px solid transparent; margin-bottom:4px }
-  .clip:hover { background:var(--panel) } .clip.active { border-color:var(--acc); background:var(--panel) }
-  .clip small { color:var(--dim); display:block } .clip b { display:block }
-  .hist { padding:6px 10px; border-radius:8px; border:1px solid var(--line); margin-bottom:4px; font-size:12px }
-  .hist small { color:var(--dim); display:block }
-  .hist .row { margin-top:4px; gap:4px } .hist button { padding:3px 7px; font-size:11px }
-  main { display:flex; flex-direction:column; padding:14px; gap:10px; min-width:0 }
-  video { width:100%; max-height:58vh; background:#000; border-radius:8px; outline:none }
-  #tl { position:relative; height:44px; background:var(--panel); border-radius:6px; cursor:pointer; user-select:none; touch-action:none }
-  #sel { position:absolute; top:0; bottom:0; background:rgba(242,182,50,.22); border-left:2px solid var(--acc); border-right:2px solid var(--acc) }
-  .h { position:absolute; top:-6px; width:14px; height:56px; margin-left:-7px; cursor:ew-resize; z-index:2 }
-  .h::after { content:''; position:absolute; left:4px; top:8px; width:6px; height:40px; background:var(--acc); border-radius:3px }
-  #ph { position:absolute; top:0; bottom:0; width:2px; background:#fff; pointer-events:none; z-index:3 }
-  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap }
-  button, select { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:8px 12px; cursor:pointer; font:inherit }
-  button:hover { border-color:var(--dim) } button.primary { background:var(--acc); color:#111; border-color:var(--acc); font-weight:600 }
-  button.danger { border-color:var(--err); color:var(--err) } button.danger:hover { background:rgba(240,96,96,.15) }
-  button:disabled { opacity:.5; cursor:default }
-  input[type=text] { background:#0b0e12; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:8px 10px; font:inherit }
-  #title { flex:1; min-width:200px } #title:focus { border-color:var(--acc); outline:none }
-  kbd { background:#0b0e12; border:1px solid var(--line); border-radius:4px; padding:0 5px; font-size:11px; color:var(--dim) }
-  .info { color:var(--dim) } .info b { color:var(--fg) }
-  #status { display:none; padding:8px 12px; border-radius:8px; border:1px solid var(--err); background:rgba(240,96,96,.12); color:var(--fg) }
-  #status.warn { border-color:var(--acc); background:rgba(242,182,50,.12) }
-  #vidErr { display:none; color:var(--err) }
-  #prog { display:none; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px }
-  #prog .bar { height:8px; background:#0b0e12; border-radius:4px; overflow:hidden; margin-top:8px }
-  #prog .bar i { display:block; height:100%; width:0; background:var(--acc); transition:width .4s }
-  #prog .steps { display:flex; gap:14px; margin-top:6px; color:var(--dim); font-size:12px }
-  #prog .steps span.on { color:var(--acc); font-weight:600 } #prog .steps span.done { color:var(--ok) }
-  #result { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px; display:none }
-  #result.ok { border-color:var(--ok) } #result.err { border-color:var(--err) }
-  #result input { width:100%; background:#0b0e12; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:7px; font:inherit; margin:6px 0 }
-  .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-size:12px; background:#0b0e12; color:var(--dim) }
-  .badge.ok { color:var(--ok) } .badge.warn { color:var(--acc) }
-  #toast { position:fixed; right:14px; bottom:14px; background:var(--panel); border:1px solid var(--acc); border-radius:8px; padding:10px 14px; display:none; z-index:20 }
-  #modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:10 }
-  #modal .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px; max-width:460px; display:flex; flex-direction:column; gap:10px }
-  #modal label { display:flex; gap:8px; align-items:flex-start; cursor:pointer }
-  @media (max-width:800px) { body { grid-template-columns:1fr; grid-template-rows:auto 1fr } aside { max-height:34vh; border-right:0; border-bottom:1px solid var(--line) } }
+/* ---- design tokens (docs/design/tokens.css, theme "wardogs") ---- */
+
+:root {
+  
+  --bg: #111418;            
+  --surface: #1a1f26;       
+  --surface-2: #0b0e12;     
+  --line: #2f3742;          
+  --line-strong: #3d4653;   
+
+  
+  --fg: #e6e9ee;            
+  --fg-muted: #8a94a3;      
+  --fg-faint: #5f6876;      
+
+  
+  --accent: #f2b632;
+  --accent-hover: #f7c65a;
+  --accent-fg: #111418;     
+  --accent-soft: rgba(242, 182, 50, 0.22);  
+
+  
+  --ok: #4cc38a;
+  --ok-soft: rgba(76, 195, 138, 0.14);
+  --warn: #f2b632;
+  --warn-soft: rgba(242, 182, 50, 0.14);
+  --err: #f06060;
+  --err-soft: rgba(240, 96, 96, 0.14);
+  --info: #5aa9e6;
+  --info-soft: rgba(90, 169, 230, 0.14);
+
+  
+  --focus: #7cc4ff;
+
+  
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, Consolas, "Cascadia Mono", "SF Mono", monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --leading: 1.4;
+  --weight-strong: 600;
+
+  
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  
+  --duration: 150ms;
+  --duration-slow: 400ms;
+
+  
+  --sidebar-w: 280px;
+  --touch: 44px;            
+  --max-w: 720px;           
+  --topbar-h: 44px;
+}
+</style>
+<link id="theme" rel="stylesheet" href="" disabled>
+<style>
+/* ---- components (docs/design/base.css) ---- */
+
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { height: 100%; }
+body {
+  margin: 0; min-height: 100%;
+  background: var(--bg); color: var(--fg);
+  font: var(--text-base) / var(--leading) var(--font);
+  -webkit-text-size-adjust: 100%;
+}
+h1, h2, h3 { margin: 0; font-weight: var(--weight-strong); line-height: 1.25; }
+h1 { font-size: var(--text-xl); }
+h2 { font-size: var(--text-lg); }
+h3 { font-size: var(--text-base); }
+p { margin: 0; }
+a { color: var(--accent); text-decoration: none; }
+a:hover, a.is-hover { text-decoration: underline; }
+code, .mono { font-family: var(--font-mono); font-size: var(--text-sm); }
+small, .muted { color: var(--fg-muted); }
+.faint { color: var(--fg-faint); }
+.sm { font-size: var(--text-sm); }
+.xs { font-size: var(--text-xs); }
+:focus-visible, .is-focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+::placeholder { color: var(--fg-faint); }
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
+
+.row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.row.nowrap { flex-wrap: nowrap; }
+.stack { display: flex; flex-direction: column; gap: var(--space-2); }
+.stack-3 { display: flex; flex-direction: column; gap: var(--space-3); }
+.stack-4 { display: flex; flex-direction: column; gap: var(--space-4); }
+.grow { flex: 1; min-width: 0; }
+.right { margin-left: auto; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.break { overflow-wrap: anywhere; }
+
+.icon { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; vertical-align: -5px; }
+.icon-sm { width: 16px; height: 16px; vertical-align: -3px; }
+.spinner { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.topbar {
+  height: var(--topbar-h); display: flex; align-items: center; gap: var(--space-4);
+  padding: 0 var(--space-4); background: var(--surface); border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 5;
+}
+.wordmark { display: flex; align-items: center; gap: var(--space-2); white-space: nowrap; color: var(--fg); font-weight: var(--weight-strong); letter-spacing: 0.02em; }
+.wordmark .icon { color: var(--accent); stroke-width: 2; }
+.wordmark:hover { text-decoration: none; }
+.nav { display: flex; gap: var(--space-1); }
+.nav a { color: var(--fg-muted); padding: var(--space-1) var(--space-3); border-radius: var(--radius-md); line-height: 24px; }
+.nav a:hover, .nav a.is-hover { color: var(--fg); background: var(--surface-2); text-decoration: none; }
+.nav a[aria-current="page"] { color: var(--fg); background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--accent); }
+.topbar .right { display: flex; align-items: center; gap: var(--space-3); color: var(--fg-muted); font-size: var(--text-sm); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); flex: none; }
+.dot.warn { background: var(--warn); }
+.dot.err { background: var(--err); }
+.dot.off { background: var(--fg-faint); }
+.dot.busy { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.35; } }
+.status { display: inline-flex; align-items: center; gap: var(--space-2); }
+@media (max-width: 480px) {
+  .topbar { gap: var(--space-2); padding: 0 var(--space-3); }
+  .wordmark span, .topbar .version, .topbar .badge { display: none; }
+  .nav a { padding: var(--space-1) var(--space-2); }
+}
+
+.page { max-width: var(--max-w); margin: 0 auto; padding: var(--space-5) var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
+.page-head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+.banners { display: flex; flex-direction: column; gap: 1px; }
+
+.clips { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: calc(100vh - var(--topbar-h)); }
+.cliplist { border-right: 1px solid var(--line); overflow: auto; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); }
+.cliplist > summary { display: none; }
+.cliplist h2 { font-size: var(--text-sm); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: var(--space-3) var(--space-2) var(--space-1); }
+.cliplist h2:first-child { margin-top: var(--space-1); }
+.editor { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); min-width: 0; }
+@media (max-width: 999px) {
+  .clips { display: flex; flex-direction: column; min-height: 0; }
+  .cliplist { border-right: 0; border-bottom: 1px solid var(--line); padding: 0; overflow: visible; }
+  .cliplist > summary {
+    display: flex; align-items: center; gap: var(--space-2); list-style: none; cursor: pointer;
+    min-height: var(--touch); padding: 0 var(--space-4); color: var(--fg-muted); user-select: none;
+  }
+  .cliplist > summary::-webkit-details-marker { display: none; }
+  .cliplist > summary .icon { transition: transform var(--duration); }
+  .cliplist[open] > summary .icon { transform: rotate(90deg); }
+  .cliplist > summary b { color: var(--fg); }
+  .cliplist > .list-body { padding: 0 var(--space-3) var(--space-3); max-height: 50vh; overflow: auto; }
+}
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  min-height: 36px; padding: 0 var(--space-3); border-radius: var(--radius-md);
+  background: var(--surface); color: var(--fg); border: 1px solid var(--line);
+  font: inherit; cursor: pointer; white-space: nowrap; position: relative;
+  transition: border-color var(--duration), background var(--duration);
+}
+.btn:hover, .btn.is-hover { border-color: var(--line-strong); background: var(--surface-2); }
+.btn.btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: var(--weight-strong); }
+.btn.btn-primary:hover, .btn.btn-primary.is-hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.btn-danger { color: var(--err); border-color: var(--err); }
+.btn.btn-danger:hover, .btn.btn-danger.is-hover { background: var(--err-soft); }
+.btn.btn-ghost { background: transparent; border-color: transparent; color: var(--fg-muted); }
+.btn.btn-ghost:hover, .btn.btn-ghost.is-hover { color: var(--fg); background: var(--surface-2); }
+.btn:disabled, .btn.is-disabled { opacity: 0.5; cursor: default; pointer-events: none; }
+.btn.is-busy { pointer-events: none; }
+.btn.is-busy .spinner { border-color: currentColor; border-top-color: transparent; opacity: 0.7; }
+.btn.btn-sm { min-height: 28px; padding: 0 var(--space-2); font-size: var(--text-sm); }
+.btn.btn-icon { padding: 0; width: 36px; }
+.btn kbd { margin-left: var(--space-1); }
+@media (pointer: coarse) { .btn { min-height: var(--touch); } }
+
+.field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.field > label { font-size: var(--text-sm); color: var(--fg-muted); }
+.field .hint { font-size: var(--text-sm); color: var(--fg-muted); }
+.field .error { font-size: var(--text-sm); color: var(--err); }
+.input, .select, textarea.input {
+  width: 100%; min-height: 36px; padding: var(--space-2) var(--space-3);
+  background: var(--surface-2); color: var(--fg); border: 1px solid var(--line); border-radius: var(--radius-md);
+  font: inherit; transition: border-color var(--duration);
+}
+.input:focus, .input.is-focus, .select:focus, .select.is-focus { border-color: var(--accent); outline: none; }
+.field.is-invalid .input, .input.is-invalid { border-color: var(--err); }
+.input:disabled, .select:disabled, .input.is-disabled { opacity: 0.5; cursor: default; }
+.input[readonly] { color: var(--fg-muted); }
+.input.mono { font-family: var(--font-mono); font-size: var(--text-sm); }
+textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading); }
+.select { appearance: none; padding-right: var(--space-6); background-image: linear-gradient(45deg, transparent 50%, var(--fg-muted) 50%), linear-gradient(135deg, var(--fg-muted) 50%, transparent 50%); background-position: calc(100% - 18px) 55%, calc(100% - 13px) 55%; background-size: 5px 5px; background-repeat: no-repeat; }
+.input-group { display: flex; gap: var(--space-1); align-items: stretch; }
+.input-group .input { flex: 1; min-width: 0; }
+.input-group .btn { flex: none; }
+.copy-field .btn.is-copied { color: var(--ok); border-color: var(--ok); }
+.fields-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+@media (max-width: 600px) { .fields-2 { grid-template-columns: 1fr; } }
+
+.switch { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; min-height: 24px; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch .track { width: 36px; height: 20px; border-radius: var(--radius-pill); background: var(--line-strong); position: relative; flex: none; transition: background var(--duration); }
+.switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--fg); transition: transform var(--duration); }
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { transform: translateX(16px); background: var(--accent-fg); }
+.switch input:focus-visible + .track { outline: 2px solid var(--focus); outline-offset: 2px; }
+.switch input:disabled ~ * { opacity: 0.5; cursor: default; }
+
+.check { display: flex; gap: var(--space-2); align-items: flex-start; cursor: pointer; }
+.check input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--accent); flex: none; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.card-head { display: flex; align-items: center; gap: var(--space-3); }
+.card-head h2, .card-head h3 { flex: 1; min-width: 0; }
+.card.is-disabled .card-body { display: none; }
+.card.is-disabled .card-head { opacity: 0.6; }
+.card.is-disabled .card-head .switch { opacity: 1; }
+
+.banner { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--line); background: var(--info-soft); color: var(--fg); }
+.banner .icon { color: var(--info); margin-top: 1px; }
+.banner.warn { background: var(--warn-soft); } .banner.warn .icon { color: var(--warn); }
+.banner.err { background: var(--err-soft); } .banner.err .icon { color: var(--err); }
+.banner .grow { flex: 1; min-width: 0; }
+.banner .btn-ghost { margin: -6px -8px -6px 0; }
+
+.toast-stack { position: fixed; right: var(--space-4); bottom: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); z-index: 20; max-width: min(360px, calc(100vw - 2 * var(--space-4))); }
+.toast { display: flex; gap: var(--space-2); align-items: center; padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 4px 16px var(--scrim); }
+.toast.ok { border-color: var(--ok); } .toast.ok .icon { color: var(--ok); }
+.toast.err { border-color: var(--err); } .toast.err .icon { color: var(--err); }
+.toast.info .icon { color: var(--info); }
+@media (max-width: 600px) { .toast-stack { left: var(--space-3); right: var(--space-3); bottom: var(--space-3); max-width: none; } }
+.toast-stack.is-static { position: static; max-width: 360px; }
+
+.modal { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; padding: var(--space-4); z-index: 10; }
+.modal.is-static { position: static; background: none; padding: 0; justify-content: flex-start; }
+.dialog { background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: var(--space-4) var(--space-5); max-width: 460px; width: 100%; display: flex; flex-direction: column; gap: var(--space-3); }
+.dialog h2 { font-size: var(--text-lg); }
+.dialog.danger h2 { color: var(--err); }
+.dialog .actions { display: flex; gap: var(--space-2); justify-content: flex-end; flex-wrap: wrap; }
+
+.badge { display: inline-flex; align-items: center; gap: var(--space-1); padding: 1px var(--space-2); border-radius: var(--radius-pill); font-size: var(--text-xs); background: var(--surface-2); color: var(--fg-muted); border: 1px solid var(--line); line-height: 16px; white-space: nowrap; }
+.badge.ok { color: var(--ok); border-color: var(--ok); }
+.badge.warn { color: var(--warn); border-color: var(--warn); }
+.badge.err { color: var(--err); border-color: var(--err); }
+.badge.accent { color: var(--accent); border-color: var(--accent); }
+
+.checks { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }
+.check-row { display: grid; grid-template-columns: 24px 1fr auto; gap: var(--space-3); align-items: start; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); }
+.check-row:last-child { border-bottom: 0; }
+.check-row .mark { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; color: var(--fg-faint); }
+.check-row.ok .mark { color: var(--ok); }
+.check-row.warn .mark { color: var(--warn); }
+.check-row.problem .mark { color: var(--err); }
+.check-row.waiting .mark { color: var(--accent); }
+.check-row.skipped { opacity: 0.6; }
+.check-row .label { font-weight: var(--weight-strong); }
+.check-row .detail { color: var(--fg-muted); font-size: var(--text-sm); }
+.check-row.problem .detail { color: var(--fg); }
+.check-row .fix { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--surface-2); border-radius: var(--radius-md); font-size: var(--text-sm); }
+.check-row .fix .path { font-family: var(--font-mono); color: var(--fg); }
+.check-row .side { display: flex; gap: var(--space-2); align-items: center; }
+@media (max-width: 480px) { .check-row { grid-template-columns: 24px 1fr; } .check-row .side { grid-column: 2; } }
+
+.stepper { display: flex; gap: var(--space-2); align-items: center; counter-reset: step; }
+.step { display: flex; align-items: center; gap: var(--space-2); color: var(--fg-muted); font-size: var(--text-sm); }
+.step .num { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line-strong); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); color: var(--fg-muted); flex: none; }
+.step.current { color: var(--fg); font-weight: var(--weight-strong); }
+.step.current .num { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.step.done .num { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
+.step .optional { color: var(--fg-faint); font-weight: normal; }
+.stepper .line { flex: 1; height: 1px; background: var(--line); min-width: var(--space-3); }
+@media (max-width: 480px) { .step:not(.current) .name { display: none; } }
+
+.tabs { display: flex; gap: var(--space-1); border-bottom: 1px solid var(--line); }
+.tabs a, .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: var(--space-2) var(--space-3); color: var(--fg-muted); font: inherit; cursor: pointer; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.tabs [aria-selected="true"], .tabs [aria-current="page"], .tabs .is-current { color: var(--fg); border-bottom-color: var(--accent); }
+.tabs a:hover, .tabs button:hover, .tabs .is-hover { color: var(--fg); text-decoration: none; }
+
+.progress { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
+.progress.err { border-color: var(--err); }
+.progress .bar { height: 8px; background: var(--surface-2); border-radius: var(--radius-sm); overflow: hidden; }
+.progress .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width var(--duration-slow); }
+.progress.err .bar i { background: var(--err); }
+.progress .stages { display: flex; gap: var(--space-4); font-size: var(--text-sm); color: var(--fg-muted); flex-wrap: wrap; }
+.progress .stages .on { color: var(--accent); font-weight: var(--weight-strong); }
+.progress .stages .done { color: var(--ok); }
+.progress .stages .failed { color: var(--err); }
+
+.result { background: var(--surface); border: 1px solid var(--ok); border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
+.result.err { border-color: var(--err); }
+.result.partial { border-color: var(--warn); }
+.result .head { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-strong); }
+.result .head .icon { color: var(--ok); }
+.result.err .head .icon { color: var(--err); }
+.result.partial .head .icon { color: var(--warn); }
+.result .line { display: flex; gap: var(--space-2); align-items: center; font-size: var(--text-sm); }
+.result .line .icon-sm { flex: none; }
+.result .line.ok .icon-sm { color: var(--ok); }
+.result .line.err .icon-sm { color: var(--err); }
+
+.timeline { position: relative; height: 44px; background: var(--surface-2); border-radius: var(--radius-md); cursor: pointer; user-select: none; touch-action: none; border: 1px solid var(--line); }
+.timeline .range { position: absolute; top: 0; bottom: 0; background: var(--accent-soft); border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+.timeline .handle { position: absolute; top: -6px; width: 24px; height: 56px; margin-left: -12px; cursor: ew-resize; z-index: 2; }
+.timeline .handle::after { content: ""; position: absolute; left: 9px; top: 8px; width: 6px; height: 40px; background: var(--accent); border-radius: 3px; transition: transform var(--duration); }
+.timeline .handle:hover::after, .timeline .handle.is-hover::after, .timeline .handle.is-active::after { transform: scaleX(1.5); background: var(--accent-hover); }
+.timeline .handle.is-active::before { content: attr(data-time); position: absolute; top: -22px; left: 50%; transform: translateX(-50%); font-size: var(--text-xs); font-family: var(--font-mono); color: var(--fg); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 0 var(--space-1); white-space: nowrap; }
+.timeline .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--fg); pointer-events: none; z-index: 3; }
+.timeline .ticks { position: absolute; inset: 0; display: flex; justify-content: space-between; padding: 0 var(--space-1); font-size: var(--text-xs); font-family: var(--font-mono); color: var(--fg-faint); align-items: flex-end; pointer-events: none; }
+@media (pointer: coarse), (max-width: 600px) {
+  .timeline { height: var(--touch); }
+  .timeline .handle { width: 32px; margin-left: -16px; }
+  .timeline .handle::after { left: 12px; width: 8px; }
+}
+video, .video { width: 100%; max-height: 58vh; background: var(--surface-2); border-radius: var(--radius-lg); outline: none; border: 1px solid var(--line); }
+.video { aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; color: var(--fg-faint); }
+.video .icon { width: 48px; height: 48px; stroke-width: 1.25; }
+
+.clip { display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid transparent; cursor: pointer; }
+.clip:hover, .clip.is-hover { background: var(--surface); }
+.clip.active { border-color: var(--accent); background: var(--surface); }
+.clip .name { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-strong); min-width: 0; }
+.clip .name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clip .meta { color: var(--fg-muted); font-size: var(--text-sm); display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.clip.new .name::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+.clip.deleting { opacity: 0.5; pointer-events: none; }
+.hist { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--line); font-size: var(--text-sm); display: flex; flex-direction: column; gap: var(--space-1); }
+.hist .meta { color: var(--fg-muted); }
+.hist.expired { opacity: 0.6; }
+.hist .row { gap: var(--space-1); }
+
+.empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-3); padding: var(--space-6) var(--space-4); color: var(--fg-muted); border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); }
+.empty .icon { width: 32px; height: 32px; color: var(--fg-faint); stroke-width: 1.5; }
+.empty b { color: var(--fg); }
+.empty.compact { padding: var(--space-4); border: 0; }
+
+kbd { display: inline-block; min-width: 18px; padding: 0 5px; background: var(--surface-2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: var(--radius-sm); font: var(--text-xs) / 16px var(--font-mono); color: var(--fg-muted); text-align: center; vertical-align: middle; }
+.shortcuts { color: var(--fg-muted); font-size: var(--text-sm); display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.shortcuts span { white-space: nowrap; }
+
+.qr { display: flex; gap: var(--space-4); align-items: center; flex-wrap: wrap; }
+.qr .code { width: 132px; height: 132px; padding: 6px; background: var(--fg); border-radius: var(--radius-md); flex: none; }
+.qr .code svg { width: 100%; height: 100%; display: block; color: var(--bg); }
+.qr .addr { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; flex: 1; }
+
+.well { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-3); font-family: var(--font-mono); font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.list-tight { display: flex; flex-direction: column; gap: var(--space-1); }
+.section-title { font-size: var(--text-sm); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+.needs-restart { color: var(--warn); font-size: var(--text-xs); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
+}
+
+/* ---- page: clips ---- */
+.editor .title-row { display: flex; gap: var(--space-2); align-items: center; }
+.editor .title-row .input { flex: 1; min-width: 160px; }
+.plan { color: var(--fg-muted); font-size: var(--text-sm); }
+.plan b { color: var(--fg); }
+.share-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.share-row .select { width: auto; min-width: 180px; }
+.list-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2) var(--space-2); }
+.list-head .count { color: var(--fg-muted); font-size: var(--text-sm); }
+.editor.is-off { opacity: 0.5; pointer-events: none; }
+.video-err { color: var(--err); font-size: var(--text-sm); }
+.clip .name b { font-weight: var(--weight-strong); }
+@media (max-width: 999px) { .list-head { padding: var(--space-2) var(--space-2) var(--space-1); } }
+
+/* ---- page: login and placeholders ---- */
+.centered { min-height: calc(100vh - var(--topbar-h)); display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
+.centered .card { width: 100%; max-width: 380px; }
+.brand { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-lg); font-weight: var(--weight-strong); }
+.brand .icon { color: var(--accent); width: 28px; height: 28px; }
 </style>
 </head>
 <body>
-<aside>
-  <h1>REPLAYCUT CLIPS <span id="ver" class="info" style="font-size:10px;letter-spacing:0"></span></h1>
-  <div class="row" style="margin:0 6px 4px"><button id="btnSave" title="Triggers F9 in OBS (saves the last 5 minutes)">F9: Save replay</button></div>
-  <div id="upd" class="info" style="display:none;margin:0 6px 6px;padding:6px 8px;border:1px solid var(--line);border-radius:6px"></div>
-  <div id="list"><div class="info" style="padding:8px">Loading clips …</div></div>
-  <h2>Shared</h2>
-  <div id="hist"><div class="info" style="padding:4px 8px">Nothing shared yet.</div></div>
-</aside>
-<main>
-  <div id="status"></div>
-  <div class="row">
-    <input type="text" id="title" placeholder="Title (optional) - shown in list, filename and Discord post" maxlength="80" disabled>
-    <button id="bDel" class="danger" disabled>Delete</button>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 20 20"><path d="M4 3.5v13l11-6.5z"/><path d="M2 7h4M2 13h4" /></symbol>
+  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4v12l10-6z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 20 20"><path d="M6 4v12M14 4v12"/></symbol>
+  <symbol id="i-cut-in" viewBox="0 0 20 20"><path d="M4 3v14M4 10h9M10 6l4 4-4 4"/></symbol>
+  <symbol id="i-cut-out" viewBox="0 0 20 20"><path d="M16 3v14M16 10H7M10 6l-4 4 4 4"/></symbol>
+  <symbol id="i-share" viewBox="0 0 20 20"><path d="M10 12V3M6.5 6.5 10 3l3.5 3.5M4 11v5h12v-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2.5 5.5h5l2 2h8v8h-15z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7"/></symbol>
+  <symbol id="i-check" viewBox="0 0 20 20"><path d="m4 10.5 4 4 8-9"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 20 20"><path d="M10 3 2.5 16.5h15z"/><path d="M10 8v4M10 14.2v.3"/></symbol>
+  <symbol id="i-error" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="m7 7 6 6M13 7l-6 6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/></symbol>
+  <symbol id="i-close" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
+  <symbol id="i-obs" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v5M4 14l4-2.5M16 14l-4-2.5"/></symbol>
+  <symbol id="i-diagnostics" viewBox="0 0 20 20"><path d="M2.5 10h4l2-5 3 10 2-5h4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 20 20"><path d="M16 9.5A6 6 0 0 0 5 6.5M4 10.5A6 6 0 0 0 15 13.5"/><path d="M4.5 3v4h4M15.5 17v-4h-4"/></symbol>
+  <symbol id="i-qr" viewBox="0 0 20 20"><rect x="3" y="3" width="5" height="5"/><rect x="12" y="3" width="5" height="5"/><rect x="3" y="12" width="5" height="5"/><path d="M12 12h2v2h-2zM16 12h1M12 16h1M15 15h2v2h-2z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 20 20"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 20 20"><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5 5.5l1 11h8l1-11M8.5 9v5M11.5 9v5"/></symbol>
+  <symbol id="i-external" viewBox="0 0 20 20"><path d="M11 3h6v6M17 3l-8 8M15 11v5H4V5h5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5l3 2"/></symbol>
+  <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12M2.5 8h3.5M14 8h3.5M2.5 12h3.5M14 12h3.5"/></symbol>
+  <symbol id="i-skip" viewBox="0 0 20 20"><path d="M5 5l7 5-7 5zM14 5v10"/></symbol>
+</svg>
+
+<header class="topbar">
+  <a class="wordmark" href="/"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+  <nav class="nav" id="nav">
+    <a href="/" data-page="clips">Clips</a><a href="/settings" data-page="settings">Settings</a><a href="/diagnostics" data-page="diagnostics">Diagnostics</a>
+  </nav>
+  <div class="right">
+    <span class="badge" id="encoder" hidden></span>
+    <span class="status" id="dotWrap" title="Service running"><i class="dot" id="dot"></i></span>
+    <span class="version" id="ver"></span>
   </div>
-  <video id="v" controls preload="auto" playsinline></video>
-  <div id="vidErr"></div>
-  <div id="tl"><div id="sel"></div><div class="h" id="hin"></div><div class="h" id="hout"></div><div id="ph"></div></div>
-  <div class="row">
-    <button id="bIn">Set in <kbd>I</kbd></button>
-    <button id="bOut">Set out <kbd>O</kbd></button>
-    <button id="bAll">Whole clip</button>
-    <button id="bPrev">Play selection <kbd>P</kbd></button>
-    <span class="info" id="selInfo"></span>
+</header>
+
+<div class="banners" id="banners">
+  <div class="banner err" id="b-unreachable" hidden><svg class="icon"><use href="#i-error"/></svg><div class="grow"><b>Service not responding</b> <span class="muted" id="b-unreachable-text"></span></div></div>
+  <div class="banner err" id="b-failed" hidden><svg class="icon"><use href="#i-error"/></svg><div class="grow"><b>Last share failed:</b> <span id="b-failed-text"></span></div><button class="btn btn-ghost btn-icon" data-dismiss="b-failed" title="Dismiss"><svg class="icon"><use href="#i-close"/></svg></button></div>
+  <div class="banner warn" id="b-scan" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Clip scan stuck</b> <span id="b-scan-text"></span></div></div>
+  <div class="banner" id="b-update" hidden><svg class="icon"><use href="#i-info"/></svg><div class="grow"><b id="b-update-text"></b> <a id="b-update-link" href="#" target="_blank" rel="noopener">Release notes</a></div><button class="btn btn-ghost btn-icon" data-dismiss="b-update" title="Dismiss for this visit"><svg class="icon"><use href="#i-close"/></svg></button></div>
+  <div class="banner" id="b-newclip" hidden><svg class="icon"><use href="#i-film"/></svg><div class="grow"><b>New clip:</b> <span id="b-newclip-text"></span> You have marks on the current one.</div><div class="row nowrap"><button class="btn btn-sm" id="b-newclip-load">Load new clip</button><button class="btn btn-sm btn-ghost" id="b-newclip-keep">Keep editing</button></div></div>
+</div>
+
+<!-- ===================== Clips ===================== -->
+<div class="clips" id="page-clips" hidden>
+  <details class="cliplist" id="cliplist">
+    <summary>
+      <svg class="icon"><use href="#i-chevron"/></svg>
+      <span id="sumText"><b>Clips</b></span>
+      <button class="btn btn-sm right" id="btnSave2" title="Triggers the replay hotkey in OBS (saves the last minutes)">Save replay <kbd>F9</kbd></button>
+    </summary>
+    <div class="list-body">
+      <div class="list-head"><h2 style="margin:0">Clips</h2><span class="count" id="count"></span><button class="btn btn-sm right" id="btnSave" title="Triggers the replay hotkey in OBS (saves the last minutes)">Save replay <kbd>F9</kbd></button></div>
+      <div id="list"><div class="empty compact">Loading clips …</div></div>
+      <h2>Shared</h2>
+      <div id="hist"><div class="empty compact">Nothing shared yet.</div></div>
+    </div>
+  </details>
+
+  <main class="editor" id="editor">
+    <div id="emptyEditor" class="empty" style="margin-top:var(--space-5)" hidden>
+      <svg class="icon"><use href="#i-film"/></svg>
+      <div id="emptyText"></div>
+      <div class="row" id="emptyActions"></div>
+    </div>
+
+    <div id="editorBody" class="stack-3" hidden>
+      <div class="title-row">
+        <input class="input" id="title" maxlength="80" placeholder="Title (optional) - shown in the list, the file name and the post" disabled>
+        <button class="btn btn-danger" id="bDel" disabled><svg class="icon"><use href="#i-trash"/></svg> Delete</button>
+      </div>
+      <video id="v" controls preload="auto" playsinline></video>
+      <div class="video-err" id="vidErr" hidden></div>
+      <div class="timeline" id="tl">
+        <div class="ticks" id="ticks"></div>
+        <div class="range" id="sel"></div>
+        <div class="handle" id="hin"></div>
+        <div class="handle" id="hout"></div>
+        <div class="playhead" id="ph"></div>
+      </div>
+      <div class="row">
+        <button class="btn" id="bIn"><svg class="icon"><use href="#i-cut-in"/></svg> Set in <kbd>I</kbd></button>
+        <button class="btn" id="bOut"><svg class="icon"><use href="#i-cut-out"/></svg> Set out <kbd>O</kbd></button>
+        <button class="btn" id="bAll">Whole clip</button>
+        <button class="btn" id="bPrev"><svg class="icon"><use href="#i-play"/></svg> Play selection <kbd>P</kbd></button>
+        <span class="plan" id="selInfo"></span>
+      </div>
+      <div class="share-row">
+        <button class="btn btn-primary" id="bShare"><svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd></button>
+        <select class="select" id="audio" title="Which audio tracks go into the shared clip"></select>
+        <span class="plan" id="planInfo"></span>
+      </div>
+      <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>I</kbd><kbd>O</kbd> marks</span><span><kbd>Enter</kbd> share</span></div>
+      <div class="progress" id="prog" hidden><div class="row nowrap"><span class="grow" id="progText"></span><span class="muted sm" id="progPct"></span></div><div class="bar"><i id="progBar"></i></div><div class="stages" id="stages"></div></div>
+      <div class="result" id="result" hidden></div>
+    </div>
+  </main>
+</div>
+
+<!-- ===================== Login ===================== -->
+<div class="centered" id="page-login" hidden>
+  <form class="card" id="loginForm">
+    <div class="brand"><svg class="icon"><use href="#i-logo"/></svg> replaycut</div>
+    <p class="muted sm">This replaycut asks other devices for a password. Signing in keeps this browser logged in for 30 days.</p>
+    <div class="field" id="pwField">
+      <label for="pw">Password</label>
+      <div class="input-group"><input class="input" id="pw" type="password" autocomplete="current-password" autofocus><button class="btn btn-icon" type="button" id="pwEye" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div>
+      <span class="error" id="pwError" hidden></span>
+    </div>
+    <button class="btn btn-primary" id="loginBtn" type="submit">Sign in</button>
+    <p class="muted xs">Forgot it? On the PC itself no password is needed: open the UI there and set a new one in Settings.</p>
+  </form>
+</div>
+
+<!-- ===================== Not built yet ===================== -->
+<div class="centered" id="page-soon" hidden>
+  <div class="card">
+    <div class="brand"><svg class="icon"><use href="#i-logo"/></svg> <span id="soonTitle"></span></div>
+    <p class="muted sm" id="soonText"></p>
+    <a class="btn btn-primary" href="/">Back to clips</a>
   </div>
-  <div class="row">
-    <button class="primary" id="bShare">Share <kbd>Enter</kbd></button>
-    <select id="audio" title="Which audio tracks go into the shared clip"></select>
-    <span class="info" id="planInfo"></span>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="dialog danger" role="dialog" aria-modal="true">
+    <h2>Delete clip?</h2>
+    <div class="muted" id="delName"></div>
+    <div class="muted sm">The MKV and the files shared from it go to the recycle bin on the PC.</div>
+    <label class="check" id="delNcRow"><input type="checkbox" id="delNc" checked> <span>Also remove from Nextcloud - <b>shared links (e.g. in Discord) will stop working</b>. Unchecked keeps copies and links in Nextcloud.</span></label>
+    <div class="actions"><button class="btn" id="delCancel">Cancel <kbd>Esc</kbd></button><button class="btn btn-danger" id="delOk">Move to recycle bin</button></div>
   </div>
-  <div class="info"><kbd>Space</kbd> Play/Pause · <kbd>←</kbd><kbd>→</kbd> 1 s · <kbd>Shift</kbd>+arrow 5 s · <kbd>,</kbd><kbd>.</kbd> 1 frame · <kbd>Home</kbd>/<kbd>End</kbd> start/end</div>
-  <div id="prog"><div id="progText"></div><div class="bar"><i id="progBar"></i></div>
-    <div class="steps"><span data-s="encode">1 Cut + H.264</span><span data-s="upload">2 Nextcloud</span><span data-s="discord">3 Discord</span></div></div>
-  <div id="result"></div>
-</main>
-<div id="modal"><div class="box">
-  <b>Delete clip?</b>
-  <div id="delName" class="info"></div>
-  <div class="info">The MKV and the files shared from it go to the recycle bin on the box.</div>
-  <label><input type="checkbox" id="delNc" checked> <span>Also remove from Nextcloud - <b>shared links (e.g. in Discord) will then become invalid</b>. Unchecked = copies and links in Nextcloud remain.</span></label>
-  <div class="row"><button id="delOk" class="danger">Move to recycle bin</button><button id="delCancel">Cancel</button></div>
-</div></div>
-<div id="toast"></div>
+</div>
+
+<div class="toast-stack" id="toasts"></div>
+
 <script>
+'use strict';
+// ------------------------------------------------------------ shared
 const $ = s => document.getElementById(s);
-const v = $('v'), tl = $('tl'), sel = $('sel'), hin = $('hin'), hout = $('hout'), ph = $('ph');
-let clips = [], cfg = { shareKbps: 6000, expireDays: 0, audio: [{ id: 'mix', label: 'Mix (all)', need: 1 }] };
-let cur = null, tIn = 0, tOut = 0, edited = false, busy = false, lastSeen = null, stopAt = null;
-let watchingJob = null, shownLast = null, failures = 0, histKey = '', audioBuilt = '';
-
-const fmt = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const short = b => (b || '').replace(/^WARDOGS\s*/, '');
-const audioLabel = id => (cfg.audio.find(a => a.id === id) || {}).label || id || 'Mix';
+const fmt = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
+const fmtShort = s => { s = Math.max(0, Math.round(s || 0)); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r; };
+const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup': 'soon', '/settings': 'soon', '/diagnostics': 'soon', '/obs': 'soon' };
+const page = PAGES[location.pathname] || 'clips';
+let cfg = { shareKbps: 6000, expireDays: 0, audio: [{ id: 'mix', label: 'Mix (all)', need: 1 }], displayName: '' };
 
-// fetch with timeout (the service must never hang silently) and retry for idempotent calls
+// theme: remembered per browser so the page does not flash the default first
+function applyTheme(name) {
+  const link = $('theme'), custom = name && name !== 'wardogs';
+  link.href = custom ? '/themes/' + encodeURIComponent(name) + '.css' : '';
+  link.disabled = !custom;
+  try { localStorage.setItem('rc-theme', name || 'wardogs'); } catch (e) {}
+}
+try { applyTheme(localStorage.getItem('rc-theme')); } catch (e) {}
+
+// fetch with timeout (the service must never hang silently) and retry for idempotent calls;
+// a 401 means "password set, not logged in" and sends the browser to the login page
 async function api(path, opts = {}, { timeout = 6000, retries = 1 } = {}) {
   for (let i = 0; ; i++) {
     const ac = new AbortController(), t = setTimeout(() => ac.abort(), timeout);
     try {
       const r = await fetch(path, Object.assign({ signal: ac.signal, cache: 'no-store' }, opts));
+      if (r.status === 401 && page !== 'login') { location.href = '/login?next=' + encodeURIComponent(location.pathname); throw new Error('login required'); }
       const d = await r.json().catch(() => ({ ok: false, error: 'HTTP ' + r.status }));
       if (!r.ok && d.error === undefined) d.error = 'HTTP ' + r.status;
       if (!r.ok) d.ok = false;
       return d;
     } catch (e) {
-      if (i >= retries) throw new Error(e.name === 'AbortError' ? 'Timeout (' + timeout / 1000 + ' s)' : 'Service unreachable');
+      if (e.message === 'login required' || i >= retries) throw new Error(e.message === 'login required' ? e.message : (e.name === 'AbortError' ? 'Timeout (' + timeout / 1000 + ' s)' : 'Service unreachable'));
       await new Promise(res => setTimeout(res, 500));
     } finally { clearTimeout(t); }
   }
 }
-function setStatus(msg, cls) { const s = $('status'); if (!msg) { s.style.display = 'none'; return; } s.textContent = msg; s.className = cls || ''; s.style.display = 'block'; }
+const jsonOpts = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-// Validity of the Nextcloud link: 0 = no expiry (default, so Discord posts do not die)
-function gueltig() { return cfg.expireDays > 0 ? cfg.expireDays + ' days valid' : 'no expiry'; }
-function plan(d) {
-  // fixed bitrate: Discord only gets the Nextcloud link, so there is no size target to hit anymore
-  const a = 128000, vb = cfg.shareKbps * 1000;
-  return { mb: (vb + a) * d / 8 / 1048576, kbps: vb / 1000 };
+// in-page toasts: bottom right, 3 s, at most three
+function toast(msg, kind = 'info') {
+  const stack = $('toasts'), icon = { ok: 'check', err: 'error', info: 'info' }[kind] || 'info';
+  const t = document.createElement('div'); t.className = 'toast ' + kind;
+  t.innerHTML = `<svg class="icon"><use href="#i-${icon}"/></svg><span></span>`; t.lastChild.textContent = msg;
+  stack.appendChild(t); while (stack.children.length > 3) stack.firstChild.remove();
+  setTimeout(() => t.remove(), 3000);
+}
+function copyText(t) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t);
+  const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); return Promise.resolve();
+}
+function banner(id, show, text) { const b = $(id); if (!b) return; b.hidden = !show; if (text !== undefined) { const t = $(id + '-text'); if (t) t.textContent = text; } }
+document.querySelectorAll('[data-dismiss]').forEach(b => b.onclick = () => { $(b.dataset.dismiss).hidden = true; if (b.dataset.dismiss === 'b-update') updDismissed = cfg.update && cfg.update.version; if (b.dataset.dismiss === 'b-failed') failedDismissed = cfg._lastFailedId; });
+function setDot(state, title) { $('dot').className = 'dot ' + (state || ''); $('dotWrap').title = title || ''; }
+function showPage(name) {
+  ['clips', 'login', 'soon'].forEach(p => { $('page-' + p).hidden = p !== name; });
+  document.querySelectorAll('#nav a').forEach(a => { if (a.dataset.page === (name === 'clips' ? 'clips' : location.pathname.slice(1))) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+}
+
+
+// ------------------------------------------------------------ login
+function initLogin() {
+  showPage('login');
+  $('nav').hidden = true;
+  const next = new URLSearchParams(location.search).get('next') || '/';
+  api('/api/session', {}, { retries: 0 }).then(s => {
+    if (s.authenticated) { location.replace(next); return; }
+  }).catch(() => {});
+  $('pwEye').onclick = () => { const p = $('pw'); p.type = p.type === 'password' ? 'text' : 'password'; };
+  $('loginForm').onsubmit = async e => {
+    e.preventDefault();
+    const btn = $('loginBtn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Signing in';
+    $('pwField').classList.remove('is-invalid'); $('pwError').hidden = true;
+    try {
+      const r = await api('/api/login', jsonOpts('POST', { password: $('pw').value }), { retries: 0, timeout: 10000 });
+      if (r.ok) { location.replace(next); return; }
+      $('pwField').classList.add('is-invalid'); $('pwError').textContent = r.error || 'Wrong password.'; $('pwError').hidden = false;
+    } catch (err) { $('pwField').classList.add('is-invalid'); $('pwError').textContent = err.message; $('pwError').hidden = false; }
+    btn.disabled = false; btn.textContent = 'Sign in';
+  };
+}
+
+// ------------------------------------------------------------ clips
+let clips = [], cur = null, tIn = 0, tOut = 0, edited = false, busy = false, lastSeen = null, stopAt = null;
+let watchingJob = null, shownLast = null, failures = 0, histKey = '', audioBuilt = '', listKey = '';
+let updDismissed = '', failedDismissed = '', pendingNew = null, pollT = null;
+let v, tl, sel, hin, hout, ph;
+
+const short = b => { const p = (cfg.displayName || '').trim(); return p && b && b.toLowerCase().startsWith(p.toLowerCase()) ? b.slice(p.length).trim() : (b || ''); };
+const audioLabel = id => (cfg.audio.find(a => a.id === id) || {}).label || id || 'Mix';
+function expiry() { return cfg.expireDays > 0 ? 'link expires in ' + cfg.expireDays + ' days' : 'link never expires'; }
+function plan(d) { const a = 128000, vb = cfg.shareKbps * 1000; return { mb: (vb + a) * d / 8 / 1048576, kbps: vb / 1000 }; }
+
+function initClips() {
+  v = $('v'); tl = $('tl'); sel = $('sel'); hin = $('hin'); hout = $('hout'); ph = $('ph');
+  // the list is a collapsed panel beside the game, a column on a wide screen
+  const mq = matchMedia('(min-width: 1000px)'); const sync = () => { $('cliplist').open = mq.matches; }; mq.addEventListener('change', sync); sync();
+
+  v.addEventListener('timeupdate', () => { if (stopAt !== null && v.currentTime >= stopAt) { v.pause(); stopAt = null; } render(); });
+  v.addEventListener('play', () => { if (stopAt !== null && (v.currentTime < tIn || v.currentTime >= tOut)) stopAt = null; });
+  v.addEventListener('loadedmetadata', () => { if (cur && (!cur.duration || cur.duration < 1)) { cur.duration = v.duration; tOut = v.duration; } render(); });
+  v.addEventListener('error', () => { const e = v.error; if (!cur || !e) return;
+    const why = { 1: 'aborted', 2: 'network error while loading', 3: 'decode error', 4: 'this browser does not play the codec of the preview (AV1 needs Chrome or Firefox)' }[e.code] || ('code ' + e.code);
+    $('vidErr').textContent = 'Preview cannot be played: ' + why; $('vidErr').hidden = false; });
+
+  // Timeline: click = seek, drag handles = in/out
+  let drag = null;
+  const posT = e => { const r = tl.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * (cur ? cur.duration : 0); };
+  hin.addEventListener('pointerdown', e => { drag = 'in'; e.stopPropagation(); tl.setPointerCapture(e.pointerId); hin.classList.add('is-active'); });
+  hout.addEventListener('pointerdown', e => { drag = 'out'; e.stopPropagation(); tl.setPointerCapture(e.pointerId); hout.classList.add('is-active'); });
+  tl.addEventListener('pointerdown', e => { if (!drag) { drag = 'seek'; seek(posT(e)); tl.setPointerCapture(e.pointerId); } });
+  tl.addEventListener('pointermove', e => { if (!drag) return; const t = posT(e);
+    if (drag === 'in') { tIn = Math.min(t, tOut - 0.5); edited = true; v.currentTime = tIn; }
+    else if (drag === 'out') { tOut = Math.max(t, tIn + 0.5); edited = true; v.currentTime = tOut; }
+    else seek(t); render(); });
+  const endDrag = () => { drag = null; hin.classList.remove('is-active'); hout.classList.remove('is-active'); };
+  tl.addEventListener('pointerup', endDrag); tl.addEventListener('pointercancel', endDrag);
+
+  document.addEventListener('keydown', e => {
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || !$('modal').hidden) { if (e.key === 'Escape' && !$('modal').hidden) $('modal').hidden = true; return; }
+    if (!cur) return;
+    const k = e.key, big = e.shiftKey ? 5 : 1;
+    if (k === ' ') { e.preventDefault(); v.paused ? v.play() : v.pause(); }
+    else if (k === 'ArrowLeft') { e.preventDefault(); seek(v.currentTime - big); }
+    else if (k === 'ArrowRight') { e.preventDefault(); seek(v.currentTime + big); }
+    else if (k === ',') seek(v.currentTime - 1 / 60);
+    else if (k === '.') seek(v.currentTime + 1 / 60);
+    else if (k === 'Home') seek(0); else if (k === 'End') seek(cur.duration);
+    else if (k === 'i' || k === 'I') setIn(); else if (k === 'o' || k === 'O') setOut();
+    else if (k === 'p' || k === 'P') playSel();
+    else if (k === 'Enter') share();
+  });
+  $('bIn').onclick = setIn; $('bOut').onclick = setOut; $('bPrev').onclick = playSel;
+  $('bAll').onclick = () => { if (!cur) return; tIn = 0; tOut = cur.duration; edited = false; render(); };
+  $('bShare').onclick = share;
+  $('btnSave').onclick = $('btnSave2').onclick = sendF9;
+
+  // Title: Enter or leaving the field saves it (empty = remove title)
+  $('title').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('title').blur(); } else if (e.key === 'Escape') { $('title').value = cur ? (cur.title || '') : ''; $('title').blur(); } });
+  $('title').addEventListener('blur', saveTitle);
+
+  // Delete: dialog with the Nextcloud toggle, files go to the recycle bin
+  $('bDel').onclick = () => { if (!cur || busy) return; $('delName').textContent = (cur.title ? cur.title + ' - ' : '') + short(cur.base) + ' (' + fmt(cur.duration) + ')'; $('delNc').checked = !!cfg.nextcloud; $('delNcRow').hidden = !cfg.nextcloud; $('modal').hidden = false; $('delCancel').focus(); };
+  $('delCancel').onclick = () => { $('modal').hidden = true; };
+  $('modal').addEventListener('click', e => { if (e.target === $('modal')) $('modal').hidden = true; });
+  $('delOk').onclick = deleteClip;
+
+  $('b-newclip-load').onclick = () => { if (pendingNew) { load(pendingNew); toast('New clip loaded'); } pendingNew = null; banner('b-newclip', false); };
+  $('b-newclip-keep').onclick = () => { pendingNew = null; banner('b-newclip', false); };
+
+  poll();
+}
+
+async function sendF9() {
+  const b1 = $('btnSave'), b2 = $('btnSave2'); b1.disabled = b2.disabled = true;
+  try { const r = await api('/api/save', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast('F9 sent to OBS - the clip will appear shortly') : toast('F9 failed: ' + r.error, 'err'); }
+  catch (e) { toast('F9 failed: ' + e.message, 'err'); }
+  b1.disabled = b2.disabled = false;
+}
+
+function ticks(d) {
+  const box = $('ticks'); box.innerHTML = '';
+  if (!d) return;
+  const step = d > 240 ? 60 : d > 90 ? 30 : d > 30 ? 10 : 5;
+  for (let t = 0; t <= d; t += step) { const s = document.createElement('span'); s.textContent = fmtShort(t); box.appendChild(s); }
 }
 function render() {
   if (!cur) return;
   const d = cur.duration || v.duration || 1;
   sel.style.left = (tIn / d * 100) + '%'; sel.style.width = ((tOut - tIn) / d * 100) + '%';
   hin.style.left = (tIn / d * 100) + '%'; hout.style.left = (tOut / d * 100) + '%';
+  hin.dataset.time = fmt(tIn); hout.dataset.time = fmt(tOut);
+  hin.title = 'In: ' + fmt(tIn); hout.title = 'Out: ' + fmt(tOut);
   ph.style.left = (v.currentTime / d * 100) + '%';
   const len = tOut - tIn, p = plan(Math.max(1, len));
-  $('selInfo').innerHTML = `In <b>${fmt(tIn)}</b> · Out <b>${fmt(tOut)}</b> · Length <b>${fmt(len)}</b>`;
-  $('planInfo').innerHTML = `H.264 1080p ~${p.kbps.toFixed(0)} kbit/s, approx. <b>${p.mb.toFixed(1)} MB</b> · ` +
-    `<span class="badge ok">Nextcloud link (${gueltig()}) + Discord post</span>` +
-    (cfg.nextcloud === false ? ' <span class="badge" style="color:var(--err)">Nextcloud access missing (clip-service.ps1 -Setup)</span>' : '');
+  $('selInfo').innerHTML = `${fmt(tIn)} - ${fmt(tOut)} · <b>${len.toFixed(1)} s</b>`;
+  $('planInfo').innerHTML = `about <b>${p.mb.toFixed(0)} MB</b> at ${p.kbps.toFixed(0)} kbit/s` +
+    (cfg.localMode ? ` · <span class="badge accent">local</span> no storage integration - the file stays in <code>shared\\</code>` : ` · ${esc(expiry())}${cfg.webhook ? ' + Discord post' : ''}`);
 }
 function buildAudio() {
   const key = JSON.stringify(cfg.audio) + '|' + (cur ? cur.tracks : 0); if (key === audioBuilt) return; audioBuilt = key;
@@ -153,65 +724,23 @@ function buildAudio() {
   s.value = keep && [...s.options].some(o => o.value === keep && !o.disabled) ? keep : 'mix';
 }
 function load(c, keepSel) {
-  cur = c; $('vidErr').style.display = 'none';
+  cur = c; $('vidErr').hidden = true; $('editorBody').hidden = false; $('emptyEditor').hidden = true;
   v.src = c.preview; v.load();
   if (!keepSel) { tIn = 0; tOut = c.duration; edited = false; }
   document.querySelectorAll('.clip').forEach(e => e.classList.toggle('active', e.dataset.base === c.base));
   $('title').value = c.title || ''; $('title').disabled = false; $('bDel').disabled = false;
-  buildAudio(); render();
+  ticks(c.duration); buildAudio(); render();
 }
 function unload() {
-  cur = null; v.pause(); v.removeAttribute('src'); v.load();
+  cur = null; if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
   $('title').value = ''; $('title').disabled = true; $('bDel').disabled = true; $('selInfo').textContent = ''; $('planInfo').textContent = '';
   sel.style.width = '0'; ph.style.left = '0';
 }
-function setIn() { tIn = Math.min(v.currentTime, tOut - 0.5); edited = true; render(); }
-function setOut() { tOut = Math.max(v.currentTime, tIn + 0.5); edited = true; render(); }
+function setIn() { if (!cur) return; tIn = Math.min(v.currentTime, tOut - 0.5); edited = true; render(); }
+function setOut() { if (!cur) return; tOut = Math.max(v.currentTime, tIn + 0.5); edited = true; render(); }
 function seek(t) { v.currentTime = Math.max(0, Math.min(cur ? cur.duration : 0, t)); render(); }
-function playSel() { stopAt = tOut; seek(tIn); v.play(); }
-v.addEventListener('timeupdate', () => { if (stopAt !== null && v.currentTime >= stopAt) { v.pause(); stopAt = null; } render(); });
-v.addEventListener('play', () => { if (stopAt !== null && (v.currentTime < tIn || v.currentTime >= tOut)) stopAt = null; });
-v.addEventListener('loadedmetadata', () => { if (cur && (!cur.duration || cur.duration < 1)) { cur.duration = v.duration; tOut = v.duration; } render(); });
-v.addEventListener('error', () => { const e = v.error; if (!cur || !e) return;
-  const why = { 1: 'aborted', 2: 'network error while loading', 3: 'decode error', 4: 'format not supported (AV1 - Firefox/Chrome required)' }[e.code] || ('code ' + e.code);
-  $('vidErr').textContent = 'Preview cannot be played: ' + why; $('vidErr').style.display = 'block'; });
+function playSel() { if (!cur) return; stopAt = tOut; seek(tIn); v.play(); }
 
-// Timeline: click = seek, drag handles = in/out
-let drag = null;
-const posT = e => { const r = tl.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * (cur ? cur.duration : 0); };
-hin.addEventListener('pointerdown', e => { drag = 'in'; e.stopPropagation(); tl.setPointerCapture(e.pointerId); });
-hout.addEventListener('pointerdown', e => { drag = 'out'; e.stopPropagation(); tl.setPointerCapture(e.pointerId); });
-tl.addEventListener('pointerdown', e => { if (!drag) { drag = 'seek'; seek(posT(e)); tl.setPointerCapture(e.pointerId); } });
-tl.addEventListener('pointermove', e => { if (!drag) return; const t = posT(e);
-  if (drag === 'in') { tIn = Math.min(t, tOut - 0.5); edited = true; v.currentTime = tIn; }
-  else if (drag === 'out') { tOut = Math.max(t, tIn + 0.5); edited = true; v.currentTime = tOut; }
-  else seek(t); render(); });
-tl.addEventListener('pointerup', () => drag = null); tl.addEventListener('pointercancel', () => drag = null);
-
-document.addEventListener('keydown', e => {
-  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || !cur || $('modal').style.display === 'flex') return;
-  const k = e.key, big = e.shiftKey ? 5 : 1;
-  if (k === ' ') { e.preventDefault(); v.paused ? v.play() : v.pause(); }
-  else if (k === 'ArrowLeft') { e.preventDefault(); seek(v.currentTime - big); }
-  else if (k === 'ArrowRight') { e.preventDefault(); seek(v.currentTime + big); }
-  else if (k === ',') seek(v.currentTime - 1 / 60);
-  else if (k === '.') seek(v.currentTime + 1 / 60);
-  else if (k === 'Home') seek(0); else if (k === 'End') seek(cur.duration);
-  else if (k === 'i' || k === 'I') setIn(); else if (k === 'o' || k === 'O') setOut();
-  else if (k === 'p' || k === 'P') playSel();
-  else if (k === 'Enter') share();
-});
-$('bIn').onclick = setIn; $('bOut').onclick = setOut; $('bPrev').onclick = playSel;
-$('bAll').onclick = () => { tIn = 0; tOut = cur.duration; edited = false; render(); };
-$('bShare').onclick = share;
-$('btnSave').onclick = async () => {
-  $('btnSave').disabled = true;
-  try { const r = await api('/api/save', { method: 'POST', body: '' }, { retries: 0 }); toast(r.ok ? 'F9 sent to OBS - clip will appear shortly' : 'F9 failed: ' + r.error); }
-  catch (e) { toast('F9 failed: ' + e.message); }
-  $('btnSave').disabled = false;
-};
-
-// Title: Enter or leaving the field saves it (empty = remove title)
 let titleSaving = null, titleSavingName = null;
 function saveTitle() {
   if (!cur) return Promise.resolve();
@@ -223,77 +752,97 @@ function saveTitle() {
   titleSavingName = name;
   titleSaving = (async () => {
     try {
-      const r = await api('/api/clips/' + encodeURIComponent(cur.base) + '/name', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }, { retries: 0 });
-      if (r.ok) { cur.title = r.title; $('title').value = r.title; toast(r.title ? 'Title saved' : 'Title removed'); poll.now(); } else toast('Title: ' + r.error);
-    } catch (e) { toast('Title: ' + e.message); }
+      const r = await api('/api/clips/' + encodeURIComponent(cur.base) + '/name', jsonOpts('PUT', { name }), { retries: 0 });
+      if (r.ok) { cur.title = r.title; $('title').value = r.title; toast(r.title ? 'Title saved' : 'Title removed', 'ok'); poll.now(); } else toast('Title: ' + r.error, 'err');
+    } catch (e) { toast('Title: ' + e.message, 'err'); }
     titleSaving = null; titleSavingName = null;
   })();
   return titleSaving;
 }
-$('title').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('title').blur(); } else if (e.key === 'Escape') { $('title').value = cur ? (cur.title || '') : ''; $('title').blur(); } });
-$('title').addEventListener('blur', saveTitle);
 
-// Delete: dialog with Nextcloud toggle, files go to the recycle bin
-$('bDel').onclick = () => { if (!cur || busy) return; $('delName').textContent = (cur.title ? cur.title + ' - ' : '') + short(cur.base) + ' (' + fmt(cur.duration) + ')'; $('delNc').checked = true; $('modal').style.display = 'flex'; $('delCancel').focus(); };
-$('delCancel').onclick = () => $('modal').style.display = 'none';
-$('modal').addEventListener('click', e => { if (e.target === $('modal')) $('modal').style.display = 'none'; });
-$('delOk').onclick = async () => {
-  const c = cur, nc = $('delNc').checked; $('modal').style.display = 'none'; if (!c) return;
+async function deleteClip() {
+  const c = cur, nc = !!cfg.nextcloud && $('delNc').checked; $('modal').hidden = true; if (!c) return;
   unload();   // release the stream, otherwise the browser keeps the preview open
   $('delOk').disabled = true;
   try {
     const r = await api('/api/clips/' + encodeURIComponent(c.base) + (nc ? '?nextcloud=1' : ''), { method: 'DELETE' }, { retries: 0, timeout: 30000 });
-    if (r.ok) { toast(`Deleted: ${r.recycled} file(s) in recycle bin` + (nc ? `, ${r.nextcloud} removed from Nextcloud` : '')); lastSeen = null; showResult(null); shownLast = null; }
-    else { toast('Delete failed: ' + r.error); }
-  } catch (e) { toast('Delete failed: ' + e.message); }
+    if (r.ok) { toast(`Deleted: ${r.recycled} file(s) in the recycle bin` + (nc ? `, ${r.nextcloud} removed from Nextcloud` : ''), 'ok'); lastSeen = null; showResult(null); shownLast = null; }
+    else toast('Delete failed: ' + r.error, 'err');
+  } catch (e) { toast('Delete failed: ' + e.message, 'err'); }
   $('delOk').disabled = false; poll.now();
-};
-
-function copyText(t) {
-  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t);
-  const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); return Promise.resolve();
 }
-const STAGES = { queued: 'Waiting …', encode: 'Cut + H.264 encode', upload: 'Uploading to Nextcloud', discord: 'Discord webhook', done: 'Done', error: 'Error' };
+
+// the stages of a share: only the integrations that are on (API contract)
+function stageList() { const s = [['encode', 'Cut + encode']]; if (cfg.nextcloud) s.push(['upload', 'Nextcloud']); if (cfg.webhook) s.push(['discord', 'Discord']); return s; }
+const STAGE_TEXT = { queued: 'Queued …', encode: 'Encoding', upload: 'Uploading to Nextcloud …', discord: 'Posting to Discord …' };
 function showProgress(j) {
-  const p = $('prog'); if (!j || j.stage === 'done' || j.stage === 'error') { p.style.display = 'none'; return; }
-  p.style.display = 'block';
-  const pct = j.stage === 'encode' ? (j.percent || 0) : (j.stage === 'upload' ? 100 : (j.stage === 'discord' ? 100 : 0));
-  $('progText').textContent = `Sharing in progress: ${STAGES[j.stage] || j.stage}` + (j.stage === 'encode' ? ` ${pct} %` : '') + ` · ${fmt(j.seconds)} @ ${j.kbps} kbit/s · ${audioLabel(j.audio)}` + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
+  const p = $('prog'); if (!j || j.stage === 'done' || j.stage === 'error') { p.hidden = true; return; }
+  p.hidden = false;
+  const pct = j.stage === 'encode' ? (j.percent || 0) : (j.stage === 'queued' ? 0 : 100);
+  $('progText').textContent = (STAGE_TEXT[j.stage] || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)} at ${j.kbps} kbit/s, ${audioLabel(j.audio)}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
+  $('progPct').textContent = pct + ' %';
   $('progBar').style.width = pct + '%';
-  const order = ['encode', 'upload', 'discord'], idx = order.indexOf(j.stage);
-  p.querySelectorAll('.steps span').forEach(s => { const i = order.indexOf(s.dataset.s); s.className = i < idx ? 'done' : (i === idx ? 'on' : ''); });
+  const list = stageList(), idx = list.findIndex(([id]) => id === j.stage);
+  $('stages').innerHTML = list.map(([id, label], i) => `<span class="${i < idx ? 'done' : (i === idx ? 'on' : '')}">${i + 1} ${label}</span>`).join('');
 }
 function showResult(r) {
-  const box = $('result'); if (!r) { box.style.display = 'none'; return; }
-  box.style.display = 'block'; box.className = r.ok ? 'ok' : 'err';
-  const when = r.finished || r.at ? ` <span class="info">(${esc((r.finished || r.at).replace('T', ' ').slice(0, 16))}, ${esc(r.title ? r.title + ' - ' : '')}${esc(short(r.base))})</span>` : '';
-  if (!r.ok) { box.innerHTML = `<b>Error while sharing:</b> ${esc(r.error || 'unknown')}${when}`; return; }
-  box.innerHTML = `<b>Shared:</b> ${Number(r.seconds).toFixed(1)} s, ${r.sizeMB} MB, ${esc(audioLabel(r.audio))} · Discord: ${esc(r.discord)} · Link is in the Windows clipboard (${gueltig()})${when}
-    <input readonly value="${esc(r.direct)}" onclick="this.select()">
-    <div class="row"><button id="cp">Copy direct link</button><button id="cp2">Copy page link</button><a href="${esc(r.link)}" target="_blank"><button>Open</button></a></div>`;
-  $('cp').onclick = () => copyText(r.direct).then(() => toast('Direct link copied'));
-  $('cp2').onclick = () => copyText(r.link).then(() => toast('Link copied'));
+  const box = $('result'); if (!r) { box.hidden = true; return; }
+  box.hidden = false;
+  const when = (r.finished || r.at) ? ` <span class="muted sm">${esc((r.finished || r.at).replace('T', ' ').slice(0, 16))} · ${esc(r.title ? r.title + ' - ' : '')}${esc(short(r.base))}</span>` : '';
+  if (!r.ok) {
+    box.className = 'result err';
+    box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-error"/></svg> Share failed</div><div class="sm">${esc(r.error || 'unknown error')}</div>${when ? '<div>' + when + '</div>' : ''}
+      <div class="row"><button class="btn btn-sm" id="rRetry"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Try again</button></div>`;
+    $('rRetry').onclick = share;
+    return;
+  }
+  const meta = `${Number(r.seconds).toFixed(1)} s, ${r.sizeMB} MB, ${esc(audioLabel(r.audio))}`;
+  if (!r.direct) {
+    // local mode: the file is the result
+    box.className = 'result';
+    box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-check"/></svg> Ready - ${meta} <span class="badge accent">local</span></div>
+      <div class="muted sm break">shared\\${esc(r.file || '')}</div>
+      <div class="row"><button class="btn" id="rOpen"><svg class="icon"><use href="#i-folder"/></svg> Open folder</button><button class="btn" id="rCopy"><svg class="icon"><use href="#i-copy"/></svg> Copy file</button><span class="muted sm">Then Ctrl+V in Discord attaches it.</span></div>${when ? '<div>' + when + '</div>' : ''}`;
+    $('rOpen').onclick = () => jobAction(r.id, 'open-folder', 'Folder opened on the PC');
+    $('rCopy').onclick = () => jobAction(r.id, 'copy-file', 'File copied - paste it with Ctrl+V');
+    return;
+  }
+  const postFailed = r.discord && !/^link posted/i.test(r.discord);
+  box.className = 'result' + (postFailed ? ' partial' : '');
+  box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-${postFailed ? 'warning' : 'check'}"/></svg> ${postFailed ? 'Uploaded, but not posted' : 'Shared'} - ${meta}, link copied</div>
+    <div class="input-group"><input class="input mono" readonly value="${esc(r.direct)}" onclick="this.select()"><button class="btn" id="cp"><svg class="icon"><use href="#i-copy"/></svg> Direct</button><button class="btn" id="cp2" title="Copy the share page link"><svg class="icon"><use href="#i-external"/></svg> Page</button></div>
+    ${r.discord ? `<div class="line ${postFailed ? 'err' : 'ok'}"><svg class="icon icon-sm"><use href="#i-${postFailed ? 'error' : 'check'}"/></svg> Discord: ${esc(r.discord)}</div>` : ''}
+    <div class="line"><span class="muted sm">${esc(expiry())}</span>${when}</div>`;
+  $('cp').onclick = () => copyText(r.direct).then(() => toast('Direct link copied', 'ok'));
+  $('cp2').onclick = () => copyText(r.link).then(() => toast('Page link copied', 'ok'));
+}
+async function jobAction(id, action, okText) {
+  try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/' + action, { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(okText, 'ok') : toast(r.error, 'err'); }
+  catch (e) { toast(e.message, 'err'); }
 }
 function renderHistory(h) {
-  const key = JSON.stringify((h || []).map(e => e.id)); if (key === histKey) return; histKey = key;
-  const box = $('hist'); box.innerHTML = (h && h.length) ? '' : '<div class="info" style="padding:4px 8px">Nothing shared yet.</div>';
+  const key = JSON.stringify((h || []).map(e => e.id)) + cfg.displayName; if (key === histKey) return; histKey = key;
+  const box = $('hist'); box.innerHTML = (h && h.length) ? '' : '<div class="empty compact">Nothing shared yet.</div>';
   (h || []).forEach(e => {
     const d = document.createElement('div'); d.className = 'hist';
-    d.innerHTML = `<b>${esc(e.title || short(e.base))}</b><small>${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · ${fmt(e.seconds)} · ${e.sizeMB} MB · ${esc(audioLabel(e.audio))}</small>
-      <div class="row"><button data-c="direct">Direct link</button><button data-c="link">Page</button><a href="${esc(e.link)}" target="_blank"><button>Open</button></a></div>`;
-    d.querySelectorAll('button[data-c]').forEach(b => b.onclick = () => copyText(e[b.dataset.c]).then(() => toast(b.dataset.c === 'direct' ? 'Direct link copied' : 'Link copied')));
+    const local = !e.direct;
+    d.innerHTML = `<b class="truncate"></b><div class="meta">${fmt(e.seconds)} · ${e.sizeMB} MB · ${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · ${esc(audioLabel(e.audio))}${local ? ' <span class="badge accent">local</span>' : ''}</div>
+      <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(e.link)}" target="_blank" rel="noopener">Open</a>`}</div>`;
+    d.querySelector('b').textContent = e.title || short(e.base);
+    d.querySelectorAll('button[data-c]').forEach(b => b.onclick = () => copyText(e[b.dataset.c]).then(() => toast(b.dataset.c === 'direct' ? 'Direct link copied' : 'Page link copied', 'ok')));
+    d.querySelectorAll('button[data-a]').forEach(b => b.onclick = () => jobAction(e.id, b.dataset.a, b.dataset.a === 'copy-file' ? 'File copied - paste it with Ctrl+V' : 'Folder opened on the PC'));
     box.appendChild(d);
   });
 }
-function setBusy(b) { busy = b; $('bShare').disabled = b; $('bShare').innerHTML = b ? 'Sharing …' : 'Share <kbd>Enter</kbd>'; }
+function setBusy(b) { busy = b; const s = $('bShare'); s.disabled = b; s.innerHTML = b ? '<span class="spinner"></span> Sharing' : '<svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd>'; s.classList.toggle('is-busy', b); setDot(b ? 'busy' : (cfg._lastFailed ? 'err' : ''), b ? 'Sharing' : (cfg._lastFailed ? 'Last share failed' : 'Service running')); }
 async function share() {
-  if (!cur || busy) return; setBusy(true); $('result').style.display = 'none';
+  if (!cur || busy) return; setBusy(true); $('result').hidden = true;
   // Save the title first: clicking "Share" also triggers the blur of the title field, and without
   // this await the share POST would overtake the title PUT - the clip would then be posted without a title.
   await saveTitle();
   try {
-    const r = await api('/api/share', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base: cur.base, start: tIn, end: tOut, audio: $('audio').value }) }, { retries: 0, timeout: 10000 });
-    if (!r.ok) { if (r.job) { watchJob(r.job); toast(r.error); } else { showResult(r); setBusy(false); } return; }
+    const r = await api('/api/share', jsonOpts('POST', { base: cur.base, start: tIn, end: tOut, audio: $('audio').value }), { retries: 0, timeout: 10000 });
+    if (!r.ok) { if (r.job) { watchJob(r.job); toast(r.error, 'err'); } else { showResult(r); setBusy(false); } return; }
     watchJob(r.job);
   } catch (e) { showResult({ ok: false, error: e.message }); setBusy(false); }
 }
@@ -304,58 +853,102 @@ async function watchJob(id) {
   while (watchingJob === id) {
     try {
       const j = await api('/api/jobs/' + id, {}, { retries: 0 });
-      if (j.stage === 'done' || j.stage === 'error') { watchingJob = null; showProgress(null); showResult(j); shownLast = id; setBusy(false); poll.now(); return; }
-      if (j.error && j.ok === false && !j.stage) { throw new Error(j.error); }
+      if (j.stage === 'done' || j.stage === 'error') { watchingJob = null; showProgress(null); showResult(j); shownLast = id; cfg._lastFailed = j.ok === false; cfg._lastFailedId = id; setBusy(false); poll.now(); return; }
+      if (j.error && j.ok === false && !j.stage) throw new Error(j.error);
       showProgress(j); misses = 0;
-    } catch (e) { if (++misses >= 8) { watchingJob = null; showProgress(null); showResult({ ok: false, error: 'Connection to service lost: ' + e.message }); setBusy(false); return; } }
+    } catch (e) { if (++misses >= 8) { watchingJob = null; showProgress(null); showResult({ ok: false, error: 'Connection to the service lost: ' + e.message }); setBusy(false); return; } }
     await new Promise(r => setTimeout(r, 1000));
   }
 }
-let toastT; function toast(m) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', 3000); }
 
-let pollT = null;
-// Update banner: config.update is null or { version, url }; "dismiss" hides it for this page load.
-let updDismissed = '';
-function showUpdate(u) {
-  const el = $('upd');
-  if (!u || !u.version || updDismissed === u.version) { el.style.display = 'none'; return; }
-  el.innerHTML = `replaycut ${esc(u.version)} is available - <a href="${esc(u.url || '#')}" target="_blank" rel="noopener">release notes</a> <a href="#" id="updX" style="float:right">dismiss</a>`;
-  el.style.display = 'block';
-  $('updX').onclick = e => { e.preventDefault(); updDismissed = u.version; el.style.display = 'none'; };
+function showEmpty(kind) {
+  $('editorBody').hidden = true; $('emptyEditor').hidden = false;
+  const t = $('emptyText'), a = $('emptyActions');
+  if (kind === 'setup') {
+    t.innerHTML = '<b>Not set up yet</b><br>replaycut does not know your recording folder and integrations.';
+    a.innerHTML = '<a class="btn btn-primary" href="/setup">Run the setup</a>';
+  } else if (kind === 'offline') {
+    t.innerHTML = '<b>No connection to the service</b><br>Is replaycut running on the PC? Look for the tray icon.';
+    a.innerHTML = '';
+  } else {
+    t.innerHTML = `<b>Nothing to cut yet</b><br>Start the replay buffer in OBS, play, and press <kbd>F9</kbd> when something happens. The clip shows up here within a few seconds.`;
+    a.innerHTML = '<button class="btn" id="emptyF9">Send <kbd>F9</kbd> to OBS</button>';
+    $('emptyF9').onclick = sendF9;
+  }
 }
+
+function renderList() {
+  const key = JSON.stringify(clips.map(c => [c.base, c.title, c.tracks])) + (cur ? cur.base : ''); if (key === listKey) return; listKey = key;
+  const list = $('list'); list.innerHTML = clips.length ? '' : '<div class="empty compact"><b>No clips yet</b><br>Press <kbd>F9</kbd> in OBS while the replay buffer runs.</div>';
+  clips.forEach(c => {
+    const e = document.createElement('div'); e.className = 'clip' + (cur && cur.base === c.base ? ' active' : ''); e.dataset.base = c.base;
+    e.innerHTML = `<div class="name"><span></span></div><div class="meta"><span>${fmt(c.duration)}</span><span>${(c.size / 1048576).toFixed(0)} MB</span>${c.tracks ? `<span>${c.tracks} track${c.tracks === 1 ? '' : 's'}</span>` : ''}<span>${esc((c.created || '').slice(11, 16))}</span></div>`;
+    const n = e.querySelector('.name span'); if (c.title) { n.innerHTML = `<b></b>`; n.firstChild.textContent = c.title; n.title = short(c.base); } else n.textContent = short(c.base);
+    e.onclick = () => { load(c); if (!matchMedia('(min-width: 1000px)').matches) $('cliplist').open = false; };
+    list.appendChild(e);
+  });
+  $('count').textContent = clips.length || '';
+  $('sumText').innerHTML = clips.length ? `<b>${clips.length} clip${clips.length === 1 ? '' : 's'}</b> · newest ${esc((clips[0].created || '').slice(11, 16))}` : '<b>No clips yet</b>';
+}
+
+function showUpdate(u) {
+  if (!u || !u.version || updDismissed === u.version) { banner('b-update', false); return; }
+  $('b-update-text').textContent = `replaycut ${u.version} is available.`; $('b-update-link').href = u.url || '#'; banner('b-update', true);
+}
+
 async function poll() {
   clearTimeout(pollT);
   try {
     const d = await api('/api/clips');
-    failures = 0; setStatus(null);
+    failures = 0; banner('b-unreachable', false);
     cfg = Object.assign(cfg, d.config); clips = d.clips || [];
-    $('ver').textContent = (cfg.version ? 'v' + cfg.version : '') + (cfg.encoder ? ' · ' + cfg.encoder : '');
+    applyTheme(cfg.theme);
+    $('ver').textContent = cfg.version ? cfg.version : '';
+    $('encoder').textContent = cfg.encoder || ''; $('encoder').hidden = !cfg.encoder;
     showUpdate(cfg.update);
-    const list = $('list'); list.innerHTML = clips.length ? '' : '<div class="info" style="padding:8px">No clip yet. Press F9 in the game.</div>';
-    clips.forEach(c => { const e = document.createElement('div'); e.className = 'clip' + (cur && cur.base === c.base ? ' active' : ''); e.dataset.base = c.base;
-      e.innerHTML = (c.title ? `<b>${esc(c.title)}</b>` : '') + `${esc(short(c.base))}<small>${fmt(c.duration)} · ${(c.size / 1048576).toFixed(1)} MB${c.tracks && c.tracks < 4 ? ' · only ' + c.tracks + ' audio tracks' : ''}</small>`;
-      e.onclick = () => load(c); list.appendChild(e);
-      if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; if (document.activeElement !== $('title')) $('title').value = c.title || ''; } });
+    if (page !== 'clips') { pollT = setTimeout(poll, 3000); return; }
+    clips.forEach(c => { if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; if (document.activeElement !== $('title')) $('title').value = c.title || ''; } });
+    renderList();
     if (clips.length) {
       const newest = clips[0];
       if (!cur) load(newest);
-      else if (!clips.some(c => c.base === cur.base)) { unload(); load(newest); toast('Clip is gone - loaded next one'); }
-      else if (newest.base !== lastSeen && lastSeen !== null && (!edited || confirm('New clip available - switch? (Cancel = keep current)'))) { load(newest); toast('New clip loaded'); }
+      else if (!clips.some(c => c.base === cur.base)) { unload(); load(newest); toast('Clip is gone - loaded the next one'); }
+      else if (newest.base !== lastSeen && lastSeen !== null) {
+        if (!edited) { load(newest); toast('New clip loaded'); }
+        else if (!pendingNew || pendingNew.base !== newest.base) { pendingNew = newest; $('b-newclip-text').textContent = `${short(newest.base)} (${fmt(newest.duration)}).`; banner('b-newclip', true); }
+      }
       lastSeen = newest.base;
-    } else if (cur) unload();
+    } else { if (cur) unload(); showEmpty(cfg.setupDone === false ? 'setup' : 'none'); }
     buildAudio(); renderHistory(d.history);
     if (d.job && watchingJob !== d.job) watchJob(d.job);                      // running job (e.g. after reload)
-    else if (!d.job && !watchingJob && d.last && d.last.id !== shownLast) { showResult(d.last); shownLast = d.last.id; setBusy(false); }
-    if (d.scanAt && (Date.now() - new Date(d.scanAt).getTime()) > 30000) setStatus('The service clip scan has been stuck for ' + Math.round((Date.now() - new Date(d.scanAt).getTime()) / 1000) + ' s - check the log on the box.', 'warn');
+    else if (!d.job && !watchingJob && d.last && d.last.id !== shownLast) { showResult(d.last); shownLast = d.last.id; cfg._lastFailed = d.last.ok === false; cfg._lastFailedId = d.last.id; setBusy(false); }
+    const failed = !watchingJob && d.last && d.last.ok === false && failedDismissed !== d.last.id;
+    banner('b-failed', failed, failed ? (d.last.error || 'unknown error') : '');
+    if (!busy) setDot(failed ? 'err' : '', failed ? 'Last share failed' : 'Service running');
+    const stuck = d.scanAt && (Date.now() - new Date(d.scanAt).getTime()) > 30000;
+    banner('b-scan', !!stuck, stuck ? `for ${Math.round((Date.now() - new Date(d.scanAt).getTime()) / 1000)} s - the folder watcher stopped reporting. Check the log on the PC.` : '');
+    if (stuck && !busy && !failed) setDot('warn', 'Clip scan stuck');
   } catch (e) {
+    if (e.message === 'login required') return;
     failures++;
-    setStatus(`Service not responding (${e.message}) - attempt ${failures}, retrying every 3 s …`);
-    if (!clips.length) $('list').innerHTML = '<div class="info" style="padding:8px">No connection to the clip service.</div>';
+    banner('b-unreachable', true, `(${e.message}) - attempt ${failures}, retrying every 3 s. Is replaycut running on the PC? Look for the tray icon.`);
+    setDot('off', 'Service not responding');
+    if (page === 'clips' && !clips.length) showEmpty('offline');
   }
   pollT = setTimeout(poll, 3000);
 }
 poll.now = () => { clearTimeout(pollT); pollT = setTimeout(poll, 50); };
-poll();
+
+// ------------------------------------------------------------ start
+(async function init() {
+  if (page === 'login') { initLogin(); return; }
+  if (page === 'soon') {
+    const names = { '/setup': ['Setup', 'The browser setup arrives with the next release step. Until then, run "replaycut setup" in a terminal.'], '/settings': ['Settings', 'The settings page arrives with the next release step. Until then, edit settings.json (see docs/settings.md).'], '/diagnostics': ['Diagnostics', 'The diagnostics page arrives with the next release step. Until then, run "replaycut test" in a terminal.'], '/obs': ['OBS', 'The OBS page comes with the OBS integration.'] };
+    const [t, x] = names[location.pathname] || ['Not here', 'Nothing at this address.'];
+    $('soonTitle').textContent = t; $('soonText').textContent = x; showPage('soon'); poll(); return;
+  }
+  showPage('clips'); initClips();
+})();
 </script>
 </body>
 </html>
