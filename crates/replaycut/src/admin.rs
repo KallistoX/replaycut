@@ -447,3 +447,58 @@ pub async fn restart(State(app): State<App>) -> Result<Response, ApiError> {
     app.pending_restart.lock().clear();
     Ok((StatusCode::ACCEPTED, Json(json!({ "ok": true }))).into_response())
 }
+
+/// `GET /api/setup/obs`: what the wizard's OBS step shows - the OBS
+/// profiles on this machine (read only), the folder being watched and the
+/// newest clip with its video facts.
+pub async fn setup_obs(State(app): State<App>) -> Json<Value> {
+    let profiles = tokio::task::spawn_blocking(crate::obs::profiles)
+        .await
+        .unwrap_or_default();
+    let paths = app.paths();
+    let newest = {
+        let inner = app.inner.lock();
+        inner
+            .clips
+            .values()
+            .max_by(|a, b| a.created.cmp(&b.created))
+            .map(|c| {
+                json!({
+                    "name": c.name,
+                    "base": c.base,
+                    "created": c.created,
+                    "duration": c.duration,
+                    "tracks": c.tracks,
+                    "codec": c.codec,
+                    "width": c.width,
+                    "height": c.height,
+                    "fps": c.fps,
+                    "container": "mkv",
+                })
+            })
+    };
+    // MP4 and other containers in the folder are not clips; the wizard names them.
+    let mut others: Vec<String> = std::fs::read_dir(&paths.clip_dir)
+        .map(|rd| {
+            rd.flatten()
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+                    (e.path().is_file()
+                        && ["mp4", "mov", "flv", "ts", "m4v"].contains(&ext.as_str()))
+                    .then_some(name)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    others.sort();
+    others.reverse();
+    others.truncate(3);
+    Json(json!({
+        "profiles": profiles,
+        "watching": paths.clip_dir.to_string_lossy(),
+        "newest": newest,
+        "otherFiles": others,
+        "encoder": app.runtime().encoder.name,
+    }))
+}

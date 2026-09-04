@@ -387,6 +387,26 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; background: var(--
 .clip .name b { font-weight: var(--weight-strong); }
 @media (max-width: 999px) { .list-head { padding: var(--space-2) var(--space-2) var(--space-1); } }
 
+/* ---- page: setup and settings ---- */
+.wizard-foot { display: flex; gap: var(--space-2); align-items: center; justify-content: flex-end; flex-wrap: wrap; padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.wizard-foot .left { margin-right: auto; }
+ol.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: var(--space-2); color: var(--fg-muted); }
+ol.steps b { color: var(--fg); font-weight: normal; }
+.path { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--fg); }
+.local-note { display: flex; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.local-note .icon { color: var(--accent); flex: none; }
+.done { text-align: center; padding: var(--space-6) var(--space-4); display: flex; flex-direction: column; align-items: center; gap: var(--space-3); }
+.done .icon { width: 40px; height: 40px; color: var(--ok); }
+.group { display: flex; flex-direction: column; gap: var(--space-3); }
+.group > h2 { font-size: var(--text-sm); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+.save-bar { position: sticky; bottom: 0; display: flex; gap: var(--space-2); align-items: center; padding: var(--space-3) var(--space-4); margin: 0 calc(-1 * var(--space-4)); background: var(--surface); border-top: 1px solid var(--line-strong); z-index: 4; }
+.save-bar .msg { flex: 1; color: var(--fg-muted); font-size: var(--text-sm); }
+.save-bar.dirty .msg { color: var(--warn); }
+.add-card { border-style: dashed; align-items: center; text-align: center; color: var(--fg-muted); }
+.test-msg { font-size: var(--text-sm); }
+.test-msg.ok { color: var(--ok); } .test-msg.err { color: var(--err); }
+.step .name { white-space: nowrap; }
+
 /* ---- page: login and placeholders ---- */
 .centered { min-height: calc(100vh - var(--topbar-h)); display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
 .centered .card { width: 100%; max-width: 380px; }
@@ -441,6 +461,7 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; background: var(--
   <div class="banner err" id="b-failed" hidden><svg class="icon"><use href="#i-error"/></svg><div class="grow"><b>Last share failed:</b> <span id="b-failed-text"></span></div><button class="btn btn-ghost btn-icon" data-dismiss="b-failed" title="Dismiss"><svg class="icon"><use href="#i-close"/></svg></button></div>
   <div class="banner warn" id="b-scan" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Clip scan stuck</b> <span id="b-scan-text"></span></div></div>
   <div class="banner" id="b-update" hidden><svg class="icon"><use href="#i-info"/></svg><div class="grow"><b id="b-update-text"></b> <a id="b-update-link" href="#" target="_blank" rel="noopener">Release notes</a></div><button class="btn btn-ghost btn-icon" data-dismiss="b-update" title="Dismiss for this visit"><svg class="icon"><use href="#i-close"/></svg></button></div>
+  <div class="banner warn" id="b-restart" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Restart needed.</b> <span id="b-restart-text"></span></div><button class="btn btn-sm" id="b-restart-now">Restart now</button></div>
   <div class="banner" id="b-newclip" hidden><svg class="icon"><use href="#i-film"/></svg><div class="grow"><b>New clip:</b> <span id="b-newclip-text"></span> You have marks on the current one.</div><div class="row nowrap"><button class="btn btn-sm" id="b-newclip-load">Load new clip</button><button class="btn btn-sm btn-ghost" id="b-newclip-keep">Keep editing</button></div></div>
 </div>
 
@@ -515,6 +536,197 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; background: var(--
   </form>
 </div>
 
+<!-- ===================== Setup wizard ===================== -->
+<main class="page" id="page-setup" hidden>
+  <div class="stepper" id="stepper">
+    <div class="step" data-step="1"><span class="num">1</span><span class="name">OBS</span></div><span class="line"></span>
+    <div class="step" data-step="2"><span class="num">2</span><span class="name">Integrations <span class="optional">optional</span></span></div><span class="line"></span>
+    <div class="step" data-step="3"><span class="num">3</span><span class="name">Access</span></div>
+  </div>
+
+  <section class="stack-4" id="wiz1" hidden>
+    <div class="page-head"><h1>Connect OBS</h1><span class="muted">replaycut watches the folder OBS writes replays to. Nothing in OBS is changed.</span></div>
+    <div class="card">
+      <h2>In OBS, once</h2>
+      <ol class="steps">
+        <li><b>Turn on the replay buffer:</b> <span class="path">Settings › Output › Replay Buffer</span> - enable it, 300 s is a good length.</li>
+        <li><b>Record as MKV:</b> <span class="path">Settings › Output › Recording › Recording Format</span> = <b>mkv</b>. MP4 breaks on a crash and cannot be read while OBS writes.</li>
+        <li><b>Audio tracks in this order:</b> 1 everything, 2 microphone, 3 game, 4 voice chat - <span class="path">Settings › Output › Recording › Audio Track</span> and the mixer's <span class="path">Advanced Audio Properties</span>. Only track 1 is required.</li>
+        <li><b>A hotkey:</b> <span class="path">Settings › Hotkeys › Save Replay</span> - F9 is what the button in replaycut sends.</li>
+        <li><b>Start the buffer</b> in the main window (Controls › Start Replay Buffer). It stops when OBS closes.</li>
+      </ol>
+    </div>
+    <div class="field">
+      <label for="wFolder">Recording folder</label>
+      <div class="input-group"><input class="input mono" id="wFolder"><select class="select" id="wProfiles" style="width:auto;max-width:45%" title="Folders from your OBS profiles"></select></div>
+      <span class="hint" id="wFolderHint">The folder OBS writes replays to. Leaving the field saves it and replaycut starts watching it.</span>
+    </div>
+    <div class="checks">
+      <div class="check-row" id="wChkReplay"><div class="mark"></div><div><div class="label"></div><div class="detail"></div><div class="fix" hidden></div></div><div class="side"><button class="btn btn-sm" id="wF9">Send <kbd>F9</kbd></button></div></div>
+      <div class="check-row" id="wChkTools"><div class="mark"></div><div><div class="label">ffmpeg and encoder</div><div class="detail"></div></div><div class="side"></div></div>
+    </div>
+    <div class="wizard-foot">
+      <span class="left muted sm" id="wHint1">You can continue without a replay; the check keeps running in the background.</span>
+      <button class="btn btn-ghost" id="wSkip1">Continue anyway</button>
+      <button class="btn btn-primary" id="wNext1" disabled>Next: Integrations</button>
+    </div>
+  </section>
+
+  <section class="stack-4" id="wiz2" hidden>
+    <div class="page-head"><h1>Integrations</h1><span class="muted">Optional. Each one can be switched on later in Settings.</span></div>
+    <div class="local-note" id="wLocalNote"><svg class="icon"><use href="#i-info"/></svg><div><b>Without integrations replaycut is a local clip manager.</b> "Share" cuts and encodes the clip into <code>shared\</code> and offers "Open folder" and "Copy file", so Ctrl+V in Discord attaches it. Nothing leaves this PC.</div></div>
+    <div class="card" id="wNcCard">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>Nextcloud</h2><span class="badge" id="wNcBadge">off</span><label class="switch"><input type="checkbox" id="wNcOn"><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">Uploads the shared file to <code>&lt;folder&gt;/&lt;YYYY-MM&gt;/</code> and creates a public link. The link goes to the clipboard and, if Discord is on, into the post.</p>
+        <div class="field"><label>Server</label><input class="input" id="wNcUrl" placeholder="https://cloud.example.com"></div>
+        <div class="fields-2">
+          <div class="field"><label>User</label><input class="input" id="wNcUser" autocomplete="off"></div>
+          <div class="field"><label>App password</label><div class="input-group"><input class="input" id="wNcPw" type="password" autocomplete="off"><button class="btn btn-icon" type="button" data-eye="wNcPw" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Nextcloud › Settings › Security › Devices &amp; sessions. Stored in the Windows Credential Manager, never in a file.</span></div>
+        </div>
+        <div class="fields-2">
+          <div class="field"><label>Folder</label><input class="input" id="wNcFolder" value="Clips"></div>
+          <div class="field"><label>Link expiry</label><select class="select" id="wNcExpire"><option value="0">never</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select><span class="hint">An expired link also breaks the Discord post.</span></div>
+        </div>
+        <div class="row"><button class="btn" id="wNcTest">Test connection</button><span class="test-msg" id="wNcMsg"></span></div>
+      </div>
+    </div>
+    <div class="card" id="wDcCard">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge" id="wDcBadge">off</span><label class="switch"><input type="checkbox" id="wDcOn"><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">Posts <code>**&lt;name&gt;** &lt;title&gt; (&lt;s&gt; s) - &lt;link&gt;</code> into one channel through a webhook. Needs a storage integration for the link.</p>
+        <div class="field"><label>Webhook URL</label><div class="input-group"><input class="input mono" id="wDcHook" type="password" autocomplete="off" placeholder="https://discord.com/api/webhooks/..."><button class="btn btn-icon" type="button" data-eye="wDcHook" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Discord: Server settings › Integrations › Webhooks › Copy Webhook URL. Stored in the Credential Manager.</span></div>
+        <div class="field"><label>Display name</label><input class="input" id="wDcName"><span class="hint">Shown as the poster and as the bold prefix of every post.</span></div>
+        <div class="row"><button class="btn" id="wDcTest">Send test message</button><span class="test-msg" id="wDcMsg"></span></div>
+      </div>
+    </div>
+    <div class="wizard-foot">
+      <button class="btn btn-ghost left" id="wBack2">Back</button>
+      <button class="btn btn-ghost" id="wSkip2">Skip - keep it local</button>
+      <button class="btn btn-primary" id="wNext2">Next: Access</button>
+    </div>
+  </section>
+
+  <section class="stack-4" id="wiz3" hidden>
+    <div class="page-head"><h1>Access</h1><span class="muted">Who can open replaycut, and from where.</span></div>
+    <div class="card">
+      <div class="card-head"><h2>Password</h2><span class="badge">optional</span><label class="switch"><input type="checkbox" id="wPwOn"><span class="track"></span></label></div>
+      <div class="card-body stack-3" id="wPwBody">
+        <p class="muted sm">Recommended if others share your network. <b>This PC never needs it</b> - only phones and other computers get the login page. It is sent over your network once, unencrypted, like every login afterwards; HTTPS comes later.</p>
+        <div class="fields-2">
+          <div class="field"><label>Password</label><div class="input-group"><input class="input" id="wPw1" type="password" autocomplete="new-password"><button class="btn btn-icon" type="button" data-eye="wPw1" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div></div>
+          <div class="field"><label>Repeat</label><input class="input" id="wPw2" type="password" autocomplete="new-password"><span class="error" id="wPwErr" hidden></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Open it on your phone</h2>
+      <div class="qr" id="wQr"><div class="code" id="wQrCode"></div><div class="addr" id="wAddr"><div class="muted sm">Same Wi-Fi as this PC. The installer created the firewall rule for the port.</div></div></div>
+    </div>
+    <div class="wizard-foot">
+      <button class="btn btn-ghost left" id="wBack3">Back</button>
+      <button class="btn btn-primary" id="wFinish">Finish setup</button>
+    </div>
+  </section>
+
+  <section id="wizDone" hidden>
+    <div class="done">
+      <svg class="icon"><use href="#i-check"/></svg>
+      <h1>You're set</h1>
+      <p class="muted" id="wDoneText"></p>
+      <div class="row" style="justify-content:center"><a class="btn btn-primary" href="/">Go to clips</a><a class="btn" href="/settings">Settings</a></div>
+    </div>
+  </section>
+</main>
+
+<!-- ===================== Settings ===================== -->
+<main class="page" id="page-settings" hidden>
+  <div class="page-head"><h1>Settings</h1><span class="muted">Saved to <code>settings.json</code>; secrets go to the Windows Credential Manager.</span></div>
+  <div class="tabs"><a href="#general" data-tab="general">General</a><a href="#integrations" data-tab="integrations">Integrations</a></div>
+
+  <div class="stack-4" id="tabGeneral">
+    <div class="group">
+      <h2>Clips</h2>
+      <div class="field"><label>Recording folder <span class="needs-restart" id="ovClipDir" hidden>set on the command line</span></label><input class="input mono" data-f="clipDir"><span class="hint">Scanned for <code>*.mkv</code>, not recursively. Previews go to <code>.preview\</code>, shared files to <code>shared\</code> inside it.</span></div>
+      <div class="fields-2">
+        <div class="field"><label>Display name</label><input class="input" data-f="displayName"><span class="hint">Prefix of the Discord post; clip names starting with it are shortened in the list.</span></div>
+        <div class="field"><label>Theme</label><select class="select" data-f="theme"></select><span class="hint">Drop a <code>.css</code> file into the <code>themes</code> folder of the data directory to add one.</span></div>
+      </div>
+    </div>
+    <div class="group">
+      <h2>Encoding</h2>
+      <div class="fields-2">
+        <div class="field"><label>Video bitrate (kbit/s)</label><input class="input" data-f="shareKbps" type="number" min="500" max="100000" step="100"><span class="hint">Constant bitrate of the shared H.264 file. 6000 is about 45 MB per minute.</span></div>
+        <div class="field"><label>Encoder</label><select class="select" data-f="encoder"><option value="auto">auto</option><option value="h264_nvenc">h264_nvenc (NVIDIA)</option><option value="h264_amf">h264_amf (AMD)</option><option value="h264_qsv">h264_qsv (Intel)</option><option value="libx264">libx264 (software)</option></select><span class="hint" id="encHint"></span></div>
+        <div class="field"><label>Hardware decoding</label><select class="select" data-f="hwaccel"><option value="">none (software)</option><option value="cuda">cuda (NVIDIA)</option><option value="d3d11va">d3d11va</option><option value="qsv">qsv (Intel)</option></select></div>
+        <div class="field"><label>ffmpeg priority</label><select class="select" data-f="ffmpegPriority"><option value="normal">normal</option><option value="belowNormal">below normal</option><option value="idle">idle</option></select><span class="hint">Keeps the game smooth while a clip is encoded.</span></div>
+        <div class="field"><label>ffmpeg threads</label><input class="input" data-f="ffmpegThreads" type="number" min="0" max="256"><span class="hint">0 = half of the cores, at least 2.</span></div>
+      </div>
+    </div>
+    <div class="group">
+      <h2>Service</h2>
+      <div class="fields-2">
+        <div class="field"><label>Port <span class="needs-restart">restart needed</span></label><input class="input" data-f="port" type="number" min="1" max="65535"></div>
+        <div class="field"><label>Listen on <span class="needs-restart">restart needed</span></label><select class="select" data-f="bind"><option value="0.0.0.0">all interfaces - phones and other PCs can connect</option><option value="127.0.0.1">this PC only (127.0.0.1)</option></select></div>
+        <div class="field"><label>Log level</label><select class="select" data-f="logLevel"><option>error</option><option>warn</option><option>info</option><option>debug</option><option>trace</option></select></div>
+      </div>
+      <label class="switch"><input type="checkbox" data-f="checkUpdates"><span class="track"></span> Check GitHub once a day for a new release <span class="muted sm">(nothing is downloaded)</span></label>
+      <label class="switch"><input type="checkbox" id="sAutostart"><span class="track"></span> Start replaycut when I sign in <span class="muted sm">(saved at once)</span></label>
+    </div>
+    <div class="group">
+      <h2>Access</h2>
+      <label class="switch"><input type="checkbox" id="sPwOn"><span class="track"></span> Password for other devices <span class="muted sm">(this PC never needs it)</span></label>
+      <div class="fields-2" id="sPwFields">
+        <div class="field"><label>New password</label><div class="input-group"><input class="input" id="sPw1" type="password" autocomplete="new-password" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sPw1" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div></div>
+        <div class="field"><label>Repeat</label><input class="input" id="sPw2" type="password" autocomplete="new-password"><span class="error" id="sPwErr" hidden></span></div>
+      </div>
+      <div class="row"><button class="btn" id="sAddr"><svg class="icon"><use href="#i-qr"/></svg> Show address and QR code</button><span class="muted sm" id="sAddrText"></span></div>
+    </div>
+  </div>
+
+  <div class="stack-4" id="tabIntegrations" hidden>
+    <p class="muted">Each integration has its own switch, its own settings and its own test. Off means the stage is skipped when sharing. Storage integrations produce the link, notify integrations post it.</p>
+    <div class="card" id="sNcCard">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>Nextcloud</h2><span class="badge">storage</span><span class="badge" id="sNcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.nextcloud.enabled"><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <div class="field"><label>Server</label><input class="input" data-f="integrations.nextcloud.url"></div>
+        <div class="fields-2">
+          <div class="field"><label>User</label><input class="input" id="sNcUser" autocomplete="off"><span class="hint" id="sNcUserHint"></span></div>
+          <div class="field"><label>App password</label><div class="input-group"><input class="input" id="sNcPw" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sNcPw" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the Credential Manager as <code>replaycut/nextcloud</code>.</span></div>
+        </div>
+        <div class="fields-2">
+          <div class="field"><label>Folder</label><input class="input" data-f="integrations.nextcloud.folder"></div>
+          <div class="field"><label>Link expiry</label><select class="select" data-f="integrations.nextcloud.expireDays"><option value="0">never</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></div>
+        </div>
+        <div class="row"><button class="btn" id="sNcTest">Test connection</button><span class="test-msg" id="sNcMsg"></span></div>
+      </div>
+    </div>
+    <div class="card" id="sDcCard">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge">notify</span><span class="badge" id="sDcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.discord.enabled"><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <div class="field"><label>Webhook URL</label><div class="input-group"><input class="input mono" id="sDcHook" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sDcHook" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint" id="sDcHookHint"></span></div>
+        <div class="field"><label>Display name</label><input class="input" data-f="displayName" data-mirror="displayName"><span class="hint">Same field as in General.</span></div>
+        <div class="row"><button class="btn" id="sDcTest">Send test message</button><span class="test-msg" id="sDcMsg"></span></div>
+      </div>
+    </div>
+    <div class="card add-card"><span class="sm">More integrations (Dropbox, Google Drive, WebDAV, S3) arrive as one more card each.</span></div>
+  </div>
+
+  <div class="save-bar" id="saveBar">
+    <span class="msg" id="saveMsg">All changes saved.</span>
+    <button class="btn btn-ghost" id="sDiscard" hidden>Discard</button>
+    <button class="btn btn-primary" id="sSave" disabled>Save</button>
+  </div>
+</main>
+
+<div class="modal" id="addrModal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true">
+    <h2>Open it on your phone</h2>
+    <div class="qr"><div class="code" id="mQrCode"></div><div class="addr" id="mAddr"></div></div>
+    <div class="actions"><button class="btn" id="addrClose">Close</button></div>
+  </div>
+</div>
+
 <!-- ===================== Not built yet ===================== -->
 <div class="centered" id="page-soon" hidden>
   <div class="card">
@@ -543,7 +755,7 @@ const $ = s => document.getElementById(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
 const fmtShort = s => { s = Math.max(0, Math.round(s || 0)); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r; };
-const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup': 'soon', '/settings': 'soon', '/diagnostics': 'soon', '/obs': 'soon' };
+const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup': 'setup', '/settings': 'settings', '/diagnostics': 'soon', '/obs': 'soon' };
 const page = PAGES[location.pathname] || 'clips';
 let cfg = { shareKbps: 6000, expireDays: 0, audio: [{ id: 'mix', label: 'Mix (all)', need: 1 }], displayName: '' };
 
@@ -592,7 +804,7 @@ function banner(id, show, text) { const b = $(id); if (!b) return; b.hidden = !s
 document.querySelectorAll('[data-dismiss]').forEach(b => b.onclick = () => { $(b.dataset.dismiss).hidden = true; if (b.dataset.dismiss === 'b-update') updDismissed = cfg.update && cfg.update.version; if (b.dataset.dismiss === 'b-failed') failedDismissed = cfg._lastFailedId; });
 function setDot(state, title) { $('dot').className = 'dot ' + (state || ''); $('dotWrap').title = title || ''; }
 function showPage(name) {
-  ['clips', 'login', 'soon'].forEach(p => { $('page-' + p).hidden = p !== name; });
+  ['clips', 'login', 'soon', 'setup', 'settings'].forEach(p => { $('page-' + p).hidden = p !== name; });
   document.querySelectorAll('#nav a').forEach(a => { if (a.dataset.page === (name === 'clips' ? 'clips' : location.pathname.slice(1))) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
 }
 
@@ -617,6 +829,241 @@ function initLogin() {
     } catch (err) { $('pwField').classList.add('is-invalid'); $('pwError').textContent = err.message; $('pwError').hidden = false; }
     btn.disabled = false; btn.textContent = 'Sign in';
   };
+}
+
+// ------------------------------------------------------------ shared: fields, eyes, addresses
+document.querySelectorAll('[data-eye]').forEach(b => b.onclick = () => { const i = $(b.dataset.eye); i.type = i.type === 'password' ? 'text' : 'password'; });
+const CODEC_MIME = { h264: 'video/mp4; codecs="avc1.640028"', hevc: 'video/mp4; codecs="hvc1.1.6.L120.90"', av1: 'video/mp4; codecs="av01.0.08M.08"', vp9: 'video/mp4; codecs="vp09.00.10.08"' };
+function browserPlays(codec) {
+  const mime = CODEC_MIME[(codec || '').toLowerCase()]; if (!mime) return null;
+  try { if (window.MediaSource && MediaSource.isTypeSupported) return MediaSource.isTypeSupported(mime); } catch (e) {}
+  const c = document.createElement('video').canPlayType(mime); return c === 'probably' || c === 'maybe';
+}
+function setCheck(row, state, label, detail, fix) {
+  row.className = 'check-row ' + (state || '');
+  const icons = { waiting: '', ok: 'check', warn: 'warning', problem: 'error', skipped: 'skip', idle: 'clock' };
+  row.querySelector('.mark').innerHTML = state === 'waiting' ? '<span class="spinner"></span>' : `<svg class="icon"><use href="#i-${icons[state] || 'clock'}"/></svg>`;
+  if (label !== undefined) row.querySelector('.label').textContent = label;
+  row.querySelector('.detail').innerHTML = detail || '';
+  const f = row.querySelector('.fix'); if (f) { f.hidden = !fix; f.innerHTML = fix || ''; }
+}
+function fillAddresses(a, codeEl, addrEl) {
+  codeEl.innerHTML = a.qrSvg || '';
+  const svg = codeEl.querySelector('svg'); if (svg) { svg.removeAttribute('width'); svg.removeAttribute('height'); }
+  addrEl.querySelectorAll('.input-group').forEach(e => e.remove());
+  (a.urls || []).forEach(u => {
+    const g = document.createElement('div'); g.className = 'input-group';
+    g.innerHTML = `<input class="input mono" readonly><button class="btn btn-icon" title="Copy"><svg class="icon"><use href="#i-copy"/></svg></button>`;
+    g.querySelector('input').value = u; g.querySelector('button').onclick = () => copyText(u).then(() => toast('Address copied', 'ok'));
+    addrEl.appendChild(g);
+  });
+}
+async function loadAddresses(codeEl, addrEl) {
+  try { const a = await api('/api/addresses', {}, { retries: 0 }); fillAddresses(a, codeEl, addrEl); return a; }
+  catch (e) { addrEl.insertAdjacentHTML('beforeend', `<div class="error sm">${esc(e.message)}</div>`); return null; }
+}
+async function runTest(kind, body, btn, msg) {
+  btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = '<span class="spinner"></span> Testing'; msg.className = 'test-msg'; msg.textContent = '';
+  try {
+    const r = await api('/api/test/' + kind, jsonOpts('POST', body), { retries: 0, timeout: 30000 });
+    if (r.ok) {
+      msg.className = 'test-msg ok';
+      if (kind === 'nextcloud') { const free = r.freeBytes != null ? ` · ${(r.freeBytes / 1073741824).toFixed(1)} GB free` : ''; msg.textContent = `Logged in as ${r.displayName || r.user}${free} (${r.ms} ms)`; }
+      else msg.textContent = r.dryRun ? 'Dry run: nothing sent, the URL looks right.' : 'Test message posted - check the channel.';
+    } else { msg.className = 'test-msg err'; msg.textContent = r.error || 'failed'; }
+    return r.ok;
+  } catch (e) { msg.className = 'test-msg err'; msg.textContent = e.message; return false; }
+  finally { btn.disabled = false; btn.innerHTML = old; }
+}
+
+// ------------------------------------------------------------ setup wizard
+async function initSetup() {
+  showPage('setup'); $('nav').hidden = true;
+  let step = 1, settings = null, obsTimer = null, folderSaved = '', replayOk = false;
+  const wiz = { 1: $('wiz1'), 2: $('wiz2'), 3: $('wiz3') };
+  function go(n) {
+    step = n; Object.entries(wiz).forEach(([k, el]) => el.hidden = Number(k) !== n); $('wizDone').hidden = true;
+    document.querySelectorAll('#stepper .step').forEach(s => { const k = Number(s.dataset.step); s.className = 'step' + (k < n ? ' done' : k === n ? ' current' : ''); if (k < n) s.querySelector('.num').innerHTML = '<svg class="icon icon-sm"><use href="#i-check"/></svg>'; else s.querySelector('.num').textContent = k; });
+    if (n !== 1) clearInterval(obsTimer); else pollObs();
+    if (n === 3) loadAddresses($('wQrCode'), $('wAddr'));
+    window.scrollTo(0, 0);
+  }
+  try { settings = await api('/api/settings', {}, { retries: 0 }); } catch (e) { toast('Cannot load the settings: ' + e.message, 'err'); settings = {}; }
+  // step 1
+  $('wFolder').value = settings.clipDir || ''; folderSaved = settings.clipDir || '';
+  const nc = (settings.integrations || {}).nextcloud || {}, dc = (settings.integrations || {}).discord || {};
+  $('wNcOn').checked = !!nc.enabled; $('wNcUrl').value = nc.url && nc.url !== 'https://cloud.example.com' ? nc.url : ''; $('wNcFolder').value = nc.folder || 'Clips'; $('wNcExpire').value = String(nc.expireDays || 0);
+  $('wDcOn').checked = !!dc.enabled; $('wDcName').value = settings.displayName && settings.displayName !== 'replaycut' ? settings.displayName : '';
+  if (settings.secrets && settings.secrets.nextcloud) $('wNcUser').placeholder = 'stored - leave empty to keep';
+  if (settings.secrets && settings.secrets.nextcloud) $('wNcPw').placeholder = 'stored - leave empty to keep';
+  if (settings.secrets && settings.secrets.discord) $('wDcHook').placeholder = 'stored - leave empty to keep';
+  const cardState = () => { $('wNcCard').classList.toggle('is-disabled', !$('wNcOn').checked); $('wNcBadge').textContent = $('wNcOn').checked ? 'on' : 'off'; $('wDcCard').classList.toggle('is-disabled', !$('wDcOn').checked); $('wDcBadge').textContent = $('wDcOn').checked ? 'on' : 'off'; $('wLocalNote').hidden = $('wNcOn').checked || $('wDcOn').checked; $('wSkip2').hidden = $('wNcOn').checked || $('wDcOn').checked; };
+  $('wNcOn').onchange = $('wDcOn').onchange = cardState; cardState();
+  $('wPwOn').onchange = () => { $('wPwBody').hidden = !$('wPwOn').checked; }; $('wPwOn').checked = !!settings.passwordSet; $('wPwBody').hidden = !$('wPwOn').checked;
+
+  async function saveFolder() {
+    const f = $('wFolder').value.trim(); if (!f || f === folderSaved) return true;
+    try {
+      const r = await api('/api/settings', jsonOpts('PUT', { clipDir: f }), { retries: 0, timeout: 15000 });
+      if (!r.ok) { toast(r.error, 'err'); return false; }
+      folderSaved = f; toast('Watching ' + f, 'ok'); replayOk = false; pollObs(); return true;
+    } catch (e) { toast(e.message, 'err'); return false; }
+  }
+  $('wFolder').addEventListener('change', saveFolder);
+  $('wProfiles').onchange = () => { const v = $('wProfiles').value; if (v) { $('wFolder').value = v; saveFolder(); } };
+  $('wF9').onclick = sendF9;
+  async function pollObs() {
+    clearInterval(obsTimer);
+    const tick = async () => {
+      let d; try { d = await api('/api/setup/obs', {}, { retries: 0 }); } catch (e) { setCheck($('wChkReplay'), 'problem', 'Service unreachable', esc(e.message)); return; }
+      // profiles
+      const sel = $('wProfiles'), had = sel.value;
+      const opts = (d.profiles || []).filter(p => p.recPath);
+      sel.innerHTML = '<option value="">' + (opts.length ? 'from OBS profile …' : 'no OBS profile found') + '</option>' + opts.map(p => `<option value="${esc(p.recPath)}">${esc(p.name)}${p.current ? ' (current)' : ''}${p.format ? ' · ' + esc(p.format) : ''}</option>`).join('');
+      sel.value = had; sel.disabled = !opts.length;
+      if (!$('wFolder').value && opts.length) { const cur = opts.find(p => p.current) || opts[0]; $('wFolder').value = cur.recPath; saveFolder(); }
+      const prof = opts.find(p => p.current) || opts[0];
+      const mp4Profile = prof && prof.format && prof.format !== 'mkv';
+      // replay check
+      if (d.newest) {
+        const n = d.newest, plays = browserPlays(n.codec);
+        const hint = plays === null ? '' : plays ? ' <b>Your browser plays this preview.</b>' : ' <b>This browser does not play ' + esc(n.codec) + ' - use Chrome or Firefox on the PC, or set OBS to H.264.</b>';
+        setCheck($('wChkReplay'), n.tracks < 2 ? 'warn' : 'ok', 'Replay found', `${esc(n.name)} · ${fmt(n.duration)} · ${esc((n.codec || '?').toUpperCase())} ${n.width}x${n.height} ${n.fps ? Math.round(n.fps) + ' fps' : ''} · ${n.tracks} audio track${n.tracks === 1 ? '' : 's'}.${hint}` + (n.tracks < 2 ? '<br>Only the mix will be offered when sharing; add tracks in OBS later to drop the mic or the voice chat.' : ''), mp4Profile ? `Your current OBS profile records <b>${esc(prof.format)}</b>; this clip is an MKV from earlier. Set <span class="path">Settings › Output › Recording › Recording Format</span> to <b>mkv</b> before the next replay.` : '');
+        replayOk = true;
+      } else if ((d.otherFiles || []).length) {
+        setCheck($('wChkReplay'), 'problem', 'Replay found, but it is not an MKV', `${esc(d.otherFiles[0])}. replaycut needs MKV: another container is unreadable until OBS closes it, and a crash loses it entirely.`, `Set <span class="path">Settings › Output › Recording › Recording Format</span> to <b>mkv</b>, then press the hotkey again. The other file can stay where it is.`);
+        replayOk = false;
+      } else {
+        setCheck($('wChkReplay'), 'waiting', 'Waiting for the first replay', `Press your replay hotkey in OBS now (F9, or the button on the right). Watching <code>${esc(d.watching)}</code> - a new MKV shows up here within 5 seconds.`, mp4Profile ? `Your current OBS profile records <b>${esc(prof.format)}</b>. Set <span class="path">Settings › Output › Recording › Recording Format</span> to <b>mkv</b> first.` : '');
+        replayOk = false;
+      }
+      setCheck($('wChkTools'), d.encoder ? 'ok' : 'problem', 'ffmpeg and encoder', d.encoder ? `ffmpeg found · encoder <b>${esc(d.encoder)}</b> works` : 'no usable encoder - see the log');
+      $('wNext1').disabled = !replayOk;
+    };
+    await tick(); obsTimer = setInterval(tick, 2000);
+  }
+  $('wSkip1').onclick = async () => { if (await saveFolder()) go(2); };
+  $('wNext1').onclick = async () => { if (await saveFolder()) go(2); };
+  // step 2
+  $('wBack2').onclick = () => go(1);
+  $('wNcTest').onclick = () => runTest('nextcloud', { url: $('wNcUrl').value.trim(), folder: $('wNcFolder').value.trim(), user: $('wNcUser').value.trim(), password: $('wNcPw').value }, $('wNcTest'), $('wNcMsg'));
+  $('wDcTest').onclick = () => runTest('discord', { webhook: $('wDcHook').value.trim(), displayName: $('wDcName').value.trim() }, $('wDcTest'), $('wDcMsg'));
+  async function saveIntegrations(skip) {
+    const ncOn = !skip && $('wNcOn').checked, dcOn = !skip && $('wDcOn').checked;
+    const body = { integrations: { nextcloud: { enabled: ncOn }, discord: { enabled: dcOn } } };
+    if (ncOn) { Object.assign(body.integrations.nextcloud, { url: $('wNcUrl').value.trim(), folder: $('wNcFolder').value.trim() || 'Clips', expireDays: Number($('wNcExpire').value) }); if ($('wNcUser').value.trim() && $('wNcPw').value) { body.nextcloudUser = $('wNcUser').value.trim(); body.nextcloudPassword = $('wNcPw').value; } }
+    if (dcOn) { if ($('wDcHook').value.trim()) body.discordWebhook = $('wDcHook').value.trim(); if ($('wDcName').value.trim()) body.displayName = $('wDcName').value.trim(); }
+    if (ncOn && !body.integrations.nextcloud.url) { toast('Nextcloud: enter the server address', 'err'); return false; }
+    if (ncOn && !(settings.secrets && settings.secrets.nextcloud) && !body.nextcloudUser) { toast('Nextcloud: enter user and app password', 'err'); return false; }
+    if (dcOn && !(settings.secrets && settings.secrets.discord) && !body.discordWebhook) { toast('Discord: paste the webhook URL', 'err'); return false; }
+    try { const r = await api('/api/settings', jsonOpts('PUT', body), { retries: 0, timeout: 20000 }); if (!r.ok) { toast(r.error, 'err'); return false; } settings = r.settings; return true; }
+    catch (e) { toast(e.message, 'err'); return false; }
+  }
+  $('wSkip2').onclick = async () => { if (await saveIntegrations(true)) go(3); };
+  $('wNext2').onclick = async () => { if (await saveIntegrations(false)) go(3); };
+  // step 3
+  $('wBack3').onclick = () => go(2);
+  $('wFinish').onclick = async () => {
+    const body = { setupDone: true }; $('wPwErr').hidden = true;
+    if ($('wPwOn').checked) {
+      const p1 = $('wPw1').value, p2 = $('wPw2').value;
+      if (p1 || !settings.passwordSet) {
+        if (p1.length < 6) { $('wPwErr').textContent = 'Use at least 6 characters.'; $('wPwErr').hidden = false; return; }
+        if (p1 !== p2) { $('wPwErr').textContent = 'The two entries differ.'; $('wPwErr').hidden = false; return; }
+        body.password = p1;
+      }
+    } else if (settings.passwordSet) body.password = '';
+    $('wFinish').disabled = true;
+    try {
+      const r = await api('/api/settings', jsonOpts('PUT', body), { retries: 0, timeout: 20000 });
+      if (!r.ok) { toast(r.error, 'err'); $('wFinish').disabled = false; return; }
+      const s = r.settings, parts = [`folder ${s.clipDir}`, s.integrations.nextcloud.enabled ? 'Nextcloud on' : 'Nextcloud off', s.integrations.discord.enabled ? 'Discord on' : 'Discord off', s.passwordSet ? 'password set' : 'no password'];
+      $('wDoneText').textContent = parts.join(', ') + '. Everything here can be changed in Settings.';
+      Object.values(wiz).forEach(el => el.hidden = true); $('wizDone').hidden = false; $('stepper').hidden = true; window.scrollTo(0, 0);
+    } catch (e) { toast(e.message, 'err'); $('wFinish').disabled = false; }
+  };
+  go(1);
+}
+
+// ------------------------------------------------------------ settings
+const SETTINGS_FIELDS = ['clipDir', 'displayName', 'theme', 'shareKbps', 'encoder', 'hwaccel', 'ffmpegPriority', 'ffmpegThreads', 'port', 'bind', 'logLevel', 'checkUpdates', 'integrations.nextcloud.enabled', 'integrations.nextcloud.url', 'integrations.nextcloud.folder', 'integrations.nextcloud.expireDays', 'integrations.discord.enabled'];
+const getPath = (o, p) => p.split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
+const setPath = (o, p, v) => { const ks = p.split('.'); let a = o; ks.slice(0, -1).forEach(k => { a[k] = a[k] || {}; a = a[k]; }); a[ks[ks.length - 1]] = v; };
+async function initSettings() {
+  showPage('settings');
+  let orig = null, restartPending = [];
+  const fields = [...document.querySelectorAll('#page-settings [data-f]')];
+  const tabs = () => { const t = location.hash === '#integrations' ? 'integrations' : 'general'; $('tabGeneral').hidden = t !== 'general'; $('tabIntegrations').hidden = t !== 'integrations'; document.querySelectorAll('#page-settings .tabs a').forEach(a => { if (a.dataset.tab === t) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }); };
+  window.addEventListener('hashchange', tabs); tabs();
+  function readField(el) { if (el.type === 'checkbox') return el.checked; if (el.type === 'number' || /Kbps|Threads|port|expireDays/.test(el.dataset.f)) return Number(el.value); return el.value; }
+  function fill(s) {
+    orig = s;
+    const themeSel = document.querySelector('[data-f="theme"]'); themeSel.innerHTML = (s.themes || ['wardogs']).map(t => `<option value="${esc(t)}">${esc(t)}${t === 'wardogs' ? ' (default)' : ''}</option>`).join('');
+    const encSel = document.querySelector('[data-f="encoder"]'); if (s.encoder && ![...encSel.options].some(o => o.value === s.encoder)) encSel.add(new Option(s.encoder, s.encoder));
+    fields.forEach(el => { const v = getPath(s, el.dataset.f); if (el.type === 'checkbox') el.checked = !!v; else el.value = v == null ? '' : String(v); });
+    $('encHint').textContent = cfg.encoder ? `In use: ${cfg.encoder}. Changing it runs a test encode.` : '';
+    $('ovClipDir').hidden = !(s.overrides && s.overrides.clipDir);
+    $('sAutostart').checked = !!s.autostart;
+    $('sPwOn').checked = !!s.passwordSet; $('sPwFields').hidden = !$('sPwOn').checked; $('sPw1').value = ''; $('sPw2').value = ''; $('sPw1').placeholder = s.passwordSet ? 'leave empty to keep' : 'at least 6 characters';
+    $('sNcUser').value = ''; $('sNcPw').value = ''; $('sDcHook').value = '';
+    $('sNcUserHint').textContent = s.secrets && s.secrets.nextcloud ? 'A credential is stored; fill both fields to replace it.' : 'No credential stored yet.';
+    $('sDcHookHint').textContent = s.secrets && s.secrets.discord ? 'A webhook is stored; paste a new one to replace it.' : 'No webhook stored yet. Discord: Server settings › Integrations › Webhooks › Copy Webhook URL.';
+    $('sNcBadge').textContent = s.integrations.nextcloud.enabled ? (s.secrets.nextcloud ? 'on' : 'on, no credentials') : 'off'; $('sNcBadge').className = 'badge' + (s.integrations.nextcloud.enabled && !s.secrets.nextcloud ? ' warn' : '');
+    $('sDcBadge').textContent = s.integrations.discord.enabled ? (s.secrets.discord ? 'on' : 'on, no webhook') : 'off'; $('sDcBadge').className = 'badge' + (s.integrations.discord.enabled && !s.secrets.discord ? ' warn' : '');
+    restartPending = s.restartNeeded || []; showRestart();
+    dirty();
+  }
+  function changes() {
+    const c = {};
+    fields.forEach(el => { if (el.dataset.mirror) return; const v = readField(el), o = getPath(orig, el.dataset.f); if (String(v) !== String(o == null ? '' : o)) setPath(c, el.dataset.f, v); });
+    if ($('sPwOn').checked && $('sPw1').value) c.password = $('sPw1').value;
+    if (!$('sPwOn').checked && orig.passwordSet) c.password = '';
+    if ($('sNcUser').value.trim() || $('sNcPw').value) { c.nextcloudUser = $('sNcUser').value.trim(); c.nextcloudPassword = $('sNcPw').value; }
+    if ($('sDcHook').value.trim()) c.discordWebhook = $('sDcHook').value.trim();
+    return c;
+  }
+  function labels(c) { const names = { clipDir: 'Recording folder', displayName: 'Display name', theme: 'Theme', shareKbps: 'Video bitrate', encoder: 'Encoder', hwaccel: 'Hardware decoding', ffmpegPriority: 'ffmpeg priority', ffmpegThreads: 'ffmpeg threads', port: 'Port', bind: 'Listen on', logLevel: 'Log level', checkUpdates: 'Update check', integrations: 'Integrations', password: 'Password', nextcloudUser: 'Nextcloud credentials', nextcloudPassword: '', discordWebhook: 'Discord webhook' }; return Object.keys(c).map(k => names[k]).filter(Boolean).join(', '); }
+  function dirty() {
+    const c = changes(), n = Object.keys(c).length;
+    $('saveBar').classList.toggle('dirty', n > 0); $('sSave').disabled = !n; $('sDiscard').hidden = !n;
+    $('saveMsg').innerHTML = n ? `<svg class="icon icon-sm"><use href="#i-warning"/></svg> Unsaved changes: ${esc(labels(c))}` : 'All changes saved.';
+  }
+  function showRestart() {
+    const b = $('b-restart'); if (!b) return;
+    b.hidden = !restartPending.length; $('b-restart-text').textContent = restartPending.length ? `Changed: ${restartPending.join(', ')}. They take effect after a restart.` : '';
+  }
+  fields.forEach(el => { el.addEventListener('input', () => { if (el.dataset.f === 'displayName') fields.filter(o => o !== el && o.dataset.f === 'displayName').forEach(o => o.value = el.value); dirty(); }); el.addEventListener('change', dirty); });
+  ['sPw1', 'sPw2', 'sNcUser', 'sNcPw', 'sDcHook'].forEach(id => $(id).addEventListener('input', dirty));
+  $('sPwOn').onchange = () => { $('sPwFields').hidden = !$('sPwOn').checked; dirty(); };
+  $('sAutostart').onchange = async () => { try { const r = await api('/api/settings', jsonOpts('PUT', { autostart: $('sAutostart').checked }), { retries: 0 }); r.ok ? toast('Autostart ' + ($('sAutostart').checked ? 'on' : 'off'), 'ok') : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } };
+  $('sDiscard').onclick = () => fill(orig);
+  $('sSave').onclick = async () => {
+    const c = changes(); $('sPwErr').hidden = true;
+    if ('password' in c && c.password) { if (c.password.length < 6) { $('sPwErr').textContent = 'Use at least 6 characters.'; $('sPwErr').hidden = false; return; } if (c.password !== $('sPw2').value) { $('sPwErr').textContent = 'The two entries differ.'; $('sPwErr').hidden = false; return; } }
+    if ('nextcloudUser' in c && (!c.nextcloudUser || !c.nextcloudPassword)) { toast('Nextcloud: fill user and app password together', 'err'); return; }
+    $('sSave').disabled = true; $('sSave').innerHTML = '<span class="spinner"></span> Saving';
+    try {
+      const r = await api('/api/settings', jsonOpts('PUT', c), { retries: 0, timeout: 30000 });
+      if (!r.ok) toast(r.error, 'err');
+      else { toast('Settings saved', 'ok'); if (c.theme) applyTheme(c.theme); fill(r.settings); if (r.restartNeeded && r.restartNeeded.length) { restartPending = r.settings.restartNeeded; showRestart(); } }
+    } catch (e) { toast(e.message, 'err'); }
+    $('sSave').innerHTML = 'Save'; dirty();
+  };
+  $('sNcTest').onclick = () => runTest('nextcloud', { url: document.querySelector('[data-f="integrations.nextcloud.url"]').value.trim(), folder: document.querySelector('[data-f="integrations.nextcloud.folder"]').value.trim(), user: $('sNcUser').value.trim(), password: $('sNcPw').value }, $('sNcTest'), $('sNcMsg'));
+  $('sDcTest').onclick = () => runTest('discord', { webhook: $('sDcHook').value.trim(), displayName: document.querySelector('[data-f="displayName"]').value.trim() }, $('sDcTest'), $('sDcMsg'));
+  $('sAddr').onclick = async () => { $('addrModal').hidden = false; await loadAddresses($('mQrCode'), $('mAddr')); };
+  $('addrClose').onclick = () => { $('addrModal').hidden = true; };
+  $('addrModal').addEventListener('click', e => { if (e.target === $('addrModal')) $('addrModal').hidden = true; });
+  $('b-restart-now').onclick = async () => {
+    $('b-restart-now').disabled = true; $('b-restart-now').innerHTML = '<span class="spinner"></span> Restarting';
+    try { const r = await api('/api/restart', { method: 'POST', body: '' }, { retries: 0 }); if (!r.ok) { toast(r.error, 'err'); $('b-restart-now').disabled = false; $('b-restart-now').textContent = 'Restart now'; return; } }
+    catch (e) { /* the old process is gone already */ }
+    const port = orig && orig.port ? orig.port : location.port, target = location.protocol + '//' + location.hostname + ':' + port + '/settings';
+    for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 1000)); try { const s = await fetch(target.replace('/settings', '/api/session'), { cache: 'no-store' }); if (s.ok) { location.href = target; return; } } catch (e) {} }
+    toast('The service did not come back - start it from the Start menu.', 'err');
+  };
+  try { fill(await api('/api/settings', {}, { retries: 0 })); } catch (e) { toast('Cannot load the settings: ' + e.message, 'err'); }
+  try { const a = await api('/api/addresses', {}, { retries: 0 }); $('sAddrText').textContent = (a.urls || [])[0] || ''; } catch (e) {}
 }
 
 // ------------------------------------------------------------ clips
@@ -942,6 +1389,8 @@ poll.now = () => { clearTimeout(pollT); pollT = setTimeout(poll, 50); };
 // ------------------------------------------------------------ start
 (async function init() {
   if (page === 'login') { initLogin(); return; }
+  if (page === 'setup') { initSetup(); poll(); return; }
+  if (page === 'settings') { initSettings(); poll(); return; }
   if (page === 'soon') {
     const names = { '/setup': ['Setup', 'The browser setup arrives with the next release step. Until then, run "replaycut setup" in a terminal.'], '/settings': ['Settings', 'The settings page arrives with the next release step. Until then, edit settings.json (see docs/settings.md).'], '/diagnostics': ['Diagnostics', 'The diagnostics page arrives with the next release step. Until then, run "replaycut test" in a terminal.'], '/obs': ['OBS', 'The OBS page comes with the OBS integration.'] };
     const [t, x] = names[location.pathname] || ['Not here', 'Nothing at this address.'];

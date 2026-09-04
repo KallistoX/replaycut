@@ -129,6 +129,7 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
             }
             let duration = runtime.media.duration(&preview).await?;
             let tracks = runtime.media.audio_tracks(path).await;
+            let video = runtime.media.video_info(path).await;
             let clip = Clip {
                 name: path
                     .file_name()
@@ -143,6 +144,10 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
                 created: util::system_time_local(*mtime),
                 preview: format!("/media/{}.mp4", util::encode_path_segment(&base)),
                 status: "ready",
+                codec: video.codec,
+                width: video.width,
+                height: video.height,
+                fps: video.fps,
             };
             tracing::info!(
                 "new clip: {} ({:.1} MB, {duration} s, {tracks} audio tracks) - preview ready",

@@ -726,3 +726,28 @@ fn t21_local_mode_actions_on_the_last_job() {
         }
     }
 }
+
+#[test]
+fn t22_setup_obs_document() {
+    let _g = serial();
+    if !since_21() {
+        return;
+    }
+    let (status, d) = get_json("/api/setup/obs");
+    assert_eq!(status, 200);
+    assert!(d["profiles"].is_array(), "{d}");
+    assert!(d["watching"].as_str().is_some_and(|w| !w.is_empty()), "{d}");
+    assert!(
+        d["newest"].is_null() || d["newest"]["codec"].is_string(),
+        "{d}"
+    );
+    assert!(d["otherFiles"].is_array());
+    // the fixture clip (from t02) carries the video facts
+    let f = fixture();
+    if let Some(c) = find_clip(&f.base) {
+        assert_eq!(c["codec"], "h264", "{c}");
+        assert_eq!(c["width"], 1280);
+        assert_eq!(c["height"], 720);
+        assert_eq!(c["fps"], 30);
+    }
+}

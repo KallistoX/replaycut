@@ -253,6 +253,32 @@ impl Media {
         Ok((d * 100.0).round() / 100.0)
     }
 
+    /// Codec, size and frame rate of the first video stream; empty values
+    /// when probing fails (the clip still works, the hints are missing).
+    pub async fn video_info(&self, path: &Path) -> VideoInfo {
+        let p = path.to_string_lossy();
+        match self
+            .ffprobe(&[
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=codec_name,width,height,r_frame_rate",
+                "-of",
+                "csv=p=0",
+                &p,
+            ])
+            .await
+        {
+            Ok(out) => VideoInfo::parse(&out),
+            Err(e) => {
+                tracing::warn!("cannot probe the video of {}: {e}", path.display());
+                VideoInfo::default()
+            }
+        }
+    }
+
     /// Number of audio streams; 1 when probing fails (as in 1.4).
     pub async fn audio_tracks(&self, path: &Path) -> u32 {
         let p = path.to_string_lossy();
@@ -279,6 +305,48 @@ impl Media {
     }
 }
 
+/// What the setup wizard and the OBS page say about a clip's video.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct VideoInfo {
+    pub codec: String,
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+}
+
+impl VideoInfo {
+    /// ffprobe csv line: `h264,1920,1080,60/1` (fields may be missing or `N/A`).
+    pub fn parse(csv: &str) -> Self {
+        let line = csv.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+        let f: Vec<&str> = line.trim().split(',').collect();
+        let num = |i: usize| {
+            f.get(i)
+                .and_then(|s| s.trim().parse::<u32>().ok())
+                .unwrap_or(0)
+        };
+        let fps = f
+            .get(3)
+            .and_then(|s| {
+                let s = s.trim();
+                match s.split_once('/') {
+                    Some((a, b)) => {
+                        let (a, b) = (a.parse::<f64>().ok()?, b.parse::<f64>().ok()?);
+                        (b > 0.0).then(|| a / b)
+                    }
+                    None => s.parse::<f64>().ok(),
+                }
+            })
+            .map(|v| (v * 100.0).round() / 100.0)
+            .unwrap_or(0.0);
+        Self {
+            codec: f.first().map(|s| s.trim().to_string()).unwrap_or_default(),
+            width: num(1),
+            height: num(2),
+            fps,
+        }
+    }
+}
+
 fn winget_ffmpeg(packages: &Path) -> Option<PathBuf> {
     let dirs = std::fs::read_dir(packages).ok()?;
     for pkg in dirs.flatten() {
@@ -293,4 +361,23 @@ fn winget_ffmpeg(packages: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::VideoInfo;
+
+    #[test]
+    fn video_info_parses_ffprobe_csv() {
+        let v = VideoInfo::parse("h264,1920,1080,60/1\n");
+        assert_eq!(v.codec, "h264");
+        assert_eq!((v.width, v.height), (1920, 1080));
+        assert_eq!(v.fps, 60.0);
+        let v = VideoInfo::parse("av1,2560,1440,60000/1001");
+        assert_eq!(v.fps, 59.94);
+        let v = VideoInfo::parse("hevc,N/A,N/A,0/0");
+        assert_eq!(v.codec, "hevc");
+        assert_eq!((v.width, v.height, v.fps), (0, 0, 0.0));
+        assert_eq!(VideoInfo::parse(""), VideoInfo::default());
+    }
 }

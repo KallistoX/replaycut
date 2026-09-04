@@ -18,6 +18,7 @@ mod lifecycle;
 mod media;
 #[cfg(windows)]
 mod migrate;
+mod obs;
 mod platform;
 mod scanner;
 mod settings;

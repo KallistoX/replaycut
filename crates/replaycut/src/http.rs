@@ -53,6 +53,7 @@ pub fn router(state: App) -> Router {
         .route("/api/test/nextcloud", post(admin::test_nextcloud))
         .route("/api/test/discord", post(admin::test_discord))
         .route("/api/addresses", get(admin::addresses))
+        .route("/api/setup/obs", get(admin::setup_obs))
         .route("/api/session", get(admin::session))
         .route("/api/login", post(admin::login))
         .route("/api/logout", post(admin::logout))

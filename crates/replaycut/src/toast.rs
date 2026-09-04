@@ -204,6 +204,10 @@ mod tests {
             created: String::new(),
             preview: String::new(),
             status: "ready",
+            codec: "hevc".into(),
+            width: 1920,
+            height: 1080,
+            fps: 60.0,
         };
         let t = Toast::clip_saved(&clip, "http://localhost:8420/");
         assert_eq!(t.title, "Clip saved");

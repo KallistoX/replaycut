@@ -391,6 +391,31 @@ letters, digits and dashes. Anything else, including a missing file, is
 this one to exit, then shuts down. `409` while a share runs, `503` when the
 process cannot restart itself.
 
+### `GET /api/setup/obs`
+
+What the setup wizard's OBS step shows. Read only; nothing in OBS changes.
+
+```json
+{
+  "profiles": [
+    { "name": "Gaming", "current": true, "mode": "Advanced", "recPath": "C:\\Users\\you\\Videos\\Clips", "format": "mkv" }
+  ],
+  "watching": "C:\\Users\\you\\Videos\\Clips",
+  "newest": { "name": "Replay ... .mkv", "base": "Replay ...", "created": "2026-09-04T21:14:02", "duration": 300, "tracks": 4, "codec": "hevc", "width": 1920, "height": 1080, "fps": 60, "container": "mkv" },
+  "otherFiles": ["Replay ... .mp4"],
+  "encoder": "h264_nvenc"
+}
+```
+
+`profiles` comes from `%APPDATA%\obs-studio` (`basic\profiles\*\basic.ini`,
+current one from `user.ini` or `global.ini`), empty when OBS is not
+installed for this user. `newest` is the youngest clip the scanner knows
+or `null`; `otherFiles` lists up to three non-MKV recordings in the folder
+(an MP4 there means OBS records in the wrong container).
+
+Clips in `GET /api/clips` carry the same `codec`, `width`, `height` and
+`fps` (empty or 0 when probing failed).
+
 ### `POST /api/jobs/<id>/open-folder`, `POST /api/jobs/<id>/copy-file`
 
 The local mode's way out of the browser: for a finished job with a file in

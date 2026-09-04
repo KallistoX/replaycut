@@ -69,6 +69,11 @@ pub struct Clip {
     pub created: String,
     pub preview: String,
     pub status: &'static str,
+    // since 2.1: what the video is, for the setup wizard and browser hints
+    pub codec: String,
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -242,7 +247,10 @@ pub struct AppState {
     pub sessions: Sessions,
     /// Set by main once the shutdown handle exists (for `POST /api/restart`).
     pub shutdown: std::sync::OnceLock<Shutdown>,
-    /// Restart-only fields changed since start.
+    /// The settings the process started with; restart-only fields are
+    /// compared against these, so changing a value back clears the warning.
+    boot_settings: Settings,
+    /// Restart-only fields that differ from `boot_settings`.
     pub pending_restart: Mutex<Vec<&'static str>>,
     pub inner: Mutex<Inner>,
     /// Wakes the scanner early (after a delete, for example).
@@ -354,6 +362,7 @@ impl AppState {
             }
         }
         Ok(Self {
+            boot_settings: settings.clone(),
             settings: RwLock::new(settings),
             settings_path,
             overrides,
@@ -394,7 +403,7 @@ impl AppState {
     /// validated and saved them.
     pub async fn apply_settings(&self, next: Settings) -> Result<Vec<&'static str>> {
         let current = self.settings();
-        let restart = current.restart_needed(&next);
+        let restart = self.boot_settings.restart_needed(&next);
         let rebuild = current.encoder != next.encoder
             || current.hwaccel != next.hwaccel
             || current.ffmpeg_priority != next.ffmpeg_priority
@@ -425,14 +434,7 @@ impl AppState {
             tracing::info!("clip folder is now {}", next.clip_dir.display());
         }
         *self.settings.write() = next;
-        {
-            let mut pending = self.pending_restart.lock();
-            for f in restart.iter() {
-                if !pending.contains(f) {
-                    pending.push(f);
-                }
-            }
-        }
+        *self.pending_restart.lock() = restart.clone();
         self.scan_wake.notify_one();
         self.tray_changed();
         Ok(restart)
