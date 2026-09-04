@@ -36,7 +36,7 @@ Releases are published on GitHub as a ZIP for Windows x64; see
 ## Install
 
 1. Download the release ZIP, unpack it anywhere and run `install.cmd`. It
-   copies replaycut to `%LOCALAPPDATA%eplaycutpp`, adds a start menu and
+   copies replaycut to `%LOCALAPPDATA%\replaycut\app`, adds a start menu and
    a desktop shortcut, asks whether replaycut should start when you sign in
    (default: no) and whether other devices in your private network may reach
    it (one administrator prompt for the firewall rule), then starts the

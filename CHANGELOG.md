@@ -10,6 +10,11 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- README and CHANGELOG: the install path `%LOCALAPPDATA%eplaycutpp` had
+  lost its backslashes.
+
 ## [2.3.0] - 2026-09-05
 
 The one-click update and the complete tray menu. From this release on,
@@ -122,7 +127,7 @@ from the 1.x PowerShell service.
   switches the check off. Nothing is downloaded.
 - Windows integration, part 2: `replaycut install` (idempotent, per user, no
   admin except the optional firewall rule): copies the program to
-  `%LOCALAPPDATA%eplaycutpp`, writes start menu and desktop shortcuts
+  `%LOCALAPPDATA%\replaycut\app`, writes start menu and desktop shortcuts
   with the AppUserModelID, registers the notification app id, asks about
   autostart (HKCU Run entry, default off) and the firewall rule (one UAC
   prompt, private profile), starts the service and opens the page;
