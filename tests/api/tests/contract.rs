@@ -867,3 +867,68 @@ fn t25_obs_document_and_actions_without_obs() {
     let (status, body) = post_json("/api/obs/reconnect", &json!({}));
     assert_eq!(status, 200, "{body}");
 }
+
+// Since 2.3: the one-click update.
+
+fn since_23() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    let ok = (major, minor) >= (2, 3);
+    if !ok {
+        eprintln!("skipped: needs replaycut 2.3, service is {v}");
+    }
+    ok
+}
+
+#[test]
+fn t26_update_document_and_actions_without_an_update() {
+    let _g = serial();
+    if !since_23() {
+        return;
+    }
+    let (status, d) = get_json("/api/update");
+    assert_eq!(status, 200);
+    let phase = d["phase"].as_str().unwrap_or("");
+    assert!(
+        [
+            "idle",
+            "checking",
+            "available",
+            "downloading",
+            "ready",
+            "installing",
+            "error"
+        ]
+        .contains(&phase),
+        "{d}"
+    );
+    assert!(d["current"].is_string(), "{d}");
+    assert!(d["installed"].is_boolean(), "{d}");
+    assert!(d["checkUpdates"].is_boolean(), "{d}");
+    assert!(d["percent"].is_number(), "{d}");
+    assert!(d["justUpdated"].is_boolean(), "{d}");
+    if d["latest"].is_object() {
+        assert!(d["latest"]["version"].is_string(), "{d}");
+        assert!(d["latest"]["notes"].is_string(), "{d}");
+    } else {
+        // nothing newer known: download and install refuse
+        let (status, body) = post_json("/api/update/download", &json!({}));
+        assert_eq!(status, 409, "{body}");
+        let (status, body) = post_json("/api/update/install", &json!({}));
+        assert_eq!(status, 409, "{body}");
+    }
+    let (status, body) = post_json("/api/update/seen", &json!({}));
+    assert_eq!(status, 200, "{body}");
+    let (_, d) = get_json("/api/update");
+    assert_eq!(d["justUpdated"], false);
+    // the check asks the releases API; without network it answers 502
+    let (status, body) = post_json("/api/update/check", &json!({}));
+    assert!(status == 200 || status == 502, "{status} {body}");
+    if status == 200 {
+        assert!(body["checkedAt"].is_string(), "{body}");
+    }
+}

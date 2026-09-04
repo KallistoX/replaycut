@@ -141,14 +141,17 @@ pub async fn run(state: &AppState) -> Report {
             "skip",
             "the daily check is off (checkUpdates: false)",
         )
-    } else if let Some(u) = state.update.lock().clone() {
+    } else if let Some(u) = state.update.lock().latest.clone() {
         Check::new(
             "update",
             "Update",
             "warn",
             format!("{} is available - this is {VERSION}", u.version),
         )
-        .with_fix(format!("Release notes and download: {}", u.url))
+        .with_fix(format!(
+            "Update now on the clips page or in Settings; release notes: {}",
+            u.url
+        ))
     } else {
         Check::new(
             "update",

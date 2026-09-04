@@ -520,6 +520,62 @@ document carries `obs: { enabled, host, port }` and `secrets.obs`;
 `PUT /api/settings` accepts `obs.enabled`, `obs.host`, `obs.port` and the
 write-only `obsPassword` (`""` removes it). Changing any of them reconnects.
 
+## Since 2.3
+
+The one-click update. The daily check (since 2.0) now also remembers the
+release notes and the assets; the service can download the release ZIP,
+verify it and replace itself.
+
+Trust: a release is installed only when its `SHA256SUMS` carries a valid
+minisign signature by one of the public keys built into the running
+replaycut, and the ZIP matches the sums. An unsigned or foreign release is
+shown as available but the download ends in `error`.
+
+### `GET /api/update`
+
+```json
+{
+  "phase": "available",
+  "current": "2.3.0",
+  "installed": true,
+  "checkUpdates": true,
+  "percent": 0,
+  "checkedAt": "2026-09-04 12:00:00",
+  "justUpdated": false,
+  "latest": {
+    "version": "2.3.1", "url": "https://github.com/.../releases/tag/v2.3.1",
+    "notes": "## Fixed
+- ...", "publishedAt": "2026-09-04T11:00:00Z",
+    "assetName": "replaycut-2.3.1-windows-x64.zip", "assetSize": 4200000
+  },
+  "error": null
+}
+```
+
+`phase` is one of `idle` (no newer release known), `checking`, `available`,
+`downloading` (`percent` 0-99), `ready` (downloaded and verified),
+`installing`, `error` (`error` says why; `latest` stays). `latest` is absent
+when nothing newer is known; `notes` is the release body as Markdown, cut at
+16 KB. `installed` is false when this executable does not run from the app
+folder (a development build or a copy run from the ZIP): then `install`
+refuses and the UI hides the button. `justUpdated` is true on the first
+start after a one-click update until `POST /api/update/seen`.
+
+### `POST /api/update/check`, `/download`, `/install`, `/seen`
+
+`check` asks the releases API now and answers with the document above
+(`ok: true`); 502 when GitHub cannot be reached. `download` starts the
+download in the background and answers `{ "ok": true }` at once; 409 when no
+update is known or one is already downloading; progress and the outcome show
+in `GET /api/update`. `install` replaces the program files with the verified
+package and restarts the service (like `/api/restart`); 409 when nothing is
+ready, when this copy is not installed, or while a share is running. `seen`
+clears `justUpdated`. All four need a session from the LAN, like every
+non-GET request.
+
+`config.update` in `GET /api/clips` keeps its 2.0 shape (`null` or
+`{ version, url }`).
+
 ## Behaviour
 
 ### Folder scan

@@ -632,3 +632,71 @@ pub async fn obs_refresh(State(app): State<App>) -> Result<Json<Value>, ApiError
     app.obs.set_facts(facts);
     Ok(Json(json!({ "ok": true })))
 }
+
+// ------------------------------------------------------------ updates (since 2.3)
+
+fn update_document(app: &AppState) -> Value {
+    let mut doc = serde_json::to_value(&*app.update.lock()).unwrap_or(Value::Null);
+    doc["current"] = json!(VERSION);
+    doc["installed"] = json!(crate::update::is_installed_copy());
+    doc["checkUpdates"] = json!(app.settings().check_updates);
+    doc
+}
+
+/// `GET /api/update`
+pub async fn update_status(State(app): State<App>) -> Json<Value> {
+    Json(update_document(&app))
+}
+
+/// `POST /api/update/check`: ask GitHub now.
+pub async fn update_check(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    crate::update::check(&app).await.map_err(|e| {
+        ApiError::new(
+            StatusCode::BAD_GATEWAY,
+            format!("update check failed: {e:#}"),
+        )
+    })?;
+    let mut doc = update_document(&app);
+    doc["ok"] = json!(true);
+    Ok(Json(doc))
+}
+
+/// `POST /api/update/download`: fetch and verify the latest release.
+pub async fn update_download(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    {
+        let u = app.update.lock();
+        if u.latest.is_none() {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "no update is available",
+            ));
+        }
+        if matches!(
+            u.phase,
+            crate::update::Phase::Downloading | crate::update::Phase::Installing
+        ) {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "an update is already in progress",
+            ));
+        }
+    }
+    let state = app.clone();
+    tokio::spawn(async move {
+        let _ = crate::update::download(state, true).await;
+    });
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `POST /api/update/install`: apply the verified package and restart.
+pub async fn update_install(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    crate::update::install(&app)
+        .map_err(|e| ApiError::new(StatusCode::CONFLICT, format!("{e:#}")))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `POST /api/update/seen`: the UI showed "What's new".
+pub async fn update_seen(State(app): State<App>) -> Json<Value> {
+    app.update.lock().just_updated = false;
+    Json(json!({ "ok": true }))
+}

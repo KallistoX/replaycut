@@ -83,8 +83,10 @@ web page you visit cannot change your settings.
 
 ### Update
 
-Unpack the new ZIP and run its `install.cmd`. Settings, titles, history and
-credentials are kept; the service is restarted on the new version.
+replaycut checks GitHub once a day and shows a banner when a newer release
+exists. "Update now" downloads the ZIP, verifies its signature and hash and
+restarts on the new version; settings, titles, history and credentials are
+kept. By hand: unpack the new ZIP and run its `install.cmd`.
 
 ### Uninstall
 

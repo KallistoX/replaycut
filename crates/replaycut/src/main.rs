@@ -406,6 +406,8 @@ async fn serve(
     shutdown: Shutdown,
     open_browser: bool,
 ) -> Result<()> {
+    let just_updated = update::cleanup_after_start(&state.data_dir);
+    state.update.lock().just_updated = just_updated;
     tokio::spawn(scanner::run(state.clone()));
     tokio::spawn(obs_ws::run(state.obs.clone()));
     tokio::spawn(obs_link::react(

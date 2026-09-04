@@ -10,6 +10,13 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- One-click update: `GET /api/update` and `POST /api/update/{check,download,install,seen}`.
+  The service downloads the release ZIP, verifies the minisign signature of
+  `SHA256SUMS` and the hash, unpacks, checks the new executable and restarts
+  into it. Releases without a valid signature are never installed.
+
 ## [2.2.0] - 2026-09-04
 
 The OBS integration: replaycut talks to OBS through obs-websocket, saves

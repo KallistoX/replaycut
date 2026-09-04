@@ -20,7 +20,7 @@ use crate::media::{Encoder, Media};
 use crate::platform;
 use crate::settings::Settings;
 use crate::tray::TrayHandle;
-use crate::update::UpdateInfo;
+use crate::update::UpdateStatus;
 use crate::util;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -262,8 +262,8 @@ pub struct AppState {
     pub scan_wake: Notify,
     /// Set once the tray exists; poked whenever clips or jobs change.
     pub tray: std::sync::OnceLock<TrayHandle>,
-    /// A newer release, when the update check found one.
-    pub update: Mutex<Option<UpdateInfo>>,
+    /// The update check and the one-click update (see `update.rs`).
+    pub update: Mutex<UpdateStatus>,
 }
 
 #[derive(Debug)]
@@ -387,7 +387,7 @@ impl AppState {
             inner: Mutex::new(inner),
             scan_wake: Notify::new(),
             tray: std::sync::OnceLock::new(),
-            update: Mutex::new(None),
+            update: Mutex::new(UpdateStatus::default()),
         })
     }
 
@@ -564,7 +564,7 @@ impl AppState {
                 "audio": audio,
                 "webhook": webhook,
                 "nextcloud": nextcloud,
-                "update": *self.update.lock(),
+                "update": self.update.lock().latest.as_ref().map(|l| json!({ "version": l.version, "url": l.url })),
                 // since 2.1
                 "setupDone": settings.setup_done,
                 "theme": settings.theme,

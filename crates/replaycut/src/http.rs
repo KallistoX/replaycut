@@ -58,6 +58,11 @@ pub fn router(state: App) -> Router {
         .route("/api/obs", get(admin::obs_status))
         .route("/api/obs/reconnect", post(admin::obs_reconnect))
         .route("/api/obs/refresh", post(admin::obs_refresh))
+        .route("/api/update", get(admin::update_status))
+        .route("/api/update/check", post(admin::update_check))
+        .route("/api/update/download", post(admin::update_download))
+        .route("/api/update/install", post(admin::update_install))
+        .route("/api/update/seen", post(admin::update_seen))
         .route(
             "/api/obs/replay-buffer/start",
             post(admin::obs_start_replay),

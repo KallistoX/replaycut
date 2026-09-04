@@ -188,3 +188,21 @@ become `settings.json` (only when none exists yet), `clip-*.json` and the
 credentials `wardogs/*` are copied where ours are missing, the task is
 stopped and removed, autostart is switched on, and the old firewall rule and
 URL reservation are removed in the elevated step.
+
+## One-click update
+
+Since 2.3 the service can update itself: it downloads the release ZIP and
+`SHA256SUMS` from GitHub, checks the minisign signature
+(`SHA256SUMS.minisig`) against the public key built into the running
+executable, compares the hash, unpacks into the update folder, runs the new
+executable with `--version`, then moves the running `replaycut.exe` aside
+as `replaycut.old.exe`, copies the package into `app\` and restarts. The
+first start after that removes `replaycut.old.exe` and the update folder.
+Settings, state and credentials are not touched. When anything fails before
+the copy, nothing has changed; when the new executable does not start, the
+previous one is still there as `replaycut.old.exe`.
+
+Two environment variables exist for testing the flow against a fake release
+served locally and are not meant for normal use: `REPLAYCUT_RELEASES_URL`
+replaces the GitHub releases URL, `REPLAYCUT_UPDATE_PUBKEY` replaces the
+built-in signing key (base64, as `minisign -G` prints it).
