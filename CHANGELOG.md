@@ -12,6 +12,12 @@ contract.
 
 ### Added
 
+- Service core, part 3: real integrations. Nextcloud storage (WebDAV upload
+  into `<folder>/<YYYY-MM>/`, public link created or reused, remote delete)
+  and Discord notify (webhook post with the display name as user name).
+  Credentials live in the Windows Credential Manager under
+  `replaycut/nextcloud` and `replaycut/discord-webhook`; `replaycut setup`
+  configures both on the console, `replaycut test` checks them.
 - Service core, part 2: the share pipeline. `POST /api/share` validates and
   registers a job (202, 409 while a job runs, 404 unknown clip, 400 invalid
   selection or audio mode), encodes with ffmpeg and live progress, then runs

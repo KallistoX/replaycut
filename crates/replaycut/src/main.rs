@@ -1,11 +1,13 @@
 //! replaycut - clip manager for the OBS replay buffer.
 
+mod credentials;
 mod http;
 mod integrations;
 mod media;
 mod platform;
 mod scanner;
 mod settings;
+mod setup;
 mod share;
 mod state;
 mod util;
@@ -27,30 +29,42 @@ use crate::state::{AppState, Paths, VERSION};
 #[derive(Parser, Debug)]
 #[command(version, about = "Clip manager for the OBS replay buffer")]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
     /// Directory for settings.json, state files and logs.
-    #[arg(long)]
+    #[arg(long, global = true)]
     data_dir: Option<PathBuf>,
     /// Settings file (default: <data-dir>/settings.json).
-    #[arg(long)]
+    #[arg(long, global = true)]
     settings: Option<PathBuf>,
     /// Override clipDir from the settings.
-    #[arg(long)]
+    #[arg(long, global = true)]
     clip_dir: Option<PathBuf>,
     /// Override port from the settings.
-    #[arg(long)]
+    #[arg(long, global = true)]
     port: Option<u16>,
     /// Override the bind address (e.g. 127.0.0.1 for local testing).
-    #[arg(long)]
+    #[arg(long, global = true)]
     bind: Option<String>,
     /// Override the UI file.
-    #[arg(long)]
+    #[arg(long, global = true)]
     ui: Option<PathBuf>,
     /// Override the log level (error, warn, info, debug, trace).
-    #[arg(long)]
+    #[arg(long, global = true)]
     log_level: Option<String>,
     /// Encode for real but simulate uploads, posts, the hotkey and the clipboard.
-    #[arg(long)]
+    #[arg(long, global = true)]
     dry_run: bool,
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum Command {
+    /// Run the service (default).
+    Run,
+    /// Configure the integrations interactively (secrets go to the Credential Manager).
+    Setup,
+    /// Check the enabled integrations and their credentials.
+    Test,
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
@@ -84,6 +98,12 @@ async fn main() -> Result<()> {
         .validate()
         .with_context(|| format!("invalid settings in {}", settings_path.display()))?;
 
+    match cli.command {
+        Some(Command::Setup) => return setup::run(&settings_path, &mut settings).await,
+        Some(Command::Test) => return setup::test(&settings).await,
+        Some(Command::Run) | None => {}
+    }
+
     let _log_guard = init_logging(&data_dir.join("logs"), &settings.log_level)?;
     let media = Media::locate()?;
     let encoder = media.detect_encoder(&settings.encoder).await?;
@@ -96,7 +116,7 @@ async fn main() -> Result<()> {
     }
     let paths = Paths::new(&settings.clip_dir, &data_dir, ui_file);
     let bind = format!("{}:{}", settings.bind, settings.port);
-    let integrations = Integrations::from_settings(&settings, cli.dry_run);
+    let integrations = Integrations::build(&settings, cli.dry_run)?;
     let state = Arc::new(AppState::load(
         settings,
         paths,

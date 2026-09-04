@@ -316,8 +316,8 @@ impl AppState {
             .iter()
             .map(|m| json!({ "id": m.id, "label": m.label, "need": m.need }))
             .collect();
-        let nextcloud = self.dry_run || self.settings.integrations.nextcloud.enabled;
-        let webhook = self.dry_run || self.settings.integrations.discord.enabled;
+        let nextcloud = self.integrations.storage.is_some();
+        let webhook = self.integrations.notify.is_some();
         json!({
             "clips": clips,
             "last": inner.last,
