@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/replaycut", "tests/api"]
 
 [workspace.package]
-version = "2.2.0-dev"
+version = "2.2.0"
 edition = "2021"
 license = "AGPL-3.0-only"
 repository = "https://github.com/KallistoX/replaycut"

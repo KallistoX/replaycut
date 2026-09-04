@@ -10,6 +10,13 @@ contract.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-04
+
+The OBS integration: replaycut talks to OBS through obs-websocket, saves
+replays without simulated key presses, shows when the replay buffer is
+stopped and compares the OBS profile with what it expects. Read-only; the
+only actions are saving a replay and starting the buffer.
+
 ### Added
 
 - OBS integration, part 1: the service connects to obs-websocket 5 on this PC
@@ -139,6 +146,7 @@ from the 1.x PowerShell service.
   share pipeline, the single-job rule (409), delete, `/api/save` and 404s.
 - CI skeleton (fmt, clippy, build, compile tests).
 
-[Unreleased]: https://github.com/KallistoX/replaycut/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/KallistoX/replaycut/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/KallistoX/replaycut/releases/tag/v2.2.0
 [2.1.0]: https://github.com/KallistoX/replaycut/releases/tag/v2.1.0
 [2.0.0]: https://github.com/KallistoX/replaycut/releases/tag/v2.0.0
