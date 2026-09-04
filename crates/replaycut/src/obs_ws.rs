@@ -347,7 +347,10 @@ async fn session(handle: &Arc<ObsHandle>, config: &ObsConfig) -> Result<SessionE
     let mut poll = tokio::time::interval(STATUS_POLL);
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut ping = tokio::time::interval(Duration::from_secs(20));
-    let (status_tx, mut status_rx) = mpsc::channel::<Result<Value>>(2);
+    // Poll answers carry when they were asked for: one that was in flight
+    // while a state event arrived is stale and must not undo the event.
+    let (status_tx, mut status_rx) = mpsc::channel::<(Instant, Result<Value>)>(2);
+    let mut last_state_event: Option<Instant> = None;
     let end = loop {
         tokio::select! {
             msg = stream.next() => match msg {
@@ -371,6 +374,9 @@ async fn session(handle: &Arc<ObsHandle>, config: &ObsConfig) -> Result<SessionE
                             }
                         }
                         Some(5) => {
+                            if v["d"]["eventType"] == "ReplayBufferStateChanged" {
+                                last_state_event = Some(Instant::now());
+                            }
                             if let Some(end) = handle_event(handle, &v["d"]) {
                                 break end;
                             }
@@ -404,14 +410,16 @@ async fn session(handle: &Arc<ObsHandle>, config: &ObsConfig) -> Result<SessionE
                 let frame = json!({ "op": 6, "d": { "requestType": "GetReplayBufferStatus", "requestId": id, "requestData": {} } });
                 if sink.send(Message::Text(frame.to_string().into())).await.is_ok() {
                     let (tx, rx) = oneshot::channel();
-                    pending.insert(id, (tx, Instant::now()));
+                    let sent = Instant::now();
+                    pending.insert(id, (tx, sent));
                     let status_tx = status_tx.clone();
-                    tokio::spawn(async move { if let Ok(r) = rx.await { let _ = status_tx.send(r).await; } });
+                    tokio::spawn(async move { if let Ok(r) = rx.await { let _ = status_tx.send((sent, r)).await; } });
                 }
                 pending.retain(|_, (_, at)| at.elapsed() < REQUEST_TIMEOUT * 2);
             }
-            Some(status) = status_rx.recv() => {
-                if let Ok(v) = status {
+            Some((sent, status)) = status_rx.recv() => {
+                let stale = last_state_event.is_some_and(|at| sent < at);
+                if let (false, Ok(v)) = (stale, status) {
                     if let Some(active) = v["outputActive"].as_bool() {
                         let changed = handle.status().replay_active != active;
                         handle.set(|s| s.replay_active = active);
