@@ -40,7 +40,10 @@ const PACKAGE_FILES: [&str; 7] = [
 /// The maintainer's minisign public keys (base64 as `minisign -G` prints
 /// them). More than one allows a rotation: a release is accepted when any
 /// key verifies it. Empty means no update can be verified.
-pub const PUBLIC_KEYS: &[&str] = &[];
+pub const PUBLIC_KEYS: &[&str] = &[
+    // minisign key 48259F89A10BFB0C, see dist/minisign.pub
+    "RWQM+wuhiZ8lSAv6rQmSUeFAuYBrG8OYfzcVrw0xcuUlYxCN8XNQO/18",
+];
 
 fn releases_url() -> String {
     std::env::var("REPLAYCUT_RELEASES_URL").unwrap_or_else(|_| RELEASES_URL.to_string())
@@ -695,6 +698,15 @@ mod tests {
         assert!(!is_newer("v1.9.9", "2.0.0"));
         assert!(!is_newer("v2.0.0-rc1", "2.0.0"));
         assert!(!is_newer("nonsense", "2.0.0"));
+    }
+
+    #[test]
+    fn built_in_keys_are_valid_minisign_keys() {
+        assert!(!PUBLIC_KEYS.is_empty(), "no release signing key built in");
+        for k in PUBLIC_KEYS {
+            minisign_verify::PublicKey::from_base64(k)
+                .unwrap_or_else(|e| panic!("public key {k}: {e}"));
+        }
     }
 
     #[test]

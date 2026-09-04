@@ -206,6 +206,14 @@ Settings, state and credentials are not touched. When anything fails before
 the copy, nothing has changed; when the new executable does not start, the
 previous one is still there as `replaycut.old.exe`.
 
+The public key is `dist/minisign.pub` in the repository (minisign key
+`48259F89A10BFB0C`). To check a download by hand:
+
+```
+minisign -Vm SHA256SUMS -p minisign.pub
+sha256sum -c SHA256SUMS
+```
+
 Two environment variables exist for testing the flow against a fake release
 served locally and are not meant for normal use: `REPLAYCUT_RELEASES_URL`
 replaces the GitHub releases URL, `REPLAYCUT_UPDATE_PUBKEY` replaces the
