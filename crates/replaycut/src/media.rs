@@ -8,10 +8,26 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use tokio::process::Command;
 
+use crate::settings::FfmpegPriority;
+
 #[derive(Debug, Clone)]
 pub struct Media {
     pub ffmpeg: PathBuf,
     pub ffprobe: PathBuf,
+    /// Windows priority class passed as a process creation flag (0 = inherit).
+    #[cfg_attr(not(windows), allow(dead_code))]
+    priority_flag: u32,
+    /// `-threads` for encodes; 0 = leave it to ffmpeg.
+    pub threads: u32,
+}
+
+/// Process creation flag for a priority class.
+pub fn priority_flag(priority: FfmpegPriority) -> u32 {
+    match priority {
+        FfmpegPriority::Normal => 0x0000_0020,
+        FfmpegPriority::BelowNormal => 0x0000_4000,
+        FfmpegPriority::Idle => 0x0000_0040,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -67,7 +83,19 @@ impl Media {
             "ffprobe not found next to {}",
             ffmpeg.display()
         );
-        Ok(Self { ffmpeg, ffprobe })
+        Ok(Self {
+            ffmpeg,
+            ffprobe,
+            priority_flag: 0,
+            threads: 0,
+        })
+    }
+
+    /// Run every ffmpeg/ffprobe process at this priority and encode with this many threads.
+    pub fn with_resource_limits(mut self, priority: FfmpegPriority, threads: u32) -> Self {
+        self.priority_flag = priority_flag(priority);
+        self.threads = threads;
+        self
     }
 
     fn command(&self, exe: &Path) -> Command {
@@ -77,7 +105,7 @@ impl Media {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.creation_flags(CREATE_NO_WINDOW | self.priority_flag);
         cmd
     }
 

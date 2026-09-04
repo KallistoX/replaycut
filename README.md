@@ -43,9 +43,10 @@ Once the 2.0 service is released:
 
 1. Download the release ZIP, unpack it and run `install.cmd`. The service
    registers itself to start at logon and opens the setup page in your browser.
-2. In the setup page, point replaycut at the folder OBS writes replays to,
-   press your replay hotkey once so it can verify the file, and optionally
-   enable integrations (upload target, Discord webhook).
+2. Point replaycut at the folder OBS writes replays to and, if you want,
+   enable integrations (Nextcloud upload, Discord webhook). Until the setup
+   page exists this is `replaycut setup` on the console; see
+   [`docs/settings.md`](docs/settings.md).
 3. Play. Press the replay hotkey when something happens, open the page, trim,
    Share.
 
@@ -65,6 +66,25 @@ cargo run -p replaycut -- --dry-run --port 8422 --bind 127.0.0.1 --clip-dir <scr
 `--dry-run` encodes for real but simulates uploads, posts, the replay hotkey
 and the clipboard. Settings live in `<data-dir>/settings.json` and are
 created with defaults on first start; command-line flags override them.
+All settings, the credential targets and the command line are documented in
+[`docs/settings.md`](docs/settings.md).
+
+### Resource usage
+
+The service is meant to sit next to a game. Measured on the release build
+(idle, no clients connected, folder watcher active):
+
+| Metric (10 minutes idle, 16-core desktop) | Value |
+|---|---|
+| Working set | 28.6 MB average, 28.7 MB peak |
+| Private memory | 7.7 MB |
+| CPU time | 0.11 s in 10 minutes (0.02 % of one core) |
+| Threads / handles | 11 / 333 |
+| Executable | 5.0 MB |
+
+
+While a clip is shared, ffmpeg runs at below-normal priority with a thread
+cap (see `ffmpegPriority` and `ffmpegThreads`), so the game keeps the CPU.
 
 ### API contract tests
 

@@ -12,16 +12,30 @@ Windows; the browser is the remote control and may be a phone or laptop in the
 same network.
 
 2.0 is a Rust rewrite of a PowerShell service (1.x) that is in use but was
-never published. The rewrite is API-identical to 1.4; the UI (`ui.html`, one
-static file, vanilla JS) is reused unchanged in 2.0. Features come after 2.0.
+never published. The rewrite is API-identical to 1.4; the UI (`ui/index.html`,
+one static file, vanilla JS) is the 1.4 UI with English strings, logic
+unchanged. Features come after 2.0.
 
 ## Layout
 
 ```
 Cargo.toml              workspace
-crates/replaycut/       the service binary (placeholder until the 2.0 core lands)
+crates/replaycut/       the service binary
+  src/main.rs            CLI (clap), startup, logging
+  src/settings.rs        settings.json (see docs/settings.md)
+  src/state.rs           clips, jobs, history, titles, seen list; 1.x file formats
+  src/scanner.rs         folder watcher and scan rules
+  src/media.rs           ffmpeg/ffprobe, encoder detection, resource limits
+  src/share.rs           the share pipeline
+  src/integrations.rs    storage (Nextcloud) and notify (Discord) plus dry-run stand-ins
+  src/credentials.rs     Windows Credential Manager
+  src/setup.rs           `replaycut setup` and `replaycut test`
+  src/http.rs            axum router, one handler per endpoint
+  src/platform.rs        recycle bin, replay hotkey, clipboard
+ui/index.html           the browser UI (vanilla JS, served by the service)
 tests/api/              black-box HTTP contract tests, run against BASE_URL
 docs/api.md             the HTTP API contract - binding for every implementation
+docs/settings.md        settings.json, credentials, command line
 .github/workflows/      CI (fmt, clippy, build, compile tests)
 ```
 

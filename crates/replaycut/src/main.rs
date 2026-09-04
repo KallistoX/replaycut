@@ -105,7 +105,8 @@ async fn main() -> Result<()> {
     }
 
     let _log_guard = init_logging(&data_dir.join("logs"), &settings.log_level)?;
-    let media = Media::locate()?;
+    let media =
+        Media::locate()?.with_resource_limits(settings.ffmpeg_priority, settings.ffmpeg_threads());
     let encoder = media.detect_encoder(&settings.encoder).await?;
     let ui_file = resolve_ui_file(&settings.ui_file);
     if !ui_file.is_file() {

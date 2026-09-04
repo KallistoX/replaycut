@@ -283,6 +283,10 @@ async fn encode(state: &AppState, id: &str, job: &Job, input: &Path, out: &Path)
     let input_s = input.to_string_lossy().into_owned();
     let out_s = out.to_string_lossy().into_owned();
     let mut args: Vec<&str> = vec!["-nostats", "-progress", "pipe:1", "-y", "-v", "error"];
+    let threads = state.media.threads.to_string();
+    if state.media.threads > 0 {
+        args.extend(["-threads", &threads]); // decoder (dav1d takes every core otherwise)
+    }
     if !state.settings.hwaccel.is_empty() {
         args.extend(["-hwaccel", state.settings.hwaccel.as_str()]);
     }
@@ -291,6 +295,9 @@ async fn encode(state: &AppState, id: &str, job: &Job, input: &Path, out: &Path)
     ]);
     args.extend(audio_args(&job.audio).ok_or_else(|| anyhow!("unknown audio mode {}", job.audio))?);
     args.extend(["-vf", "scale=-2:1080", "-c:v", &state.encoder.name]);
+    if state.media.threads > 0 {
+        args.extend(["-threads", &threads]); // encoder and filters
+    }
     args.extend(state.encoder.opts.iter().copied());
     args.extend([
         "-b:v", &b, "-maxrate", &maxrate, "-bufsize", &bufsize, "-pix_fmt", "yuv420p",

@@ -12,6 +12,10 @@ contract.
 
 ### Added
 
+- Service core, part 4: resource limits for ffmpeg (`ffmpegPriority`,
+  default below normal; `ffmpegThreads`, default half the cores) so a share
+  does not stall the game; `docs/settings.md`; idle footprint of the release
+  build measured and recorded in the README.
 - Service core, part 3: real integrations. Nextcloud storage (WebDAV upload
   into `<folder>/<YYYY-MM>/`, public link created or reused, remote delete)
   and Discord notify (webhook post with the display name as user name).

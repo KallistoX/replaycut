@@ -66,8 +66,8 @@ MP4 with `faststart`, so the file starts with the `ftyp` box followed by
 - With `Range: bytes=a-b`, `bytes=a-` or `bytes=-n`: `206` with
   `Content-Range: bytes <start>-<end>/<total>` and exactly that slice. `b` is
   clamped to the last byte.
-- Multiple ranges, `If-Range` and `416` are not supported by 1.4; a later
-  implementation may add `416` for unsatisfiable ranges.
+- Multiple ranges and `If-Range` are not supported. 1.4 answers an
+  unsatisfiable range with a truncated `206`; 2.0 answers `416`.
 - Unknown clip: `404` plain text. A `base` containing `/` or `\` is rejected
   (`500` in 1.4, `400` or `404` acceptable later).
 
@@ -92,8 +92,8 @@ Body: `{ "base": "<clip base>", "start": <seconds>, "end": <seconds>, "audio": "
   that job id.
 - Unknown `base`: `404 { ok: false, error }`.
 - Validation failures (too short, unknown audio mode, clip has fewer tracks
-  than the mode needs): `500 { ok: false, error }` in 1.4. A later
-  implementation may use `400`; the tests accept `400` or `500`.
+  than the mode needs): `500 { ok: false, error }` in 1.4, `400` in 2.0; the
+  tests accept both.
 - Success: `202 { ok: true, job: "<id>" }` is sent immediately; the work
   continues in the background. The id is 8 lowercase hex characters in 1.4;
   treat it as an opaque string.
@@ -116,8 +116,8 @@ Body: `{ "name": "<title>" }`. `POST` is accepted as an alias for `PUT`.
 - An empty result removes the title. Titles persist across restarts and are
   keyed by `base`; the MKV keeps its OBS file name.
 - Response: `{ ok: true, base, title }` with the title as stored.
-- Unknown `base`: `500 { ok: false, error }` in 1.4 (the handler throws). A
-  later implementation may answer `404`; the tests accept either.
+- Unknown `base`: `500 { ok: false, error }` in 1.4 (the handler throws),
+  `404` in 2.0; the tests accept either.
 
 ### `DELETE /api/clips/<base>[?nextcloud=1]`
 
@@ -131,8 +131,10 @@ the clip and its title. The clip disappears from `/api/clips` immediately.
   history entries are removed. Without it, `nextcloud` is `0` and history is
   kept.
 - Deleting the clip of a running job is refused: `500 { ok: false, error }`
-  in 1.4 (`409` acceptable later).
-- Unknown `base`: `500` in 1.4, `404` acceptable later.
+  in 1.4, `409` in 2.0.
+- Unknown `base`: `500` in 1.4, `404` in 2.0.
+- `?nextcloud=1` without an active storage integration: `400` in 2.0 (1.4
+  fails with `500` when credentials are missing).
 
 ### `GET /api/history`
 
@@ -142,9 +144,9 @@ the clip and its title. The clip disappears from `/api/clips` immediately.
 
 Triggers "save replay buffer" in OBS (1.4 sends the F9 key; 2.0 may use
 obs-websocket with the key press as fallback). The request must carry a
-`Content-Length` header, an empty body is fine; the UI sends `body: ''`.
-Response: `{ ok: true }`. Failure to reach OBS is not detectable in 1.4 and
-still answers `ok: true`.
+`Content-Length` header in 1.4 (http.sys), an empty body is fine; the UI
+sends `body: ''`. 2.0 accepts any body. Response: `{ ok: true }`. Failure to
+reach OBS is not detectable and still answers `ok: true`.
 
 ## Objects
 
@@ -258,9 +260,10 @@ A copy of a successfully finished Job without `percent`, `stage`, `ok` and
   tracks a clip needs for the mode to be offered. Labels are for display and
   may be translated; ids are the contract.
 - `version` and `encoder` are shown in the UI header.
-- `webhook` and `nextcloud` say whether the respective credentials exist.
-  1.4 reads the Credential Manager on every call; a later implementation may
-  cache this.
+- `webhook` and `nextcloud` say whether the respective integration is
+  usable: 1.4 checks that credentials exist (Credential Manager read on
+  every call), 2.0 reports whether the integration is enabled and has
+  credentials, evaluated at startup.
 
 ## Behaviour
 
@@ -310,8 +313,9 @@ A copy of a successfully finished Job without `percent`, `stage`, `ok` and
 4. `discord`: one message is posted through the webhook:
    `**<prefix>** [<title> - ]<base without a leading "<prefix> " part> (<int seconds> s) - <direct>`.
    In 1.4 the prefix is the hard-coded string `WARDOGS`; 2.0 makes it the configured display name.
-   Only the bare direct link, never an attachment. Missing webhook credentials
-   are not an error (`discord` says so).
+   Only the bare direct link, never an attachment; 2.0 sends the display
+   name as the webhook user name. Missing webhook credentials are not an
+   error (`discord` says so; in 2.0 the stage is skipped).
 5. `done`: the job is appended to history, `busy` is `false`, `last` is the
    job. Any failure in steps 2 to 4 ends the job with `error` instead; the
    partially produced file (if any) stays in `shared/`.
