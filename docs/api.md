@@ -297,12 +297,13 @@ A copy of a successfully finished Job without `percent`, `stage`, `ok` and
    (`scale=-2:1080`), encodes H.264 with the detected encoder at `shareKbps`
    (CBR, `maxrate = kbps`, `bufsize = 2 * kbps`), audio per mode as AAC 128k,
    `+faststart`. Progress comes from `-progress pipe:1` (`out_time_us`).
-   Output file: `shared/<base with whitespace as _>_<int start>-<int end>[_<slug>].mp4`,
+   Output file: `shared/<base with whitespace as _>_<start>-<end>[_<slug>].mp4` with
+   `start` and `end` rounded to whole seconds,
    where `slug` is the title with every run of characters other than
    `[A-Za-z0-9_-]` replaced by `-`, trimmed of `-`, cut to 40 characters.
 3. `upload`: the file is uploaded to `<folder>/<YYYY-MM>/` where the month
-   comes from the first `YYYY-MM-DD` in `base` (`unsortiert` when there is
-   none). A public read-only link is created; if one already exists for that
+   comes from the first `YYYY-MM-DD` in `base` (fallback `unsortiert` in 1.4,
+   `unsorted` in 2.0). A public read-only link is created; if one already exists for that
    path it is reused. `link` is the share page, `direct` is `<link>/download`,
    `ncPath` is `/<folder>/<month>/<file>`. The direct link is put into the
    clipboard.

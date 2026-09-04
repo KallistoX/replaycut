@@ -17,7 +17,6 @@ pub struct Media {
 #[derive(Debug, Clone)]
 pub struct Encoder {
     pub name: String,
-    #[allow(dead_code)] // used by the share pipeline (R3b)
     pub opts: Vec<&'static str>,
 }
 
@@ -90,6 +89,11 @@ impl Media {
             .map_err(|_| anyhow!("{} timed out after {timeout:?}", exe.display()))?
             .with_context(|| format!("cannot start {}", exe.display()))?;
         Ok(out)
+    }
+
+    /// A configured ffmpeg command for callers that stream its output themselves.
+    pub fn ffmpeg_command(&self) -> Command {
+        self.command(&self.ffmpeg)
     }
 
     pub async fn ffmpeg(&self, args: &[&str], timeout: Duration) -> Result<Output> {

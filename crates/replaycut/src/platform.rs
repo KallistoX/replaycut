@@ -31,3 +31,10 @@ pub fn press_f9() -> Result<()> {
 pub fn press_f9() -> Result<()> {
     anyhow::bail!("sending the replay hotkey is only supported on Windows")
 }
+
+/// Put text into the clipboard (the direct link after a share).
+pub fn copy_text(text: &str) -> Result<()> {
+    let mut clipboard = arboard::Clipboard::new()?;
+    clipboard.set_text(text.to_string())?;
+    Ok(())
+}

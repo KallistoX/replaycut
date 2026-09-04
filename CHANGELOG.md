@@ -12,6 +12,14 @@ contract.
 
 ### Added
 
+- Service core, part 2: the share pipeline. `POST /api/share` validates and
+  registers a job (202, 409 while a job runs, 404 unknown clip, 400 invalid
+  selection or audio mode), encodes with ffmpeg and live progress, then runs
+  the storage and notify integrations when enabled, records history (200
+  entries) and keeps the last 30 jobs. `--dry-run` uses simulated
+  integrations with `dry-run.invalid` links. `DELETE ...?nextcloud=1`
+  removes remote copies through the storage integration. The contract suite
+  passes 11/11 against the Rust service in dry-run mode.
 - Service core, part 1: `replaycut` binary with settings.json, rolling log,
   folder scanner (change notifications plus polling, 2-second age and
   exclusive-open rule), preview remux, and the read side of the API:

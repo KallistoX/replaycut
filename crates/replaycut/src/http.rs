@@ -15,6 +15,7 @@ use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
 use crate::platform;
+use crate::share::{self, ShareError, ShareRequest};
 use crate::state::{AppState, StateError};
 
 type App = Arc<AppState>;
@@ -150,12 +151,31 @@ async fn delete_clip(
             }
         }
     }
-    if remote {
-        tracing::debug!(
-            "remote deletion requested - storage integrations arrive with the share pipeline"
-        );
-    }
-    let remote_deleted = 0;
+    let remote_deleted = if remote {
+        let Some(storage) = &app.integrations.storage else {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "no storage integration is enabled",
+            ));
+        };
+        let month = share::month_of(&base);
+        let mut paths: Vec<String> = files
+            .iter()
+            .skip(1)
+            .filter_map(|f| {
+                f.file_name()
+                    .map(|n| storage.remote_path(&month, &n.to_string_lossy()))
+            })
+            .collect();
+        paths.extend(app.history_paths_for(&base));
+        paths.sort();
+        paths.dedup();
+        let n = storage.delete(&paths).await.map_err(ApiError::internal)?;
+        app.remove_history_for(&base);
+        n
+    } else {
+        0
+    };
     let recycled = tokio::task::spawn_blocking(move || -> Result<usize, anyhow::Error> {
         let mut n = 0;
         for f in files {
@@ -178,11 +198,37 @@ async fn delete_clip(
     ))
 }
 
-async fn share(State(_app): State<App>, _body: Bytes) -> Result<Json<Value>, ApiError> {
-    Err(ApiError::new(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "sharing is not implemented yet",
-    ))
+fn number(v: &Value) -> f64 {
+    v.as_f64()
+        .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+        .unwrap_or(0.0)
+}
+
+async fn share(State(app): State<App>, body: Bytes) -> Response {
+    let v = parse_body(&body);
+    let req = ShareRequest {
+        base: v["base"].as_str().unwrap_or("").to_string(),
+        start: number(&v["start"]),
+        end: number(&v["end"]),
+        audio: v["audio"].as_str().unwrap_or("").to_string(),
+    };
+    match share::start(&app, req) {
+        Ok(id) => {
+            tokio::spawn(share::run(app.clone(), id.clone()));
+            (StatusCode::ACCEPTED, Json(json!({ "ok": true, "job": id }))).into_response()
+        }
+        Err(ShareError::Busy(job)) => (
+            StatusCode::CONFLICT,
+            Json(json!({ "ok": false, "error": "a share is already running", "job": job })),
+        )
+            .into_response(),
+        Err(ShareError::UnknownClip(base)) => {
+            ApiError::new(StatusCode::NOT_FOUND, format!("unknown clip: {base}")).into_response()
+        }
+        Err(ShareError::Invalid(msg)) => {
+            ApiError::new(StatusCode::BAD_REQUEST, msg).into_response()
+        }
+    }
 }
 
 async fn save(State(app): State<App>) -> Result<Json<Value>, ApiError> {

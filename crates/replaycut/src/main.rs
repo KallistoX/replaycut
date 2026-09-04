@@ -1,10 +1,12 @@
 //! replaycut - clip manager for the OBS replay buffer.
 
 mod http;
+mod integrations;
 mod media;
 mod platform;
 mod scanner;
 mod settings;
+mod share;
 mod state;
 mod util;
 
@@ -17,6 +19,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
+use crate::integrations::Integrations;
 use crate::media::Media;
 use crate::settings::Settings;
 use crate::state::{AppState, Paths, VERSION};
@@ -93,11 +96,13 @@ async fn main() -> Result<()> {
     }
     let paths = Paths::new(&settings.clip_dir, &data_dir, ui_file);
     let bind = format!("{}:{}", settings.bind, settings.port);
+    let integrations = Integrations::from_settings(&settings, cli.dry_run);
     let state = Arc::new(AppState::load(
         settings,
         paths,
         media,
         encoder,
+        integrations,
         cli.dry_run,
     )?);
 
@@ -105,12 +110,13 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| format!("cannot listen on {bind}"))?;
     tracing::info!(
-        "replaycut {VERSION} started: clips {}, http://{bind}/, encoder {}, ffmpeg {}, ffmpeg threads {}, priority {:?}{}",
+        "replaycut {VERSION} started: clips {}, http://{bind}/, encoder {}, ffmpeg {}, ffmpeg threads {}, priority {:?}, {}{}",
         state.paths.clip_dir.display(),
         state.encoder.name,
         state.media.ffmpeg.display(),
         state.settings.ffmpeg_threads(),
         state.settings.ffmpeg_priority,
+        state.integrations.describe(),
         if state.dry_run { " [DRY RUN: uploads, posts, hotkey and clipboard are simulated]" } else { "" }
     );
 

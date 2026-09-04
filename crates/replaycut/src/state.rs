@@ -11,14 +11,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Notify;
 
+use crate::integrations::Integrations;
 use crate::media::{Encoder, Media};
 use crate::settings::Settings;
 use crate::util;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-#[allow(dead_code)] // used by the share pipeline (R3b)
 pub const MAX_JOBS: usize = 30;
-#[allow(dead_code)]
 pub const MAX_HISTORY: usize = 200;
 pub const HISTORY_IN_STATUS: usize = 50;
 
@@ -100,7 +99,6 @@ pub struct Job {
 
 impl Job {
     /// History entries are jobs without the transient fields.
-    #[allow(dead_code)]
     pub fn history_entry(&self) -> Value {
         let mut v = serde_json::to_value(self).unwrap_or(Value::Null);
         if let Some(map) = v.as_object_mut() {
@@ -161,6 +159,7 @@ pub struct AppState {
     pub paths: Paths,
     pub media: Media,
     pub encoder: Encoder,
+    pub integrations: Integrations,
     pub dry_run: bool,
     pub inner: Mutex<Inner>,
     /// Wakes the scanner early (after a delete, for example).
@@ -189,6 +188,7 @@ impl AppState {
         paths: Paths,
         media: Media,
         encoder: Encoder,
+        integrations: Integrations,
         dry_run: bool,
     ) -> Result<Self> {
         for d in [
@@ -249,6 +249,7 @@ impl AppState {
             paths,
             media,
             encoder,
+            integrations,
             dry_run,
             inner: Mutex::new(inner),
             scan_wake: Notify::new(),
@@ -283,7 +284,6 @@ impl AppState {
         }
     }
 
-    #[allow(dead_code)]
     pub fn save_history(&self, inner: &Inner) {
         let text = serde_json::to_string_pretty(&inner.history).unwrap_or_else(|_| "[]".into());
         if let Err(e) = util::write_atomic(&self.paths.history_file, text.as_bytes()) {
@@ -385,6 +385,87 @@ impl AppState {
         }
         if inner.last.as_ref().is_some_and(|j| j.base == base) {
             inner.last = None;
+        }
+    }
+}
+
+impl AppState {
+    /// Mutate a job in place (no-op when the id is unknown).
+    pub fn with_job<F: FnOnce(&mut Job)>(&self, id: &str, f: F) {
+        if let Some(job) = self.inner.lock().jobs.get_mut(id) {
+            f(job);
+        }
+    }
+
+    /// Register a new job as the running one and keep only the newest `MAX_JOBS`.
+    pub fn register_job(&self, inner: &mut Inner, job: Job) {
+        let id = job.id.clone();
+        inner.jobs.insert(id.clone(), job);
+        inner.current_job = Some(id);
+        if inner.jobs.len() > MAX_JOBS {
+            let mut by_age: Vec<(String, String)> = inner
+                .jobs
+                .values()
+                .map(|j| (j.at.clone(), j.id.clone()))
+                .collect();
+            by_age.sort();
+            for (_, old) in by_age.iter().take(inner.jobs.len() - MAX_JOBS) {
+                if inner.current_job.as_deref() != Some(old.as_str()) {
+                    inner.jobs.remove(old);
+                }
+            }
+        }
+    }
+
+    /// Finish the running job: `done` goes to history and becomes `last`.
+    pub fn complete_job(&self, id: &str, result: Result<(), String>) {
+        let mut inner = self.inner.lock();
+        let Some(job) = inner.jobs.get_mut(id) else {
+            return;
+        };
+        match result {
+            Ok(()) => {
+                job.ok = Some(true);
+                job.error = Some(String::new());
+                job.stage = "done".into();
+            }
+            Err(msg) => {
+                job.ok = Some(false);
+                job.error = Some(msg);
+                job.stage = "error".into();
+            }
+        }
+        job.finished = Some(util::now_local());
+        let job = job.clone();
+        if job.ok == Some(true) {
+            inner.history.insert(0, job.history_entry());
+            inner.history.truncate(MAX_HISTORY);
+            self.save_history(&inner);
+        }
+        inner.last = Some(job);
+        if inner.current_job.as_deref() == Some(id) {
+            inner.current_job = None;
+        }
+    }
+
+    /// Remote paths recorded in history for a clip.
+    pub fn history_paths_for(&self, base: &str) -> Vec<String> {
+        self.inner
+            .lock()
+            .history
+            .iter()
+            .filter(|e| e["base"] == base)
+            .filter_map(|e| e["ncPath"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    /// Drop a clip's history entries (after its remote copies were deleted).
+    pub fn remove_history_for(&self, base: &str) {
+        let mut inner = self.inner.lock();
+        let before = inner.history.len();
+        inner.history.retain(|e| e["base"] != base);
+        if inner.history.len() != before {
+            self.save_history(&inner);
         }
     }
 }
