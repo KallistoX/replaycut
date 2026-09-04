@@ -1,0 +1,16 @@
+[package]
+name = "replaycut-api-tests"
+description = "Black-box contract tests for the replaycut HTTP API (run against any implementation via BASE_URL)"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+reqwest.workspace = true
+serde_json.workspace = true
