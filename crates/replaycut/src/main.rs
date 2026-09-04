@@ -7,6 +7,8 @@
 
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
+mod admin;
+mod auth;
 mod credentials;
 mod http;
 #[cfg(windows)]
@@ -40,11 +42,10 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
-use crate::integrations::Integrations;
 use crate::lifecycle::Shutdown;
 use crate::media::Media;
 use crate::settings::Settings;
-use crate::state::{AppState, Paths, VERSION};
+use crate::state::{AppState, Boot, Overrides, Runtime, VERSION};
 
 #[derive(Parser, Debug)]
 #[command(version, about = "Clip manager for the OBS replay buffer")]
@@ -78,6 +79,9 @@ struct Cli {
     /// Do not open the browser when the service starts (used at sign-in).
     #[arg(long, global = true)]
     no_browser: bool,
+    /// Wait for a running instance on the same port to exit first (used by the restart).
+    #[arg(long, global = true, hide = true)]
+    wait_for_exit: bool,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -149,21 +153,14 @@ fn real_main(cli: Cli, console: bool) -> Result<()> {
         .unwrap_or_else(|| data_dir.join("settings.json"));
     let settings_existed = settings_path.is_file();
     let mut settings = Settings::load_or_create(&settings_path)?;
-    if let Some(d) = cli.clip_dir.clone() {
-        settings.clip_dir = d;
-    }
-    if let Some(p) = cli.port {
-        settings.port = p;
-    }
-    if let Some(b) = cli.bind.clone() {
-        settings.bind = b;
-    }
-    if let Some(u) = cli.ui.clone() {
-        settings.ui_file = u;
-    }
-    if let Some(l) = cli.log_level.clone() {
-        settings.log_level = l;
-    }
+    let overrides = Overrides {
+        clip_dir: cli.clip_dir.clone(),
+        port: cli.port,
+        bind: cli.bind.clone(),
+        ui_file: cli.ui.clone(),
+        log_level: cli.log_level.clone(),
+    };
+    overrides.apply(&mut settings);
     settings
         .validate()
         .with_context(|| format!("invalid settings in {}", settings_path.display()))?;
@@ -190,7 +187,14 @@ fn real_main(cli: Cli, console: bool) -> Result<()> {
         Some(Command::Install | Command::Uninstall { .. } | Command::Autostart { .. }) => {
             anyhow::bail!("this command is only supported on Windows")
         }
-        Some(Command::Run) | None => run_service(&cli, settings, &data_dir, console),
+        Some(Command::Run) | None => run_service(
+            &cli,
+            settings,
+            &settings_path,
+            overrides,
+            &data_dir,
+            console,
+        ),
     }
 }
 
@@ -212,7 +216,14 @@ fn stop(port: u16) -> Result<()> {
     Ok(())
 }
 
-fn run_service(cli: &Cli, settings: Settings, data_dir: &Path, console: bool) -> Result<()> {
+fn run_service(
+    cli: &Cli,
+    settings: Settings,
+    settings_path: &Path,
+    overrides: Overrides,
+    data_dir: &Path,
+    console: bool,
+) -> Result<()> {
     let _log_guard = init_logging(&data_dir.join("logs"), &settings.log_level, console)?;
     lifecycle::install_panic_hook();
     platform::set_app_id();
@@ -227,6 +238,13 @@ fn run_service(cli: &Cli, settings: Settings, data_dir: &Path, console: bool) ->
 
     let ui_url = format!("http://localhost:{}/", settings.port);
     let port = settings.port;
+    if cli.wait_for_exit {
+        // Started by `POST /api/restart`: the old process is still shutting down.
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while platform::instance_running(port) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
     let Some(_instance) = platform::claim_single_instance(port)? else {
         if cli.no_browser {
             tracing::info!("replaycut is already running");
@@ -241,7 +259,14 @@ fn run_service(cli: &Cli, settings: Settings, data_dir: &Path, console: bool) ->
 
     let runtime = runtime()?;
     let shutdown = Shutdown::new();
-    let (state, listener) = runtime.block_on(startup(settings, data_dir, cli.dry_run))?;
+    let (state, listener) = runtime.block_on(startup(
+        settings,
+        settings_path,
+        overrides,
+        data_dir,
+        cli.dry_run,
+    ))?;
+    let _ = state.shutdown.set(shutdown.clone());
 
     // `replaycut stop` sets this event; a plain thread waits on it.
     let stop_event = platform::StopEvent::create(port)?;
@@ -296,12 +321,13 @@ fn run_service(cli: &Cli, settings: Settings, data_dir: &Path, console: bool) ->
 /// state files, the listening socket.
 async fn startup(
     settings: Settings,
+    settings_path: &Path,
+    overrides: Overrides,
     data_dir: &Path,
     dry_run: bool,
 ) -> Result<(Arc<AppState>, tokio::net::TcpListener)> {
-    let media =
-        Media::locate()?.with_resource_limits(settings.ffmpeg_priority, settings.ffmpeg_threads());
-    let encoder = media.detect_encoder(&settings.encoder).await?;
+    let media_base = Media::locate()?;
+    let runtime = Runtime::build(&media_base, &settings, dry_run, None).await?;
     let ui_file = resolve_ui_file(&settings.ui_file);
     if !ui_file.is_file() {
         tracing::warn!(
@@ -309,28 +335,28 @@ async fn startup(
             ui_file.display()
         );
     }
-    let paths = Paths::new(&settings.clip_dir, data_dir, ui_file);
     let bind = format!("{}:{}", settings.bind, settings.port);
-    let integrations = Integrations::build(&settings, dry_run)?;
-    let state = Arc::new(AppState::load(
+    let state = Arc::new(AppState::load(Boot {
         settings,
-        paths,
-        media,
-        encoder,
-        integrations,
+        settings_path: settings_path.to_path_buf(),
+        overrides,
+        data_dir: data_dir.to_path_buf(),
+        ui_file,
+        media_base,
+        runtime,
         dry_run,
-    )?);
+    })?);
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
         .with_context(|| format!("cannot listen on {bind}"))?;
     tracing::info!(
         "replaycut {VERSION} started: clips {}, http://{bind}/, encoder {}, ffmpeg {}, ffmpeg threads {}, priority {:?}, {}{}",
-        state.paths.clip_dir.display(),
-        state.encoder.name,
-        state.media.ffmpeg.display(),
-        state.settings.ffmpeg_threads(),
-        state.settings.ffmpeg_priority,
-        state.integrations.describe(),
+        state.paths().clip_dir.display(),
+        state.runtime().encoder.name,
+        state.media_base.ffmpeg.display(),
+        state.settings().ffmpeg_threads(),
+        state.settings().ffmpeg_priority,
+        state.runtime().integrations.describe(),
         if state.dry_run { " [DRY RUN: uploads, posts, hotkey, clipboard and toasts are simulated]" } else { "" }
     );
     Ok((state, listener))
@@ -344,7 +370,7 @@ async fn serve(
     open_browser: bool,
 ) -> Result<()> {
     tokio::spawn(scanner::run(state.clone()));
-    if state.settings.check_updates {
+    if state.settings().check_updates {
         tokio::spawn(update::run(state.clone()));
     }
     if open_browser {
@@ -359,7 +385,8 @@ async fn serve(
             shutdown.wait().await;
         }
     };
-    let server = axum::serve(listener, http::router(state)).with_graceful_shutdown(graceful);
+    let app = http::router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let server = axum::serve(listener, app).with_graceful_shutdown(graceful);
     let deadline = async {
         shutdown.wait().await;
         tokio::time::sleep(Duration::from_secs(5)).await;

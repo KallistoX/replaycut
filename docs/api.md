@@ -269,6 +269,133 @@ A copy of a successfully finished Job without `percent`, `stage`, `ok` and
   every call), 2.0 reports whether the integration is enabled and has
   credentials, evaluated at startup.
 
+## Since 2.1
+
+Everything in this section exists from replaycut 2.1 on. A 1.x service does
+not have it; the test suite checks `config.version` and skips these cases
+below 2.1. The 1.4 contract above is unchanged.
+
+### Access control
+
+- **Origin check**, always on: a request with any method other than `GET`,
+  `HEAD` or `OPTIONS` is refused with `403 { ok: false, error }` when it
+  carries an `Origin` header that does not name the same host and port as
+  the `Host` header (scheme ignored). Requests without `Origin` (scripts,
+  the test suite) pass; a browser always sends it for cross-site writes.
+- **Password**, optional. Set through `PUT /api/settings` (`password`),
+  stored as an argon2id hash in `settings.json`, never returned. While a
+  password is set, requests to `/api/*` and `/media/*` from any address but
+  loopback need the session cookie `rc_session` (HttpOnly, SameSite=Strict,
+  30 days); without it they get `401 { ok: false, error: "login required" }`.
+  Loopback (`127.0.0.0/8`, `::1`) never needs a login. Pages, `/themes/*`,
+  `/api/session`, `/api/login` and `/api/logout` are always open.
+- JSON endpoints of 2.1 (`PUT /api/settings`, `POST /api/test/*`,
+  `POST /api/login`) require `Content-Type: application/json` and answer
+  `415` otherwise. `POST /api/save` keeps accepting an empty body.
+
+### `GET /setup`, `/settings`, `/diagnostics`, `/login`, `/obs`
+
+The UI file, exactly as `GET /`; the page's script shows the page named by
+the path.
+
+### `GET /api/settings`
+
+The settings file without secrets plus what the settings page needs:
+
+```json
+{
+  "clipDir": "C:\\Users\\you\\Videos", "port": 8420, "bind": "0.0.0.0",
+  "displayName": "replaycut", "shareKbps": 6000, "encoder": "auto",
+  "hwaccel": "", "ffmpegPriority": "belowNormal", "ffmpegThreads": 0,
+  "logLevel": "info", "checkUpdates": true, "setupDone": true,
+  "theme": "wardogs", "uiFile": "ui/index.html",
+  "integrations": {
+    "nextcloud": { "enabled": false, "url": "https://cloud.example.com", "folder": "Clips", "expireDays": 0 },
+    "discord": { "enabled": false }
+  },
+  "secrets": { "nextcloud": false, "discord": false },
+  "passwordSet": false,
+  "autostart": false,
+  "themes": ["plain", "wardogs"],
+  "restartNeeded": [],
+  "overrides": { "clipDir": false, "port": false, "bind": false },
+  "version": "2.1.0"
+}
+```
+
+`secrets` says whether a credential is stored, never what it is.
+`restartNeeded` lists restart-only fields changed since the service started.
+`overrides` marks fields a command-line flag overrides; saving them changes
+the file but not the running service.
+
+### `PUT /api/settings`
+
+Body: a partial object with any of the fields above except `secrets`,
+`passwordSet`, `autostart`, `themes`, `restartNeeded`, `overrides`,
+`version`, plus these write-only keys:
+
+| Key | Effect |
+|---|---|
+| `password` | sets the password (at least 6 characters); `""` removes it and ends every session |
+| `nextcloudUser`, `nextcloudPassword` | together: stored in the Credential Manager |
+| `discordWebhook` | stored in the Credential Manager; must look like a Discord webhook URL |
+| `autostart` | `true`/`false`: the sign-in entry (Windows) |
+
+Response `200 { ok: true, restartNeeded: ["port"], settings: <GET document> }`.
+Everything but `port`, `bind` and `uiFile` takes effect at once: a new
+clip folder is scanned, a new encoder is detected, integrations are
+rebuilt, the next share uses the new bitrate. Errors: `400` with the field
+name in `error` (`unknown field: x`, `invalid value: ...`, `port must not be
+0`), `409` while a share runs and `clipDir` or `encoder` is in the body,
+`415` without the JSON content type.
+
+### `POST /api/test/nextcloud`
+
+Body `{ url, folder, user?, password? }`; without `user`/`password` the
+stored credential is used. Response `{ ok: true, user, displayName,
+freeBytes, totalBytes, ms }` (quota fields `null` when unlimited) or
+`{ ok: false, error }` with status `200` in both cases: the test ran, the
+result is the payload.
+
+### `POST /api/test/discord`
+
+Body `{ webhook?, displayName? }`; without `webhook` the stored one. Sends
+one test message. Response `{ ok: true }` or `{ ok: false, error }`; in dry
+run `{ ok: true, dryRun: true }` without sending.
+
+### `GET /api/addresses`
+
+`{ hostname, port, bind, urls: ["http://<host>:<port>/", "http://<ip>:<port>/", "http://localhost:<port>/"], qrSvg }`.
+`qrSvg` is an SVG document encoding `urls[0]`. With `bind` set to loopback
+only the localhost address is listed.
+
+### `GET /themes/<name>.css`
+
+`<data-dir>\themes\<name>.css` as `text/css`; `<name>` is lower-case
+letters, digits and dashes. Anything else, including a missing file, is
+`404`. The built-in theme `wardogs` has no file.
+
+### `GET /api/session`, `POST /api/login`, `POST /api/logout`
+
+- `GET /api/session` -> `{ authenticated, loopback, passwordSet }`.
+  `authenticated` is true without a password, on loopback, or with a valid
+  session cookie.
+- `POST /api/login { password }` -> `200 { ok: true }` with a `Set-Cookie`
+  for `rc_session`, `401` on a wrong password (after a 1 s delay), `429`
+  after ten failures from the same address for 60 s.
+- `POST /api/logout` -> `200 { ok: true }` and clears the cookie.
+
+### `POST /api/restart`
+
+`202 { ok: true }`: the service starts a new copy of itself that waits for
+this one to exit, then shuts down. `409` while a share runs, `503` when the
+process cannot restart itself.
+
+### Additions to `GET /api/clips`
+
+`config` gains `setupDone`, `theme`, `passwordSet`, `localMode` (no storage
+integration active) and `displayName`.
+
 ## Behaviour
 
 ### Folder scan

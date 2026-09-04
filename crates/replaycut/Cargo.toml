@@ -16,6 +16,7 @@ path = "src/main.rs"
 [dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 anyhow = "1.0.104"
+argon2 = { version = "0.5", features = ["std"] }
 arboard = { version = "3.6.1", default-features = false }
 axum = "0.8.9"
 chrono = "0.4.45"
@@ -23,9 +24,11 @@ clap = { version = "4.5.61", features = ["derive"] }
 notify = "8.2.0"
 parking_lot = "0.12.5"
 percent-encoding = "2.3.2"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 rpassword = "7.5.4"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json.workspace = true
+sha2 = "0.10"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "process", "fs", "sync", "time", "io-util", "signal"] }
 tokio-util = { version = "0.7.19", features = ["io"] }
 tower = { version = "0.5.3", features = ["util"] }

@@ -31,6 +31,15 @@ pub struct Settings {
     pub log_level: String,
     /// Ask GitHub once a day whether a newer release exists (hint only).
     pub check_updates: bool,
+    /// False until the browser setup finished (or `replaycut setup` ran).
+    /// Missing in a file from 2.0 means true: that installation was set up.
+    pub setup_done: bool,
+    /// Theme name: `wardogs` is built in, anything else is
+    /// `<data-dir>/themes/<name>.css`.
+    pub theme: String,
+    /// argon2id PHC string of the optional password; never sent to the UI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password_hash: Option<String>,
     pub integrations: Integrations,
 }
 
@@ -91,6 +100,9 @@ impl Default for Settings {
             ffmpeg_threads: 0,
             log_level: "info".into(),
             check_updates: true,
+            setup_done: true,
+            theme: "wardogs".into(),
+            password_hash: None,
             integrations: Integrations::default(),
         }
     }
@@ -119,7 +131,108 @@ pub fn default_data_dir() -> PathBuf {
     home.join(".local").join("share").join("replaycut")
 }
 
+pub const LOG_LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
+
+/// Theme names are file names: lower-case letters, digits and dashes only.
+pub fn is_theme_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 40
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// Top-level keys `PUT /api/settings` accepts, and the nested ones below
+/// `integrations`. Anything else is a 400 with the offending name.
+const PATCH_KEYS: [&str; 15] = [
+    "clipDir",
+    "port",
+    "bind",
+    "uiFile",
+    "displayName",
+    "shareKbps",
+    "encoder",
+    "hwaccel",
+    "ffmpegPriority",
+    "ffmpegThreads",
+    "logLevel",
+    "checkUpdates",
+    "setupDone",
+    "theme",
+    "integrations",
+];
+const NEXTCLOUD_KEYS: [&str; 4] = ["enabled", "url", "folder", "expireDays"];
+const DISCORD_KEYS: [&str; 1] = ["enabled"];
+
 impl Settings {
+    /// Apply a partial JSON object (the body of `PUT /api/settings`) and
+    /// return the new settings, validated. Secrets are not settings and
+    /// must be stripped by the caller first.
+    pub fn with_patch(&self, patch: &serde_json::Value) -> std::result::Result<Self, String> {
+        let Some(obj) = patch.as_object() else {
+            return Err("body must be a JSON object".into());
+        };
+        let mut current = serde_json::to_value(self).map_err(|e| e.to_string())?;
+        for (key, value) in obj {
+            if !PATCH_KEYS.contains(&key.as_str()) {
+                return Err(format!("unknown field: {key}"));
+            }
+            if key == "integrations" {
+                let Some(groups) = value.as_object() else {
+                    return Err("integrations must be an object".into());
+                };
+                for (group, fields) in groups {
+                    let allowed: &[&str] = match group.as_str() {
+                        "nextcloud" => &NEXTCLOUD_KEYS,
+                        "discord" => &DISCORD_KEYS,
+                        _ => return Err(format!("unknown integration: {group}")),
+                    };
+                    let Some(fields) = fields.as_object() else {
+                        return Err(format!("integrations.{group} must be an object"));
+                    };
+                    for (field, v) in fields {
+                        if !allowed.contains(&field.as_str()) {
+                            return Err(format!("unknown field: integrations.{group}.{field}"));
+                        }
+                        current["integrations"][group][field] = v.clone();
+                    }
+                }
+            } else {
+                current[key] = value.clone();
+            }
+        }
+        let next: Settings = serde_json::from_value(current).map_err(|e| {
+            // serde's message names the field: "invalid type: string, expected u16" etc.
+            format!("invalid value: {e}")
+        })?;
+        next.validate().map_err(|e| e.to_string())?;
+        Ok(next)
+    }
+
+    /// Which restart-only fields differ between two settings.
+    pub fn restart_needed(&self, other: &Settings) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.port != other.port {
+            out.push("port");
+        }
+        if self.bind != other.bind {
+            out.push("bind");
+        }
+        if self.ui_file != other.ui_file {
+            out.push("uiFile");
+        }
+        out
+    }
+
+    /// The settings as the UI may see them: everything but the password hash.
+    pub fn public_json(&self) -> serde_json::Value {
+        let mut v = serde_json::to_value(self).unwrap_or(serde_json::Value::Null);
+        if let Some(map) = v.as_object_mut() {
+            map.remove("passwordHash");
+        }
+        v
+    }
+
     /// Load the file, or write the defaults when it does not exist yet.
     pub fn load_or_create(path: &Path) -> Result<Self> {
         if path.is_file() {
@@ -129,7 +242,11 @@ impl Settings {
                 .with_context(|| format!("{} is not valid settings JSON", path.display()))?;
             return Ok(settings);
         }
-        let settings = Settings::default();
+        // A brand-new file: nothing is set up yet.
+        let settings = Settings {
+            setup_done: false,
+            ..Settings::default()
+        };
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
@@ -155,10 +272,29 @@ impl Settings {
     pub fn validate(&self) -> Result<()> {
         anyhow::ensure!(self.port != 0, "port must not be 0");
         anyhow::ensure!(
+            self.bind.parse::<std::net::IpAddr>().is_ok(),
+            "bind must be an IP address such as 0.0.0.0 or 127.0.0.1"
+        );
+        anyhow::ensure!(
+            LOG_LEVELS.contains(&self.log_level.as_str()),
+            "logLevel must be one of error, warn, info, debug, trace"
+        );
+        anyhow::ensure!(
+            is_theme_name(&self.theme),
+            "theme must be a name of lower-case letters, digits and dashes"
+        );
+        anyhow::ensure!(
+            self.ffmpeg_threads <= 256,
+            "ffmpegThreads must be 0 (auto) or at most 256"
+        );
+        anyhow::ensure!(
             !self.clip_dir.as_os_str().is_empty(),
             "clipDir must not be empty"
         );
-        anyhow::ensure!(self.share_kbps >= 500, "shareKbps must be at least 500");
+        anyhow::ensure!(
+            (500..=100_000).contains(&self.share_kbps),
+            "shareKbps must be between 500 and 100000"
+        );
         anyhow::ensure!(
             !self.encoder.trim().is_empty(),
             "encoder must be 'auto' or an encoder name"
@@ -209,6 +345,76 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(s.ffmpeg_threads(), 3);
+    }
+
+    #[test]
+    fn patch_merges_and_validates() {
+        let s = Settings::default();
+        let next = s
+            .with_patch(&serde_json::json!({
+                "shareKbps": 8000,
+                "integrations": { "nextcloud": { "enabled": true, "url": "https://cloud.example.com" } }
+            }))
+            .unwrap();
+        assert_eq!(next.share_kbps, 8000);
+        assert!(next.integrations.nextcloud.enabled);
+        assert_eq!(next.integrations.nextcloud.folder, "Clips");
+        assert_eq!(next.port, 8420);
+
+        let err = s
+            .with_patch(&serde_json::json!({ "passwordHash": "x" }))
+            .unwrap_err();
+        assert!(err.contains("unknown field: passwordHash"), "{err}");
+        let err = s.with_patch(&serde_json::json!({ "port": 0 })).unwrap_err();
+        assert!(err.contains("port"), "{err}");
+        let err = s
+            .with_patch(&serde_json::json!({ "port": "abc" }))
+            .unwrap_err();
+        assert!(err.contains("invalid value"), "{err}");
+        let err = s
+            .with_patch(&serde_json::json!({ "integrations": { "dropbox": {} } }))
+            .unwrap_err();
+        assert!(err.contains("unknown integration"), "{err}");
+        assert!(s
+            .with_patch(&serde_json::json!({ "theme": "Bad Name" }))
+            .is_err());
+    }
+
+    #[test]
+    fn restart_fields() {
+        let s = Settings::default();
+        let next = s
+            .with_patch(&serde_json::json!({ "port": 9000, "shareKbps": 700 }))
+            .unwrap();
+        assert_eq!(s.restart_needed(&next), vec!["port"]);
+        assert!(s.restart_needed(&s).is_empty());
+    }
+
+    #[test]
+    fn public_json_hides_the_hash() {
+        let s = Settings {
+            password_hash: Some("$argon2id$...".into()),
+            ..Settings::default()
+        };
+        let v = s.public_json();
+        assert!(v.get("passwordHash").is_none());
+        assert_eq!(v["theme"], "wardogs");
+        assert_eq!(v["setupDone"], true);
+    }
+
+    #[test]
+    fn fresh_file_is_not_set_up() {
+        let dir = std::env::temp_dir().join(format!("rc-settings-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("settings.json");
+        let s = Settings::load_or_create(&path).unwrap();
+        assert!(!s.setup_done);
+        let again = Settings::load_or_create(&path).unwrap();
+        assert!(!again.setup_done);
+        // a file without the field (2.0) counts as set up
+        std::fs::write(&path, r#"{"port": 8420}"#).unwrap();
+        assert!(Settings::load_or_create(&path).unwrap().setup_done);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

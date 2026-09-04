@@ -162,7 +162,7 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<String, ShareError> 
         end,
         seconds,
         audio,
-        kbps: state.settings.share_kbps,
+        kbps: state.settings().share_kbps,
         stage: "queued".into(),
         percent: 0,
         at: util::now_local(),
@@ -180,13 +180,17 @@ pub async fn run(state: Arc<AppState>, id: String) {
     }
     state.complete_job(&id, result.map_err(|e| format!("{e:#}")));
     if let Some(job) = state.job(&id) {
-        let uploaded = state.integrations.storage.is_some();
+        let uploaded = job.direct.is_some();
         toast::show(&state, Toast::share_result(&job, uploaded, &state.ui_url()));
     }
 }
 
 async fn pipeline(state: &AppState, id: &str) -> Result<()> {
     let job = state.job(id).ok_or_else(|| anyhow!("job vanished"))?;
+    // The runtime of the moment the job started; a settings change while
+    // it runs does not swap integrations or encoder under its feet.
+    let runtime = state.runtime();
+    let settings = state.settings();
     let (clip_path, title) = {
         let inner = state.inner.lock();
         let clip = inner
@@ -199,7 +203,7 @@ async fn pipeline(state: &AppState, id: &str) -> Result<()> {
         )
     };
     let file_name = share_file_name(&job.base, job.start, job.end, &slug(&title));
-    let out = state.paths.shared_dir.join(&file_name);
+    let out = state.paths().shared_dir.join(&file_name);
     let mode_label = AUDIO_MODES
         .iter()
         .find(|m| m.id == job.audio)
@@ -234,7 +238,7 @@ async fn pipeline(state: &AppState, id: &str) -> Result<()> {
 
     // upload
     let mut direct: Option<String> = None;
-    if let Some(storage) = &state.integrations.storage {
+    if let Some(storage) = &runtime.integrations.storage {
         state.with_job(id, |j| j.stage = "upload".into());
         let published = storage
             .publish(&out, &month_of(&job.base))
@@ -256,9 +260,9 @@ async fn pipeline(state: &AppState, id: &str) -> Result<()> {
     }
 
     // notify
-    if let (Some(notify), Some(direct)) = (&state.integrations.notify, direct) {
+    if let (Some(notify), Some(direct)) = (&runtime.integrations.notify, direct) {
         state.with_job(id, |j| j.stage = "discord".into());
-        let prefix = &state.settings.display_name;
+        let prefix = &settings.display_name;
         let label = post_label(prefix, &job.base, &title);
         let text = format!(
             "**{prefix}** {label} ({} s) - {direct}",
@@ -288,22 +292,24 @@ async fn encode(state: &AppState, id: &str, job: &Job, input: &Path, out: &Path)
     let input_s = input.to_string_lossy().into_owned();
     let out_s = out.to_string_lossy().into_owned();
     let mut args: Vec<&str> = vec!["-nostats", "-progress", "pipe:1", "-y", "-v", "error"];
-    let threads = state.media.threads.to_string();
-    if state.media.threads > 0 {
+    let runtime = state.runtime();
+    let settings = state.settings();
+    let threads = runtime.media.threads.to_string();
+    if runtime.media.threads > 0 {
         args.extend(["-threads", &threads]); // decoder (dav1d takes every core otherwise)
     }
-    if !state.settings.hwaccel.is_empty() {
-        args.extend(["-hwaccel", state.settings.hwaccel.as_str()]);
+    if !settings.hwaccel.is_empty() {
+        args.extend(["-hwaccel", settings.hwaccel.as_str()]);
     }
     args.extend([
         "-ss", &start, "-t", &seconds, "-i", &input_s, "-map", "0:v:0",
     ]);
     args.extend(audio_args(&job.audio).ok_or_else(|| anyhow!("unknown audio mode {}", job.audio))?);
-    args.extend(["-vf", "scale=-2:1080", "-c:v", &state.encoder.name]);
-    if state.media.threads > 0 {
+    args.extend(["-vf", "scale=-2:1080", "-c:v", &runtime.encoder.name]);
+    if runtime.media.threads > 0 {
         args.extend(["-threads", &threads]); // encoder and filters
     }
-    args.extend(state.encoder.opts.iter().copied());
+    args.extend(runtime.encoder.opts.iter().copied());
     args.extend([
         "-b:v", &b, "-maxrate", &maxrate, "-bufsize", &bufsize, "-pix_fmt", "yuv420p",
     ]);
@@ -317,7 +323,7 @@ async fn encode(state: &AppState, id: &str, job: &Job, input: &Path, out: &Path)
         &out_s,
     ]);
 
-    let mut cmd = state.media.ffmpeg_command();
+    let mut cmd = runtime.media.ffmpeg_command();
     cmd.args(&args);
     let mut child = cmd.spawn().context("cannot start ffmpeg")?;
     let stdout = child

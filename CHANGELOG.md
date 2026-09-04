@@ -10,6 +10,18 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- Settings change at runtime: `GET/PUT /api/settings` (everything but port,
+  bind and the UI file takes effect at once), `POST /api/test/nextcloud` and
+  `/api/test/discord`, `GET /api/addresses` with a QR code, `GET /themes/<name>.css`
+  from the data directory, `POST /api/restart`. Contract: docs/api.md "Since 2.1".
+- Optional password for other devices: argon2id hash in settings.json, 30-day
+  session cookie, login throttle; this PC (loopback) never needs it. Every
+  cross-site write is refused by an Origin check, password or not.
+- `setupDone` and `theme` in settings.json; the page routes `/setup`,
+  `/settings`, `/diagnostics`, `/login` serve the UI file.
+
 ### Changed
 
 - New application and tray icons (play mark with cut marks, amber on a dark

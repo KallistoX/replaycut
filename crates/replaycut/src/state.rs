@@ -5,13 +5,17 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Notify;
 
+use crate::auth::Sessions;
 use crate::integrations::Integrations;
+use crate::lifecycle::Shutdown;
 use crate::media::{Encoder, Media};
 use crate::platform;
 use crate::settings::Settings;
@@ -157,13 +161,89 @@ pub struct Inner {
     pub scan_at: Option<String>,
 }
 
-pub struct AppState {
-    pub settings: Settings,
-    pub paths: Paths,
+/// What a settings change may rebuild: the tools with their resource
+/// limits, the detected encoder and the integrations.
+pub struct Runtime {
     pub media: Media,
     pub encoder: Encoder,
+    /// The `encoder` setting the detection ran for (`auto` or a name).
+    pub encoder_setting: String,
     pub integrations: Integrations,
+}
+
+impl Runtime {
+    /// Build from settings. `base` is the located ffmpeg without limits;
+    /// `previous` lets an unchanged encoder setting skip the test encode.
+    pub async fn build(
+        base: &Media,
+        settings: &Settings,
+        dry_run: bool,
+        previous: Option<&Runtime>,
+    ) -> Result<Self> {
+        let media = base
+            .clone()
+            .with_resource_limits(settings.ffmpeg_priority, settings.ffmpeg_threads());
+        let encoder = match previous {
+            Some(p) if p.encoder_setting == settings.encoder => p.encoder.clone(),
+            _ => media.detect_encoder(&settings.encoder).await?,
+        };
+        let integrations = Integrations::build(settings, dry_run)?;
+        Ok(Self {
+            media,
+            encoder,
+            encoder_setting: settings.encoder.clone(),
+            integrations,
+        })
+    }
+}
+
+/// Command-line overrides that must not be written back to settings.json.
+#[derive(Debug, Clone, Default)]
+pub struct Overrides {
+    pub clip_dir: Option<PathBuf>,
+    pub port: Option<u16>,
+    pub bind: Option<String>,
+    pub ui_file: Option<PathBuf>,
+    pub log_level: Option<String>,
+}
+
+impl Overrides {
+    /// Apply to settings read from the file.
+    pub fn apply(&self, settings: &mut Settings) {
+        if let Some(d) = &self.clip_dir {
+            settings.clip_dir = d.clone();
+        }
+        if let Some(p) = self.port {
+            settings.port = p;
+        }
+        if let Some(b) = &self.bind {
+            settings.bind = b.clone();
+        }
+        if let Some(u) = &self.ui_file {
+            settings.ui_file = u.clone();
+        }
+        if let Some(l) = &self.log_level {
+            settings.log_level = l.clone();
+        }
+    }
+}
+
+pub struct AppState {
+    settings: RwLock<Settings>,
+    /// Where settings.json lives; saves go there minus the overrides.
+    pub settings_path: PathBuf,
+    pub overrides: Overrides,
+    pub data_dir: PathBuf,
+    paths: RwLock<Arc<Paths>>,
+    /// ffmpeg as located, without resource limits.
+    pub media_base: Media,
+    runtime: RwLock<Arc<Runtime>>,
     pub dry_run: bool,
+    pub sessions: Sessions,
+    /// Set by main once the shutdown handle exists (for `POST /api/restart`).
+    pub shutdown: std::sync::OnceLock<Shutdown>,
+    /// Restart-only fields changed since start.
+    pub pending_restart: Mutex<Vec<&'static str>>,
     pub inner: Mutex<Inner>,
     /// Wakes the scanner early (after a delete, for example).
     pub scan_wake: Notify,
@@ -189,23 +269,45 @@ impl std::fmt::Display for StateError {
 }
 impl std::error::Error for StateError {}
 
+/// Everything `AppState::load` needs besides the state files.
+pub struct Boot {
+    pub settings: Settings,
+    pub settings_path: PathBuf,
+    pub overrides: Overrides,
+    pub data_dir: PathBuf,
+    pub ui_file: PathBuf,
+    pub media_base: Media,
+    pub runtime: Runtime,
+    pub dry_run: bool,
+}
+
+fn create_dirs(paths: &Paths) -> Result<()> {
+    for d in [
+        &paths.data_dir,
+        &paths.clip_dir,
+        &paths.preview_dir,
+        &paths.shared_dir,
+    ] {
+        std::fs::create_dir_all(d).with_context(|| format!("cannot create {}", d.display()))?;
+    }
+    Ok(())
+}
+
 impl AppState {
-    pub fn load(
-        settings: Settings,
-        paths: Paths,
-        media: Media,
-        encoder: Encoder,
-        integrations: Integrations,
-        dry_run: bool,
-    ) -> Result<Self> {
-        for d in [
-            &paths.data_dir,
-            &paths.clip_dir,
-            &paths.preview_dir,
-            &paths.shared_dir,
-        ] {
-            std::fs::create_dir_all(d).with_context(|| format!("cannot create {}", d.display()))?;
-        }
+    pub fn load(boot: Boot) -> Result<Self> {
+        let Boot {
+            settings,
+            settings_path,
+            overrides,
+            data_dir,
+            ui_file,
+            media_base,
+            runtime,
+            dry_run,
+        } = boot;
+        let paths = Paths::new(&settings.clip_dir, &data_dir, ui_file);
+        create_dirs(&paths)?;
+        let sessions = Sessions::load(&data_dir.join("sessions.json"));
         let mut inner = Inner::default();
         if paths.names_file.is_file() {
             match read_json(&paths.names_file) {
@@ -252,12 +354,17 @@ impl AppState {
             }
         }
         Ok(Self {
-            settings,
-            paths,
-            media,
-            encoder,
-            integrations,
+            settings: RwLock::new(settings),
+            settings_path,
+            overrides,
+            data_dir,
+            paths: RwLock::new(Arc::new(paths)),
+            media_base,
+            runtime: RwLock::new(Arc::new(runtime)),
             dry_run,
+            sessions,
+            shutdown: std::sync::OnceLock::new(),
+            pending_restart: Mutex::new(Vec::new()),
             inner: Mutex::new(inner),
             scan_wake: Notify::new(),
             tray: std::sync::OnceLock::new(),
@@ -265,14 +372,94 @@ impl AppState {
         })
     }
 
+    /// A copy of the effective settings (file plus command-line overrides).
+    pub fn settings(&self) -> Settings {
+        self.settings.read().clone()
+    }
+
+    pub fn paths(&self) -> Arc<Paths> {
+        self.paths.read().clone()
+    }
+
+    pub fn runtime(&self) -> Arc<Runtime> {
+        self.runtime.read().clone()
+    }
+
+    pub fn password_set(&self) -> bool {
+        self.settings.read().password_hash.is_some()
+    }
+
+    /// Make new settings effective: rebuild what depends on them, note the
+    /// fields that need a restart, wake the scanner. The caller has already
+    /// validated and saved them.
+    pub async fn apply_settings(&self, next: Settings) -> Result<Vec<&'static str>> {
+        let current = self.settings();
+        let restart = current.restart_needed(&next);
+        let rebuild = current.encoder != next.encoder
+            || current.hwaccel != next.hwaccel
+            || current.ffmpeg_priority != next.ffmpeg_priority
+            || current.ffmpeg_threads != next.ffmpeg_threads
+            || current.display_name != next.display_name
+            || serde_json::to_value(&current.integrations).ok()
+                != serde_json::to_value(&next.integrations).ok();
+        if rebuild {
+            let previous = self.runtime();
+            let runtime = Runtime::build(&self.media_base, &next, self.dry_run, Some(&previous))
+                .await
+                .context("cannot apply the new settings")?;
+            tracing::info!(
+                "settings applied: encoder {}, {}",
+                runtime.encoder.name,
+                runtime.integrations.describe()
+            );
+            *self.runtime.write() = Arc::new(runtime);
+        }
+        if current.clip_dir != next.clip_dir {
+            let old = self.paths();
+            let paths = Paths::new(&next.clip_dir, &old.data_dir, old.ui_file.clone());
+            create_dirs(&paths)?;
+            *self.paths.write() = Arc::new(paths);
+            let mut inner = self.inner.lock();
+            inner.clips.clear();
+            inner.scan_at = None;
+            tracing::info!("clip folder is now {}", next.clip_dir.display());
+        }
+        *self.settings.write() = next;
+        {
+            let mut pending = self.pending_restart.lock();
+            for f in restart.iter() {
+                if !pending.contains(f) {
+                    pending.push(f);
+                }
+            }
+        }
+        self.scan_wake.notify_one();
+        self.tray_changed();
+        Ok(restart)
+    }
+
+    /// Rebuild the integrations after credentials changed (settings unchanged).
+    pub async fn rebuild_runtime(&self) -> Result<()> {
+        let settings = self.settings();
+        let previous = self.runtime();
+        let runtime =
+            Runtime::build(&self.media_base, &settings, self.dry_run, Some(&previous)).await?;
+        *self.runtime.write() = Arc::new(runtime);
+        Ok(())
+    }
+
     /// The UI address on this machine.
     pub fn ui_url(&self) -> String {
-        format!("http://localhost:{}/", self.settings.port)
+        format!("http://localhost:{}/", self.settings.read().port)
     }
 
     /// The UI address for other devices in the network.
     pub fn lan_url(&self) -> String {
-        format!("http://{}:{}/", platform::hostname(), self.settings.port)
+        format!(
+            "http://{}:{}/",
+            platform::hostname(),
+            self.settings.read().port
+        )
     }
 
     /// Tell the tray that clips or jobs changed.
@@ -292,8 +479,8 @@ impl AppState {
                 .map(|(k, v)| (k.clone(), Value::String(v.clone())))
                 .collect(),
         );
-        if let Err(e) = util::write_atomic(&self.paths.names_file, v.to_string().as_bytes()) {
-            tracing::warn!("cannot write {}: {e}", self.paths.names_file.display());
+        if let Err(e) = util::write_atomic(&self.paths().names_file, v.to_string().as_bytes()) {
+            tracing::warn!("cannot write {}: {e}", self.paths().names_file.display());
         }
     }
 
@@ -305,15 +492,15 @@ impl AppState {
                 .map(|s| Value::String(s.clone()))
                 .collect(),
         );
-        if let Err(e) = util::write_atomic(&self.paths.seen_file, v.to_string().as_bytes()) {
-            tracing::warn!("cannot write {}: {e}", self.paths.seen_file.display());
+        if let Err(e) = util::write_atomic(&self.paths().seen_file, v.to_string().as_bytes()) {
+            tracing::warn!("cannot write {}: {e}", self.paths().seen_file.display());
         }
     }
 
     pub fn save_history(&self, inner: &Inner) {
         let text = serde_json::to_string_pretty(&inner.history).unwrap_or_else(|_| "[]".into());
-        if let Err(e) = util::write_atomic(&self.paths.history_file, text.as_bytes()) {
-            tracing::warn!("cannot write {}: {e}", self.paths.history_file.display());
+        if let Err(e) = util::write_atomic(&self.paths().history_file, text.as_bytes()) {
+            tracing::warn!("cannot write {}: {e}", self.paths().history_file.display());
         }
     }
 
@@ -342,8 +529,10 @@ impl AppState {
             .iter()
             .map(|m| json!({ "id": m.id, "label": m.label, "need": m.need }))
             .collect();
-        let nextcloud = self.integrations.storage.is_some();
-        let webhook = self.integrations.notify.is_some();
+        let runtime = self.runtime();
+        let settings = self.settings.read();
+        let nextcloud = runtime.integrations.storage.is_some();
+        let webhook = runtime.integrations.notify.is_some();
         json!({
             "clips": clips,
             "last": inner.last,
@@ -352,14 +541,20 @@ impl AppState {
             "scanAt": inner.scan_at,
             "history": history,
             "config": {
-                "shareKbps": self.settings.share_kbps,
-                "expireDays": self.settings.integrations.nextcloud.expire_days,
+                "shareKbps": settings.share_kbps,
+                "expireDays": settings.integrations.nextcloud.expire_days,
                 "version": VERSION,
-                "encoder": self.encoder.name,
+                "encoder": runtime.encoder.name,
                 "audio": audio,
                 "webhook": webhook,
                 "nextcloud": nextcloud,
                 "update": *self.update.lock(),
+                // since 2.1
+                "setupDone": settings.setup_done,
+                "theme": settings.theme,
+                "passwordSet": settings.password_hash.is_some(),
+                "localMode": !nextcloud,
+                "displayName": settings.display_name,
             }
         })
     }

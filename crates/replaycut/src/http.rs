@@ -14,6 +14,8 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
+use crate::admin;
+use crate::auth;
 use crate::platform;
 use crate::share::{self, ShareError, ShareRequest};
 use crate::state::{AppState, StateError};
@@ -24,6 +26,12 @@ pub fn router(state: App) -> Router {
     Router::new()
         .route("/", get(ui))
         .route("/index.html", get(ui))
+        // pages since 2.1: the same file, the JS picks the page by path
+        .route("/setup", get(ui))
+        .route("/settings", get(ui))
+        .route("/diagnostics", get(ui))
+        .route("/login", get(ui))
+        .route("/obs", get(ui))
         .route("/api/clips", get(clips))
         .route("/api/clips/{base}", axum::routing::delete(delete_clip))
         .route(
@@ -35,7 +43,25 @@ pub fn router(state: App) -> Router {
         .route("/api/share", post(share))
         .route("/api/save", post(save))
         .route("/media/{file}", get(media))
+        // since 2.1
+        .route(
+            "/api/settings",
+            get(admin::get_settings).put(admin::put_settings),
+        )
+        .route("/api/test/nextcloud", post(admin::test_nextcloud))
+        .route("/api/test/discord", post(admin::test_discord))
+        .route("/api/addresses", get(admin::addresses))
+        .route("/api/session", get(admin::session))
+        .route("/api/login", post(admin::login))
+        .route("/api/logout", post(admin::logout))
+        .route("/api/restart", post(admin::restart))
+        .route("/themes/{file}", get(admin::theme))
         .fallback(not_found)
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::guard,
+        ))
+        .layer(axum::middleware::from_fn(auth::origin_check))
         .with_state(state)
 }
 
@@ -91,10 +117,11 @@ async fn not_found() -> Response {
 }
 
 async fn ui(State(app): State<App>) -> Result<Response, ApiError> {
-    let bytes = tokio::fs::read(&app.paths.ui_file).await.map_err(|e| {
+    let paths = app.paths();
+    let bytes = tokio::fs::read(&paths.ui_file).await.map_err(|e| {
         ApiError::internal(format!(
             "UI file {} unreadable: {e}",
-            app.paths.ui_file.display()
+            paths.ui_file.display()
         ))
     })?;
     Ok((
@@ -143,7 +170,8 @@ async fn delete_clip(
     // The MKV plus every share derived from it.
     let prefix = base.split_whitespace().collect::<Vec<_>>().join("_") + "_";
     let mut files = vec![std::path::PathBuf::from(&clip.path)];
-    if let Ok(entries) = std::fs::read_dir(&app.paths.shared_dir) {
+    let paths = app.paths();
+    if let Ok(entries) = std::fs::read_dir(&paths.shared_dir) {
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
             if name.starts_with(&prefix) && name.to_ascii_lowercase().ends_with(".mp4") {
@@ -152,7 +180,8 @@ async fn delete_clip(
         }
     }
     let remote_deleted = if remote {
-        let Some(storage) = &app.integrations.storage else {
+        let runtime = app.runtime();
+        let Some(storage) = &runtime.integrations.storage else {
             return Err(ApiError::new(
                 StatusCode::BAD_REQUEST,
                 "no storage integration is enabled",
@@ -189,7 +218,7 @@ async fn delete_clip(
     .await
     .map_err(ApiError::internal)?
     .map_err(ApiError::internal)?;
-    let _ = std::fs::remove_file(app.paths.preview_of(&base));
+    let _ = std::fs::remove_file(paths.preview_of(&base));
     app.forget_clip(&base);
     app.scan_wake.notify_one();
     tracing::info!("deleted {base}: {recycled} file(s) to the recycle bin");
@@ -251,7 +280,7 @@ async fn media(State(app): State<App>, Path(file): Path<String>, req: Request) -
     if base.contains(['/', '\\']) {
         return ApiError::new(StatusCode::BAD_REQUEST, "bad path").into_response();
     }
-    let path = app.paths.preview_of(base);
+    let path = app.paths().preview_of(base);
     if !path.is_file() {
         return not_found().await;
     }

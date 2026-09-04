@@ -11,6 +11,8 @@ plain text.
 | Data directory | `%LOCALAPPDATA%\replaycut` (override with `--data-dir`) |
 | Settings | `<data-dir>\settings.json` (override with `--settings`) |
 | State files | `<data-dir>\clip-names.json`, `clip-seen.json`, `clip-history.json` |
+| Browser sessions | `<data-dir>\sessions.json` (hashes of the login cookies, 30 days) |
+| Themes | `<data-dir>\themes\<name>.css` (see `docs/themes.md`) |
 | Logs | `<data-dir>\logs\replaycut.<date>.log`, daily rotation, 7 files kept |
 | Previews | `<clipDir>\.preview\` |
 | Shared clips | `<clipDir>\shared\` |
@@ -63,6 +65,14 @@ fine.
 | `ffmpegThreads` | `-threads` for decoder and encoder. `0` (default) means half of the logical cores, at least 2. Set it to the core count and `ffmpegPriority` to `normal` for maximum speed when nothing else is running. |
 | `logLevel` | `error`, `warn`, `info`, `debug` or `trace`. The `RUST_LOG` environment variable overrides it. |
 | `checkUpdates` | `true` asks GitHub once a day (a minute after start, then every 24 h) whether a newer release exists and shows a banner in the UI; nothing is downloaded. Set to `false` if the service must not contact GitHub. |
+| `setupDone` | `false` until the browser setup (`/setup`) finished. A file without the field counts as set up, so an installation from 2.0 is not asked again. |
+| `theme` | Name of the UI theme: `wardogs` (built in) or a file `themes\<name>.css` in the data directory. See `docs/themes.md`. |
+| `passwordHash` | Set through the settings page or `PUT /api/settings` with `password`; an argon2id hash, never the password. Absent means no password: every device in the network may use the UI. This PC (loopback) never needs the password. |
+
+Since 2.1 the settings page and `PUT /api/settings` change the file at
+runtime; everything but `port`, `bind` and `uiFile` takes effect without a
+restart. Command-line overrides win over the file for as long as the
+process runs but are never written back.
 | `integrations.nextcloud` | `enabled` switches the upload on. `url` is the server, `folder` the target folder (clips land in `<folder>/<YYYY-MM>/`), `expireDays` sets an expiry on the public link (`0` = never; an expired link also kills the Discord post). |
 | `integrations.discord` | `enabled` switches the webhook post on. The webhook URL itself is a credential. |
 

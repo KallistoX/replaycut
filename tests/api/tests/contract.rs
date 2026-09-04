@@ -494,3 +494,208 @@ fn t12_config_update_is_null_or_release() {
         }
     }
 }
+
+// ---------------------------------------------------------------- since 2.1
+//
+// These cases need a 2.1 service; against 1.4.1 they print "skipped" and
+// pass, so the suite stays green for both.
+
+fn since_21() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    let ok = (major, minor) >= (2, 1);
+    if !ok {
+        eprintln!("skipped: needs replaycut 2.1, service is {v}");
+    }
+    ok
+}
+
+#[test]
+fn t13_settings_document_hides_secrets() {
+    let _g = serial();
+    if !since_21() {
+        return;
+    }
+    let (status, doc) = get_json("/api/settings");
+    assert_eq!(status, 200);
+    assert!(doc["shareKbps"].is_number(), "shareKbps: {doc}");
+    assert!(
+        doc.get("passwordHash").is_none(),
+        "passwordHash must never be sent"
+    );
+    assert!(doc["secrets"]["nextcloud"].is_boolean(), "secrets: {doc}");
+    assert!(doc["passwordSet"].is_boolean());
+    assert!(
+        doc["themes"]
+            .as_array()
+            .is_some_and(|t| t.iter().any(|n| n == "wardogs")),
+        "themes: {}",
+        doc["themes"]
+    );
+    assert!(doc["restartNeeded"].is_array());
+    assert_eq!(doc["version"], state()["config"]["version"]);
+}
+
+#[test]
+fn t14_settings_put_validates() {
+    let _g = serial();
+    if !since_21() {
+        return;
+    }
+    let (status, body) = put_json("/api/settings", &json!({ "port": 0 }));
+    assert_eq!(status, 400, "{body}");
+    assert!(
+        body["error"].as_str().unwrap_or("").contains("port"),
+        "{body}"
+    );
+    let (status, body) = put_json("/api/settings", &json!({ "bogus": 1 }));
+    assert_eq!(status, 400, "{body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or("")
+            .contains("unknown field"),
+        "{body}"
+    );
+    let (status, body) = put_json("/api/settings", &json!({ "passwordHash": "x" }));
+    assert_eq!(status, 400, "{body}");
+    // a text body is not JSON
+    let resp = client()
+        .put(url("/api/settings"))
+        .header("content-type", "text/plain")
+        .body("port=1")
+        .send()
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 415);
+}
+
+#[test]
+fn t15_settings_put_applies_bitrate() {
+    let _g = serial();
+    if !since_21() {
+        return;
+    }
+    let before = state()["config"]["shareKbps"].as_u64().unwrap_or(6000);
+    let target = if before == 4000 { 4500 } else { 4000 };
+    let (status, body) = put_json("/api/settings", &json!({ "shareKbps": target }));
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["ok"], true);
+    assert!(
+        body["restartNeeded"]
+            .as_array()
+            .is_some_and(|a| a.is_empty()),
+        "{body}"
+    );
+    assert_eq!(body["settings"]["shareKbps"], target);
+    assert_eq!(
+        state()["config"]["shareKbps"],
+        target,
+        "config reflects the change"
+    );
+    let (status, _) = put_json("/api/settings", &json!({ "shareKbps": before }));
+    assert_eq!(status, 200);
+    assert_eq!(state()["config"]["shareKbps"], before);
+}
+
+#[test]
+fn t16_origin_check_refuses_cross_site_writes() {
+    let _g = serial();
+    if !since_21() {
+        return;
+    }
+    let resp = client()
+        .post(url("/api/save"))
+        .header("origin", "http://evil.example")
+        .body("")
+        .send()
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 403);
+    let body: serde_json::Value = resp.json().unwrap_or_default();
+    assert_eq!(body["ok"], false);
+    // same-origin and no origin both pass (the endpoint itself answers 200 in dry run)
+    let host = url("")
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .to_string();
+    let resp = client()
+        .post(url("/api/save"))
+        .header("origin", format!("http://{host}"))
+        .body("")
+        .send()
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200, "same-origin");
+    let (status, _) = post_json("/api/save", &json!({}));
+    assert_eq!(status, 200, "no origin header");
+}
+
+#[test]
+fn t17_session_on_loopback_is_authenticated() {
+    let _g = serial();
+    if !since_21() {
+        return;
+    }
+    let (status, s) = get_json("/api/session");
+    assert_eq!(status, 200);
+    assert_eq!(s["authenticated"], true, "{s}");
+    assert_eq!(s["loopback"], true, "the suite runs on this machine: {s}");
+    assert!(s["passwordSet"].is_boolean());
+}
+
+#[test]
+fn t18_theme_route_is_strict() {
+    let _g = serial();
+    if !since_21() {
+        return;
+    }
+    assert_eq!(get("/themes/nope.css").status().as_u16(), 404);
+    assert_eq!(get("/themes/..%2Fsettings.json").status().as_u16(), 404);
+    assert_eq!(get("/themes/Bad%20Name.css").status().as_u16(), 404);
+    assert_eq!(
+        get("/themes/wardogs.css").status().as_u16(),
+        404,
+        "built in, no file"
+    );
+}
+
+#[test]
+fn t19_addresses_carry_a_qr_code() {
+    let _g = serial();
+    if !since_21() {
+        return;
+    }
+    let (status, a) = get_json("/api/addresses");
+    assert_eq!(status, 200);
+    assert!(a["port"].is_number());
+    let urls = a["urls"].as_array().cloned().unwrap_or_default();
+    assert!(!urls.is_empty(), "{a}");
+    assert!(urls
+        .iter()
+        .all(|u| u.as_str().is_some_and(|s| s.starts_with("http://"))));
+    assert!(
+        a["qrSvg"].as_str().is_some_and(|s| s.contains("<svg")),
+        "qrSvg"
+    );
+}
+
+#[test]
+fn t20_pages_serve_the_ui() {
+    let _g = serial();
+    if !since_21() {
+        return;
+    }
+    for page in ["/setup", "/settings", "/diagnostics", "/login"] {
+        let resp = get(page);
+        assert_eq!(resp.status().as_u16(), 200, "{page}");
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        assert!(ct.starts_with("text/html"), "{page}: {ct}");
+    }
+}

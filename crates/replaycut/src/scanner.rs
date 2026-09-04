@@ -2,6 +2,9 @@
 //! triggers a scan; a scan applies the contract rules: a `*.mkv` becomes a
 //! clip once it is at least 2 s old and can be opened exclusively, the
 //! preview is remuxed, duration and audio tracks are probed.
+//!
+//! The folder can change at runtime (settings page): every round re-reads
+//! the paths and re-creates the watcher when the folder differs.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -19,20 +22,16 @@ const POLL: Duration = Duration::from_secs(5);
 const MIN_AGE: Duration = Duration::from_secs(2);
 const DEBOUNCE: Duration = Duration::from_millis(300);
 
-pub async fn run(state: Arc<AppState>) {
-    let (tx, mut rx) = mpsc::channel::<()>(4);
-    let _watcher = match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+fn watch(dir: &Path, tx: mpsc::Sender<()>) -> Option<notify::RecommendedWatcher> {
+    match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if res.is_ok() {
             let _ = tx.try_send(());
         }
     }) {
-        Ok(mut w) => match w.watch(&state.paths.clip_dir, RecursiveMode::NonRecursive) {
+        Ok(mut w) => match w.watch(dir, RecursiveMode::NonRecursive) {
             Ok(()) => Some(w),
             Err(e) => {
-                tracing::warn!(
-                    "cannot watch {}: {e} - polling only",
-                    state.paths.clip_dir.display()
-                );
+                tracing::warn!("cannot watch {}: {e} - polling only", dir.display());
                 None
             }
         },
@@ -40,9 +39,21 @@ pub async fn run(state: Arc<AppState>) {
             tracing::warn!("file watcher unavailable: {e} - polling only");
             None
         }
-    };
+    }
+}
+
+pub async fn run(state: Arc<AppState>) {
+    let (tx, mut rx) = mpsc::channel::<()>(4);
+    let mut watched = state.paths().clip_dir.clone();
+    // Kept alive for its Drop; re-created when the folder changes.
+    let mut _watcher = watch(&watched, tx.clone());
 
     loop {
+        let paths = state.paths();
+        if paths.clip_dir != watched {
+            watched = paths.clip_dir.clone();
+            _watcher = watch(&watched, tx.clone());
+        }
         let retry = match scan(&state).await {
             Ok(retry) => retry,
             Err(e) => {
@@ -62,8 +73,10 @@ pub async fn run(state: Arc<AppState>) {
 /// One scan. Returns how soon a re-scan is worthwhile when a file was
 /// skipped for being too young or still open.
 async fn scan(state: &AppState) -> Result<Option<Duration>> {
+    let paths = state.paths();
+    let runtime = state.runtime();
     let mut files: Vec<(PathBuf, SystemTime, u64)> = Vec::new();
-    for entry in std::fs::read_dir(&state.paths.clip_dir)?.flatten() {
+    for entry in std::fs::read_dir(&paths.clip_dir)?.flatten() {
         let path = entry.path();
         if !path.is_file()
             || path
@@ -109,13 +122,13 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
             retry = Some(retry.map_or(Duration::from_secs(1), |r| r.min(Duration::from_secs(1))));
             continue;
         }
-        let preview = state.paths.preview_of(&base);
+        let preview = paths.preview_of(&base);
         let result: Result<()> = async {
             if !preview.is_file() {
-                state.media.remux_preview(path, &preview).await?;
+                runtime.media.remux_preview(path, &preview).await?;
             }
-            let duration = state.media.duration(&preview).await?;
-            let tracks = state.media.audio_tracks(path).await;
+            let duration = runtime.media.duration(&preview).await?;
+            let tracks = runtime.media.audio_tracks(path).await;
             let clip = Clip {
                 name: path
                     .file_name()
@@ -177,7 +190,7 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
         inner.scan_at = Some(util::now_local());
     }
     state.tray_changed();
-    if let Ok(previews) = std::fs::read_dir(&state.paths.preview_dir) {
+    if let Ok(previews) = std::fs::read_dir(&paths.preview_dir) {
         for p in previews.flatten() {
             let path = p.path();
             let is_mp4 = path

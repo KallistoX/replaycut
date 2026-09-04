@@ -37,6 +37,48 @@ pub fn copy_text(text: &str) -> Result<()> {
     Ok(())
 }
 
+/// The IPv4 address other devices reach this machine at: the source
+/// address of a UDP socket "connected" to a documentation address (no
+/// packet is sent).
+pub fn primary_ipv4() -> Option<std::net::Ipv4Addr> {
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    sock.connect("192.0.2.1:80").ok()?;
+    match sock.local_addr().ok()?.ip() {
+        std::net::IpAddr::V4(ip) if !ip.is_loopback() && !ip.is_unspecified() => Some(ip),
+        _ => None,
+    }
+}
+
+/// Start a second copy of this process with the same arguments plus
+/// `--no-browser --wait-for-exit`; it waits until this one has released
+/// the single-instance mutex and then takes over.
+pub fn spawn_self_for_restart() -> Result<()> {
+    use anyhow::Context as _;
+    let exe = std::env::current_exe().context("current executable")?;
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    for flag in ["--no-browser", "--wait-for-exit"] {
+        if !args.iter().any(|a| a == flag) {
+            args.push(flag.to_string());
+        }
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    #[cfg(windows)]
+    {
+        crate::winshell::spawn_detached(&exe, &refs)
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new(&exe)
+            .args(&refs)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .with_context(|| format!("cannot start {}", exe.display()))?;
+        Ok(())
+    }
+}
+
 /// Lower-case computer name for the address other devices use.
 pub fn hostname() -> String {
     std::env::var("COMPUTERNAME")

@@ -157,6 +157,14 @@ impl Notify {
 // ---------------------------------------------------------------------------
 // Nextcloud: WebDAV upload plus an OCS public link
 
+/// What the Nextcloud login check reports.
+#[derive(Debug, Clone)]
+pub struct UserInfo {
+    pub display_name: String,
+    pub free: Option<u64>,
+    pub total: Option<u64>,
+}
+
 pub struct Nextcloud {
     pub url: String,
     pub folder: String,
@@ -219,6 +227,11 @@ impl Nextcloud {
 
     /// Login check; returns the display name reported by the server.
     pub async fn test(&self) -> Result<String> {
+        Ok(self.user_info().await?.display_name)
+    }
+
+    /// Login check with the quota (`OCS cloud/user`).
+    pub async fn user_info(&self) -> Result<UserInfo> {
         let res = self
             .client
             .get(format!("{}/ocs/v2.php/cloud/user?format=json", self.url))
@@ -229,11 +242,18 @@ impl Nextcloud {
             bail!("login failed: HTTP {status} - check user name and app password");
         }
         let body: Value = res.json().await.unwrap_or(Value::Null);
-        let name = body["ocs"]["data"]["display-name"]
+        let data = &body["ocs"]["data"];
+        let display_name = data["display-name"]
             .as_str()
             .unwrap_or(&self.user)
             .to_string();
-        Ok(name)
+        // quota.total/free are -3 for "unlimited"; only positive numbers count.
+        let positive = |v: &Value| v.as_i64().filter(|n| *n >= 0).map(|n| n as u64);
+        Ok(UserInfo {
+            display_name,
+            free: positive(&data["quota"]["free"]),
+            total: positive(&data["quota"]["total"]),
+        })
     }
 
     async fn mkcol(&self, remote_dir: &str) -> Result<()> {
