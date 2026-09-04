@@ -37,18 +37,48 @@ The service itself follows. Until then there is nothing to install.
 - A hardware H.264 encoder is used when available (AMD AMF, NVIDIA NVENC,
   Intel Quick Sync), otherwise libx264.
 
-## Three steps
+## Install
 
-Once the 2.0 service is released:
-
-1. Download the release ZIP, unpack it and run `install.cmd`. The service
-   registers itself to start at logon and opens the setup page in your browser.
+1. Download the release ZIP, unpack it anywhere and run `install.cmd`. It
+   copies replaycut to `%LOCALAPPDATA%eplaycutpp`, adds a start menu and
+   a desktop shortcut, asks whether replaycut should start when you sign in
+   (default: no) and whether other devices in your private network may reach
+   it (one administrator prompt for the firewall rule), then starts the
+   service and opens the page in your browser. No admin rights otherwise.
 2. Point replaycut at the folder OBS writes replays to and, if you want,
    enable integrations (Nextcloud upload, Discord webhook). Until the setup
    page exists this is `replaycut setup` on the console; see
    [`docs/settings.md`](docs/settings.md).
 3. Play. Press the replay hotkey when something happens, open the page, trim,
    Share.
+
+replaycut runs as a tray icon: **Open** shows the page, **Copy address** puts
+the address for your phone into the clipboard, **Quit** stops it. Double-click
+the shortcut to start it again; if it is already running, that opens the page.
+
+Windows SmartScreen may warn about an unsigned download the first time: click
+"More info", then "Run anyway".
+
+### Update
+
+Unpack the new ZIP and run its `install.cmd`. Settings, titles, history and
+credentials are kept; the service is restarted on the new version.
+
+### Uninstall
+
+Run `uninstall.cmd` from the unpacked ZIP (or `replaycut uninstall` from a
+terminal). It stops the service and removes the files, shortcuts, autostart
+entry and, after asking, the firewall rule. Settings, titles, history and
+credentials stay unless you use `replaycut uninstall --purge`. Your clips
+are never touched.
+
+### Coming from the 1.x PowerShell service
+
+`install.cmd` detects the old scheduled task and takes over its clip folder,
+port, Nextcloud settings, titles, history and credentials, then stops and
+removes the task so the port is free. Autostart is switched on, because the
+old service started at sign-in. The old firewall rule and URL reservation are
+removed in the same administrator step as the new firewall rule.
 
 ## Development
 

@@ -178,7 +178,7 @@ pub async fn test(settings: &Settings) -> Result<()> {
     Ok(())
 }
 
-fn ask(prompt: &str, default: &str) -> Result<String> {
+pub(crate) fn ask(prompt: &str, default: &str) -> Result<String> {
     if default.is_empty() {
         print!("{prompt}: ");
     } else {
@@ -195,7 +195,7 @@ fn ask(prompt: &str, default: &str) -> Result<String> {
     })
 }
 
-fn ask_yes_no(prompt: &str, default: bool) -> Result<bool> {
+pub(crate) fn ask_yes_no(prompt: &str, default: bool) -> Result<bool> {
     let answer = ask(&format!("{prompt} (y/n)"), if default { "y" } else { "n" })?;
     Ok(matches!(
         answer.trim().to_ascii_lowercase().as_str(),

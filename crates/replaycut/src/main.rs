@@ -9,9 +9,13 @@
 
 mod credentials;
 mod http;
+#[cfg(windows)]
+mod install;
 mod integrations;
 mod lifecycle;
 mod media;
+#[cfg(windows)]
+mod migrate;
 mod platform;
 mod scanner;
 mod settings;
@@ -21,11 +25,13 @@ mod state;
 mod toast;
 mod tray;
 mod util;
+#[cfg(windows)]
+mod winshell;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -83,11 +89,39 @@ enum Command {
     Test,
     /// Stop the running service.
     Stop,
+    /// Install or update replaycut for this user (files, shortcuts, optional autostart and firewall rule).
+    Install,
+    /// Remove the installation; settings and clips stay unless --purge.
+    Uninstall {
+        /// Also delete settings, state, logs and the stored credentials (asks first).
+        #[arg(long)]
+        purge: bool,
+    },
+    /// Start replaycut at sign-in: on, off or status.
+    Autostart {
+        #[arg(value_enum)]
+        mode: AutostartMode,
+    },
+}
+
+#[cfg(windows)]
+use crate::install::AutostartMode;
+
+/// Placeholder so the command line parses on other platforms.
+#[cfg(not(windows))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+enum AutostartMode {
+    On,
+    Off,
+    Status,
 }
 
 fn main() -> ExitCode {
     // Before clap prints anything: reach the terminal we were started from.
-    let console = platform::attach_parent_console();
+    // The installer starts the service with REPLAYCUT_NO_CONSOLE so that it
+    // does not bind to the installer's window.
+    let console =
+        std::env::var_os("REPLAYCUT_NO_CONSOLE").is_none() && platform::attach_parent_console();
     let cli = Cli::parse();
     match real_main(cli, console) {
         Ok(()) => ExitCode::SUCCESS,
@@ -112,6 +146,7 @@ fn real_main(cli: Cli, console: bool) -> Result<()> {
         .settings
         .clone()
         .unwrap_or_else(|| data_dir.join("settings.json"));
+    let settings_existed = settings_path.is_file();
     let mut settings = Settings::load_or_create(&settings_path)?;
     if let Some(d) = cli.clip_dir.clone() {
         settings.clip_dir = d;
@@ -136,6 +171,22 @@ fn real_main(cli: Cli, console: bool) -> Result<()> {
         Some(Command::Setup) => runtime()?.block_on(setup::run(&settings_path, &mut settings)),
         Some(Command::Test) => runtime()?.block_on(setup::test(&settings)),
         Some(Command::Stop) => stop(),
+        #[cfg(windows)]
+        Some(Command::Install) => install::install(
+            &runtime()?,
+            &mut settings,
+            &settings_path,
+            &data_dir,
+            settings_existed,
+        ),
+        #[cfg(windows)]
+        Some(Command::Uninstall { purge }) => install::uninstall(purge, &settings_path, &data_dir),
+        #[cfg(windows)]
+        Some(Command::Autostart { mode }) => install::autostart(mode),
+        #[cfg(not(windows))]
+        Some(Command::Install | Command::Uninstall { .. } | Command::Autostart { .. }) => {
+            anyhow::bail!("this command is only supported on Windows")
+        }
         Some(Command::Run) | None => run_service(&cli, settings, &data_dir, console),
     }
 }
@@ -150,18 +201,11 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
 
 /// `replaycut stop`: signal the stop event and wait for the instance to go.
 fn stop() -> Result<()> {
-    if !platform::signal_stop()? {
+    if platform::stop_instance(Duration::from_secs(15))? {
+        println!("replaycut stopped");
+    } else {
         println!("replaycut is not running");
-        return Ok(());
     }
-    let started = Instant::now();
-    while platform::instance_running() {
-        if started.elapsed() > Duration::from_secs(15) {
-            anyhow::bail!("replaycut is still running 15 s after the stop request");
-        }
-        std::thread::sleep(Duration::from_millis(200));
-    }
-    println!("replaycut stopped");
     Ok(())
 }
 

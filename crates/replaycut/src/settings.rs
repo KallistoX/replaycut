@@ -135,6 +135,20 @@ impl Settings {
         Ok(settings)
     }
 
+    /// Write the file (pretty JSON, trailing newline).
+    pub fn save(&self, path: &Path) -> Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(
+            path,
+            serde_json::to_string_pretty(self)?
+                + "
+",
+        )
+        .with_context(|| format!("cannot write {}", path.display()))
+    }
+
     pub fn validate(&self) -> Result<()> {
         anyhow::ensure!(self.port != 0, "port must not be 0");
         anyhow::ensure!(

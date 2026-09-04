@@ -341,6 +341,24 @@ pub use other::{
     press_f9, set_app_id, signal_stop, StopEvent,
 };
 
+/// Ask a running instance to stop and wait for it. `Ok(false)` when none ran.
+pub fn stop_instance(timeout: std::time::Duration) -> Result<bool> {
+    if !signal_stop()? {
+        return Ok(false);
+    }
+    let started = std::time::Instant::now();
+    while instance_running() {
+        if started.elapsed() > timeout {
+            anyhow::bail!(
+                "replaycut is still running {} s after the stop request",
+                timeout.as_secs()
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

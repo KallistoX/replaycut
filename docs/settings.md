@@ -83,10 +83,13 @@ in the log; the service still starts.
 replaycut [OPTIONS] [COMMAND]
 
 Commands:
-  run    Run the service (default)
-  setup  Configure display name, Nextcloud and Discord interactively
-  test   Check the enabled integrations and their credentials
-  stop   Stop the running service
+  run        Run the service (default)
+  setup      Configure display name, Nextcloud and Discord interactively
+  test       Check the enabled integrations and their credentials
+  stop       Stop the running service
+  install    Install or update replaycut for this user
+  uninstall  Remove the installation (--purge also removes settings and credentials)
+  autostart  on | off | status: start replaycut at sign-in
 
 Options:
   --data-dir <DIR>     Data directory (settings, state, logs)
@@ -151,3 +154,24 @@ once. `--dry-run` only logs them.
 
 The log records why the service stopped (Ctrl+C, the console closing, the
 stop event, Quit in the tray menu, sign-out) and any panic with a backtrace.
+
+## Installation layout
+
+`replaycut install` (what `install.cmd` runs) is idempotent and needs no
+admin rights except for the optional firewall rule:
+
+| Item | Where |
+|---|---|
+| Program files | `%LOCALAPPDATA%\replaycut\app\` (`replaycut.exe`, `ui\index.html`, `replaycut.ico`, docs) |
+| Settings, state, logs | `%LOCALAPPDATA%\replaycut\` |
+| Shortcuts | Start menu and desktop, `replaycut.lnk`, carrying the AppUserModelID `replaycut` |
+| Notification registration | `HKCU\Software\Classes\AppUserModelId\replaycut` |
+| Autostart (optional) | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\replaycut` = `"<app>\replaycut.exe" --no-browser` |
+| Firewall rule (optional) | `replaycut`, inbound TCP on the configured port, private profile, bound to the executable |
+
+Migration from the 1.x service happens inside `install` when the scheduled
+task `WARDOGS Clip-Service` or its state files exist: the task's arguments
+become `settings.json` (only when none exists yet), `clip-*.json` and the
+credentials `wardogs/*` are copied where ours are missing, the task is
+stopped and removed, autostart is switched on, and the old firewall rule and
+URL reservation are removed in the elevated step.

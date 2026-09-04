@@ -12,6 +12,16 @@ contract.
 
 ### Added
 
+- Windows integration, part 2: `replaycut install` (idempotent, per user, no
+  admin except the optional firewall rule): copies the program to
+  `%LOCALAPPDATA%eplaycutpp`, writes start menu and desktop shortcuts
+  with the AppUserModelID, registers the notification app id, asks about
+  autostart (HKCU Run entry, default off) and the firewall rule (one UAC
+  prompt, private profile), starts the service and opens the page;
+  `replaycut uninstall` (`--purge` also removes settings, state, logs and
+  credentials); `replaycut autostart on|off|status`; migration from the 1.x
+  PowerShell service (task arguments, state files, credentials, task and
+  firewall cleanup); `install.cmd` and `uninstall.cmd` for the release ZIP.
 - Windows integration, part 1: the executable runs without a console window
   and attaches to the terminal it was started from for `--help`, `setup`,
   `test`, `stop` and log output; only one instance runs at a time (a second
