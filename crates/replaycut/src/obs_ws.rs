@@ -435,6 +435,9 @@ async fn session(handle: &Arc<ObsHandle>, config: &ObsConfig) -> Result<SessionE
     handle.set(|s| {
         s.connected = false;
         s.facts = None;
+        // Unknown until the next connection reports it; otherwise a stale
+        // "running" would raise a stop toast right after a reconnect.
+        s.replay_active = false;
     });
     let _ = sink.close().await;
     Ok(end)

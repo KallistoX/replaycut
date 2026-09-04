@@ -66,6 +66,12 @@ Windows SmartScreen may warn about an unsigned download the first time: click
 - **Settings** (`/settings`): everything in `settings.json`, integrations
   with their tests, theme, autostart and the password; changes apply at
   once, port and bind after "Restart now".
+- **OBS** (`/obs`): with the WebSocket server switched on in OBS (Tools ›
+  WebSocket Server Settings), replaycut connects on its own, saves replays
+  through OBS instead of a simulated key press, warns while the replay
+  buffer is stopped and can start it, and compares folder, format, encoder
+  and audio tracks with what it expects - every difference with the OBS
+  menu path. It never changes OBS settings.
 - **Diagnostics** (`/diagnostics`): ffmpeg, encoder, folder, scan,
   integrations, network as one list with a fix per problem, and "Copy
   diagnostics" for a support message. `replaycut test` prints the same.
