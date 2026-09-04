@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>replaycut Clips</title>
+<style>
+  :root { --bg:#111418; --panel:#1a1f26; --line:#2a313b; --fg:#e6e9ee; --dim:#8a94a3; --acc:#f2b632; --ok:#4cc38a; --err:#f06060; }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif; height:100vh; display:grid; grid-template-columns:280px 1fr; }
+  aside { border-right:1px solid var(--line); overflow:auto; padding:10px; display:flex; flex-direction:column; gap:6px }
+  aside h1 { font-size:15px; margin:4px 6px 6px; color:var(--acc); letter-spacing:.06em }
+  aside h2 { font-size:12px; margin:14px 6px 4px; color:var(--dim); letter-spacing:.08em; text-transform:uppercase }
+  .clip { padding:8px 10px; border-radius:8px; cursor:pointer; border:1px solid transparent; margin-bottom:4px }
+  .clip:hover { background:var(--panel) } .clip.active { border-color:var(--acc); background:var(--panel) }
+  .clip small { color:var(--dim); display:block } .clip b { display:block }
+  .hist { padding:6px 10px; border-radius:8px; border:1px solid var(--line); margin-bottom:4px; font-size:12px }
+  .hist small { color:var(--dim); display:block }
+  .hist .row { margin-top:4px; gap:4px } .hist button { padding:3px 7px; font-size:11px }
+  main { display:flex; flex-direction:column; padding:14px; gap:10px; min-width:0 }
+  video { width:100%; max-height:58vh; background:#000; border-radius:8px; outline:none }
+  #tl { position:relative; height:44px; background:var(--panel); border-radius:6px; cursor:pointer; user-select:none; touch-action:none }
+  #sel { position:absolute; top:0; bottom:0; background:rgba(242,182,50,.22); border-left:2px solid var(--acc); border-right:2px solid var(--acc) }
+  .h { position:absolute; top:-6px; width:14px; height:56px; margin-left:-7px; cursor:ew-resize; z-index:2 }
+  .h::after { content:''; position:absolute; left:4px; top:8px; width:6px; height:40px; background:var(--acc); border-radius:3px }
+  #ph { position:absolute; top:0; bottom:0; width:2px; background:#fff; pointer-events:none; z-index:3 }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap }
+  button, select { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:8px 12px; cursor:pointer; font:inherit }
+  button:hover { border-color:var(--dim) } button.primary { background:var(--acc); color:#111; border-color:var(--acc); font-weight:600 }
+  button.danger { border-color:var(--err); color:var(--err) } button.danger:hover { background:rgba(240,96,96,.15) }
+  button:disabled { opacity:.5; cursor:default }
+  input[type=text] { background:#0b0e12; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:8px 10px; font:inherit }
+  #title { flex:1; min-width:200px } #title:focus { border-color:var(--acc); outline:none }
+  kbd { background:#0b0e12; border:1px solid var(--line); border-radius:4px; padding:0 5px; font-size:11px; color:var(--dim) }
+  .info { color:var(--dim) } .info b { color:var(--fg) }
+  #status { display:none; padding:8px 12px; border-radius:8px; border:1px solid var(--err); background:rgba(240,96,96,.12); color:var(--fg) }
+  #status.warn { border-color:var(--acc); background:rgba(242,182,50,.12) }
+  #vidErr { display:none; color:var(--err) }
+  #prog { display:none; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px }
+  #prog .bar { height:8px; background:#0b0e12; border-radius:4px; overflow:hidden; margin-top:8px }
+  #prog .bar i { display:block; height:100%; width:0; background:var(--acc); transition:width .4s }
+  #prog .steps { display:flex; gap:14px; margin-top:6px; color:var(--dim); font-size:12px }
+  #prog .steps span.on { color:var(--acc); font-weight:600 } #prog .steps span.done { color:var(--ok) }
+  #result { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px; display:none }
+  #result.ok { border-color:var(--ok) } #result.err { border-color:var(--err) }
+  #result input { width:100%; background:#0b0e12; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:7px; font:inherit; margin:6px 0 }
+  .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-size:12px; background:#0b0e12; color:var(--dim) }
+  .badge.ok { color:var(--ok) } .badge.warn { color:var(--acc) }
+  #toast { position:fixed; right:14px; bottom:14px; background:var(--panel); border:1px solid var(--acc); border-radius:8px; padding:10px 14px; display:none; z-index:20 }
+  #modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:10 }
+  #modal .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px; max-width:460px; display:flex; flex-direction:column; gap:10px }
+  #modal label { display:flex; gap:8px; align-items:flex-start; cursor:pointer }
+  @media (max-width:800px) { body { grid-template-columns:1fr; grid-template-rows:auto 1fr } aside { max-height:34vh; border-right:0; border-bottom:1px solid var(--line) } }
+</style>
+</head>
+<body>
+<aside>
+  <h1>REPLAYCUT CLIPS <span id="ver" class="info" style="font-size:10px;letter-spacing:0"></span></h1>
+  <div class="row" style="margin:0 6px 4px"><button id="btnSave" title="Triggers F9 in OBS (saves the last 5 minutes)">F9: Save replay</button></div>
+  <div id="list"><div class="info" style="padding:8px">Loading clips …</div></div>
+  <h2>Shared</h2>
+  <div id="hist"><div class="info" style="padding:4px 8px">Nothing shared yet.</div></div>
+</aside>
+<main>
+  <div id="status"></div>
+  <div class="row">
+    <input type="text" id="title" placeholder="Title (optional) - shown in list, filename and Discord post" maxlength="80" disabled>
+    <button id="bDel" class="danger" disabled>Delete</button>
+  </div>
+  <video id="v" controls preload="auto" playsinline></video>
+  <div id="vidErr"></div>
+  <div id="tl"><div id="sel"></div><div class="h" id="hin"></div><div class="h" id="hout"></div><div id="ph"></div></div>
+  <div class="row">
+    <button id="bIn">Set in <kbd>I</kbd></button>
+    <button id="bOut">Set out <kbd>O</kbd></button>
+    <button id="bAll">Whole clip</button>
+    <button id="bPrev">Play selection <kbd>P</kbd></button>
+    <span class="info" id="selInfo"></span>
+  </div>
+  <div class="row">
+    <button class="primary" id="bShare">Share <kbd>Enter</kbd></button>
+    <select id="audio" title="Which audio tracks go into the shared clip"></select>
+    <span class="info" id="planInfo"></span>
+  </div>
+  <div class="info"><kbd>Space</kbd> Play/Pause · <kbd>←</kbd><kbd>→</kbd> 1 s · <kbd>Shift</kbd>+arrow 5 s · <kbd>,</kbd><kbd>.</kbd> 1 frame · <kbd>Home</kbd>/<kbd>End</kbd> start/end</div>
+  <div id="prog"><div id="progText"></div><div class="bar"><i id="progBar"></i></div>
+    <div class="steps"><span data-s="encode">1 Cut + H.264</span><span data-s="upload">2 Nextcloud</span><span data-s="discord">3 Discord</span></div></div>
+  <div id="result"></div>
+</main>
+<div id="modal"><div class="box">
+  <b>Delete clip?</b>
+  <div id="delName" class="info"></div>
+  <div class="info">The MKV and the files shared from it go to the recycle bin on the box.</div>
+  <label><input type="checkbox" id="delNc" checked> <span>Also remove from Nextcloud - <b>shared links (e.g. in Discord) will then become invalid</b>. Unchecked = copies and links in Nextcloud remain.</span></label>
+  <div class="row"><button id="delOk" class="danger">Move to recycle bin</button><button id="delCancel">Cancel</button></div>
+</div></div>
+<div id="toast"></div>
+<script>
+const $ = s => document.getElementById(s);
+const v = $('v'), tl = $('tl'), sel = $('sel'), hin = $('hin'), hout = $('hout'), ph = $('ph');
+let clips = [], cfg = { shareKbps: 6000, expireDays: 0, audio: [{ id: 'mix', label: 'Mix (all)', need: 1 }] };
+let cur = null, tIn = 0, tOut = 0, edited = false, busy = false, lastSeen = null, stopAt = null;
+let watchingJob = null, shownLast = null, failures = 0, histKey = '', audioBuilt = '';
+
+const fmt = s => { s = Math.max(0, s); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const short = b => (b || '').replace(/^WARDOGS\s*/, '');
+const audioLabel = id => (cfg.audio.find(a => a.id === id) || {}).label || id || 'Mix';
+
+// fetch with timeout (the service must never hang silently) and retry for idempotent calls
+async function api(path, opts = {}, { timeout = 6000, retries = 1 } = {}) {
+  for (let i = 0; ; i++) {
+    const ac = new AbortController(), t = setTimeout(() => ac.abort(), timeout);
+    try {
+      const r = await fetch(path, Object.assign({ signal: ac.signal, cache: 'no-store' }, opts));
+      const d = await r.json().catch(() => ({ ok: false, error: 'HTTP ' + r.status }));
+      if (!r.ok && d.error === undefined) d.error = 'HTTP ' + r.status;
+      if (!r.ok) d.ok = false;
+      return d;
+    } catch (e) {
+      if (i >= retries) throw new Error(e.name === 'AbortError' ? 'Timeout (' + timeout / 1000 + ' s)' : 'Service unreachable');
+      await new Promise(res => setTimeout(res, 500));
+    } finally { clearTimeout(t); }
+  }
+}
+function setStatus(msg, cls) { const s = $('status'); if (!msg) { s.style.display = 'none'; return; } s.textContent = msg; s.className = cls || ''; s.style.display = 'block'; }
+
+// Validity of the Nextcloud link: 0 = no expiry (default, so Discord posts do not die)
+function gueltig() { return cfg.expireDays > 0 ? cfg.expireDays + ' days valid' : 'no expiry'; }
+function plan(d) {
+  // fixed bitrate: Discord only gets the Nextcloud link, so there is no size target to hit anymore
+  const a = 128000, vb = cfg.shareKbps * 1000;
+  return { mb: (vb + a) * d / 8 / 1048576, kbps: vb / 1000 };
+}
+function render() {
+  if (!cur) return;
+  const d = cur.duration || v.duration || 1;
+  sel.style.left = (tIn / d * 100) + '%'; sel.style.width = ((tOut - tIn) / d * 100) + '%';
+  hin.style.left = (tIn / d * 100) + '%'; hout.style.left = (tOut / d * 100) + '%';
+  ph.style.left = (v.currentTime / d * 100) + '%';
+  const len = tOut - tIn, p = plan(Math.max(1, len));
+  $('selInfo').innerHTML = `In <b>${fmt(tIn)}</b> · Out <b>${fmt(tOut)}</b> · Length <b>${fmt(len)}</b>`;
+  $('planInfo').innerHTML = `H.264 1080p ~${p.kbps.toFixed(0)} kbit/s, approx. <b>${p.mb.toFixed(1)} MB</b> · ` +
+    `<span class="badge ok">Nextcloud link (${gueltig()}) + Discord post</span>` +
+    (cfg.nextcloud === false ? ' <span class="badge" style="color:var(--err)">Nextcloud access missing (clip-service.ps1 -Setup)</span>' : '');
+}
+function buildAudio() {
+  const key = JSON.stringify(cfg.audio) + '|' + (cur ? cur.tracks : 0); if (key === audioBuilt) return; audioBuilt = key;
+  const s = $('audio'), keep = s.value; s.innerHTML = '';
+  cfg.audio.forEach(a => { const o = document.createElement('option'); o.value = a.id; o.textContent = 'Audio: ' + a.label;
+    if (cur && (cur.tracks || 1) < a.need) { o.disabled = true; o.textContent += ' (clip has only ' + (cur.tracks || 1) + ' tracks)'; } s.appendChild(o); });
+  s.value = keep && [...s.options].some(o => o.value === keep && !o.disabled) ? keep : 'mix';
+}
+function load(c, keepSel) {
+  cur = c; $('vidErr').style.display = 'none';
+  v.src = c.preview; v.load();
+  if (!keepSel) { tIn = 0; tOut = c.duration; edited = false; }
+  document.querySelectorAll('.clip').forEach(e => e.classList.toggle('active', e.dataset.base === c.base));
+  $('title').value = c.title || ''; $('title').disabled = false; $('bDel').disabled = false;
+  buildAudio(); render();
+}
+function unload() {
+  cur = null; v.pause(); v.removeAttribute('src'); v.load();
+  $('title').value = ''; $('title').disabled = true; $('bDel').disabled = true; $('selInfo').textContent = ''; $('planInfo').textContent = '';
+  sel.style.width = '0'; ph.style.left = '0';
+}
+function setIn() { tIn = Math.min(v.currentTime, tOut - 0.5); edited = true; render(); }
+function setOut() { tOut = Math.max(v.currentTime, tIn + 0.5); edited = true; render(); }
+function seek(t) { v.currentTime = Math.max(0, Math.min(cur ? cur.duration : 0, t)); render(); }
+function playSel() { stopAt = tOut; seek(tIn); v.play(); }
+v.addEventListener('timeupdate', () => { if (stopAt !== null && v.currentTime >= stopAt) { v.pause(); stopAt = null; } render(); });
+v.addEventListener('play', () => { if (stopAt !== null && (v.currentTime < tIn || v.currentTime >= tOut)) stopAt = null; });
+v.addEventListener('loadedmetadata', () => { if (cur && (!cur.duration || cur.duration < 1)) { cur.duration = v.duration; tOut = v.duration; } render(); });
+v.addEventListener('error', () => { const e = v.error; if (!cur || !e) return;
+  const why = { 1: 'aborted', 2: 'network error while loading', 3: 'decode error', 4: 'format not supported (AV1 - Firefox/Chrome required)' }[e.code] || ('code ' + e.code);
+  $('vidErr').textContent = 'Preview cannot be played: ' + why; $('vidErr').style.display = 'block'; });
+
+// Timeline: click = seek, drag handles = in/out
+let drag = null;
+const posT = e => { const r = tl.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * (cur ? cur.duration : 0); };
+hin.addEventListener('pointerdown', e => { drag = 'in'; e.stopPropagation(); tl.setPointerCapture(e.pointerId); });
+hout.addEventListener('pointerdown', e => { drag = 'out'; e.stopPropagation(); tl.setPointerCapture(e.pointerId); });
+tl.addEventListener('pointerdown', e => { if (!drag) { drag = 'seek'; seek(posT(e)); tl.setPointerCapture(e.pointerId); } });
+tl.addEventListener('pointermove', e => { if (!drag) return; const t = posT(e);
+  if (drag === 'in') { tIn = Math.min(t, tOut - 0.5); edited = true; v.currentTime = tIn; }
+  else if (drag === 'out') { tOut = Math.max(t, tIn + 0.5); edited = true; v.currentTime = tOut; }
+  else seek(t); render(); });
+tl.addEventListener('pointerup', () => drag = null); tl.addEventListener('pointercancel', () => drag = null);
+
+document.addEventListener('keydown', e => {
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || !cur || $('modal').style.display === 'flex') return;
+  const k = e.key, big = e.shiftKey ? 5 : 1;
+  if (k === ' ') { e.preventDefault(); v.paused ? v.play() : v.pause(); }
+  else if (k === 'ArrowLeft') { e.preventDefault(); seek(v.currentTime - big); }
+  else if (k === 'ArrowRight') { e.preventDefault(); seek(v.currentTime + big); }
+  else if (k === ',') seek(v.currentTime - 1 / 60);
+  else if (k === '.') seek(v.currentTime + 1 / 60);
+  else if (k === 'Home') seek(0); else if (k === 'End') seek(cur.duration);
+  else if (k === 'i' || k === 'I') setIn(); else if (k === 'o' || k === 'O') setOut();
+  else if (k === 'p' || k === 'P') playSel();
+  else if (k === 'Enter') share();
+});
+$('bIn').onclick = setIn; $('bOut').onclick = setOut; $('bPrev').onclick = playSel;
+$('bAll').onclick = () => { tIn = 0; tOut = cur.duration; edited = false; render(); };
+$('bShare').onclick = share;
+$('btnSave').onclick = async () => {
+  $('btnSave').disabled = true;
+  try { const r = await api('/api/save', { method: 'POST', body: '' }, { retries: 0 }); toast(r.ok ? 'F9 sent to OBS - clip will appear shortly' : 'F9 failed: ' + r.error); }
+  catch (e) { toast('F9 failed: ' + e.message); }
+  $('btnSave').disabled = false;
+};
+
+// Title: Enter or leaving the field saves it (empty = remove title)
+let titleSaving = null, titleSavingName = null;
+function saveTitle() {
+  if (!cur) return Promise.resolve();
+  const name = $('title').value.trim();
+  // blur (from clicking "Share") and share() both call this at the same time; if a save
+  // of the same text is already running, wait for it instead of sending a second PUT
+  if (titleSaving && titleSavingName === name) return titleSaving;
+  if (name === (cur.title || '')) return Promise.resolve();
+  titleSavingName = name;
+  titleSaving = (async () => {
+    try {
+      const r = await api('/api/clips/' + encodeURIComponent(cur.base) + '/name', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }, { retries: 0 });
+      if (r.ok) { cur.title = r.title; $('title').value = r.title; toast(r.title ? 'Title saved' : 'Title removed'); poll.now(); } else toast('Title: ' + r.error);
+    } catch (e) { toast('Title: ' + e.message); }
+    titleSaving = null; titleSavingName = null;
+  })();
+  return titleSaving;
+}
+$('title').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('title').blur(); } else if (e.key === 'Escape') { $('title').value = cur ? (cur.title || '') : ''; $('title').blur(); } });
+$('title').addEventListener('blur', saveTitle);
+
+// Delete: dialog with Nextcloud toggle, files go to the recycle bin
+$('bDel').onclick = () => { if (!cur || busy) return; $('delName').textContent = (cur.title ? cur.title + ' - ' : '') + short(cur.base) + ' (' + fmt(cur.duration) + ')'; $('delNc').checked = true; $('modal').style.display = 'flex'; $('delCancel').focus(); };
+$('delCancel').onclick = () => $('modal').style.display = 'none';
+$('modal').addEventListener('click', e => { if (e.target === $('modal')) $('modal').style.display = 'none'; });
+$('delOk').onclick = async () => {
+  const c = cur, nc = $('delNc').checked; $('modal').style.display = 'none'; if (!c) return;
+  unload();   // release the stream, otherwise the browser keeps the preview open
+  $('delOk').disabled = true;
+  try {
+    const r = await api('/api/clips/' + encodeURIComponent(c.base) + (nc ? '?nextcloud=1' : ''), { method: 'DELETE' }, { retries: 0, timeout: 30000 });
+    if (r.ok) { toast(`Deleted: ${r.recycled} file(s) in recycle bin` + (nc ? `, ${r.nextcloud} removed from Nextcloud` : '')); lastSeen = null; showResult(null); shownLast = null; }
+    else { toast('Delete failed: ' + r.error); }
+  } catch (e) { toast('Delete failed: ' + e.message); }
+  $('delOk').disabled = false; poll.now();
+};
+
+function copyText(t) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t);
+  const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); return Promise.resolve();
+}
+const STAGES = { queued: 'Waiting …', encode: 'Cut + H.264 encode', upload: 'Uploading to Nextcloud', discord: 'Discord webhook', done: 'Done', error: 'Error' };
+function showProgress(j) {
+  const p = $('prog'); if (!j || j.stage === 'done' || j.stage === 'error') { p.style.display = 'none'; return; }
+  p.style.display = 'block';
+  const pct = j.stage === 'encode' ? (j.percent || 0) : (j.stage === 'upload' ? 100 : (j.stage === 'discord' ? 100 : 0));
+  $('progText').textContent = `Sharing in progress: ${STAGES[j.stage] || j.stage}` + (j.stage === 'encode' ? ` ${pct} %` : '') + ` · ${fmt(j.seconds)} @ ${j.kbps} kbit/s · ${audioLabel(j.audio)}` + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
+  $('progBar').style.width = pct + '%';
+  const order = ['encode', 'upload', 'discord'], idx = order.indexOf(j.stage);
+  p.querySelectorAll('.steps span').forEach(s => { const i = order.indexOf(s.dataset.s); s.className = i < idx ? 'done' : (i === idx ? 'on' : ''); });
+}
+function showResult(r) {
+  const box = $('result'); if (!r) { box.style.display = 'none'; return; }
+  box.style.display = 'block'; box.className = r.ok ? 'ok' : 'err';
+  const when = r.finished || r.at ? ` <span class="info">(${esc((r.finished || r.at).replace('T', ' ').slice(0, 16))}, ${esc(r.title ? r.title + ' - ' : '')}${esc(short(r.base))})</span>` : '';
+  if (!r.ok) { box.innerHTML = `<b>Error while sharing:</b> ${esc(r.error || 'unknown')}${when}`; return; }
+  box.innerHTML = `<b>Shared:</b> ${Number(r.seconds).toFixed(1)} s, ${r.sizeMB} MB, ${esc(audioLabel(r.audio))} · Discord: ${esc(r.discord)} · Link is in the Windows clipboard (${gueltig()})${when}
+    <input readonly value="${esc(r.direct)}" onclick="this.select()">
+    <div class="row"><button id="cp">Copy direct link</button><button id="cp2">Copy page link</button><a href="${esc(r.link)}" target="_blank"><button>Open</button></a></div>`;
+  $('cp').onclick = () => copyText(r.direct).then(() => toast('Direct link copied'));
+  $('cp2').onclick = () => copyText(r.link).then(() => toast('Link copied'));
+}
+function renderHistory(h) {
+  const key = JSON.stringify((h || []).map(e => e.id)); if (key === histKey) return; histKey = key;
+  const box = $('hist'); box.innerHTML = (h && h.length) ? '' : '<div class="info" style="padding:4px 8px">Nothing shared yet.</div>';
+  (h || []).forEach(e => {
+    const d = document.createElement('div'); d.className = 'hist';
+    d.innerHTML = `<b>${esc(e.title || short(e.base))}</b><small>${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · ${fmt(e.seconds)} · ${e.sizeMB} MB · ${esc(audioLabel(e.audio))}</small>
+      <div class="row"><button data-c="direct">Direct link</button><button data-c="link">Page</button><a href="${esc(e.link)}" target="_blank"><button>Open</button></a></div>`;
+    d.querySelectorAll('button[data-c]').forEach(b => b.onclick = () => copyText(e[b.dataset.c]).then(() => toast(b.dataset.c === 'direct' ? 'Direct link copied' : 'Link copied')));
+    box.appendChild(d);
+  });
+}
+function setBusy(b) { busy = b; $('bShare').disabled = b; $('bShare').innerHTML = b ? 'Sharing …' : 'Share <kbd>Enter</kbd>'; }
+async function share() {
+  if (!cur || busy) return; setBusy(true); $('result').style.display = 'none';
+  // Save the title first: clicking "Share" also triggers the blur of the title field, and without
+  // this await the share POST would overtake the title PUT - the clip would then be posted without a title.
+  await saveTitle();
+  try {
+    const r = await api('/api/share', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base: cur.base, start: tIn, end: tOut, audio: $('audio').value }) }, { retries: 0, timeout: 10000 });
+    if (!r.ok) { if (r.job) { watchJob(r.job); toast(r.error); } else { showResult(r); setBusy(false); } return; }
+    watchJob(r.job);
+  } catch (e) { showResult({ ok: false, error: e.message }); setBusy(false); }
+}
+// Job progress: /api/jobs/<id> every second, until done/error. Survives a reload (poll() finds the active job in /api/clips).
+async function watchJob(id) {
+  if (watchingJob === id) return; watchingJob = id; setBusy(true);
+  let misses = 0;
+  while (watchingJob === id) {
+    try {
+      const j = await api('/api/jobs/' + id, {}, { retries: 0 });
+      if (j.stage === 'done' || j.stage === 'error') { watchingJob = null; showProgress(null); showResult(j); shownLast = id; setBusy(false); poll.now(); return; }
+      if (j.error && j.ok === false && !j.stage) { throw new Error(j.error); }
+      showProgress(j); misses = 0;
+    } catch (e) { if (++misses >= 8) { watchingJob = null; showProgress(null); showResult({ ok: false, error: 'Connection to service lost: ' + e.message }); setBusy(false); return; } }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+}
+let toastT; function toast(m) { const t = $('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', 3000); }
+
+let pollT = null;
+async function poll() {
+  clearTimeout(pollT);
+  try {
+    const d = await api('/api/clips');
+    failures = 0; setStatus(null);
+    cfg = Object.assign(cfg, d.config); clips = d.clips || [];
+    $('ver').textContent = (cfg.version ? 'v' + cfg.version : '') + (cfg.encoder ? ' · ' + cfg.encoder : '');
+    const list = $('list'); list.innerHTML = clips.length ? '' : '<div class="info" style="padding:8px">No clip yet. Press F9 in the game.</div>';
+    clips.forEach(c => { const e = document.createElement('div'); e.className = 'clip' + (cur && cur.base === c.base ? ' active' : ''); e.dataset.base = c.base;
+      e.innerHTML = (c.title ? `<b>${esc(c.title)}</b>` : '') + `${esc(short(c.base))}<small>${fmt(c.duration)} · ${(c.size / 1048576).toFixed(1)} MB${c.tracks && c.tracks < 4 ? ' · only ' + c.tracks + ' audio tracks' : ''}</small>`;
+      e.onclick = () => load(c); list.appendChild(e);
+      if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; if (document.activeElement !== $('title')) $('title').value = c.title || ''; } });
+    if (clips.length) {
+      const newest = clips[0];
+      if (!cur) load(newest);
+      else if (!clips.some(c => c.base === cur.base)) { unload(); load(newest); toast('Clip is gone - loaded next one'); }
+      else if (newest.base !== lastSeen && lastSeen !== null && (!edited || confirm('New clip available - switch? (Cancel = keep current)'))) { load(newest); toast('New clip loaded'); }
+      lastSeen = newest.base;
+    } else if (cur) unload();
+    buildAudio(); renderHistory(d.history);
+    if (d.job && watchingJob !== d.job) watchJob(d.job);                      // running job (e.g. after reload)
+    else if (!d.job && !watchingJob && d.last && d.last.id !== shownLast) { showResult(d.last); shownLast = d.last.id; setBusy(false); }
+    if (d.scanAt && (Date.now() - new Date(d.scanAt).getTime()) > 30000) setStatus('The service clip scan has been stuck for ' + Math.round((Date.now() - new Date(d.scanAt).getTime()) / 1000) + ' s - check the log on the box.', 'warn');
+  } catch (e) {
+    failures++;
+    setStatus(`Service not responding (${e.message}) - attempt ${failures}, retrying every 3 s …`);
+    if (!clips.length) $('list').innerHTML = '<div class="info" style="padding:8px">No connection to the clip service.</div>';
+  }
+  pollT = setTimeout(poll, 3000);
+}
+poll.now = () => { clearTimeout(pollT); pollT = setTimeout(poll, 50); };
+poll();
+</script>
+</body>
+</html>
