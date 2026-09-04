@@ -1,0 +1,16 @@
+[package]
+name = "mkico"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Renders the replaycut icon SVGs to the .ico files the service embeds"
+
+# Stand-alone: not a member of the replaycut workspace.
+[workspace]
+
+[dependencies]
+resvg = "0.45"
+ico = "0.4"
+
+[profile.release]
+opt-level = 2

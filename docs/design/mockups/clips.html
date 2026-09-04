@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<title>replaycut - Clips (mockup)</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" id="theme" href="" disabled>
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="mock.css">
+<style>
+  /* page-specific rules for the clips page; R6 lifts these too */
+  .editor .title-row { display: flex; gap: var(--space-2); align-items: center; }
+  .editor .title-row .input { flex: 1; min-width: 160px; }
+  .plan { color: var(--fg-muted); font-size: var(--text-sm); }
+  .plan b { color: var(--fg); }
+  .share-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+  .share-row .select { width: auto; min-width: 180px; }
+  .list-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2) var(--space-2); }
+  .list-head .count { color: var(--fg-muted); font-size: var(--text-sm); }
+  .editor.is-off { opacity: 0.5; pointer-events: none; }
+  .video-err { color: var(--err); font-size: var(--text-sm); }
+  @media (max-width: 999px) { .list-head { padding: var(--space-2) var(--space-2) var(--space-1); } }
+</style>
+</head>
+<body data-states="ready:Ready (clip loaded) | empty:No clips yet | unreachable:Service unreachable | running1:Job running (local, 1 stage) | running3:Job running (3 stages) | failed:Job failed | update:Update available | resultLocal:Result local (no integrations) | resultLinks:Result with links | resultPartial:Result partial (Discord failed) | delete:Delete dialog | newclip:New clip while editing | scanstuck:Scan stuck | noplay:Preview cannot play">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 20 20"><path d="M4 3.5v13l11-6.5z"/><path d="M2 7h4M2 13h4" /></symbol>
+  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4v12l10-6z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 20 20"><path d="M6 4v12M14 4v12"/></symbol>
+  <symbol id="i-cut-in" viewBox="0 0 20 20"><path d="M4 3v14M4 10h9M10 6l4 4-4 4"/></symbol>
+  <symbol id="i-cut-out" viewBox="0 0 20 20"><path d="M16 3v14M16 10H7M10 6l-4 4 4 4"/></symbol>
+  <symbol id="i-share" viewBox="0 0 20 20"><path d="M10 12V3M6.5 6.5 10 3l3.5 3.5M4 11v5h12v-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2.5 5.5h5l2 2h8v8h-15z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7"/></symbol>
+  <symbol id="i-check" viewBox="0 0 20 20"><path d="m4 10.5 4 4 8-9"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 20 20"><path d="M10 3 2.5 16.5h15z"/><path d="M10 8v4M10 14.2v.3"/></symbol>
+  <symbol id="i-error" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="m7 7 6 6M13 7l-6 6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/></symbol>
+  <symbol id="i-close" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
+  <symbol id="i-obs" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v5M4 14l4-2.5M16 14l-4-2.5"/></symbol>
+  <symbol id="i-diagnostics" viewBox="0 0 20 20"><path d="M2.5 10h4l2-5 3 10 2-5h4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 20 20"><path d="M16 9.5A6 6 0 0 0 5 6.5M4 10.5A6 6 0 0 0 15 13.5"/><path d="M4.5 3v4h4M15.5 17v-4h-4"/></symbol>
+  <symbol id="i-qr" viewBox="0 0 20 20"><rect x="3" y="3" width="5" height="5"/><rect x="12" y="3" width="5" height="5"/><rect x="3" y="12" width="5" height="5"/><path d="M12 12h2v2h-2zM16 12h1M12 16h1M15 15h2v2h-2z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 20 20"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 20 20"><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5 5.5l1 11h8l1-11M8.5 9v5M11.5 9v5"/></symbol>
+  <symbol id="i-external" viewBox="0 0 20 20"><path d="M11 3h6v6M17 3l-8 8M15 11v5H4V5h5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5l3 2"/></symbol>
+  <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12M2.5 8h3.5M14 8h3.5M2.5 12h3.5M14 12h3.5"/></symbol>
+  <symbol id="i-skip" viewBox="0 0 20 20"><path d="M5 5l7 5-7 5zM14 5v10"/></symbol>
+</svg>
+
+<header class="topbar">
+  <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+  <nav class="nav">
+    <a href="clips.html" aria-current="page">Clips</a><a href="settings.html">Settings</a><a href="obs.html">OBS</a><a href="diagnostics.html">Diagnostics</a>
+  </nav>
+  <div class="right">
+    <span class="badge" title="Encoder in use">h264_nvenc</span>
+    <span class="status" data-s="ready empty update resultLocal resultLinks resultPartial delete newclip noplay" title="Service running"><i class="dot"></i></span>
+    <span class="status" data-s="running1 running3" title="Sharing"><i class="dot busy"></i></span>
+    <span class="status" data-s="failed" title="Last share failed"><i class="dot err"></i></span>
+    <span class="status" data-s="scanstuck" title="Scan stuck"><i class="dot warn"></i></span>
+    <span class="status" data-s="unreachable" title="Service not responding"><i class="dot off"></i></span>
+    <span class="version">2.0.0</span>
+  </div>
+</header>
+
+<div class="banners">
+  <div class="banner err" data-s="unreachable"><svg class="icon"><use href="#i-error"/></svg><div class="grow"><b>Service not responding</b> <span class="muted">(timeout 6 s) - attempt 3, retrying every 3 s. Is replaycut running on the PC? Look for the tray icon.</span></div></div>
+  <div class="banner err" data-s="failed"><svg class="icon"><use href="#i-error"/></svg><div class="grow"><b>Last share failed:</b> ffmpeg exited with code 1 - Unknown encoder 'h264_nvenc'. <a href="diagnostics.html">Open diagnostics</a></div><button class="btn btn-ghost btn-icon" title="Dismiss"><svg class="icon"><use href="#i-close"/></svg></button></div>
+  <div class="banner warn" data-s="scanstuck"><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Clip scan stuck for 48 s</b> - the folder watcher stopped reporting. Check the log on the PC.</div></div>
+  <div class="banner" data-s="update"><svg class="icon"><use href="#i-info"/></svg><div class="grow"><b>replaycut 2.1.0 is available.</b> <a href="#">Release notes</a> <span class="muted">- installing is a manual step until 2.2.</span></div><button class="btn btn-ghost btn-icon" title="Dismiss for this visit"><svg class="icon"><use href="#i-close"/></svg></button></div>
+  <div class="banner" data-s="newclip"><svg class="icon"><use href="#i-film"/></svg><div class="grow"><b>New clip:</b> Replay 2026-09-04 21-31-50 (5:00). You have unsaved in/out marks on the current one.</div><div class="row nowrap"><button class="btn btn-sm">Load new clip</button><button class="btn btn-sm btn-ghost">Keep editing</button></div></div>
+</div>
+
+<div class="clips">
+  <details class="cliplist" open>
+    <summary>
+      <svg class="icon"><use href="#i-chevron"/></svg>
+      <span data-s="ready unreachable running1 running3 failed update resultLocal resultLinks resultPartial delete scanstuck noplay"><b>3 clips</b> · newest 21:14</span>
+      <span data-s="newclip"><b>4 clips</b> · <span class="badge accent">1 new</span></span>
+      <span data-s="empty"><b>No clips yet</b></span>
+      <button class="btn btn-sm right" title="Triggers the replay hotkey in OBS (saves the last 5 minutes)">Save replay <kbd>F9</kbd></button>
+    </summary>
+    <div class="list-body">
+      <div class="list-head"><h2 style="margin:0">Clips</h2><span class="count" data-s="ready unreachable running1 running3 failed update resultLocal resultLinks resultPartial delete scanstuck noplay">3</span><span class="count" data-s="newclip">4</span><button class="btn btn-sm right" title="Triggers the replay hotkey in OBS (saves the last 5 minutes)">Save replay <kbd>F9</kbd></button></div>
+
+      <div data-s="empty" class="empty compact" style="padding:var(--space-4) var(--space-3)"><svg class="icon"><use href="#i-film"/></svg><div><b>No clips yet</b><br>Press <kbd>F9</kbd> in OBS while the replay buffer runs. New clips appear here within a few seconds.</div></div>
+
+      <div data-s="newclip" class="clip new"><div class="name"><span>Replay 2026-09-04 21-31-50</span></div><div class="meta"><span>5:00</span><span>411 MB</span><span>4 tracks</span><span>21:31</span></div></div>
+      <div data-s="ready unreachable running1 running3 failed update resultLocal resultLinks resultPartial delete newclip scanstuck noplay" class="clip active"><div class="name"><span>Sniper from the roof</span></div><div class="meta"><span>5:00</span><span>412 MB</span><span>4 tracks</span><span>21:14</span></div></div>
+      <div data-s="ready unreachable running1 running3 failed update resultLocal resultLinks resultPartial delete newclip scanstuck noplay" class="clip"><div class="name"><span>Replay 2026-09-04 20-51-07</span></div><div class="meta"><span>5:00</span><span>408 MB</span><span>4 tracks</span><span>20:51</span></div></div>
+      <div data-s="ready unreachable running1 running3 failed update resultLocal resultLinks resultPartial delete newclip scanstuck noplay" class="clip"><div class="name"><span>Replay 2026-09-04 20-37-19</span></div><div class="meta"><span>5:00</span><span>410 MB</span><span>4 tracks</span><span>20:37</span></div></div>
+
+      <h2>Shared</h2>
+      <div data-s="empty" class="empty compact">Nothing shared yet.</div>
+      <div data-s="resultLinks resultPartial" class="hist"><b class="truncate">Sniper from the roof</b><div class="meta">23 s · 48 MB · 21:20 · Mix</div><div class="row"><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm">Link</button></div></div>
+      <div data-s="resultLocal" class="hist"><b class="truncate">Sniper from the roof</b><div class="meta">23 s · 48 MB · 21:20 · Mix <span class="badge accent">local</span></div><div class="row"><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button></div></div>
+      <div data-s="ready unreachable running1 running3 failed update resultLocal resultLinks resultPartial delete newclip scanstuck noplay" class="hist"><b class="truncate">Replay 2026-09-04 20-37-19</b><div class="meta">41 s · 79 MB · 20:44 · Game + Mic</div><div class="row"><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm">Link</button></div></div>
+      <div data-s="ready unreachable running1 running3 failed update resultLocal resultLinks resultPartial delete newclip scanstuck noplay" class="hist"><b class="truncate">Ace on B</b><div class="meta">18 s · 36 MB · 2026-09-02 · Mix</div><div class="row"><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm">Link</button></div></div>
+    </div>
+  </details>
+
+  <main class="editor" data-s-class="unreachable:is-off">
+
+    <div data-s="empty" class="empty" style="margin-top:var(--space-5)"><svg class="icon"><use href="#i-film"/></svg><div><b>Nothing to cut yet</b><br>Start the replay buffer in OBS, play, and press <kbd>F9</kbd> when something happens. The last 5 minutes land in <code>C:\Users\you\Videos\WARDOGS</code> and show up here.</div><div class="row"><button class="btn">Send <kbd>F9</kbd> to OBS</button><a class="btn btn-ghost" href="obs.html">Check OBS status</a></div></div>
+
+    <div data-s="ready unreachable running1 running3 failed update resultLocal resultLinks resultPartial delete newclip scanstuck noplay" class="stack-3">
+      <div class="title-row">
+        <input class="input" id="title" maxlength="80" value="Sniper from the roof" placeholder="Title (optional) - shown in the list, the file name and the post">
+        <button class="btn btn-danger"><svg class="icon"><use href="#i-trash"/></svg> Delete</button>
+      </div>
+
+      <div class="video" data-s="ready unreachable running1 running3 failed update resultLocal resultLinks resultPartial delete newclip scanstuck"><svg class="icon"><use href="#i-play"/></svg></div>
+      <div data-s="noplay" class="stack">
+        <div class="video"><svg class="icon"><use href="#i-error"/></svg></div>
+        <div class="video-err">Preview cannot be played: this browser does not decode AV1. Use Chrome or Firefox on the PC, or set OBS to HEVC or H.264. <a href="obs.html">OBS status</a></div>
+      </div>
+
+      <div class="timeline">
+        <div class="ticks"><span>0:00</span><span>1:00</span><span>2:00</span><span>3:00</span><span>4:00</span><span>5:00</span></div>
+        <div class="range" style="left:22%;width:34%"></div>
+        <div class="handle" style="left:22%" title="In: 1:06.0"></div>
+        <div class="handle" style="left:56%" title="Out: 2:48.5"></div>
+        <div class="playhead" style="left:30%"></div>
+      </div>
+
+      <div class="row">
+        <button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg> Set in <kbd>I</kbd></button>
+        <button class="btn"><svg class="icon"><use href="#i-cut-out"/></svg> Set out <kbd>O</kbd></button>
+        <button class="btn">Whole clip</button>
+        <button class="btn"><svg class="icon"><use href="#i-play"/></svg> Play selection <kbd>P</kbd></button>
+        <span class="plan">1:06.0 - 2:48.5 · <b>102.5 s</b></span>
+      </div>
+
+      <div class="share-row">
+        <button class="btn btn-primary" data-s="ready unreachable failed update resultLocal resultLinks resultPartial delete newclip scanstuck noplay"><svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd></button>
+        <button class="btn btn-primary is-busy" data-s="running1 running3"><span class="spinner"></span> Sharing</button>
+        <select class="select" title="Which audio tracks go into the shared clip"><option>Audio: Mix (all)</option><option>Audio: Game + Mic</option><option>Audio: Game only</option><option disabled>Audio: Discord only (clip has only 2 tracks)</option></select>
+        <span class="plan">about <b>77 MB</b> at 6000 kbit/s</span>
+        <span class="plan" data-s="resultLocal running1"><span class="badge accent">local</span> no integrations - the file stays in <code>shared\</code></span>
+      </div>
+
+      <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>I</kbd><kbd>O</kbd> marks</span><span><kbd>Enter</kbd> share</span></div>
+
+      <div class="progress" data-s="running1"><div class="row nowrap"><span class="grow">Encoding 0:42 of 1:42 (h264_nvenc, 6000 kbit/s)</span><span class="muted sm">41 %</span></div><div class="bar"><i style="width:41%"></i></div><div class="stages"><span class="on">1 Cut + encode</span></div></div>
+      <div class="progress" data-s="running3"><div class="row nowrap"><span class="grow">Uploading 77 MB to Nextcloud ...</span><span class="muted sm">78 %</span></div><div class="bar"><i style="width:78%"></i></div><div class="stages"><span class="done">1 Cut + encode</span><span class="on">2 Nextcloud</span><span>3 Discord</span></div></div>
+
+      <div class="result err" data-s="failed">
+        <div class="head"><svg class="icon"><use href="#i-error"/></svg> Share failed at stage 1 (encode)</div>
+        <div class="sm">ffmpeg exited with code 1: Unknown encoder 'h264_nvenc'. The encoder was detected at start-up; a driver update may have removed it.</div>
+        <div class="row"><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Try again</button><a class="btn btn-sm btn-ghost" href="diagnostics.html">Diagnostics</a></div>
+      </div>
+      <div class="result" data-s="resultLocal">
+        <div class="head"><svg class="icon"><use href="#i-check"/></svg> Ready - 48 MB, 23 s, Mix <span class="badge accent">local</span></div>
+        <div class="muted sm break">shared\Replay_2026-09-04_21-14-02_66.0-168.5_sniper-from-the-roof.mp4</div>
+        <div class="row"><button class="btn"><svg class="icon"><use href="#i-folder"/></svg> Open folder</button><button class="btn"><svg class="icon"><use href="#i-copy"/></svg> Copy file</button><span class="muted sm">Then Ctrl+V in Discord attaches it.</span></div>
+      </div>
+      <div class="result" data-s="resultLinks">
+        <div class="head"><svg class="icon"><use href="#i-check"/></svg> Shared - 48 MB, 23 s, Mix, link copied</div>
+        <div class="input-group"><input class="input mono" readonly value="https://cloud.example.com/s/AbCdEfGh/download"><button class="btn"><svg class="icon"><use href="#i-copy"/></svg> Direct</button><button class="btn" title="Copy the share page"><svg class="icon"><use href="#i-external"/></svg> Page</button></div>
+        <div class="line ok"><svg class="icon icon-sm"><use href="#i-check"/></svg> Posted to Discord as WARDOGS · link expires in 30 days</div>
+      </div>
+      <div class="result partial" data-s="resultPartial">
+        <div class="head"><svg class="icon"><use href="#i-warning"/></svg> Uploaded, but not posted - 48 MB, 23 s, link copied</div>
+        <div class="input-group"><input class="input mono" readonly value="https://cloud.example.com/s/AbCdEfGh/download"><button class="btn"><svg class="icon"><use href="#i-copy"/></svg> Direct</button><button class="btn" title="Copy the share page"><svg class="icon"><use href="#i-external"/></svg> Page</button></div>
+        <div class="line err"><svg class="icon icon-sm"><use href="#i-error"/></svg> Discord: webhook returned 404 Not Found - check the webhook in <a href="settings.html#integrations">Settings › Integrations</a>. Paste the link by hand for now.</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal" data-s="delete">
+  <div class="dialog danger" role="dialog" aria-modal="true">
+    <h2>Delete clip?</h2>
+    <div class="muted">Sniper from the roof <span class="faint">(Replay 2026-09-04 21-14-02.mkv, 412 MB)</span></div>
+    <div class="muted sm">The MKV and the files shared from it go to the recycle bin on the PC.</div>
+    <label class="check"><input type="checkbox" checked> <span>Also remove from Nextcloud - <b>shared links (e.g. in Discord) will stop working</b>. Unchecked keeps copies and links in Nextcloud.</span></label>
+    <div class="actions"><button class="btn">Cancel <kbd>Esc</kbd></button><button class="btn btn-danger">Move to recycle bin</button></div>
+  </div>
+</div>
+
+<div class="toast-stack" data-s="resultLinks"><div class="toast ok"><svg class="icon"><use href="#i-check"/></svg> Direct link copied</div></div>
+<div class="toast-stack" data-s="newclip"><div class="toast info"><svg class="icon"><use href="#i-film"/></svg> New clip: Replay 2026-09-04 21-31-50</div></div>
+
+<script src="mock.js"></script>
+</body>
+</html>

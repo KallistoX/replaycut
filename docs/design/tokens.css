@@ -1,0 +1,80 @@
+/* replaycut design tokens - theme "wardogs" (default: dark, amber accent).
+ *
+ * This file is the theme format. A theme is a copy of this file with other
+ * values; it may leave tokens out, the missing ones keep the wardogs values
+ * because wardogs is always loaded first. Nothing but custom properties on
+ * :root belongs in here - no selectors, no markup, no rules.
+ * The meaning of every token is documented in docs/themes.md.
+ */
+:root {
+  /* Surfaces */
+  --bg: #111418;            /* page background */
+  --surface: #1a1f26;       /* panels, cards, list rows, dialogs */
+  --surface-2: #0b0e12;     /* inputs, wells, code, the timeline track */
+  --line: #2f3742;          /* borders and separators */
+  --line-strong: #3d4653;   /* borders that must stand out (hover, active rows) */
+
+  /* Text */
+  --fg: #e6e9ee;            /* primary text */
+  --fg-muted: #8a94a3;      /* secondary text, meta data */
+  --fg-faint: #5f6876;      /* placeholders, keyboard hints, disabled text */
+
+  /* Accent - the one primary action per page, the active selection */
+  --accent: #f2b632;
+  --accent-hover: #f7c65a;
+  --accent-fg: #111418;     /* text on accent */
+  --accent-soft: rgba(242, 182, 50, 0.22);  /* selection range, active tints */
+
+  /* Semantic colours - independent of the accent so that a theme with a
+   * blue accent can keep warnings amber */
+  --ok: #4cc38a;
+  --ok-soft: rgba(76, 195, 138, 0.14);
+  --warn: #f2b632;
+  --warn-soft: rgba(242, 182, 50, 0.14);
+  --err: #f06060;
+  --err-soft: rgba(240, 96, 96, 0.14);
+  --info: #5aa9e6;
+  --info-soft: rgba(90, 169, 230, 0.14);
+
+  /* Focus ring - deliberately not the accent, so it stays visible on the
+   * primary button */
+  --focus: #7cc4ff;
+
+  /* Overlay behind dialogs */
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  /* Typography */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, Consolas, "Cascadia Mono", "SF Mono", monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --leading: 1.4;
+  --weight-strong: 600;
+
+  /* Spacing - 4 px grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  /* Motion */
+  --duration: 150ms;
+  --duration-slow: 400ms;
+
+  /* Layout - not colours, but part of the set so a theme may widen the list */
+  --sidebar-w: 280px;
+  --touch: 44px;            /* minimum height of anything a finger hits */
+  --max-w: 720px;           /* single-column pages (wizard, settings, ...) */
+  --topbar-h: 44px;
+}

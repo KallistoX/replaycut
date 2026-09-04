@@ -36,6 +36,9 @@ ui/index.html           the browser UI (vanilla JS, served by the service)
 tests/api/              black-box HTTP contract tests, run against BASE_URL
 docs/api.md             the HTTP API contract - binding for every implementation
 docs/settings.md        settings.json, credentials, command line
+docs/themes.md          the theme format (design tokens) - binding for the UI
+docs/design/            design system: tokens, component sheet, page mockups,
+                        icon sources and the mkico tool (static HTML, no build)
 .github/workflows/      CI (fmt, clippy, build, compile tests)
 ```
 

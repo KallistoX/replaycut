@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- tray state "last job failed": the app icon with a red dot -->
+  <rect width="64" height="64" rx="14" fill="#0b0e12"/>
+  <path d="M22 16v32l26-16z" fill="#f2b632"/>
+  <path d="M12 24h7M12 40h7" stroke="#f2b632" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="50" cy="50" r="13" fill="#f06060" stroke="#0b0e12" stroke-width="4"/>
+</svg>

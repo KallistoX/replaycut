@@ -1,0 +1,35 @@
+/* replaycut theme "plain" - light, neutral, blue accent.
+ *
+ * Exists to prove the token contract: every page must render with this file
+ * loaded after tokens.css and no change to any markup. Warnings stay amber
+ * although the accent is blue, which is why --warn is its own token.
+ * Layout, spacing and typography tokens are inherited from wardogs.
+ */
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #e9ecf1;
+  --line: #d3d8e0;
+  --line-strong: #aab3c0;
+
+  --fg: #1b1f26;
+  --fg-muted: #5b6472;
+  --fg-faint: #7b8492;
+
+  --accent: #2f6fd6;
+  --accent-hover: #245cb5;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(47, 111, 214, 0.16);
+
+  --ok: #1f8f5a;
+  --ok-soft: rgba(31, 143, 90, 0.12);
+  --warn: #b7791f;
+  --warn-soft: rgba(183, 121, 31, 0.14);
+  --err: #c9372c;
+  --err-soft: rgba(201, 55, 44, 0.12);
+  --info: #2f6fd6;
+  --info-soft: rgba(47, 111, 214, 0.12);
+
+  --focus: #1b1f26;
+  --scrim: rgba(27, 31, 38, 0.45);
+}

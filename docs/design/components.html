@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<title>replaycut design - components</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" id="theme" href="" disabled>
+<link rel="stylesheet" href="base.css">
+<style>
+  /* sheet-only chrome; uses tokens like everything else */
+  .sheet { max-width: 1100px; margin: 0 auto; padding: var(--space-5) var(--space-4) var(--space-6); display: flex; flex-direction: column; gap: var(--space-6); }
+  .sheet > section { display: flex; flex-direction: column; gap: var(--space-3); }
+  .sheet > section > h2 { padding-bottom: var(--space-2); border-bottom: 1px solid var(--line); }
+  .sheet-bar { position: sticky; top: 0; z-index: 6; }
+  .demo { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: flex-start; }
+  .demo > * { min-width: 0; }
+  .demo.col { flex-direction: column; align-items: stretch; }
+  .demo.w { max-width: 520px; }
+  .lbl { font-size: var(--text-xs); color: var(--fg-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-2); }
+  .swatch { border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; font-size: var(--text-xs); }
+  .swatch i { display: block; height: 40px; }
+  .swatch div { padding: var(--space-1) var(--space-2); background: var(--surface); }
+  .swatch code { display: block; color: var(--fg-muted); }
+  table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); }
+  th, td { text-align: left; padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--line); }
+  th { color: var(--fg-muted); font-weight: normal; }
+  .icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--space-2); }
+  .icons div { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); padding: var(--space-2); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); font-size: var(--text-xs); color: var(--fg-muted); }
+  .frame { border: 1px dashed var(--line-strong); border-radius: var(--radius-md); overflow: hidden; }
+  .appicons { display: flex; gap: var(--space-4); align-items: flex-end; flex-wrap: wrap; }
+  .appicon { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--fg-muted); }
+  .appicon .tray { display: flex; gap: var(--space-2); padding: var(--space-2); border-radius: var(--radius-sm); }
+  .appicon .tray.dark { background: var(--surface-2); } .appicon .tray.light { background: var(--fg); }
+</style>
+</head>
+<body>
+
+<!-- Inline icon sprite: monochrome, 20 px grid, currentColor. R6 pastes this block into index.html. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 20 20"><path d="M4 3.5v13l11-6.5z"/><path d="M2 7h4M2 13h4" /></symbol>
+  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4v12l10-6z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 20 20"><path d="M6 4v12M14 4v12"/></symbol>
+  <symbol id="i-cut-in" viewBox="0 0 20 20"><path d="M4 3v14M4 10h9M10 6l4 4-4 4"/></symbol>
+  <symbol id="i-cut-out" viewBox="0 0 20 20"><path d="M16 3v14M16 10H7M10 6l-4 4 4 4"/></symbol>
+  <symbol id="i-share" viewBox="0 0 20 20"><path d="M10 12V3M6.5 6.5 10 3l3.5 3.5M4 11v5h12v-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2.5 5.5h5l2 2h8v8h-15z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7"/></symbol>
+  <symbol id="i-check" viewBox="0 0 20 20"><path d="m4 10.5 4 4 8-9"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 20 20"><path d="M10 3 2.5 16.5h15z"/><path d="M10 8v4M10 14.2v.3"/></symbol>
+  <symbol id="i-error" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="m7 7 6 6M13 7l-6 6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/></symbol>
+  <symbol id="i-close" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
+  <symbol id="i-obs" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v5M4 14l4-2.5M16 14l-4-2.5"/></symbol>
+  <symbol id="i-diagnostics" viewBox="0 0 20 20"><path d="M2.5 10h4l2-5 3 10 2-5h4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 20 20"><path d="M16 9.5A6 6 0 0 0 5 6.5M4 10.5A6 6 0 0 0 15 13.5"/><path d="M4.5 3v4h4M15.5 17v-4h-4"/></symbol>
+  <symbol id="i-qr" viewBox="0 0 20 20"><rect x="3" y="3" width="5" height="5"/><rect x="12" y="3" width="5" height="5"/><rect x="3" y="12" width="5" height="5"/><path d="M12 12h2v2h-2zM16 12h1M12 16h1M15 15h2v2h-2z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 20 20"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 20 20"><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5 5.5l1 11h8l1-11M8.5 9v5M11.5 9v5"/></symbol>
+  <symbol id="i-external" viewBox="0 0 20 20"><path d="M11 3h6v6M17 3l-8 8M15 11v5H4V5h5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5l3 2"/></symbol>
+  <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12M2.5 8h3.5M14 8h3.5M2.5 12h3.5M14 12h3.5"/></symbol>
+  <symbol id="i-skip" viewBox="0 0 20 20"><path d="M5 5l7 5-7 5zM14 5v10"/></symbol>
+</svg>
+
+<header class="topbar sheet-bar">
+  <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut design</span></a>
+  <nav class="nav">
+    <a href="#" aria-current="page">Components</a>
+    <a href="mockups/clips.html">Clips</a>
+    <a href="mockups/setup.html">Setup</a>
+    <a href="mockups/settings.html">Settings</a>
+    <a href="mockups/obs.html">OBS</a>
+    <a href="mockups/diagnostics.html">Diagnostics</a>
+    <a href="mockups/login.html">Login</a>
+  </nav>
+  <div class="right">
+    <label class="row nowrap sm" style="gap:6px">Theme
+      <select class="select" id="themeSel" style="min-height:28px;padding:2px 28px 2px 8px;width:auto">
+        <option value="">wardogs (default)</option>
+        <option value="themes/plain.css">plain (light)</option>
+      </select>
+    </label>
+    <span class="version" id="vw"></span>
+  </div>
+</header>
+
+<main class="sheet">
+
+<section id="tokens">
+  <h2>Tokens</h2>
+  <p class="muted">Every colour on every page comes from one of these. The theme file overrides values, never rules.</p>
+  <div class="swatches" id="swatches"></div>
+</section>
+
+<section id="contrast-check">
+  <h2>Contrast</h2>
+  <p class="muted">Computed live from the active theme. Text pairs need 4.5:1 (AA), secondary text and UI parts 3:1.</p>
+  <table id="contrast"><thead><tr><th>Pair</th><th>Ratio</th><th>Needs</th><th></th></tr></thead><tbody></tbody></table>
+</section>
+
+<section id="top-bar-and-navigation">
+  <h2>Top bar and navigation</h2>
+  <p class="muted">On every regular page. Wizard and login show only the wordmark. Below 480 px the wordmark keeps its icon, the version and encoder hide.</p>
+  <div class="frame">
+    <header class="topbar" style="position:static">
+      <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+      <nav class="nav">
+        <a href="#" aria-current="page">Clips</a><a href="#">Settings</a><a href="#" class="is-hover">OBS</a><a href="#">Diagnostics</a>
+      </nav>
+      <div class="right">
+        <span class="badge">h264_nvenc</span>
+        <span class="status" title="Service running"><i class="dot"></i></span>
+        <span class="version">2.0.0</span>
+      </div>
+    </header>
+  </div>
+  <div class="demo">
+    <span class="status"><i class="dot"></i> ok</span>
+    <span class="status"><i class="dot busy"></i> job running</span>
+    <span class="status"><i class="dot warn"></i> warning (scan stuck, update)</span>
+    <span class="status"><i class="dot err"></i> last job failed</span>
+    <span class="status"><i class="dot off"></i> unreachable</span>
+  </div>
+</section>
+
+<section id="buttons">
+  <h2>Buttons</h2>
+  <p class="muted">One primary per page. Busy keeps the label and adds a spinner; the width does not jump.</p>
+  <div class="demo">
+    <button class="btn btn-primary">Share <kbd>Enter</kbd></button>
+    <button class="btn btn-primary is-hover">Hover</button>
+    <button class="btn btn-primary is-focus">Focus</button>
+    <button class="btn btn-primary" disabled>Disabled</button>
+    <button class="btn btn-primary is-busy"><span class="spinner"></span> Sharing</button>
+  </div>
+  <div class="demo">
+    <button class="btn">Set in <kbd>I</kbd></button>
+    <button class="btn is-hover">Hover</button>
+    <button class="btn is-focus">Focus</button>
+    <button class="btn" disabled>Disabled</button>
+    <button class="btn is-busy"><span class="spinner"></span> Testing</button>
+    <button class="btn"><svg class="icon"><use href="#i-folder"/></svg> Open folder</button>
+    <button class="btn btn-icon" title="Copy"><svg class="icon"><use href="#i-copy"/></svg></button>
+    <button class="btn btn-sm">Small</button>
+  </div>
+  <div class="demo">
+    <button class="btn btn-danger">Delete</button>
+    <button class="btn btn-danger is-hover">Hover</button>
+    <button class="btn btn-danger is-focus">Focus</button>
+    <button class="btn btn-danger" disabled>Disabled</button>
+  </div>
+  <div class="demo">
+    <button class="btn btn-ghost">Skip this step</button>
+    <button class="btn btn-ghost is-hover">Hover</button>
+    <button class="btn btn-ghost is-focus">Focus</button>
+    <button class="btn btn-ghost btn-icon" title="Dismiss"><svg class="icon"><use href="#i-close"/></svg></button>
+  </div>
+</section>
+
+<section id="fields">
+  <h2>Fields</h2>
+  <div class="demo w col">
+    <div class="field"><label for="f1">Title</label><input class="input" id="f1" placeholder="Optional - shown in list, filename and post"></div>
+    <div class="field"><label for="f2">Focus</label><input class="input is-focus" id="f2" value="Sniper from the roof"></div>
+    <div class="field is-invalid"><label for="f3">Port</label><input class="input" id="f3" value="80"><span class="error">Use a port above 1024 - lower ports need admin rights.</span></div>
+    <div class="field"><label for="f4">Disabled</label><input class="input" id="f4" value="C:\Users\you\Videos" disabled></div>
+    <div class="field"><label for="f5">Password</label>
+      <div class="input-group"><input class="input" id="f5" type="password" value="hunter2hunter2"><button class="btn btn-icon" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div>
+      <span class="hint">Recommended if others share your network. Not needed on this PC.</span></div>
+    <div class="field"><label for="f6">Encoder</label>
+      <select class="select" id="f6"><option>auto (detected: h264_nvenc)</option><option>h264_nvenc</option><option>h264_amf</option><option>h264_qsv</option><option>libx264</option></select></div>
+    <div class="field copy-field"><label for="f7">Address for your phone</label>
+      <div class="input-group"><input class="input mono" id="f7" readonly value="http://gaming-pc:8420/"><button class="btn"><svg class="icon"><use href="#i-copy"/></svg> Copy</button></div></div>
+    <div class="field copy-field"><label for="f8">Copied state (2 s)</label>
+      <div class="input-group"><input class="input mono" id="f8" readonly value="http://192.168.1.20:8420/"><button class="btn is-copied"><svg class="icon"><use href="#i-check"/></svg> Copied</button></div></div>
+    <div class="field"><label for="f9">Textarea</label><textarea class="input" id="f9">ffmpeg: C:\ffmpeg\bin\ffmpeg.exe (7.1)
+encoder: h264_nvenc</textarea></div>
+    <div class="fields-2">
+      <div class="field"><label>Two columns</label><input class="input" value="left"></div>
+      <div class="field"><label>on wide screens</label><input class="input" value="right"></div>
+    </div>
+  </div>
+</section>
+
+<section id="switch-and-checkbox">
+  <h2>Switch and checkbox</h2>
+  <div class="demo">
+    <label class="switch"><input type="checkbox" checked><span class="track"></span> Nextcloud <span class="muted">on</span></label>
+    <label class="switch"><input type="checkbox"><span class="track"></span> Discord <span class="muted">off</span></label>
+    <label class="switch"><input type="checkbox" checked disabled><span class="track"></span> Disabled</label>
+  </div>
+  <div class="demo col w">
+    <label class="check"><input type="checkbox" checked> <span>Also remove from Nextcloud - <b>shared links (e.g. in Discord) will stop working</b>.</span></label>
+    <label class="check"><input type="checkbox"> <span>Unchecked</span></label>
+  </div>
+</section>
+
+<section id="card">
+  <h2>Card</h2>
+  <p class="muted">Integrations are cards: the switch in the head, the body hidden while the integration is off. A new integration is one more card.</p>
+  <div class="demo">
+    <div class="card" style="width:min(100%,420px)">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h3>Nextcloud</h3><span class="badge ok"><svg class="icon-sm icon"><use href="#i-check"/></svg> tested</span><label class="switch"><input type="checkbox" checked><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">Uploads the shared file and creates a public link.</p>
+        <div class="field"><label>Server</label><input class="input" value="https://cloud.example.com"></div>
+        <div class="fields-2">
+          <div class="field"><label>User</label><input class="input" value="clips-dominic"></div>
+          <div class="field"><label>App password</label><input class="input" type="password" value="xxxxxxxxxxxx"></div>
+        </div>
+        <div class="field"><label>Folder</label><input class="input" value="Clips"><span class="hint">Clips land in <code>Clips/&lt;YYYY-MM&gt;/</code>.</span></div>
+        <div class="row"><button class="btn">Test connection</button><span class="muted sm">ok - 41 GB free</span></div>
+      </div>
+    </div>
+    <div class="card is-disabled" style="width:min(100%,420px)">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h3>Discord</h3><span class="badge">off</span><label class="switch"><input type="checkbox"><span class="track"></span></label></div>
+      <div class="card-body"><p>hidden while off</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="banners">
+  <h2>Banners</h2>
+  <p class="muted">Directly under the top bar, stacked in this order: unreachable, job failed, scan stuck, update. They replace the old status block.</p>
+  <div class="frame banners">
+    <div class="banner err"><svg class="icon"><use href="#i-error"/></svg><div class="grow"><b>Service not responding</b> <span class="muted">(timeout 6 s) - attempt 3, retrying every 3 s.</span></div></div>
+    <div class="banner err"><svg class="icon"><use href="#i-error"/></svg><div class="grow"><b>Last share failed:</b> Nextcloud upload: 507 Insufficient Storage. <a href="#">Show details</a></div><button class="btn btn-ghost btn-icon" title="Dismiss"><svg class="icon"><use href="#i-close"/></svg></button></div>
+    <div class="banner warn"><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Clip scan stuck for 48 s</b> - check the log on the PC.</div></div>
+    <div class="banner"><svg class="icon"><use href="#i-info"/></svg><div class="grow"><b>replaycut 2.1.0 is available.</b> <a href="#">Release notes</a></div><button class="btn btn-ghost btn-icon" title="Dismiss"><svg class="icon"><use href="#i-close"/></svg></button></div>
+    <div class="banner warn"><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Replay buffer is not running</b> - F9 does nothing until it does.</div><button class="btn btn-sm">Start replay buffer</button></div>
+  </div>
+</section>
+
+<section id="toasts">
+  <h2>Toasts (in page)</h2>
+  <p class="muted">Bottom right, bottom centre on a phone, 3 s, at most three. Only for feedback to something the page itself did. Windows toasts are a separate catalogue (see README).</p>
+  <div class="toast-stack is-static">
+    <div class="toast info"><svg class="icon"><use href="#i-info"/></svg> F9 sent to OBS - the clip will appear shortly</div>
+    <div class="toast ok"><svg class="icon"><use href="#i-check"/></svg> Direct link copied</div>
+    <div class="toast err"><svg class="icon"><use href="#i-error"/></svg> Title: service unreachable</div>
+  </div>
+</section>
+
+<section id="modal">
+  <h2>Modal</h2>
+  <div class="modal is-static">
+    <div class="dialog danger">
+      <h2>Delete clip?</h2>
+      <div class="muted">Replay 2026-09-04 21-14-02 - "Sniper from the roof"</div>
+      <div class="muted sm">The MKV and the files shared from it go to the recycle bin on the PC.</div>
+      <label class="check"><input type="checkbox" checked> <span>Also remove from Nextcloud - <b>shared links (e.g. in Discord) will stop working</b>. Unchecked keeps copies and links in Nextcloud.</span></label>
+      <div class="actions"><button class="btn">Cancel</button><button class="btn btn-danger">Move to recycle bin</button></div>
+    </div>
+  </div>
+</section>
+
+<section id="badges">
+  <h2>Badges</h2>
+  <div class="demo">
+    <span class="badge">h264_nvenc</span>
+    <span class="badge">AV1 · 4 tracks</span>
+    <span class="badge ok"><svg class="icon icon-sm"><use href="#i-check"/></svg> tested</span>
+    <span class="badge warn">85 % used</span>
+    <span class="badge err">failed</span>
+    <span class="badge accent">local</span>
+    <span class="badge">1080p60</span>
+  </div>
+</section>
+
+<section id="check-rows">
+  <h2>Check rows</h2>
+  <p class="muted">The one component for the setup wizard, the diagnostics page and the OBS page. A problem always carries the fix and, where it applies, the exact menu path.</p>
+  <div class="checks" style="max-width:720px">
+    <div class="check-row"><div class="mark"><svg class="icon"><use href="#i-clock"/></svg></div><div><div class="label">Recording folder</div><div class="detail">idle - not checked yet</div></div><div class="side"><button class="btn btn-sm">Check</button></div></div>
+    <div class="check-row waiting"><div class="mark"><span class="spinner"></span></div><div><div class="label">Waiting for the first replay</div><div class="detail">Press your replay hotkey in OBS (F9 by default). Watching C:\Users\you\Videos\WARDOGS ...</div></div><div class="side"></div></div>
+    <div class="check-row ok"><div class="mark"><svg class="icon"><use href="#i-check"/></svg></div><div><div class="label">Replay found</div><div class="detail">Replay 2026-09-04 21-14-02.mkv - HEVC 1080p60, 4 audio tracks. Your browser plays this preview.</div></div><div class="side"><span class="badge ok">ok</span></div></div>
+    <div class="check-row warn"><div class="mark"><svg class="icon"><use href="#i-warning"/></svg></div><div><div class="label">Nextcloud quota</div><div class="detail">85 % used - 7.6 GB of 50 GB free. Old clips are not deleted automatically.</div></div><div class="side"><span class="badge warn">85 %</span></div></div>
+    <div class="check-row problem"><div class="mark"><svg class="icon"><use href="#i-error"/></svg></div><div><div class="label">Recording format</div><div class="detail">OBS records MP4. A crash would lose the file, and the tool cannot read it while OBS writes.</div><div class="fix">Set <span class="path">Settings &gt; Output &gt; Recording &gt; Recording Format</span> to <b>mkv</b>, then press the hotkey again.</div></div><div class="side"><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Retry</button></div></div>
+    <div class="check-row skipped"><div class="mark"><svg class="icon"><use href="#i-skip"/></svg></div><div><div class="label">Discord webhook</div><div class="detail">skipped - integration is off</div></div><div class="side"></div></div>
+  </div>
+</section>
+
+<section id="stepper-and-tabs">
+  <h2>Stepper and tabs</h2>
+  <div class="demo col w">
+    <div class="stepper">
+      <div class="step done"><span class="num"><svg class="icon icon-sm"><use href="#i-check"/></svg></span><span class="name">OBS</span></div><span class="line"></span>
+      <div class="step current"><span class="num">2</span><span class="name">Integrations <span class="optional">optional</span></span></div><span class="line"></span>
+      <div class="step"><span class="num">3</span><span class="name">Access</span></div>
+    </div>
+    <div class="tabs"><a href="#" aria-current="page">General</a><a href="#">Integrations</a><a href="#" class="is-hover">Hover</a></div>
+  </div>
+</section>
+
+<section id="share-progress">
+  <h2>Share progress</h2>
+  <p class="muted">Stages appear only for enabled integrations (API contract): one stage in local mode, three with Nextcloud and Discord.</p>
+  <div class="demo col w">
+    <div class="progress"><div class="row nowrap"><span class="grow">Queued ...</span><span class="muted sm">0 %</span></div><div class="bar"><i style="width:0"></i></div><div class="stages"><span class="on">1 Cut + encode</span></div></div>
+    <div class="progress"><div class="row nowrap"><span class="grow">Encoding 0:42 of 1:05 (h264_nvenc, 6000 kbit/s)</span><span class="muted sm">64 %</span></div><div class="bar"><i style="width:64%"></i></div><div class="stages"><span class="on">1 Cut + encode</span><span>2 Nextcloud</span><span>3 Discord</span></div></div>
+    <div class="progress"><div class="row nowrap"><span class="grow">Uploading 48 MB ...</span><span class="muted sm">80 %</span></div><div class="bar"><i style="width:80%"></i></div><div class="stages"><span class="done">1 Cut + encode</span><span class="on">2 Nextcloud</span><span>3 Discord</span></div></div>
+    <div class="progress"><div class="row nowrap"><span class="grow">Done in 14 s</span><span class="muted sm">100 %</span></div><div class="bar"><i style="width:100%"></i></div><div class="stages"><span class="done">1 Cut + encode</span><span class="done">2 Nextcloud</span></div></div>
+    <div class="progress err"><div class="row nowrap"><span class="grow">Failed at Nextcloud: 507 Insufficient Storage</span><span class="muted sm">stopped</span></div><div class="bar"><i style="width:70%"></i></div><div class="stages"><span class="done">1 Cut + encode</span><span class="failed">2 Nextcloud</span><span>3 Discord</span></div></div>
+  </div>
+</section>
+
+<section id="result-box">
+  <h2>Result box</h2>
+  <div class="demo col w">
+    <div class="result">
+      <div class="head"><svg class="icon"><use href="#i-check"/></svg> Shared - 48 MB, 23 s, Mix</div>
+      <div class="input-group"><input class="input mono" readonly value="https://cloud.example.com/s/AbCdEf/download"><button class="btn"><svg class="icon"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-icon" title="Copy share page"><svg class="icon"><use href="#i-external"/></svg></button></div>
+      <div class="line ok"><svg class="icon icon-sm"><use href="#i-check"/></svg> Posted to Discord as WARDOGS</div>
+    </div>
+    <div class="result">
+      <div class="head"><svg class="icon"><use href="#i-check"/></svg> Ready - 48 MB, 23 s, Mix <span class="badge accent">local</span></div>
+      <div class="muted sm break">shared\Replay_2026-09-04_21-14-02_12.0-35.0_sniper-from-the-roof.mp4</div>
+      <div class="row"><button class="btn"><svg class="icon"><use href="#i-folder"/></svg> Open folder</button><button class="btn"><svg class="icon"><use href="#i-copy"/></svg> Copy file</button><span class="muted sm">Paste it into Discord with Ctrl+V.</span></div>
+    </div>
+    <div class="result partial">
+      <div class="head"><svg class="icon"><use href="#i-warning"/></svg> Shared, but not posted - 48 MB, 23 s</div>
+      <div class="input-group"><input class="input mono" readonly value="https://cloud.example.com/s/AbCdEf/download"><button class="btn"><svg class="icon"><use href="#i-copy"/></svg> Direct</button></div>
+      <div class="line err"><svg class="icon icon-sm"><use href="#i-error"/></svg> Discord: webhook returned 404 - check the webhook URL in Settings &gt; Integrations.</div>
+    </div>
+    <div class="result err">
+      <div class="head"><svg class="icon"><use href="#i-error"/></svg> Share failed</div>
+      <div class="sm">ffmpeg exited with code 1: Unknown encoder 'h264_nvenc'. <a href="#">Diagnostics</a></div>
+      <div class="row"><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Try again</button></div>
+    </div>
+  </div>
+</section>
+
+<section id="timeline">
+  <h2>Timeline</h2>
+  <p class="muted">Handles are 24 px wide (32 px with a coarse pointer) and as tall as the touch token. The active handle shows its time.</p>
+  <div class="demo col" style="max-width:720px">
+    <span class="lbl">idle</span>
+    <div class="timeline"><div class="ticks"><span>0:00</span><span>1:00</span><span>2:00</span><span>3:00</span><span>4:00</span><span>5:00</span></div><div class="range" style="left:22%;width:34%"></div><div class="handle" style="left:22%"></div><div class="handle" style="left:56%"></div><div class="playhead" style="left:30%"></div></div>
+    <span class="lbl">dragging the out handle</span>
+    <div class="timeline"><div class="range" style="left:22%;width:34%"></div><div class="handle" style="left:22%"></div><div class="handle is-active" data-time="2:48.5" style="left:56%"></div><div class="playhead" style="left:56%"></div></div>
+    <span class="lbl">playing the selection</span>
+    <div class="timeline"><div class="range" style="left:22%;width:34%"></div><div class="handle" style="left:22%"></div><div class="handle" style="left:56%"></div><div class="playhead" style="left:41%"></div></div>
+    <div class="row"><button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg> Set in <kbd>I</kbd></button><button class="btn"><svg class="icon"><use href="#i-cut-out"/></svg> Set out <kbd>O</kbd></button><button class="btn">Whole clip</button><button class="btn"><svg class="icon"><use href="#i-play"/></svg> Play selection <kbd>P</kbd></button><span class="muted sm">1:06.0 - 2:48.5 · 102.5 s · about 77 MB</span></div>
+    <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>Enter</kbd> share</span></div>
+  </div>
+</section>
+
+<section id="clip-list-and-history">
+  <h2>Clip list and history</h2>
+  <div class="demo">
+    <div class="stack" style="width:280px">
+      <div class="clip new"><div class="name"><span>Replay 2026-09-04 21-14-02</span></div><div class="meta"><span>5:00</span><span>412 MB</span><span>4 tracks</span><span>21:14</span></div></div>
+      <div class="clip active"><div class="name"><span>Sniper from the roof</span></div><div class="meta"><span>5:00</span><span>408 MB</span><span>4 tracks</span><span>20:51</span></div></div>
+      <div class="clip is-hover"><div class="name"><span>Replay 2026-09-04 20-37-19</span></div><div class="meta"><span>5:00</span><span>410 MB</span><span>20:37</span></div></div>
+      <div class="clip deleting"><div class="name"><span>Replay 2026-09-04 19-02-45</span></div><div class="meta"><span>deleting ...</span></div></div>
+    </div>
+    <div class="stack" style="width:280px">
+      <div class="hist"><b class="truncate">Sniper from the roof</b><div class="meta">23 s · 48 MB · 21:20 · Mix</div><div class="row"><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm">Link</button></div></div>
+      <div class="hist"><b class="truncate">Replay 2026-09-04 20-37-19</b><div class="meta">41 s · 79 MB · 20:44 · Game+Mic <span class="badge accent">local</span></div><div class="row"><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button></div></div>
+      <div class="hist expired"><b class="truncate">Ace on B</b><div class="meta">18 s · 36 MB · 2026-08-12 · expired link</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="empty-states">
+  <h2>Empty states</h2>
+  <div class="demo">
+    <div class="empty" style="width:min(100%,420px)"><svg class="icon"><use href="#i-film"/></svg><div><b>No clips yet</b><br>Press <kbd>F9</kbd> in OBS while the replay buffer runs. The clip shows up here within a few seconds.</div><button class="btn">Send F9 to OBS</button></div>
+    <div class="empty" style="width:min(100%,420px)"><svg class="icon"><use href="#i-settings"/></svg><div><b>Not set up yet</b><br>replaycut does not know your recording folder.</div><button class="btn btn-primary">Run the setup</button></div>
+    <div class="empty compact" style="width:280px">Nothing shared yet.</div>
+  </div>
+</section>
+
+<section id="qr-block">
+  <h2>QR block</h2>
+  <div class="qr" style="max-width:520px">
+    <div class="code"><svg viewBox="0 0 29 29" shape-rendering="crispEdges" fill="currentColor"><path d="M0 0h7v7H0zM22 0h7v7h-7zM0 22h7v7H0z" /><path fill="var(--fg)" d="M1 1h5v5H1zM23 1h5v5h-5zM1 23h5v5H1z"/><path d="M2 2h3v3H2zM24 2h3v3h-3zM2 24h3v3H2zM9 0h1v2H9zM11 0h2v1h-2zM8 2h1v1H8zM10 2h1v3h-1zM12 2h1v2h-1zM14 1h1v3h-1zM16 0h1v1h-1zM18 0h2v2h-2zM8 4h2v1H8zM13 4h2v1h-2zM17 3h1v2h-1zM19 4h1v1h-1zM9 6h1v2H9zM11 6h1v1h-1zM13 6h2v2h-2zM16 6h1v2h-1zM18 6h2v1h-2zM0 8h1v1H0zM2 8h2v1H2zM5 8h1v2H5zM8 8h1v1H8zM10 8h3v1h-3zM14 8h1v2h-1zM17 8h2v1h-2zM20 8h2v1h-2zM23 8h1v2h-1zM25 8h2v1h-2zM28 8h1v1h-1zM1 10h1v1H1zM3 10h1v2H3zM7 10h2v1H7zM10 10h1v1h-1zM12 10h1v2h-1zM16 10h1v1h-1zM18 10h3v1h-3zM22 10h1v1h-1zM24 10h1v2h-1zM27 10h1v2h-1zM0 12h2v1H0zM5 12h2v1H5zM8 12h1v2H8zM10 12h1v1h-1zM13 12h2v1h-2zM17 12h1v2h-1zM19 12h2v1h-2zM22 12h1v1h-1zM25 12h1v1h-1zM28 12h1v1h-1zM2 14h1v1H2zM4 14h2v1H4zM7 14h1v1H7zM10 14h2v1h-2zM13 14h1v2h-1zM15 14h1v1h-1zM18 14h1v1h-1zM20 14h2v1h-2zM23 14h2v1h-2zM26 14h1v2h-1zM0 16h1v1H0zM3 16h1v1H3zM5 16h1v1H5zM7 16h2v1H7zM11 16h1v1h-1zM14 16h1v1h-1zM16 16h2v1h-2zM19 16h1v2h-1zM21 16h1v1h-1zM24 16h1v1h-1zM27 16h2v1h-2zM1 18h1v1H1zM4 18h1v2H4zM6 18h1v1H6zM8 18h2v1H8zM12 18h1v2h-1zM15 18h1v1h-1zM17 18h1v1h-1zM20 18h1v1h-1zM22 18h2v1h-2zM25 18h1v1h-1zM28 18h1v1h-1zM0 20h2v1H0zM3 20h1v1H3zM6 20h2v1H6zM9 20h2v1H9zM13 20h1v1h-1zM16 20h1v2h-1zM18 20h2v1h-2zM21 20h1v1h-1zM23 20h1v1h-1zM26 20h2v1h-2zM8 22h1v1H8zM10 22h2v1h-2zM13 22h1v2h-1zM15 22h1v1h-1zM17 22h1v1h-1zM19 22h2v1h-2zM22 22h1v1h-1zM24 22h2v1h-2zM27 22h1v1h-1zM9 24h1v1H9zM11 24h1v1h-1zM14 24h1v1h-1zM16 24h1v1h-1zM18 24h1v1h-1zM20 24h2v1h-2zM23 24h1v1h-1zM26 24h1v1h-1zM28 24h1v1h-1zM8 26h1v2H8zM10 26h1v1h-1zM12 26h2v1h-2zM15 26h1v1h-1zM17 26h2v1h-2zM21 26h1v1h-1zM24 26h1v1h-1zM27 26h1v1h-1zM10 28h1v1h-1zM13 28h2v1h-2zM16 28h1v1h-1zM19 28h2v1h-2zM22 28h2v1h-2zM25 28h2v1h-2z"/></svg></div>
+    <div class="addr">
+      <div class="muted sm">Open on your phone in the same network:</div>
+      <div class="input-group"><input class="input mono" readonly value="http://gaming-pc:8420/"><button class="btn btn-icon" title="Copy"><svg class="icon"><use href="#i-copy"/></svg></button></div>
+      <div class="input-group"><input class="input mono" readonly value="http://192.168.1.20:8420/"><button class="btn btn-icon" title="Copy"><svg class="icon"><use href="#i-copy"/></svg></button></div>
+      <div class="muted xs">The pattern above is a placeholder; the service renders the real code.</div>
+    </div>
+  </div>
+</section>
+
+<section id="well">
+  <h2>Well (diagnostics text)</h2>
+  <div class="well" style="max-width:720px">replaycut 2.0.0 (x86_64-pc-windows-msvc)
+ffmpeg    ok   C:\ffmpeg\bin\ffmpeg.exe 7.1
+encoder   ok   h264_nvenc (test encode 0.4 s)
+folder    ok   C:\Users\you\Videos\WARDOGS - 212 GB free, 12 clips
+scan      ok   2 s ago
+nextcloud ok   clips-dominic@cloud.example.com - 41 GB free
+webhook   FAIL 404 Not Found
+obs       --   not connected (obs-websocket off)
+update    ok   2.0.0 is the latest release</div>
+</section>
+
+<section id="ui-icons">
+  <h2>UI icons</h2>
+  <p class="muted">Inline SVG sprite, 20 px grid, stroke 1.75, currentColor. No icon fonts, no external files.</p>
+  <div class="icons" id="iconGrid"></div>
+</section>
+
+<section id="app-icon-candidates">
+  <h2>App icon candidates (R5d)</h2>
+  <p class="muted">Three motifs at 32 and 16 px on a dark and a light task bar, plus the busy and error dots. Decision at the review; the winner becomes the SVG source of the .ico files.</p>
+  <div class="appicons" id="appicons"></div>
+</section>
+
+</main>
+
+<script>
+// Theme switch (the only script the mockups need) plus the sheet's helpers.
+(function () {
+  const link = document.getElementById('theme'), sel = document.getElementById('themeSel');
+  const apply = v => { link.href = v || ''; link.disabled = !v; sel.value = v; try { localStorage.setItem('rc-theme', v); } catch (e) {} setTimeout(refresh, 60); };
+  sel.onchange = () => apply(sel.value);
+  let saved = ''; try { saved = localStorage.getItem('rc-theme') || ''; } catch (e) {}
+  apply(saved);
+
+  const tokens = ['bg','surface','surface-2','line','line-strong','fg','fg-muted','fg-faint','accent','accent-hover','accent-fg','accent-soft','ok','ok-soft','warn','warn-soft','err','err-soft','info','info-soft','focus','scrim'];
+  const cs = () => getComputedStyle(document.documentElement);
+  function swatches() {
+    document.getElementById('swatches').innerHTML = tokens.map(t => `<div class="swatch"><i style="background:var(--${t})"></i><div>--${t}<code>${cs().getPropertyValue('--' + t).trim()}</code></div></div>`).join('');
+  }
+  // contrast: resolve a token to rgb by painting it, then WCAG ratio
+  const probe = document.createElement('div'); probe.style.position = 'absolute'; probe.style.visibility = 'hidden'; document.body.appendChild(probe);
+  function rgb(token, over) {
+    probe.style.background = `var(--${over})`; const b = getComputedStyle(probe).backgroundColor.match(/[\d.]+/g).map(Number);
+    probe.style.background = `var(--${token})`; const c = getComputedStyle(probe).backgroundColor.match(/[\d.]+/g).map(Number);
+    const a = c.length > 3 ? c[3] : 1; return [0, 1, 2].map(i => c[i] * a + b[i] * (1 - a));
+  }
+  const lum = ([r, g, b]) => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  const pairs = [['fg','bg',4.5],['fg','surface',4.5],['fg','surface-2',4.5],['fg-muted','surface',3],['fg-muted','bg',3],['fg-faint','surface-2',3],['accent-fg','accent',4.5],['accent','surface',3],['ok','surface',3],['warn','surface',3],['err','surface',3],['info','surface',3],['focus','bg',3],['focus','surface',3],['line','surface',1.3]];
+  function contrast() {
+    document.querySelector('#contrast tbody').innerHTML = pairs.map(([f, b, need]) => { const r = ratio(rgb(f, b), rgb(b, 'bg')); const ok = r >= need;
+      return `<tr><td><code>--${f}</code> on <code>--${b}</code></td><td class="mono">${r.toFixed(2)}:1</td><td>${need}:1</td><td><span class="badge ${ok ? 'ok' : 'err'}">${ok ? 'pass' : 'fail'}</span></td></tr>`; }).join('');
+  }
+  function refresh() { swatches(); contrast(); document.getElementById('vw').textContent = link.disabled ? 'wardogs' : 'plain'; }
+  refresh();
+
+  // icon grid from the sprite
+  document.getElementById('iconGrid').innerHTML = [...document.querySelectorAll('symbol')].map(s => `<div><svg class="icon"><use href="#${s.id}"/></svg>${s.id.slice(2)}</div>`).join('');
+
+  // app icon candidates: drawn with tokens, rendered at 32 and 16 px
+  const motifs = {
+    'A play + notch': `<rect width="64" height="64" rx="14" fill="var(--surface-2)"/><path d="M22 16v32l26-16z" fill="var(--accent)"/><path d="M12 24h7M12 40h7" stroke="var(--accent)" stroke-width="5" stroke-linecap="round"/>`,
+    'B brackets': `<rect width="64" height="64" rx="14" fill="var(--surface-2)"/><path d="M20 16h-8v32h8M44 16h8v32h-8" fill="none" stroke="var(--fg)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M26 22v20l16-10z" fill="var(--accent)"/>`,
+    'C film cut': `<rect width="64" height="64" rx="14" fill="var(--surface-2)"/><rect x="12" y="18" width="40" height="28" rx="4" fill="none" stroke="var(--fg)" stroke-width="4"/><path d="M20 18v28M44 18v28" stroke="var(--fg)" stroke-width="4"/><path d="M32 10v44" stroke="var(--accent)" stroke-width="5" stroke-linecap="round" stroke-dasharray="7 6"/>`
+  };
+  const dot = c => `<circle cx="50" cy="50" r="13" fill="var(--${c})" stroke="var(--surface-2)" stroke-width="4"/>`;
+  const svg = (m, extra, px) => `<svg width="${px}" height="${px}" viewBox="0 0 64 64">${m}${extra || ''}</svg>`;
+  document.getElementById('appicons').innerHTML = Object.entries(motifs).map(([name, m]) => `<div class="appicon">${svg(m, '', 64)}<div class="tray dark">${svg(m, '', 32)}${svg(m, dot('accent'), 32)}${svg(m, dot('err'), 32)}${svg(m, '', 16)}${svg(m, dot('accent'), 16)}${svg(m, dot('err'), 16)}</div><div class="tray light">${svg(m, '', 16)}${svg(m, dot('accent'), 16)}${svg(m, dot('err'), 16)}</div>${name}</div>`).join('');
+})();
+</script>
+</body>
+</html>

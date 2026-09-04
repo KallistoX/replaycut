@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<title>replaycut - Login (mockup)</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" id="theme" href="" disabled>
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="mock.css">
+<style>
+  .login { min-height: calc(100vh - var(--topbar-h)); display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
+  .login .card { width: 100%; max-width: 380px; }
+  .login .brand { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-lg); font-weight: var(--weight-strong); }
+  .login .brand .icon { color: var(--accent); width: 28px; height: 28px; }
+</style>
+</head>
+<body data-states="default:Password prompt | error:Wrong password | busy:Checking | loopback:Opened on the PC itself (no login needed)">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 20 20"><path d="M4 3.5v13l11-6.5z"/><path d="M2 7h4M2 13h4" /></symbol>
+  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4v12l10-6z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 20 20"><path d="M6 4v12M14 4v12"/></symbol>
+  <symbol id="i-cut-in" viewBox="0 0 20 20"><path d="M4 3v14M4 10h9M10 6l4 4-4 4"/></symbol>
+  <symbol id="i-cut-out" viewBox="0 0 20 20"><path d="M16 3v14M16 10H7M10 6l-4 4 4 4"/></symbol>
+  <symbol id="i-share" viewBox="0 0 20 20"><path d="M10 12V3M6.5 6.5 10 3l3.5 3.5M4 11v5h12v-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2.5 5.5h5l2 2h8v8h-15z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7"/></symbol>
+  <symbol id="i-check" viewBox="0 0 20 20"><path d="m4 10.5 4 4 8-9"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 20 20"><path d="M10 3 2.5 16.5h15z"/><path d="M10 8v4M10 14.2v.3"/></symbol>
+  <symbol id="i-error" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="m7 7 6 6M13 7l-6 6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/></symbol>
+  <symbol id="i-close" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
+  <symbol id="i-obs" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v5M4 14l4-2.5M16 14l-4-2.5"/></symbol>
+  <symbol id="i-diagnostics" viewBox="0 0 20 20"><path d="M2.5 10h4l2-5 3 10 2-5h4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 20 20"><path d="M16 9.5A6 6 0 0 0 5 6.5M4 10.5A6 6 0 0 0 15 13.5"/><path d="M4.5 3v4h4M15.5 17v-4h-4"/></symbol>
+  <symbol id="i-qr" viewBox="0 0 20 20"><rect x="3" y="3" width="5" height="5"/><rect x="12" y="3" width="5" height="5"/><rect x="3" y="12" width="5" height="5"/><path d="M12 12h2v2h-2zM16 12h1M12 16h1M15 15h2v2h-2z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 20 20"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 20 20"><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5 5.5l1 11h8l1-11M8.5 9v5M11.5 9v5"/></symbol>
+  <symbol id="i-external" viewBox="0 0 20 20"><path d="M11 3h6v6M17 3l-8 8M15 11v5H4V5h5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5l3 2"/></symbol>
+  <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12M2.5 8h3.5M14 8h3.5M2.5 12h3.5M14 12h3.5"/></symbol>
+  <symbol id="i-skip" viewBox="0 0 20 20"><path d="M5 5l7 5-7 5zM14 5v10"/></symbol>
+</svg>
+
+<header class="topbar">
+  <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+  <div class="right"><span class="version">2.0.0</span></div>
+</header>
+
+<main class="login">
+  <form class="card" onsubmit="return false" data-s="default error busy">
+    <div class="brand"><svg class="icon"><use href="#i-logo"/></svg> replaycut</div>
+    <p class="muted sm">This replaycut asks other devices for a password. Signing in keeps this browser logged in for 30 days.</p>
+    <div class="field" data-s-class="error:is-invalid">
+      <label for="pw">Password</label>
+      <div class="input-group"><input class="input" id="pw" type="password" value="hunter2" autocomplete="current-password"><button class="btn btn-icon" type="button" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div>
+      <span class="error" data-s="error">Wrong password. It is set on the gaming PC under Settings › Access.</span>
+    </div>
+    <button class="btn btn-primary" data-s="default error">Sign in</button>
+    <button class="btn btn-primary is-busy" data-s="busy"><span class="spinner"></span> Signing in</button>
+    <p class="muted xs">Forgot it? On the PC itself no password is needed: open <code>http://localhost:8420/</code> there and set a new one.</p>
+  </form>
+
+  <div class="card" data-s="loopback">
+    <div class="brand"><svg class="icon"><use href="#i-logo"/></svg> replaycut</div>
+    <p class="muted sm">You are on the PC that runs replaycut, so no password is asked here. This page is only shown to other devices; the mockup includes it to document the rule.</p>
+    <a class="btn btn-primary" href="clips.html">Open clips</a>
+  </div>
+</main>
+
+<script src="mock.js"></script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<title>replaycut - Setup (mockup)</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" id="theme" href="" disabled>
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="mock.css">
+<style>
+  .wizard-foot { display: flex; gap: var(--space-2); align-items: center; justify-content: flex-end; flex-wrap: wrap; padding-top: var(--space-3); border-top: 1px solid var(--line); }
+  .wizard-foot .left { margin-right: auto; }
+  ol.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: var(--space-2); color: var(--fg-muted); }
+  ol.steps b { color: var(--fg); font-weight: normal; }
+  ol.steps .path { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--fg); }
+  .local-note { display: flex; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+  .local-note .icon { color: var(--accent); flex: none; }
+  .done { text-align: center; padding: var(--space-6) var(--space-4); display: flex; flex-direction: column; align-items: center; gap: var(--space-3); }
+  .done .icon { width: 40px; height: 40px; color: var(--ok); }
+</style>
+</head>
+<body data-states="obsWaiting:1 OBS - waiting for the first replay | obsOk:1 OBS - replay found | obsProblem:1 OBS - problem with fix | intOff:2 Integrations - both off (local mode) | intOn:2 Integrations - Nextcloud ok, Discord failed | access:3 Access - password, addresses, QR | done:Finished">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 20 20"><path d="M4 3.5v13l11-6.5z"/><path d="M2 7h4M2 13h4" /></symbol>
+  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4v12l10-6z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 20 20"><path d="M6 4v12M14 4v12"/></symbol>
+  <symbol id="i-cut-in" viewBox="0 0 20 20"><path d="M4 3v14M4 10h9M10 6l4 4-4 4"/></symbol>
+  <symbol id="i-cut-out" viewBox="0 0 20 20"><path d="M16 3v14M16 10H7M10 6l-4 4 4 4"/></symbol>
+  <symbol id="i-share" viewBox="0 0 20 20"><path d="M10 12V3M6.5 6.5 10 3l3.5 3.5M4 11v5h12v-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2.5 5.5h5l2 2h8v8h-15z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7"/></symbol>
+  <symbol id="i-check" viewBox="0 0 20 20"><path d="m4 10.5 4 4 8-9"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 20 20"><path d="M10 3 2.5 16.5h15z"/><path d="M10 8v4M10 14.2v.3"/></symbol>
+  <symbol id="i-error" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="m7 7 6 6M13 7l-6 6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/></symbol>
+  <symbol id="i-close" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
+  <symbol id="i-obs" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v5M4 14l4-2.5M16 14l-4-2.5"/></symbol>
+  <symbol id="i-diagnostics" viewBox="0 0 20 20"><path d="M2.5 10h4l2-5 3 10 2-5h4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 20 20"><path d="M16 9.5A6 6 0 0 0 5 6.5M4 10.5A6 6 0 0 0 15 13.5"/><path d="M4.5 3v4h4M15.5 17v-4h-4"/></symbol>
+  <symbol id="i-qr" viewBox="0 0 20 20"><rect x="3" y="3" width="5" height="5"/><rect x="12" y="3" width="5" height="5"/><rect x="3" y="12" width="5" height="5"/><path d="M12 12h2v2h-2zM16 12h1M12 16h1M15 15h2v2h-2z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 20 20"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 20 20"><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5 5.5l1 11h8l1-11M8.5 9v5M11.5 9v5"/></symbol>
+  <symbol id="i-external" viewBox="0 0 20 20"><path d="M11 3h6v6M17 3l-8 8M15 11v5H4V5h5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5l3 2"/></symbol>
+  <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12M2.5 8h3.5M14 8h3.5M2.5 12h3.5M14 12h3.5"/></symbol>
+  <symbol id="i-skip" viewBox="0 0 20 20"><path d="M5 5l7 5-7 5zM14 5v10"/></symbol>
+</svg>
+
+<header class="topbar">
+  <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+  <div class="right"><span class="muted">Setup</span><span class="version">2.0.0</span></div>
+</header>
+
+<main class="page">
+
+  <div class="stepper" data-s="obsWaiting obsOk obsProblem">
+    <div class="step current"><span class="num">1</span><span class="name">OBS</span></div><span class="line"></span>
+    <div class="step"><span class="num">2</span><span class="name">Integrations <span class="optional">optional</span></span></div><span class="line"></span>
+    <div class="step"><span class="num">3</span><span class="name">Access</span></div>
+  </div>
+  <div class="stepper" data-s="intOff intOn">
+    <div class="step done"><span class="num"><svg class="icon icon-sm"><use href="#i-check"/></svg></span><span class="name">OBS</span></div><span class="line"></span>
+    <div class="step current"><span class="num">2</span><span class="name">Integrations <span class="optional">optional</span></span></div><span class="line"></span>
+    <div class="step"><span class="num">3</span><span class="name">Access</span></div>
+  </div>
+  <div class="stepper" data-s="access">
+    <div class="step done"><span class="num"><svg class="icon icon-sm"><use href="#i-check"/></svg></span><span class="name">OBS</span></div><span class="line"></span>
+    <div class="step done"><span class="num"><svg class="icon icon-sm"><use href="#i-check"/></svg></span><span class="name">Integrations <span class="optional">skipped</span></span></div><span class="line"></span>
+    <div class="step current"><span class="num">3</span><span class="name">Access</span></div>
+  </div>
+
+  <!-- ===== Step 1: OBS ===== -->
+  <section class="stack-4" data-s="obsWaiting obsOk obsProblem">
+    <div class="page-head"><h1>Connect OBS</h1><span class="muted">replaycut watches the folder OBS writes replays to. Nothing in OBS is changed.</span></div>
+
+    <div class="card">
+      <h2>In OBS, once</h2>
+      <ol class="steps">
+        <li><b>Turn on the replay buffer:</b> <span class="path">Settings › Output › Replay Buffer</span> - enable, 300 s is a good length.</li>
+        <li><b>Record as MKV:</b> <span class="path">Settings › Output › Recording › Recording Format</span> = <b>mkv</b>. MP4 breaks on a crash and cannot be read while OBS writes.</li>
+        <li><b>Audio tracks in this order:</b> 1 everything, 2 microphone, 3 game, 4 Discord - <span class="path">Settings › Output › Recording › Audio Track</span> and the mixer's <span class="path">Advanced Audio Properties</span>. Only track 1 is required.</li>
+        <li><b>A hotkey:</b> <span class="path">Settings › Hotkeys › Save Replay</span> - F9 is what the button in replaycut sends.</li>
+        <li><b>Start the buffer</b> in the main window (Controls › Start Replay Buffer). It stops when OBS closes.</li>
+      </ol>
+    </div>
+
+    <div class="field">
+      <label for="folder">Recording folder</label>
+      <div class="input-group"><input class="input mono" id="folder" value="C:\Users\you\Videos\WARDOGS"><button class="btn">Browse</button></div>
+      <span class="hint">Suggested from your OBS profile (<code>basic.ini › RecFilePath</code>). Change it if OBS records somewhere else.</span>
+    </div>
+
+    <div class="checks">
+      <div class="check-row waiting" data-s="obsWaiting"><div class="mark"><span class="spinner"></span></div><div><div class="label">Waiting for the first replay</div><div class="detail">Press your replay hotkey in OBS now (F9, or the button on the right). Watching <code>C:\Users\you\Videos\WARDOGS</code> - a new MKV shows up here within 5 seconds.</div></div><div class="side"><button class="btn btn-sm">Send <kbd>F9</kbd></button></div></div>
+      <div class="check-row ok" data-s="obsOk"><div class="mark"><svg class="icon"><use href="#i-check"/></svg></div><div><div class="label">Replay found</div><div class="detail">Replay 2026-09-04 21-14-02.mkv · 5:00 · HEVC 1920x1080 60 fps · 4 audio tracks. <b>Your browser plays this preview.</b></div></div><div class="side"><span class="badge ok">ok</span></div></div>
+      <div class="check-row ok" data-s="obsOk"><div class="mark"><svg class="icon"><use href="#i-check"/></svg></div><div><div class="label">ffmpeg and encoder</div><div class="detail">ffmpeg 7.1 found · h264_nvenc works (test encode 0.4 s)</div></div><div class="side"><span class="badge ok">ok</span></div></div>
+      <div class="check-row problem" data-s="obsProblem"><div class="mark"><svg class="icon"><use href="#i-error"/></svg></div><div><div class="label">Replay found, but it is an MP4</div><div class="detail">Replay 2026-09-04 21-14-02.mp4. replaycut needs MKV: an MP4 is unreadable until OBS closes it, and a crash loses it entirely.</div><div class="fix">Set <span class="path">Settings › Output › Recording › Recording Format</span> to <b>mkv</b>, then press the hotkey again. The MP4 can stay where it is.</div></div><div class="side"><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Retry</button></div></div>
+      <div class="check-row warn" data-s="obsProblem"><div class="mark"><svg class="icon"><use href="#i-warning"/></svg></div><div><div class="label">Only 1 audio track</div><div class="detail">The mix will be the only choice when sharing. Fine to continue; add tracks later if you want to drop Discord or the mic.</div></div><div class="side"><span class="badge warn">optional</span></div></div>
+      <div class="check-row" data-s="obsWaiting obsProblem"><div class="mark"><svg class="icon"><use href="#i-clock"/></svg></div><div><div class="label">ffmpeg and encoder</div><div class="detail">checked once a replay is found</div></div><div class="side"></div></div>
+    </div>
+
+    <div class="wizard-foot">
+      <span class="left muted sm" data-s="obsWaiting">You can continue without a replay; the check keeps running in the background.</span>
+      <button class="btn btn-ghost" data-s="obsWaiting obsProblem">Continue anyway</button>
+      <button class="btn btn-primary" data-s="obsOk">Next: Integrations</button>
+      <button class="btn btn-primary" data-s="obsWaiting obsProblem" disabled>Next: Integrations</button>
+    </div>
+  </section>
+
+  <!-- ===== Step 2: Integrations ===== -->
+  <section class="stack-4" data-s="intOff intOn">
+    <div class="page-head"><h1>Integrations</h1><span class="muted">Optional. Each one can be switched on later in Settings.</span></div>
+
+    <div class="local-note" data-s="intOff"><svg class="icon"><use href="#i-info"/></svg><div><b>Without integrations replaycut is a local clip manager.</b> "Share" cuts and encodes the clip into <code>shared\</code> and offers "Open folder" and "Copy file", so Ctrl+V in Discord attaches it. Nothing leaves this PC.</div></div>
+
+    <div class="card is-disabled" data-s="intOff">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>Nextcloud</h2><span class="badge">off</span><label class="switch"><input type="checkbox"><span class="track"></span></label></div>
+      <div class="card-body"></div>
+    </div>
+    <div class="card is-disabled" data-s="intOff">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge">off</span><label class="switch"><input type="checkbox"><span class="track"></span></label></div>
+      <div class="card-body"></div>
+    </div>
+
+    <div class="card" data-s="intOn">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>Nextcloud</h2><span class="badge ok"><svg class="icon icon-sm"><use href="#i-check"/></svg> tested</span><label class="switch"><input type="checkbox" checked><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">Uploads the shared file to <code>&lt;folder&gt;/&lt;YYYY-MM&gt;/</code> and creates a public link. The link goes to the clipboard and, if Discord is on, into the post.</p>
+        <div class="field"><label>Server</label><input class="input" value="https://cloud.example.com"></div>
+        <div class="fields-2">
+          <div class="field"><label>User</label><input class="input" value="clips-dominic"></div>
+          <div class="field"><label>App password</label><div class="input-group"><input class="input" type="password" value="xxxxxxxxxxxxxxxx"><button class="btn btn-icon" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Nextcloud › Settings › Security › Devices &amp; sessions. Stored in the Windows Credential Manager, never in a file.</span></div>
+        </div>
+        <div class="fields-2">
+          <div class="field"><label>Folder</label><input class="input" value="Clips"></div>
+          <div class="field"><label>Link expiry</label><select class="select"><option>never</option><option selected>30 days</option><option>90 days</option></select><span class="hint">An expired link also breaks the Discord post.</span></div>
+        </div>
+        <div class="row"><button class="btn">Test connection</button><span class="sm" style="color:var(--ok)"><svg class="icon icon-sm"><use href="#i-check"/></svg> Logged in as clips-dominic · 41 GB free</span></div>
+      </div>
+    </div>
+    <div class="card" data-s="intOn">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge err">test failed</span><label class="switch"><input type="checkbox" checked><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">Posts <code>**&lt;name&gt;** &lt;title&gt; (&lt;s&gt; s) - &lt;link&gt;</code> into one channel through a webhook. Needs a storage integration for the link.</p>
+        <div class="field is-invalid"><label>Webhook URL</label><div class="input-group"><input class="input mono" type="password" value="https://discord.com/api/webhooks/1234/abcd"><button class="btn btn-icon" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="error">Discord answered 404 Not Found - the webhook was deleted or the URL is incomplete. Server › Channel settings › Integrations › Webhooks › Copy URL.</span></div>
+        <div class="field"><label>Display name</label><input class="input" value="WARDOGS"><span class="hint">Shown as the poster and as the bold prefix of every post.</span></div>
+        <div class="row"><button class="btn">Send test message</button></div>
+      </div>
+    </div>
+
+    <div class="wizard-foot">
+      <button class="btn btn-ghost left" data-s="intOff intOn">Back</button>
+      <button class="btn btn-ghost" data-s="intOff">Skip - keep it local</button>
+      <button class="btn btn-primary" data-s="intOff">Next: Access</button>
+      <span class="muted sm" data-s="intOn">Discord stays on; you can fix the webhook later in Settings.</span>
+      <button class="btn btn-primary" data-s="intOn">Next: Access</button>
+    </div>
+  </section>
+
+  <!-- ===== Step 3: Access ===== -->
+  <section class="stack-4" data-s="access">
+    <div class="page-head"><h1>Access</h1><span class="muted">Who can open replaycut, and from where.</span></div>
+
+    <div class="card">
+      <div class="card-head"><h2>Password</h2><span class="badge">optional</span><label class="switch"><input type="checkbox" checked><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">Recommended if others share your network. <b>This PC never needs it</b> - only phones and other computers get the login page. Stored as a hash in settings.json.</p>
+        <div class="fields-2">
+          <div class="field"><label>Password</label><div class="input-group"><input class="input" type="password" value="hunter2hunter2"><button class="btn btn-icon" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div></div>
+          <div class="field"><label>Repeat</label><input class="input" type="password" value="hunter2hunter2"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Open it on your phone</h2>
+      <div class="qr">
+        <div class="code"><svg viewBox="0 0 29 29" shape-rendering="crispEdges" fill="currentColor"><path d="M0 0h7v7H0zM22 0h7v7h-7zM0 22h7v7H0z"/><path fill="var(--fg)" d="M1 1h5v5H1zM23 1h5v5h-5zM1 23h5v5H1z"/><path d="M2 2h3v3H2zM24 2h3v3h-3zM2 24h3v3H2zM9 0h1v2H9zM11 0h2v1h-2zM8 2h1v1H8zM10 2h1v3h-1zM12 2h1v2h-1zM14 1h1v3h-1zM16 0h1v1h-1zM18 0h2v2h-2zM8 4h2v1H8zM13 4h2v1h-2zM17 3h1v2h-1zM19 4h1v1h-1zM9 6h1v2H9zM11 6h1v1h-1zM13 6h2v2h-2zM16 6h1v2h-1zM18 6h2v1h-2zM0 8h1v1H0zM2 8h2v1H2zM5 8h1v2H5zM8 8h1v1H8zM10 8h3v1h-3zM14 8h1v2h-1zM17 8h2v1h-2zM20 8h2v1h-2zM23 8h1v2h-1zM25 8h2v1h-2zM28 8h1v1h-1zM1 10h1v1H1zM3 10h1v2H3zM7 10h2v1H7zM10 10h1v1h-1zM12 10h1v2h-1zM16 10h1v1h-1zM18 10h3v1h-3zM22 10h1v1h-1zM24 10h1v2h-1zM27 10h1v2h-1zM0 12h2v1H0zM5 12h2v1H5zM8 12h1v2H8zM10 12h1v1h-1zM13 12h2v1h-2zM17 12h1v2h-1zM19 12h2v1h-2zM22 12h1v1h-1zM25 12h1v1h-1zM28 12h1v1h-1zM2 14h1v1H2zM4 14h2v1H4zM7 14h1v1H7zM10 14h2v1h-2zM13 14h1v2h-1zM15 14h1v1h-1zM18 14h1v1h-1zM20 14h2v1h-2zM23 14h2v1h-2zM26 14h1v2h-1zM0 16h1v1H0zM3 16h1v1H3zM5 16h1v1H5zM7 16h2v1H7zM11 16h1v1h-1zM14 16h1v1h-1zM16 16h2v1h-2zM19 16h1v2h-1zM21 16h1v1h-1zM24 16h1v1h-1zM27 16h2v1h-2zM1 18h1v1H1zM4 18h1v2H4zM6 18h1v1H6zM8 18h2v1H8zM12 18h1v2h-1zM15 18h1v1h-1zM17 18h1v1h-1zM20 18h1v1h-1zM22 18h2v1h-2zM25 18h1v1h-1zM28 18h1v1h-1zM0 20h2v1H0zM3 20h1v1H3zM6 20h2v1H6zM9 20h2v1H9zM13 20h1v1h-1zM16 20h1v2h-1zM18 20h2v1h-2zM21 20h1v1h-1zM23 20h1v1h-1zM26 20h2v1h-2zM8 22h1v1H8zM10 22h2v1h-2zM13 22h1v2h-1zM15 22h1v1h-1zM17 22h1v1h-1zM19 22h2v1h-2zM22 22h1v1h-1zM24 22h2v1h-2zM27 22h1v1h-1zM9 24h1v1H9zM11 24h1v1h-1zM14 24h1v1h-1zM16 24h1v1h-1zM18 24h1v1h-1zM20 24h2v1h-2zM23 24h1v1h-1zM26 24h1v1h-1zM28 24h1v1h-1zM8 26h1v2H8zM10 26h1v1h-1zM12 26h2v1h-2zM15 26h1v1h-1zM17 26h2v1h-2zM21 26h1v1h-1zM24 26h1v1h-1zM27 26h1v1h-1zM10 28h1v1h-1zM13 28h2v1h-2zM16 28h1v1h-1zM19 28h2v1h-2zM22 28h2v1h-2zM25 28h2v1h-2z"/></svg></div>
+        <div class="addr">
+          <div class="muted sm">Same Wi-Fi as this PC. The firewall rule for port 8420 was created by the installer.</div>
+          <div class="input-group"><input class="input mono" readonly value="http://gaming-pc:8420/"><button class="btn btn-icon" title="Copy"><svg class="icon"><use href="#i-copy"/></svg></button></div>
+          <div class="input-group"><input class="input mono" readonly value="http://192.168.1.20:8420/"><button class="btn btn-icon" title="Copy"><svg class="icon"><use href="#i-copy"/></svg></button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wizard-foot">
+      <button class="btn btn-ghost left">Back</button>
+      <button class="btn btn-primary">Finish setup</button>
+    </div>
+  </section>
+
+  <!-- ===== Done ===== -->
+  <section data-s="done">
+    <div class="done">
+      <svg class="icon"><use href="#i-check"/></svg>
+      <h1>You're set</h1>
+      <p class="muted">OBS folder found, Nextcloud on, Discord on, password set. Everything here can be changed in Settings.</p>
+      <div class="row" style="justify-content:center"><a class="btn btn-primary" href="clips.html">Go to clips</a><a class="btn" href="diagnostics.html">Run diagnostics</a></div>
+    </div>
+  </section>
+
+</main>
+
+<script src="mock.js"></script>
+</body>
+</html>

@@ -10,6 +10,13 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- `docs/design`: the design system for the web UI - tokens, component
+  sheet, page mockups and icon sources - and `docs/themes.md`, the theme
+  format. Documentation only; the UI adopts it with the setup and settings
+  pages.
+
 ## [2.0.0] - 2026-09-04
 
 First public release: the Rust service, the installer and the migration

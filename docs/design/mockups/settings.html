@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<title>replaycut - Settings (mockup)</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" id="theme" href="" disabled>
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="mock.css">
+<style>
+  .group { display: flex; flex-direction: column; gap: var(--space-3); }
+  .group h2 { font-size: var(--text-sm); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+  .save-bar { position: sticky; bottom: 0; display: flex; gap: var(--space-2); align-items: center; padding: var(--space-3) var(--space-4); margin: 0 calc(-1 * var(--space-4)); background: var(--surface); border-top: 1px solid var(--line-strong); }
+  .save-bar .msg { flex: 1; color: var(--fg-muted); font-size: var(--text-sm); }
+  .save-bar.dirty .msg { color: var(--warn); }
+  .add-card { border-style: dashed; align-items: center; text-align: center; color: var(--fg-muted); }
+</style>
+</head>
+<body data-states="general:General | unsaved:General - unsaved changes | integrations:Integrations">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 20 20"><path d="M4 3.5v13l11-6.5z"/><path d="M2 7h4M2 13h4" /></symbol>
+  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4v12l10-6z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 20 20"><path d="M6 4v12M14 4v12"/></symbol>
+  <symbol id="i-cut-in" viewBox="0 0 20 20"><path d="M4 3v14M4 10h9M10 6l4 4-4 4"/></symbol>
+  <symbol id="i-cut-out" viewBox="0 0 20 20"><path d="M16 3v14M16 10H7M10 6l-4 4 4 4"/></symbol>
+  <symbol id="i-share" viewBox="0 0 20 20"><path d="M10 12V3M6.5 6.5 10 3l3.5 3.5M4 11v5h12v-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2.5 5.5h5l2 2h8v8h-15z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7"/></symbol>
+  <symbol id="i-check" viewBox="0 0 20 20"><path d="m4 10.5 4 4 8-9"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 20 20"><path d="M10 3 2.5 16.5h15z"/><path d="M10 8v4M10 14.2v.3"/></symbol>
+  <symbol id="i-error" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="m7 7 6 6M13 7l-6 6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/></symbol>
+  <symbol id="i-close" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
+  <symbol id="i-obs" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v5M4 14l4-2.5M16 14l-4-2.5"/></symbol>
+  <symbol id="i-diagnostics" viewBox="0 0 20 20"><path d="M2.5 10h4l2-5 3 10 2-5h4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 20 20"><path d="M16 9.5A6 6 0 0 0 5 6.5M4 10.5A6 6 0 0 0 15 13.5"/><path d="M4.5 3v4h4M15.5 17v-4h-4"/></symbol>
+  <symbol id="i-qr" viewBox="0 0 20 20"><rect x="3" y="3" width="5" height="5"/><rect x="12" y="3" width="5" height="5"/><rect x="3" y="12" width="5" height="5"/><path d="M12 12h2v2h-2zM16 12h1M12 16h1M15 15h2v2h-2z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 20 20"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 20 20"><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5 5.5l1 11h8l1-11M8.5 9v5M11.5 9v5"/></symbol>
+  <symbol id="i-external" viewBox="0 0 20 20"><path d="M11 3h6v6M17 3l-8 8M15 11v5H4V5h5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5l3 2"/></symbol>
+  <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12M2.5 8h3.5M14 8h3.5M2.5 12h3.5M14 12h3.5"/></symbol>
+  <symbol id="i-skip" viewBox="0 0 20 20"><path d="M5 5l7 5-7 5zM14 5v10"/></symbol>
+</svg>
+
+<header class="topbar">
+  <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+  <nav class="nav"><a href="clips.html">Clips</a><a href="settings.html" aria-current="page">Settings</a><a href="obs.html">OBS</a><a href="diagnostics.html">Diagnostics</a></nav>
+  <div class="right"><span class="badge">h264_nvenc</span><span class="status"><i class="dot"></i></span><span class="version">2.0.0</span></div>
+</header>
+
+<main class="page">
+  <div class="page-head"><h1>Settings</h1><span class="muted">Saved to <code>settings.json</code>; secrets go to the Windows Credential Manager.</span></div>
+
+  <div class="tabs">
+    <a href="#general" data-s-class="general:is-current unsaved:is-current">General</a>
+    <a href="#integrations" data-s-class="integrations:is-current">Integrations</a>
+  </div>
+
+  <!-- ===== General ===== -->
+  <div class="stack-4" data-s="general unsaved" id="general">
+    <div class="group">
+      <h2>Clips</h2>
+      <div class="field"><label>Recording folder</label><div class="input-group"><input class="input mono" value="C:\Users\you\Videos\WARDOGS"><button class="btn">Browse</button></div><span class="hint">Scanned for <code>*.mkv</code>, not recursively. Previews go to <code>.preview\</code>, shared files to <code>shared\</code> inside it.</span></div>
+      <div class="fields-2">
+        <div class="field"><label>Display name</label><input class="input" value="WARDOGS"><span class="hint">Prefix of the Discord post; clip names starting with it are shortened in the list.</span></div>
+        <div class="field"><label>Theme</label><select class="select"><option selected>wardogs (default)</option><option>plain</option><option disabled>- files in %LOCALAPPDATA%\replaycut\themes\ -</option></select><span class="hint">Drop a <code>.css</code> file into the themes folder to add one.</span></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Encoding</h2>
+      <div class="fields-2">
+        <div class="field"><label>Video bitrate</label><div class="input-group"><input class="input" value="6000" data-s-class="unsaved:is-focus"><span class="btn" style="pointer-events:none">kbit/s</span></div><span class="hint">Constant bitrate of the shared H.264 file. 6000 is about 45 MB per minute.</span></div>
+        <div class="field"><label>Encoder</label><select class="select"><option selected>auto - detected h264_nvenc</option><option>h264_nvenc</option><option>h264_amf</option><option>h264_qsv</option><option>libx264 (software)</option></select></div>
+        <div class="field"><label>Hardware decoding</label><select class="select"><option selected>none (software)</option><option>cuda</option><option>d3d11va</option><option>qsv</option></select></div>
+        <div class="field"><label>ffmpeg priority</label><select class="select"><option>normal</option><option selected>below normal</option><option>idle</option></select><span class="hint">Keeps the game smooth while a clip is encoded.</span></div>
+        <div class="field"><label>ffmpeg threads</label><input class="input" value="0"><span class="hint">0 = half of the cores, at least 2.</span></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Service</h2>
+      <div class="fields-2">
+        <div class="field"><label>Port <span class="needs-restart">restart needed</span></label><input class="input" value="8420"></div>
+        <div class="field"><label>Listen on <span class="needs-restart">restart needed</span></label><select class="select"><option selected>all interfaces - phones and other PCs can connect</option><option>this PC only (127.0.0.1)</option></select></div>
+        <div class="field"><label>Log level</label><select class="select"><option>error</option><option>warn</option><option selected>info</option><option>debug</option><option>trace</option></select></div>
+      </div>
+      <label class="switch"><input type="checkbox" checked><span class="track"></span> Check GitHub once a day for a new release <span class="muted sm">(nothing is downloaded)</span></label>
+      <label class="switch"><input type="checkbox" checked><span class="track"></span> Start replaycut when I sign in <span class="muted sm">(HKCU Run key, no admin)</span></label>
+    </div>
+
+    <div class="group">
+      <h2>Access</h2>
+      <label class="switch"><input type="checkbox" checked><span class="track"></span> Password for other devices <span class="muted sm">(this PC never needs it)</span></label>
+      <div class="fields-2">
+        <div class="field"><label>New password</label><input class="input" type="password" placeholder="leave empty to keep"></div>
+        <div class="field"><label>Repeat</label><input class="input" type="password"></div>
+      </div>
+      <div class="row"><button class="btn"><svg class="icon"><use href="#i-qr"/></svg> Show address and QR code</button><span class="muted sm">http://gaming-pc:8420/</span></div>
+    </div>
+
+    <div class="save-bar" data-s-class="unsaved:dirty">
+      <span class="msg" data-s="general">All changes saved.</span>
+      <span class="msg" data-s="unsaved"><svg class="icon icon-sm"><use href="#i-warning"/></svg> Unsaved changes: Video bitrate</span>
+      <button class="btn btn-ghost" data-s="unsaved">Discard</button>
+      <button class="btn btn-primary" data-s="general" disabled>Save</button>
+      <button class="btn btn-primary" data-s="unsaved">Save</button>
+    </div>
+  </div>
+
+  <!-- ===== Integrations ===== -->
+  <div class="stack-4" data-s="integrations" id="integrations">
+    <p class="muted">Each integration has its own switch, its own settings and its own test. Off means the stage is skipped when sharing. Storage integrations produce the link, notify integrations post it.</p>
+
+    <div class="card">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>Nextcloud</h2><span class="badge">storage</span><span class="badge ok"><svg class="icon icon-sm"><use href="#i-check"/></svg> tested 2 min ago</span><label class="switch"><input type="checkbox" checked><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <div class="field"><label>Server</label><input class="input" value="https://cloud.example.com"></div>
+        <div class="fields-2">
+          <div class="field"><label>User</label><input class="input" value="clips-dominic"></div>
+          <div class="field"><label>App password</label><div class="input-group"><input class="input" type="password" value="xxxxxxxxxxxxxxxx" readonly><button class="btn">Change</button></div><span class="hint">Stored in the Credential Manager as <code>replaycut/nextcloud</code>.</span></div>
+        </div>
+        <div class="fields-2">
+          <div class="field"><label>Folder</label><input class="input" value="Clips"></div>
+          <div class="field"><label>Link expiry</label><select class="select"><option>never</option><option selected>30 days</option><option>90 days</option></select></div>
+        </div>
+        <div class="row"><button class="btn">Test connection</button><span class="sm" style="color:var(--ok)"><svg class="icon icon-sm"><use href="#i-check"/></svg> Logged in · 41 GB free of 50 GB</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge">notify</span><span class="badge err">last post failed</span><label class="switch"><input type="checkbox" checked><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <div class="field is-invalid"><label>Webhook URL</label><div class="input-group"><input class="input mono" type="password" value="https://discord.com/api/webhooks/1234/abcd" readonly><button class="btn">Change</button></div><span class="error">Last post: 404 Not Found (21:20). The webhook was deleted in Discord or the URL is incomplete.</span></div>
+        <div class="field"><label>Display name</label><input class="input" value="WARDOGS"></div>
+        <div class="row"><button class="btn">Send test message</button></div>
+      </div>
+    </div>
+
+    <div class="card is-disabled">
+      <div class="card-head"><svg class="icon" style="color:var(--fg-muted)"><use href="#i-folder"/></svg><h2>Local folder</h2><span class="badge">storage</span><span class="badge">off</span><label class="switch"><input type="checkbox"><span class="track"></span></label></div>
+      <div class="card-body"></div>
+    </div>
+
+    <div class="card add-card">
+      <span class="sm">More integrations (Dropbox, Google Drive, WebDAV, S3) arrive as one more card each. Ask for them in the repo.</span>
+    </div>
+
+    <div class="save-bar"><span class="msg">All changes saved. Tests run against the values in the fields, saved or not.</span><button class="btn btn-primary" disabled>Save</button></div>
+  </div>
+</main>
+
+<script src="mock.js"></script>
+</body>
+</html>

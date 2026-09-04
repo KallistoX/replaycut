@@ -13,9 +13,10 @@ settings.json
 *.local.toml
 .env
 
-# Editors and OS
+# Editors, assistants and OS
 .vscode/
 .idea/
+.claude/
 *.swp
 Thumbs.db
 .DS_Store
