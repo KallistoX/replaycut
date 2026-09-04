@@ -1,0 +1,21 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Media produced or consumed by the service and the tests
+*.mkv
+*.mp4
+.preview/
+shared/
+
+# Local configuration and secrets - never commit these
+settings.json
+*.local.toml
+.env
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store

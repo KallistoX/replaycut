@@ -1,0 +1,5 @@
+# The API tests share one service instance with a single share slot, so they
+# must not run in parallel. They also serialise themselves with a mutex; this
+# keeps the order deterministic (libtest runs single-threaded tests by name).
+[env]
+RUST_TEST_THREADS = "1"
