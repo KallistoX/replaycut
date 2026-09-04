@@ -249,7 +249,17 @@ pub async fn run(state: &AppState) -> Report {
     let scan_check = {
         let scan_at = state.inner.lock().scan_at.clone();
         let just_started = uptime < 60;
+        let paused = state.scanning_paused();
         async move {
+            if paused {
+                return Check::new(
+                    "scan",
+                    "Folder scan",
+                    "warn",
+                    "paused - new replays wait in the folder",
+                )
+                .with_fix("Resume it in the tray menu (Pause scanning) or on the clips page.");
+            }
             match scan_at {
                 None if just_started => Check::new(
                     "scan",

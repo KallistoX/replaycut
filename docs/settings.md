@@ -150,9 +150,13 @@ the shell to wait: use `start /wait replaycut setup` in `cmd.exe` and
 files wait on their own.
 
 The tray icon offers **Open** (the UI in the browser), **Copy address**
-(`http://<computer name>:<port>/` for a phone or laptop in the same network)
-and **Quit**. Its tooltip shows the number of clips or the progress of the
-running share; the icon carries a badge while a share runs and a red badge
+(`http://<computer name>:<port>/` for a phone or laptop in the same network),
+**Show QR code** (the settings page with the address dialog open), **Pause
+scanning** (new replays wait in the folder until unticked; forgotten at the
+next start), **Check for updates** (asks GitHub now and answers with a
+notification), **Open log folder** and **Quit**. Its tooltip shows the
+number of clips, the progress of the running share, "paused" or "update
+available"; the icon carries a badge while a share runs and a red badge
 after a failed one.
 
 `replaycut stop` asks the running service to shut down (through a named

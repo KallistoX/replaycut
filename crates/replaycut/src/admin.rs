@@ -703,3 +703,21 @@ pub async fn update_seen(State(app): State<App>) -> Json<Value> {
     u.updated_url = None;
     Json(json!({ "ok": true }))
 }
+
+/// `POST /api/scanning { paused }`: pause or resume the folder scan
+/// (RAM only; the tray has the same switch).
+pub async fn scanning(
+    State(app): State<App>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    let v = parse_json(&headers, &body)?;
+    let Some(paused) = v["paused"].as_bool() else {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "paused must be true or false",
+        ));
+    };
+    app.set_scanning_paused(paused);
+    Ok(Json(json!({ "ok": true, "paused": paused })))
+}

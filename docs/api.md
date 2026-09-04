@@ -579,6 +579,16 @@ session from the LAN, like every non-GET request.
 `config.update` in `GET /api/clips` keeps its 2.0 shape (`null` or
 `{ version, url }`).
 
+### `POST /api/scanning`
+
+`{ "paused": true | false }` pauses or resumes the folder scan: while paused,
+new replays stay in the folder unseen (no clip, no toast) until scanning
+resumes, when they appear as usual. Answers `{ "ok": true, "paused": ... }`;
+400 without a boolean. The state lives in memory only: a restart scans
+again. `config.scanning` in `GET /api/clips` is `{ "paused": bool }`; the
+UI shows a banner with "Resume" while paused and the tray menu carries the
+same switch ("Pause scanning").
+
 ## Behaviour
 
 ### Folder scan

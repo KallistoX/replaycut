@@ -222,46 +222,50 @@ pub async fn check(state: &AppState) -> Result<Option<UpdateInfo>> {
         u.phase = Phase::Checking;
     }
     let result = fetch_latest_from(&releases_url()).await;
-    let mut u = state.update.lock();
-    u.checked_at = Some(crate::util::now_local());
-    match result {
-        Ok(info) if is_newer(&info.version, VERSION) => {
-            let same_ready = u.phase == Phase::Ready
-                && u.latest.as_ref().map(|l| &l.version) == Some(&info.version);
-            if !same_ready {
-                if u.latest.as_ref() != Some(&info) {
-                    tracing::info!(
-                        "update available: replaycut {} ({})",
-                        info.version,
-                        info.url
-                    );
+    let outcome = {
+        let mut u = state.update.lock();
+        u.checked_at = Some(crate::util::now_local());
+        match result {
+            Ok(info) if is_newer(&info.version, VERSION) => {
+                let same_ready = u.phase == Phase::Ready
+                    && u.latest.as_ref().map(|l| &l.version) == Some(&info.version);
+                if !same_ready {
+                    if u.latest.as_ref() != Some(&info) {
+                        tracing::info!(
+                            "update available: replaycut {} ({})",
+                            info.version,
+                            info.url
+                        );
+                    }
+                    u.phase = Phase::Available;
+                    u.ready_dir = None;
+                    u.error = None;
                 }
-                u.phase = Phase::Available;
-                u.ready_dir = None;
+                u.latest = Some(info.clone());
+                Ok(Some(info))
+            }
+            Ok(info) => {
+                tracing::debug!("update check: {} is not newer than {VERSION}", info.version);
+                u.phase = Phase::Idle;
+                u.latest = None;
                 u.error = None;
+                Ok(None)
             }
-            u.latest = Some(info.clone());
-            Ok(Some(info))
-        }
-        Ok(info) => {
-            tracing::debug!("update check: {} is not newer than {VERSION}", info.version);
-            u.phase = Phase::Idle;
-            u.latest = None;
-            u.error = None;
-            Ok(None)
-        }
-        Err(e) => {
-            tracing::debug!("update check failed: {e:#}");
-            if u.phase == Phase::Checking {
-                u.phase = if u.latest.is_some() {
-                    Phase::Available
-                } else {
-                    Phase::Idle
-                };
+            Err(e) => {
+                tracing::debug!("update check failed: {e:#}");
+                if u.phase == Phase::Checking {
+                    u.phase = if u.latest.is_some() {
+                        Phase::Available
+                    } else {
+                        Phase::Idle
+                    };
+                }
+                Err(e)
             }
-            Err(e)
         }
-    }
+    };
+    state.tray_changed();
+    outcome
 }
 
 /// Background task: first check after a minute, then daily.

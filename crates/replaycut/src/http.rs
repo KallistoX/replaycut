@@ -63,6 +63,7 @@ pub fn router(state: App) -> Router {
         .route("/api/update/download", post(admin::update_download))
         .route("/api/update/install", post(admin::update_install))
         .route("/api/update/seen", post(admin::update_seen))
+        .route("/api/scanning", post(admin::scanning))
         .route(
             "/api/obs/replay-buffer/start",
             post(admin::obs_start_replay),

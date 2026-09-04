@@ -260,6 +260,8 @@ pub struct AppState {
     pub inner: Mutex<Inner>,
     /// Wakes the scanner early (after a delete, for example).
     pub scan_wake: Notify,
+    /// "Pause scanning" in the tray: new replays wait in the folder. RAM only.
+    pub scanning_paused: std::sync::atomic::AtomicBool,
     /// Set once the tray exists; poked whenever clips or jobs change.
     pub tray: std::sync::OnceLock<TrayHandle>,
     /// The update check and the one-click update (see `update.rs`).
@@ -386,6 +388,7 @@ impl AppState {
             pending_restart: Mutex::new(Vec::new()),
             inner: Mutex::new(inner),
             scan_wake: Notify::new(),
+            scanning_paused: std::sync::atomic::AtomicBool::new(false),
             tray: std::sync::OnceLock::new(),
             update: Mutex::new(UpdateStatus::default()),
         })
@@ -475,6 +478,23 @@ impl AppState {
             platform::hostname(),
             self.settings.read().port
         )
+    }
+
+    pub fn scanning_paused(&self) -> bool {
+        self.scanning_paused
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Pause or resume the folder scan (tray and `POST /api/scanning`).
+    pub fn set_scanning_paused(&self, paused: bool) {
+        let was = self
+            .scanning_paused
+            .swap(paused, std::sync::atomic::Ordering::Relaxed);
+        if was != paused {
+            tracing::info!("scanning {}", if paused { "paused" } else { "resumed" });
+            self.scan_wake.notify_one();
+            self.tray_changed();
+        }
     }
 
     /// Tell the tray that clips or jobs changed.
@@ -573,6 +593,8 @@ impl AppState {
                 "displayName": settings.display_name,
                 // since 2.2
                 "obs": { "connected": obs.connected, "replayActive": obs.replay_active, "enabled": obs.enabled },
+                // since 2.3
+                "scanning": { "paused": self.scanning_paused() },
             }
         })
     }

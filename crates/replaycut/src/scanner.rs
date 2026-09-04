@@ -54,11 +54,15 @@ pub async fn run(state: Arc<AppState>) {
             watched = paths.clip_dir.clone();
             _watcher = watch(&watched, tx.clone());
         }
-        let retry = match scan(&state).await {
-            Ok(retry) => retry,
-            Err(e) => {
-                tracing::error!("scan: {e:#}");
-                None
+        let retry = if state.scanning_paused() {
+            None
+        } else {
+            match scan(&state).await {
+                Ok(retry) => retry,
+                Err(e) => {
+                    tracing::error!("scan: {e:#}");
+                    None
+                }
             }
         };
         let wait = retry.map_or(POLL, |d| d.min(POLL));

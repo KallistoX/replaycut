@@ -932,3 +932,32 @@ fn t26_update_document_and_actions_without_an_update() {
         assert!(body["checkedAt"].is_string(), "{body}");
     }
 }
+
+#[test]
+fn t27_pause_scanning_holds_a_new_clip_back() {
+    let _g = serial();
+    if !since_23() {
+        return;
+    }
+    let f = fixture();
+    assert_eq!(state()["config"]["scanning"]["paused"], false);
+    let (status, body) = post_json("/api/scanning", &json!({ "paused": "yes" }));
+    assert_eq!(status, 400, "{body}");
+    let (status, body) = post_json("/api/scanning", &json!({ "paused": true }));
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["paused"], true);
+    assert_eq!(state()["config"]["scanning"]["paused"], true);
+    // a new clip must not show up while paused
+    let base = format!("{} paused", f.base);
+    make_clip(&base);
+    std::thread::sleep(Duration::from_secs(8));
+    assert!(find_clip(&base).is_none(), "the clip appeared while paused");
+    let (status, body) = post_json("/api/scanning", &json!({ "paused": false }));
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(state()["config"]["scanning"]["paused"], false);
+    let clip = wait_for_clip(&base, Duration::from_secs(20));
+    assert_eq!(clip["base"], base);
+    let (status, _) = delete(&format!("/api/clips/{}", encode(&base)));
+    assert_eq!(status, 200);
+    wait_for_clip_gone(&base, Duration::from_secs(10));
+}

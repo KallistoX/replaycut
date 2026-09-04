@@ -60,46 +60,10 @@ pub const FIXTURE_SECONDS: f64 = 20.0;
 pub fn fixture() -> &'static Fixture {
     static FIXTURE: OnceLock<Fixture> = OnceLock::new();
     FIXTURE.get_or_init(|| {
-        let env = env();
         remove_stale_fixtures();
         let base = format!("{FIXTURE_PREFIX}{}", utc_stamp());
         let name = format!("{base}.mkv");
-        let path = env.clip_dir.join(&name);
-        let mut cmd = Command::new(&env.ffmpeg);
-        cmd.args([
-            "-y",
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc=size=1280x720:rate=30",
-        ]);
-        for hz in [440, 554, 660, 880] {
-            cmd.args(["-f", "lavfi", "-i", &format!("sine=frequency={hz}")]);
-        }
-        cmd.args([
-            "-map", "0:v", "-map", "1:a", "-map", "2:a", "-map", "3:a", "-map", "4:a",
-        ]);
-        cmd.args(["-t", &FIXTURE_SECONDS.to_string()]);
-        cmd.args([
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-pix_fmt",
-            "yuv420p",
-        ]);
-        cmd.args(["-c:a", "aac", "-b:a", "64k"]);
-        cmd.arg(&path);
-        let out = cmd
-            .output()
-            .unwrap_or_else(|e| panic!("cannot run {}: {e}", env.ffmpeg));
-        assert!(
-            out.status.success(),
-            "ffmpeg failed to create the fixture: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        let path = make_clip(&base);
         Fixture {
             base,
             name,
@@ -107,6 +71,49 @@ pub fn fixture() -> &'static Fixture {
             ready_at: Instant::now(),
         }
     })
+}
+
+/// Write `<base>.mkv` into the clip folder: 20 s of `testsrc` video plus
+/// four AAC tracks. Used for the fixture and for extra clips in tests.
+pub fn make_clip(base: &str) -> PathBuf {
+    let env = env();
+    let path = env.clip_dir.join(format!("{base}.mkv"));
+    let mut cmd = Command::new(&env.ffmpeg);
+    cmd.args([
+        "-y",
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=1280x720:rate=30",
+    ]);
+    for hz in [440, 554, 660, 880] {
+        cmd.args(["-f", "lavfi", "-i", &format!("sine=frequency={hz}")]);
+    }
+    cmd.args([
+        "-map", "0:v", "-map", "1:a", "-map", "2:a", "-map", "3:a", "-map", "4:a",
+    ]);
+    cmd.args(["-t", &FIXTURE_SECONDS.to_string()]);
+    cmd.args([
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-pix_fmt",
+        "yuv420p",
+    ]);
+    cmd.args(["-c:a", "aac", "-b:a", "64k"]);
+    cmd.arg(&path);
+    let out = cmd
+        .output()
+        .unwrap_or_else(|e| panic!("cannot run {}: {e}", env.ffmpeg));
+    assert!(
+        out.status.success(),
+        "ffmpeg failed to create the clip: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    path
 }
 
 /// Leftovers from an aborted earlier run would show up as extra clips.

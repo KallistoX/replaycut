@@ -480,6 +480,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <div class="banner err" id="b-unreachable" hidden><svg class="icon"><use href="#i-error"/></svg><div class="grow"><b>Service not responding</b> <span class="muted" id="b-unreachable-text"></span></div></div>
   <div class="banner err" id="b-failed" hidden><svg class="icon"><use href="#i-error"/></svg><div class="grow"><b>Last share failed:</b> <span id="b-failed-text"></span></div><button class="btn btn-ghost btn-icon" data-dismiss="b-failed" title="Dismiss"><svg class="icon"><use href="#i-close"/></svg></button></div>
   <div class="banner warn" id="b-scan" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Clip scan stuck</b> <span id="b-scan-text"></span></div></div>
+  <div class="banner warn" id="b-paused" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Scanning paused</b> - new replays wait in the folder until it resumes (Pause scanning in the tray).</div><button class="btn btn-sm" id="b-paused-resume">Resume</button></div>
   <div class="banner" id="b-update" hidden><svg class="icon"><use href="#i-info"/></svg><div class="grow"><b id="b-update-text"></b> <span id="b-update-hint" class="muted"></span><div class="row" id="b-update-row"><button class="btn btn-sm btn-primary" id="b-update-now">Update now</button><button class="btn btn-sm" id="b-update-notes">What's new</button><a class="btn btn-sm" id="b-update-link" href="#" target="_blank" rel="noopener" hidden>Download</a><div class="bar" id="b-update-bar" hidden><i></i></div><span class="muted sm" id="b-update-pct" hidden></span></div></div><button class="btn btn-ghost btn-icon" data-dismiss="b-update" title="Dismiss for this visit"><svg class="icon"><use href="#i-close"/></svg></button></div>
   <div class="banner ok" id="b-updated" hidden><svg class="icon"><use href="#i-check"/></svg><div class="grow"><b id="b-updated-text"></b> <button class="btn btn-sm" id="b-updated-notes">What's new</button></div><button class="btn btn-ghost btn-icon" id="b-updated-close" title="Dismiss"><svg class="icon"><use href="#i-close"/></svg></button></div>
   <div class="banner warn" id="b-restart" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Restart needed.</b> <span id="b-restart-text"></span></div><button class="btn btn-sm" id="b-restart-now">Restart now</button></div>
@@ -1092,7 +1093,7 @@ async function initSettings() {
   showPage('settings');
   let orig = null, restartPending = [];
   const fields = [...document.querySelectorAll('#page-settings [data-f]')];
-  const tabs = () => { const t = location.hash === '#integrations' ? 'integrations' : 'general'; $('tabGeneral').hidden = t !== 'general'; $('tabIntegrations').hidden = t !== 'integrations'; document.querySelectorAll('#page-settings .tabs a').forEach(a => { if (a.dataset.tab === t) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }); };
+  const tabs = () => { const t = location.hash === '#integrations' ? 'integrations' : 'general'; $('tabGeneral').hidden = t !== 'general'; $('tabIntegrations').hidden = t !== 'integrations'; document.querySelectorAll('#page-settings .tabs a').forEach(a => { if (a.dataset.tab === t) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }); if (location.hash === '#qr') setTimeout(() => $('sAddr').click(), 0); };
   window.addEventListener('hashchange', tabs); tabs();
   function readField(el) { if (el.type === 'checkbox') return el.checked; if (el.type === 'number' || /Kbps|Threads|port|expireDays/.test(el.dataset.f)) return Number(el.value); return el.value; }
   function fill(s) {
@@ -1639,6 +1640,7 @@ async function updateNow() {
   finally { updBusy = false; updateBanner(); }
 }
 $('b-update-now').onclick = updateNow;
+$('b-paused-resume').onclick = async () => { try { const r = await api('/api/scanning', jsonOpts('POST', { paused: false }), { retries: 0 }); if (r.ok) { banner('b-paused', false); if (cfg.scanning) cfg.scanning.paused = false; toast('Scanning resumed', 'ok'); poll.now && poll.now(); } else toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } };
 $('updNow').onclick = () => { $('updModal').hidden = true; updateNow(); };
 $('b-update-notes').onclick = () => { const l = upd && upd.latest; if (l) showNotes(`What's new in ${l.version}`, l.notes, l.url, upd.installed && !updBusy && upd.phase !== 'installing'); };
 $('b-updated-notes').onclick = () => showNotes(`What's new in ${upd.current}`, upd.updatedNotes, upd.updatedUrl, false);
@@ -1659,6 +1661,7 @@ async function poll() {
     if ((cfg.update || (upd && upd.latest)) && !updBusy) refreshUpdate();
     const ob = cfg.obs || {};
     banner('b-replaystop', !!ob.connected && !ob.replayActive);
+    banner('b-paused', !!(cfg.scanning && cfg.scanning.paused));
     if (page !== 'clips') { pollT = setTimeout(poll, 3000); return; }
     clips.forEach(c => { if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; if (document.activeElement !== $('title')) $('title').value = c.title || ''; } });
     renderList();
@@ -1678,7 +1681,8 @@ async function poll() {
     const failed = !watchingJob && d.last && d.last.ok === false && failedDismissed !== d.last.id;
     banner('b-failed', failed, failed ? (d.last.error || 'unknown error') : '');
     if (!busy) setDot(failed ? 'err' : '', failed ? 'Last share failed' : 'Service running');
-    const stuck = d.scanAt && (Date.now() - new Date(d.scanAt).getTime()) > 30000;
+    const paused = !!(cfg.scanning && cfg.scanning.paused);
+    const stuck = !paused && d.scanAt && (Date.now() - new Date(d.scanAt).getTime()) > 30000;
     banner('b-scan', !!stuck, stuck ? `for ${Math.round((Date.now() - new Date(d.scanAt).getTime()) / 1000)} s - the folder watcher stopped reporting. Check the log on the PC.` : '');
     if (stuck && !busy && !failed) setDot('warn', 'Clip scan stuck');
   } catch (e) {

@@ -1,5 +1,7 @@
-//! The tray icon: Open, Copy address, Quit; tooltip with the clip count or
-//! the share progress; icon state normal / job running / last job failed.
+//! The tray icon: Open, Copy address, Show QR code, Pause scanning, Check for
+//! updates, Open log folder, Quit; tooltip with the clip count, the share
+//! progress, "paused" or "update available"; icon state normal / job running
+//! / last job failed.
 //! Windows wants the icon's message loop on the thread that created it, so
 //! `run` owns the main thread and the tokio runtime lives on another one.
 //! The service pokes the loop through `TrayHandle::refresh` whenever the
@@ -14,6 +16,10 @@ pub struct TrayInfo {
     /// Percent of the running share, if one runs.
     pub sharing: Option<u8>,
     pub last_failed: bool,
+    /// "Pause scanning" is ticked.
+    pub paused: bool,
+    /// A newer release is known.
+    pub update: Option<String>,
 }
 
 impl TrayInfo {
@@ -28,18 +34,31 @@ impl TrayInfo {
             clips: inner.clips.len(),
             sharing,
             last_failed: inner.last.as_ref().is_some_and(|j| j.ok == Some(false)),
+            paused: state.scanning_paused(),
+            update: state
+                .update
+                .lock()
+                .latest
+                .as_ref()
+                .map(|l| l.version.clone()),
         }
     }
 
     pub fn tooltip(&self) -> String {
-        match self.sharing {
-            Some(p) => format!("replaycut - sharing ... {p} %"),
-            None => format!(
-                "replaycut - {} clip{}",
-                self.clips,
-                if self.clips == 1 { "" } else { "s" }
-            ),
+        if let Some(p) = self.sharing {
+            return format!("replaycut - sharing ... {p} %");
         }
+        if self.paused {
+            return "replaycut - paused".to_string();
+        }
+        if let Some(v) = &self.update {
+            return format!("replaycut - update available ({v})");
+        }
+        format!(
+            "replaycut - {} clip{}",
+            self.clips,
+            if self.clips == 1 { "" } else { "s" }
+        )
     }
 
     pub fn icon(&self) -> IconState {
@@ -65,7 +84,7 @@ mod win {
     use std::sync::Arc;
 
     use anyhow::{Context, Result};
-    use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+    use muda::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
     use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
     use windows::Win32::Foundation::{LPARAM, WPARAM};
     use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -77,7 +96,9 @@ mod win {
     use super::{IconState, TrayInfo};
     use crate::lifecycle::Shutdown;
     use crate::platform;
-    use crate::state::AppState;
+    use crate::state::{AppState, VERSION};
+    use crate::toast::{self, Toast};
+    use crate::update;
 
     const WM_REFRESH: u32 = WM_APP + 1;
 
@@ -161,20 +182,73 @@ mod win {
         }
     }
 
+    /// "Show QR code": the settings page opens its address dialog for `#qr`.
+    fn show_qr(state: &AppState) {
+        let url = format!("{}settings#qr", state.ui_url());
+        if let Err(e) = platform::open_url(&url) {
+            tracing::warn!("cannot open {url}: {e}");
+        }
+    }
+
+    fn open_log_folder(state: &AppState) {
+        let dir = state.data_dir.join("logs");
+        let _ = std::fs::create_dir_all(&dir);
+        if let Err(e) = platform::open_url(&dir.display().to_string()) {
+            tracing::warn!("cannot open {}: {e}", dir.display());
+        }
+    }
+
+    /// "Check for updates": ask now, then say what came of it in a toast.
+    fn check_updates(state: Arc<AppState>, handle: &tokio::runtime::Handle) {
+        handle.spawn(async move {
+            let t = match update::check(&state).await {
+                Ok(Some(info)) => Toast::update_available(&info.version, &state.ui_url()),
+                Ok(None) => Toast::up_to_date(VERSION),
+                Err(e) => Toast::update_check_failed(&format!("{e:#}")),
+            };
+            toast::show(&state, t);
+        });
+    }
+
     /// Create the tray icon and run the message loop until `TrayHandle::quit`.
-    pub fn run(state: Arc<AppState>, shutdown: Shutdown) -> Result<()> {
+    /// `handle` runs the update check on the service runtime.
+    pub fn run(
+        state: Arc<AppState>,
+        shutdown: Shutdown,
+        handle: tokio::runtime::Handle,
+    ) -> Result<()> {
         let menu = Menu::new();
         let open = MenuItem::with_id("open", "Open", true, None);
         let copy = MenuItem::with_id("copy", "Copy address", true, None);
+        let qr = MenuItem::with_id("qr", "Show QR code", true, None);
+        let pause = CheckMenuItem::with_id("pause", "Pause scanning", true, false, None);
+        let check = MenuItem::with_id("check", "Check for updates", true, None);
+        let logs = MenuItem::with_id("logs", "Open log folder", true, None);
         let quit = MenuItem::with_id("quit", "Quit", true, None);
-        menu.append_items(&[&open, &copy, &PredefinedMenuItem::separator(), &quit])
-            .context("tray menu")?;
+        menu.append_items(&[
+            &open,
+            &copy,
+            &qr,
+            &PredefinedMenuItem::separator(),
+            &pause,
+            &check,
+            &logs,
+            &PredefinedMenuItem::separator(),
+            &quit,
+        ])
+        .context("tray menu")?;
 
         // Handlers run inside DispatchMessageW, on this thread.
+        // The handler must be Send, so it cannot hold the CheckMenuItem: the
+        // click toggles the state, the refresh below keeps the tick in step.
         let st = state.clone();
         MenuEvent::set_event_handler(Some(move |e: MenuEvent| match e.id.0.as_str() {
             "open" => open_ui(&st),
             "copy" => copy_address(&st),
+            "qr" => show_qr(&st),
+            "pause" => st.set_scanning_paused(!st.scanning_paused()),
+            "check" => check_updates(st.clone(), &handle),
+            "logs" => open_log_folder(&st),
             "quit" => shutdown.request("Quit in the tray menu"),
             _ => {}
         }));
@@ -220,6 +294,10 @@ mod win {
                         if now.icon() != info.icon() {
                             let _ = tray.set_icon(Some(icons.get(now.icon()).clone()));
                         }
+                        // paused through the API: keep the tick in step
+                        if pause.is_checked() != now.paused {
+                            pause.set_checked(now.paused);
+                        }
                         info = now;
                     }
                     continue;
@@ -264,6 +342,8 @@ mod tests {
             clips: 1,
             sharing: None,
             last_failed: false,
+            paused: false,
+            update: None,
         };
         assert_eq!(idle.tooltip(), "replaycut - 1 clip");
         assert_eq!(idle.icon(), IconState::Normal);
@@ -281,8 +361,25 @@ mod tests {
         assert_eq!(busy.icon(), IconState::Busy);
         let failed = TrayInfo {
             last_failed: true,
-            ..idle
+            ..idle.clone()
         };
         assert_eq!(failed.icon(), IconState::Error);
+        let paused = TrayInfo {
+            paused: true,
+            update: Some("9.9.0".into()),
+            ..idle.clone()
+        };
+        assert_eq!(paused.tooltip(), "replaycut - paused");
+        assert_eq!(paused.icon(), IconState::Normal);
+        let update = TrayInfo {
+            update: Some("9.9.0".into()),
+            ..idle
+        };
+        assert_eq!(update.tooltip(), "replaycut - update available (9.9.0)");
+        let sharing_wins = TrayInfo {
+            sharing: Some(3),
+            ..update.clone()
+        };
+        assert_eq!(sharing_wins.tooltip(), "replaycut - sharing ... 3 %");
     }
 }

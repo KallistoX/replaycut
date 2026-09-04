@@ -29,6 +29,33 @@ impl Toast {
         }
     }
 
+    /// "Check for updates" in the tray found a newer release.
+    pub fn update_available(version: &str, ui_url: &str) -> Self {
+        Self {
+            title: format!("replaycut {version} is available"),
+            text: "Open the page to update".into(),
+            url: Some(ui_url.to_string()),
+        }
+    }
+
+    /// "Check for updates" in the tray found nothing newer.
+    pub fn up_to_date(version: &str) -> Self {
+        Self {
+            title: "replaycut is up to date".into(),
+            text: format!("{version} is the latest release"),
+            url: None,
+        }
+    }
+
+    /// "Check for updates" in the tray could not reach GitHub.
+    pub fn update_check_failed(error: &str) -> Self {
+        Self {
+            title: "Update check failed".into(),
+            text: error.to_string(),
+            url: None,
+        }
+    }
+
     /// The replay buffer stopped while OBS keeps running (obs-websocket).
     pub fn replay_buffer_stopped(ui_url: &str) -> Self {
         Self {

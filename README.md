@@ -52,7 +52,10 @@ Releases are published on GitHub as a ZIP for Windows x64; see
    Share.
 
 replaycut runs as a tray icon: **Open** shows the page, **Copy address** puts
-the address for your phone into the clipboard, **Quit** stops it. Double-click
+the address for your phone into the clipboard, **Show QR code** shows it for
+scanning, **Pause scanning** keeps new replays out of the list for a while,
+**Check for updates** asks GitHub now, **Open log folder** and **Quit** do
+what they say. Double-click
 the shortcut to start it again; if it is already running, that opens the page.
 
 Windows SmartScreen may warn about an unsigned download the first time: click

@@ -20,6 +20,11 @@ contract.
   and reloads the page on the new version; "What's new" shows the release
   notes; after an update the page says so once. Settings › General has
   "Check for updates now" with the time of the last check.
+- The tray menu is complete: Open, Copy address, Show QR code, Pause
+  scanning, Check for updates (with a notification for the outcome), Open
+  log folder, Quit. The tooltip says "paused" and "update available".
+- `POST /api/scanning { paused }` and `config.scanning`: pause the folder
+  scan from the tray or the API; the UI shows a banner with "Resume".
 
 ## [2.2.0] - 2026-09-04
 

@@ -299,6 +299,7 @@ fn run_service(
     {
         let tray = tray::TrayHandle::for_current_thread();
         let _ = state.tray.set(tray);
+        let handle = runtime.handle().clone();
         let service = {
             let state = state.clone();
             let shutdown = shutdown.clone();
@@ -317,7 +318,7 @@ fn run_service(
                 })
                 .context("cannot start the service thread")?
         };
-        if let Err(e) = tray::run(state.clone(), shutdown.clone()) {
+        if let Err(e) = tray::run(state.clone(), shutdown.clone(), handle) {
             tracing::warn!("tray icon unavailable: {e:#} - running without it");
         }
         service
