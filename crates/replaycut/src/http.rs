@@ -57,6 +57,7 @@ pub fn router(state: App) -> Router {
         .route("/api/diagnostics", get(admin::diagnostics))
         .route("/api/obs", get(admin::obs_status))
         .route("/api/obs/reconnect", post(admin::obs_reconnect))
+        .route("/api/obs/refresh", post(admin::obs_refresh))
         .route(
             "/api/obs/replay-buffer/start",
             post(admin::obs_start_replay),

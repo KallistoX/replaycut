@@ -508,6 +508,7 @@ profile change and every 30 s.
 - `replay-buffer/start`: `StartReplayBuffer`; `200 { ok }` (also when it
   already runs), `409` without a connection.
 - `reconnect`: connect now instead of waiting out the backoff; always `200`.
+- `refresh`: read the facts again now; `200 { ok }`, `409` without a connection.
 - `adopt-folder`: makes the OBS recording folder the `clipDir` of replaycut
   (the same as `PUT /api/settings`); `200 { ok, clipDir }`, `409` without a
   connection or while a share runs.

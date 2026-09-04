@@ -409,6 +409,11 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 
 .summary { display: flex; gap: var(--space-4); flex-wrap: wrap; align-items: center; }
 .summary .n { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-sm); }
+/* ---- page: obs ---- */
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); font-size: var(--text-sm); }
+.kv dt { color: var(--fg-muted); } .kv dd { margin: 0; }
+@media (max-width: 480px) { .kv { grid-template-columns: 1fr; } .kv dt { margin-top: var(--space-2); } }
+
 /* ---- page: login and placeholders ---- */
 .centered { min-height: calc(100vh - var(--topbar-h)); display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
 .centered .card { width: 100%; max-width: 380px; }
@@ -449,7 +454,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 <header class="topbar">
   <a class="wordmark" href="/"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
   <nav class="nav" id="nav">
-    <a href="/" data-page="clips">Clips</a><a href="/settings" data-page="settings">Settings</a><a href="/diagnostics" data-page="diagnostics">Diagnostics</a>
+    <a href="/" data-page="clips">Clips</a><a href="/settings" data-page="settings">Settings</a><a href="/obs" data-page="obs">OBS</a><a href="/diagnostics" data-page="diagnostics">Diagnostics</a>
   </nav>
   <div class="right">
     <span class="badge" id="encoder" hidden></span>
@@ -464,6 +469,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <div class="banner warn" id="b-scan" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Clip scan stuck</b> <span id="b-scan-text"></span></div></div>
   <div class="banner" id="b-update" hidden><svg class="icon"><use href="#i-info"/></svg><div class="grow"><b id="b-update-text"></b> <a id="b-update-link" href="#" target="_blank" rel="noopener">Release notes</a></div><button class="btn btn-ghost btn-icon" data-dismiss="b-update" title="Dismiss for this visit"><svg class="icon"><use href="#i-close"/></svg></button></div>
   <div class="banner warn" id="b-restart" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Restart needed.</b> <span id="b-restart-text"></span></div><button class="btn btn-sm" id="b-restart-now">Restart now</button></div>
+  <div class="banner warn" id="b-replaystop" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Replay buffer is not running</b> - F9 does nothing until it does. OBS is open and connected.</div><button class="btn btn-sm" id="b-replaystop-start">Start replay buffer</button></div>
   <div class="banner" id="b-newclip" hidden><svg class="icon"><use href="#i-film"/></svg><div class="grow"><b>New clip:</b> <span id="b-newclip-text"></span> You have marks on the current one.</div><div class="row nowrap"><button class="btn btn-sm" id="b-newclip-load">Load new clip</button><button class="btn btn-sm btn-ghost" id="b-newclip-keep">Keep editing</button></div></div>
 </div>
 
@@ -564,6 +570,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <span class="hint" id="wFolderHint">The folder OBS writes replays to. Leaving the field saves it and replaycut starts watching it.</span>
     </div>
     <div class="checks">
+      <div class="check-row" id="wChkObs" hidden><div class="mark"></div><div><div class="label">OBS connection</div><div class="detail"></div><div class="fix" hidden></div></div><div class="side"><button class="btn btn-sm" id="wObsStart" hidden>Start replay buffer</button></div></div>
       <div class="check-row" id="wChkReplay"><div class="mark"></div><div><div class="label"></div><div class="detail"></div><div class="fix" hidden></div></div><div class="side"><button class="btn btn-sm" id="wF9">Send <kbd>F9</kbd></button></div></div>
       <div class="check-row" id="wChkTools"><div class="mark"></div><div><div class="label">ffmpeg and encoder</div><div class="detail"></div></div><div class="side"></div></div>
     </div>
@@ -729,6 +736,41 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   </div>
 </div>
 
+<!-- ===================== OBS ===================== -->
+<main class="page" id="page-obs" hidden>
+  <div class="page-head"><h1>OBS</h1><span class="muted">Read-only. replaycut looks, compares with what it expects, and suggests. It never changes OBS settings.</span></div>
+
+  <section class="stack-4" id="obsOff" hidden>
+    <div class="checks">
+      <div class="check-row" id="obsOffRow"><div class="mark"><svg class="icon"><use href="#i-obs"/></svg></div><div><div class="label">Not connected</div><div class="detail" id="obsOffDetail"></div><div class="fix">In OBS: <span class="path">Tools › WebSocket Server Settings</span> › tick <b>Enable WebSocket server</b>, keep port <b>4455</b>, click <b>Show Connect Info</b> and copy the password below. With it, replaycut sees the replay buffer, saves replays without simulated key presses and warns when the buffer is not running.</div></div><div class="side"></div></div>
+    </div>
+    <div class="card">
+      <h2>Connection</h2>
+      <div class="fields-2">
+        <div class="field"><label for="obsHost">Host</label><input class="input" id="obsHost"></div>
+        <div class="field"><label for="obsPort">Port</label><input class="input" id="obsPort" type="number" min="1" max="65535"></div>
+      </div>
+      <div class="field"><label for="obsPw">Password</label><div class="input-group"><input class="input" id="obsPw" type="password" autocomplete="off" placeholder="from Show Connect Info"><button class="btn btn-icon" type="button" data-eye="obsPw" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint" id="obsPwHint"></span></div>
+      <label class="switch"><input type="checkbox" id="obsEnabled"><span class="track"></span> Connect to OBS <span class="muted sm">(off = F9 as a key press only)</span></label>
+      <div class="row"><button class="btn btn-primary" id="obsConnect">Connect</button><span class="muted sm">Until then, F9 is sent as a key press, which OBS may miss when it is not focused.</span></div>
+    </div>
+  </section>
+
+  <section class="stack-4" id="obsOn" hidden>
+    <div class="card">
+      <div class="card-head"><svg class="icon" style="color:var(--ok)"><use href="#i-obs"/></svg><h2>Connected</h2><span class="badge ok" id="obsVersion"></span><button class="btn btn-sm btn-ghost" id="obsEdit">Connection …</button></div>
+      <dl class="kv">
+        <dt>Replay buffer</dt><dd id="obsBuffer"></dd>
+        <dt>Profile</dt><dd id="obsProfile"></dd>
+        <dt>Encoder</dt><dd id="obsEncoder"></dd>
+        <dt>Last replay saved</dt><dd id="obsLastSaved"></dd>
+      </dl>
+    </div>
+    <div class="checks" id="obsChecks"></div>
+    <div class="row"><button class="btn" id="obsRecheck"><svg class="icon"><use href="#i-refresh"/></svg> Re-check</button><span class="muted sm" id="obsCheckedAt"></span></div>
+  </section>
+</main>
+
 <!-- ===================== Diagnostics ===================== -->
 <main class="page" id="page-diagnostics" hidden>
   <div class="page-head"><h1>Diagnostics</h1><span class="muted">Everything that can go wrong, in one list. Paste the copy into a support message.</span></div>
@@ -778,7 +820,7 @@ const $ = s => document.getElementById(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
 const fmtShort = s => { s = Math.max(0, Math.round(s || 0)); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r; };
-const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup': 'setup', '/settings': 'settings', '/diagnostics': 'diagnostics', '/obs': 'soon' };
+const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup': 'setup', '/settings': 'settings', '/diagnostics': 'diagnostics', '/obs': 'obs' };
 const page = PAGES[location.pathname] || 'clips';
 let cfg = { shareKbps: 6000, expireDays: 0, audio: [{ id: 'mix', label: 'Mix (all)', need: 1 }], displayName: '' };
 
@@ -827,7 +869,7 @@ function banner(id, show, text) { const b = $(id); if (!b) return; b.hidden = !s
 document.querySelectorAll('[data-dismiss]').forEach(b => b.onclick = () => { $(b.dataset.dismiss).hidden = true; if (b.dataset.dismiss === 'b-update') updDismissed = cfg.update && cfg.update.version; if (b.dataset.dismiss === 'b-failed') failedDismissed = cfg._lastFailedId; });
 function setDot(state, title) { $('dot').className = 'dot ' + (state || ''); $('dotWrap').title = title || ''; }
 function showPage(name) {
-  ['clips', 'login', 'soon', 'setup', 'settings', 'diagnostics'].forEach(p => { $('page-' + p).hidden = p !== name; });
+  ['clips', 'login', 'soon', 'setup', 'settings', 'diagnostics', 'obs'].forEach(p => { $('page-' + p).hidden = p !== name; });
   document.querySelectorAll('#nav a').forEach(a => { if (a.dataset.page === (name === 'clips' ? 'clips' : location.pathname.slice(1))) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
 }
 
@@ -935,10 +977,21 @@ async function initSetup() {
   $('wFolder').addEventListener('change', saveFolder);
   $('wProfiles').onchange = () => { const v = $('wProfiles').value; if (v) { $('wFolder').value = v; saveFolder(); } };
   $('wF9').onclick = sendF9;
+  $('wObsStart').onclick = () => obsAction('/api/obs/replay-buffer/start', 'Replay buffer started');
   async function pollObs() {
     clearInterval(obsTimer);
     const tick = async () => {
-      let d; try { d = await api('/api/setup/obs', {}, { retries: 0 }); } catch (e) { setCheck($('wChkReplay'), 'problem', 'Service unreachable', esc(e.message)); return; }
+      let d, o = null; try { d = await api('/api/setup/obs', {}, { retries: 0 }); o = await api('/api/obs', {}, { retries: 0 }); } catch (e) { setCheck($('wChkReplay'), 'problem', 'Service unreachable', esc(e.message)); return; }
+      // obs-websocket, when it is there: buffer state and the folder straight from OBS
+      const row = $('wChkObs'); row.hidden = !(o && o.enabled);
+      if (o && o.enabled) {
+        if (!o.connected) setCheck(row, 'skipped', 'OBS connection', esc(o.reason || 'connecting …') + ' - optional; the folder check below works without it. <a href="/obs">OBS page</a>');
+        else if (o.replayActive) setCheck(row, 'ok', 'OBS connected', `OBS ${esc(o.version || '')} · replay buffer running${o.facts && o.facts.profile.replaySeconds ? ' (' + o.facts.profile.replaySeconds + ' s)' : ''}`);
+        else setCheck(row, 'problem', 'OBS connected, replay buffer stopped', 'F9 does nothing until it runs.', 'Start it here or in OBS: Controls › Start Replay Buffer.');
+        $('wObsStart').hidden = !(o.connected && !o.replayActive);
+        const rp = o.facts && o.facts.profile && o.facts.profile.recPath;
+        if (rp && !(d.profiles || []).some(p => p.recPath === rp)) (d.profiles = d.profiles || []).unshift({ name: 'OBS (connected)', current: true, recPath: rp, format: o.facts.profile.format });
+      }
       // profiles
       const sel = $('wProfiles'), had = sel.value;
       const opts = (d.profiles || []).filter(p => p.recPath);
@@ -1089,6 +1142,72 @@ async function initSettings() {
   try { const a = await api('/api/addresses', {}, { retries: 0 }); $('sAddrText').textContent = (a.urls || [])[0] || ''; } catch (e) {}
 }
 
+// ------------------------------------------------------------ OBS page
+async function obsAction(path, okText) {
+  try { const r = await api(path, { method: 'POST', body: '' }, { retries: 0, timeout: 10000 }); r.ok ? toast(okText, 'ok') : toast(r.error, 'err'); return r.ok; }
+  catch (e) { toast(e.message, 'err'); return false; }
+}
+function renderObs(d) {
+  const off = !d.connected, s = d.settings || {};
+  $('obsOff').hidden = !off; $('obsOn').hidden = off;
+  if (off) {
+    if (!window.OBS_FIX) window.OBS_FIX = $('obsOffRow').querySelector('.fix').innerHTML;
+    const showFix = d.enabled && !(d.reason && /password/.test(d.reason));
+    setCheck($('obsOffRow'), d.enabled ? (d.reason ? 'problem' : 'waiting') : 'skipped', d.enabled ? 'Not connected' : 'Connection switched off', esc(d.reason || (d.enabled ? 'connecting …' : 'F9 is sent as a key press.')), showFix ? window.OBS_FIX : '');
+    if (document.activeElement !== $('obsHost')) $('obsHost').value = s.host || 'localhost';
+    if (document.activeElement !== $('obsPort')) $('obsPort').value = s.port || 4455;
+    $('obsEnabled').checked = !!s.enabled;
+    $('obsPwHint').textContent = s.passwordSet ? 'A password is stored; enter a new one to replace it.' : 'Leave empty if OBS does not require authentication.';
+    return;
+  }
+  const f = d.facts || {}, p = f.profile || {}, v = f.video || {};
+  $('obsVersion').textContent = 'OBS ' + (d.version || '?');
+  $('obsBuffer').innerHTML = d.replayActive ? `<span class="badge ok">running</span> ${p.replaySeconds ? p.replaySeconds + ' s' : ''}` : `<span class="badge warn">stopped</span> <button class="btn btn-sm" id="obsStartInline" style="margin-left:8px">Start replay buffer</button>`;
+  const inl = $('obsStartInline'); if (inl) inl.onclick = () => obsAction('/api/obs/replay-buffer/start', 'Replay buffer started');
+  $('obsProfile').textContent = `${p.name || '?'} · ${p.mode || '?'} mode · ${p.recPath || 'no folder'} · ${p.format || '?'}`;
+  $('obsEncoder').textContent = `${p.encoder || '?'}${v.width ? ` · ${v.width}x${v.height} ${v.fps} fps` : ''}`;
+  $('obsLastSaved').textContent = d.lastSaved ? `${(d.lastSaved.at || '').replace('T', ' ')} - ${d.lastSaved.path}` : 'none since replaycut connected';
+  const box = $('obsChecks'); box.innerHTML = '';
+  (d.checks || []).forEach(c => {
+    const row = document.createElement('div'); row.className = 'check-row';
+    row.innerHTML = `<div class="mark"></div><div><div class="label"></div><div class="detail"></div><div class="fix" hidden></div></div><div class="side"></div>`;
+    const state = { ok: 'ok', warn: 'warn', problem: 'problem', skip: 'skipped' }[c.status] || 'idle';
+    setCheck(row, state, c.label, esc(c.detail), c.fix ? esc(c.fix).replace(/(Settings › [^.]+)/g, '<span class="path">$1</span>') : '');
+    const side = row.querySelector('.side');
+    if (c.status === 'ok') side.innerHTML = '<span class="badge ok">match</span>';
+    else if (c.status === 'warn') side.innerHTML = '<span class="badge warn">suggest</span>';
+    else if (c.status === 'problem') side.innerHTML = '<span class="badge err">fix</span>';
+    if (c.action === 'start-replay-buffer') { const b = document.createElement('button'); b.className = 'btn btn-sm'; b.textContent = 'Start replay buffer'; b.onclick = () => obsAction('/api/obs/replay-buffer/start', 'Replay buffer started'); side.appendChild(b); }
+    if (c.action === 'adopt-folder') { const b = document.createElement('button'); b.className = 'btn btn-sm'; b.textContent = 'Use this folder in replaycut'; b.onclick = async () => { if (await obsAction('/api/obs/adopt-folder', 'replaycut now watches the OBS folder')) pollObsPage(); }; side.appendChild(b); }
+    box.appendChild(row);
+  });
+  $('obsCheckedAt').textContent = f.checkedAt ? 'Checked ' + f.checkedAt.replace('T', ' ') + ' · updates live on OBS events' : '';
+}
+let obsPageTimer = null;
+async function pollObsPage() {
+  clearTimeout(obsPageTimer);
+  try { renderObs(await api('/api/obs', {}, { retries: 0 })); }
+  catch (e) { if (e.message !== 'login required') renderObs({ connected: false, enabled: true, reason: 'replaycut unreachable: ' + e.message, settings: {} }); }
+  obsPageTimer = setTimeout(pollObsPage, 3000);
+}
+function initObs() {
+  showPage('obs');
+  $('obsConnect').onclick = async () => {
+    const body = { obs: { host: $('obsHost').value.trim() || 'localhost', port: Number($('obsPort').value) || 4455, enabled: $('obsEnabled').checked } };
+    if ($('obsPw').value) body.obsPassword = $('obsPw').value;
+    $('obsConnect').disabled = true;
+    try {
+      const r = await api('/api/settings', jsonOpts('PUT', body), { retries: 0, timeout: 15000 });
+      if (!r.ok) toast(r.error, 'err'); else { $('obsPw').value = ''; toast('Connecting …'); await api('/api/obs/reconnect', { method: 'POST', body: '' }, { retries: 0 }).catch(() => {}); }
+    } catch (e) { toast(e.message, 'err'); }
+    $('obsConnect').disabled = false; setTimeout(pollObsPage, 1500);
+  };
+  $('obsEdit').onclick = () => { $('obsOn').hidden = true; $('obsOff').hidden = false; clearTimeout(obsPageTimer); };
+  $('obsRecheck').onclick = async () => { $('obsRecheck').disabled = true; await obsAction('/api/obs/refresh', 'Checked again'); await pollObsPage(); $('obsRecheck').disabled = false; };
+  pollObsPage();
+}
+window.renderObs = renderObs;
+
 // ------------------------------------------------------------ diagnostics
 async function initDiagnostics() {
   showPage('diagnostics');
@@ -1192,6 +1311,7 @@ function initClips() {
   $('delOk').onclick = deleteClip;
 
   $('b-newclip-load').onclick = () => { if (pendingNew) { load(pendingNew); toast('New clip loaded'); } pendingNew = null; banner('b-newclip', false); };
+  $('b-replaystop-start').onclick = async () => { try { const r = await api('/api/obs/replay-buffer/start', { method: 'POST', body: '' }, { retries: 0, timeout: 10000 }); r.ok ? toast('Replay buffer started', 'ok') : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } poll.now(); };
   $('b-newclip-keep').onclick = () => { pendingNew = null; banner('b-newclip', false); };
 
   poll();
@@ -1199,7 +1319,7 @@ function initClips() {
 
 async function sendF9() {
   const b1 = $('btnSave'), b2 = $('btnSave2'); b1.disabled = b2.disabled = true;
-  try { const r = await api('/api/save', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast('F9 sent to OBS - the clip will appear shortly') : toast('F9 failed: ' + r.error, 'err'); }
+  try { const r = await api('/api/save', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(r.via === 'obs-websocket' ? 'Replay saved through OBS - the clip will appear shortly' : 'F9 sent to OBS as a key press - the clip will appear shortly') : toast(r.error || 'F9 failed', 'err'); }
   catch (e) { toast('F9 failed: ' + e.message, 'err'); }
   b1.disabled = b2.disabled = false;
 }
@@ -1413,6 +1533,8 @@ async function poll() {
     $('ver').textContent = cfg.version ? cfg.version : '';
     $('encoder').textContent = cfg.encoder || ''; $('encoder').hidden = !cfg.encoder;
     showUpdate(cfg.update);
+    const ob = cfg.obs || {};
+    banner('b-replaystop', !!ob.connected && !ob.replayActive);
     if (page !== 'clips') { pollT = setTimeout(poll, 3000); return; }
     clips.forEach(c => { if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; if (document.activeElement !== $('title')) $('title').value = c.title || ''; } });
     renderList();
@@ -1452,6 +1574,7 @@ poll.now = () => { clearTimeout(pollT); pollT = setTimeout(poll, 50); };
   if (page === 'setup') { initSetup(); poll(); return; }
   if (page === 'settings') { initSettings(); poll(); return; }
   if (page === 'diagnostics') { initDiagnostics(); poll(); return; }
+  if (page === 'obs') { initObs(); poll(); return; }
   if (page === 'soon') {
     const names = { '/setup': ['Setup', 'The browser setup arrives with the next release step. Until then, run "replaycut setup" in a terminal.'], '/settings': ['Settings', 'The settings page arrives with the next release step. Until then, edit settings.json (see docs/settings.md).'], '/diagnostics': ['Diagnostics', 'The diagnostics page arrives with the next release step. Until then, run "replaycut test" in a terminal.'], '/obs': ['OBS', 'The OBS page comes with the OBS integration.'] };
     const [t, x] = names[location.pathname] || ['Not here', 'Nothing at this address.'];

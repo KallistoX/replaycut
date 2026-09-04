@@ -621,3 +621,14 @@ pub async fn obs_adopt_folder(State(app): State<App>) -> Result<Json<Value>, Api
     tracing::info!("clip folder adopted from OBS: {path}");
     Ok(Json(json!({ "ok": true, "clipDir": path })))
 }
+
+/// `POST /api/obs/refresh` (since 2.2): read the facts again now.
+pub async fn obs_refresh(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    if !app.obs.status().connected {
+        return Err(ApiError::new(StatusCode::CONFLICT, "OBS is not connected"));
+    }
+    crate::obs_ws::refresh_basics(&app.obs).await;
+    let facts = crate::obs_status::read_facts(&app.obs).await;
+    app.obs.set_facts(facts);
+    Ok(Json(json!({ "ok": true })))
+}
