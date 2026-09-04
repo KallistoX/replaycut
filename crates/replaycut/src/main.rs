@@ -406,8 +406,12 @@ async fn serve(
     shutdown: Shutdown,
     open_browser: bool,
 ) -> Result<()> {
-    let just_updated = update::cleanup_after_start(&state.data_dir);
-    state.update.lock().just_updated = just_updated;
+    if let Some(j) = update::cleanup_after_start(&state.data_dir) {
+        let mut u = state.update.lock();
+        u.just_updated = true;
+        u.updated_notes = Some(j.notes);
+        u.updated_url = Some(j.url);
+    }
     tokio::spawn(scanner::run(state.clone()));
     tokio::spawn(obs_ws::run(state.obs.clone()));
     tokio::spawn(obs_link::react(

@@ -697,6 +697,9 @@ pub async fn update_install(State(app): State<App>) -> Result<Json<Value>, ApiEr
 
 /// `POST /api/update/seen`: the UI showed "What's new".
 pub async fn update_seen(State(app): State<App>) -> Json<Value> {
-    app.update.lock().just_updated = false;
+    let mut u = app.update.lock();
+    u.just_updated = false;
+    u.updated_notes = None;
+    u.updated_url = None;
     Json(json!({ "ok": true }))
 }

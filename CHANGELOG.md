@@ -16,6 +16,10 @@ contract.
   The service downloads the release ZIP, verifies the minisign signature of
   `SHA256SUMS` and the hash, unpacks, checks the new executable and restarts
   into it. Releases without a valid signature are never installed.
+- The update banner: "Update now" runs the whole update with a progress bar
+  and reloads the page on the new version; "What's new" shows the release
+  notes; after an update the page says so once. Settings › General has
+  "Check for updates now" with the time of the last check.
 
 ## [2.2.0] - 2026-09-04
 

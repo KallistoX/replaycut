@@ -558,8 +558,10 @@ shown as available but the download ends in `error`.
 when nothing newer is known; `notes` is the release body as Markdown, cut at
 16 KB. `installed` is false when this executable does not run from the app
 folder (a development build or a copy run from the ZIP): then `install`
-refuses and the UI hides the button. `justUpdated` is true on the first
-start after a one-click update until `POST /api/update/seen`.
+refuses and the UI offers the download link instead. `justUpdated` is true
+on the first start after a one-click update until `POST /api/update/seen`;
+while it is, `updatedNotes` and `updatedUrl` carry the release notes and
+page of the version just installed (the UI shows "What's new").
 
 ### `POST /api/update/check`, `/download`, `/install`, `/seen`
 
@@ -570,8 +572,9 @@ update is known or one is already downloading; progress and the outcome show
 in `GET /api/update`. `install` replaces the program files with the verified
 package and restarts the service (like `/api/restart`); 409 when nothing is
 ready, when this copy is not installed, or while a share is running. `seen`
-clears `justUpdated`. All four need a session from the LAN, like every
-non-GET request.
+clears `justUpdated` and the notes. The service restarts with the same
+command line, so overrides such as `--port` stay in force. All four need a
+session from the LAN, like every non-GET request.
 
 `config.update` in `GET /api/clips` keeps its 2.0 shape (`null` or
 `{ version, url }`).

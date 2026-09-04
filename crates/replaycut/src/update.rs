@@ -25,7 +25,7 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 const NOTES_LIMIT: usize = 16 * 1024;
 pub const EXE_NAME: &str = "replaycut.exe";
 pub const OLD_EXE_NAME: &str = "replaycut.old.exe";
-const MARKER: &str = "installed.txt";
+const MARKER: &str = "installed.json";
 /// Everything the release ZIP carries; the first two are required.
 const PACKAGE_FILES: [&str; 7] = [
     "replaycut.exe",
@@ -104,6 +104,11 @@ pub struct UpdateStatus {
     pub ready_dir: Option<PathBuf>,
     /// True on the first start after a one-click update, until the UI saw it.
     pub just_updated: bool,
+    /// The release notes and page of the version just installed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_url: Option<String>,
 }
 
 /// `major.minor.patch` plus whether a pre-release suffix is present.
@@ -545,10 +550,14 @@ pub fn install_files(unpacked: &Path, app: &Path) -> Result<()> {
 
 /// Apply the verified package and restart into the new version.
 pub fn install(state: &AppState) -> Result<()> {
-    let (unpacked, version) = {
+    let (unpacked, version, marker) = {
         let u = state.update.lock();
         match (&u.phase, &u.ready_dir, &u.latest) {
-            (Phase::Ready, Some(dir), Some(info)) => (dir.clone(), info.version.clone()),
+            (Phase::Ready, Some(dir), Some(info)) => (
+                dir.clone(),
+                info.version.clone(),
+                serde_json::json!({ "version": info.version, "notes": info.notes, "url": info.url }),
+            ),
             _ => bail!("no verified update is ready - download it first"),
         }
     };
@@ -571,34 +580,59 @@ pub fn install(state: &AppState) -> Result<()> {
         return Err(e);
     }
     // The marker tells the next start that it is the update's first start.
-    let _ = std::fs::write(state.data_dir.join("update").join(MARKER), &version);
+    let _ = std::fs::write(
+        state.data_dir.join("update").join(MARKER),
+        marker.to_string(),
+    );
     tracing::info!("update {version} installed - restarting");
     spawn_new(&app.join(EXE_NAME))?;
     shutdown.request("update");
     Ok(())
 }
 
-#[cfg(windows)]
+/// Start the new executable with this process's arguments (the command-line
+/// overrides stay in force), plus `--no-browser --wait-for-exit`.
 fn spawn_new(exe: &Path) -> Result<()> {
-    crate::winshell::spawn_detached(exe, &["--no-browser", "--wait-for-exit"])
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    for flag in ["--no-browser", "--wait-for-exit"] {
+        if !args.iter().any(|a| a == flag) {
+            args.push(flag.to_string());
+        }
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    #[cfg(windows)]
+    {
+        crate::winshell::spawn_detached(exe, &refs)
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new(exe)
+            .args(&refs)
+            .spawn()
+            .with_context(|| format!("cannot start {}", exe.display()))?;
+        Ok(())
+    }
 }
-#[cfg(not(windows))]
-fn spawn_new(exe: &Path) -> Result<()> {
-    std::process::Command::new(exe)
-        .args(["--no-browser", "--wait-for-exit"])
-        .spawn()
-        .with_context(|| format!("cannot start {}", exe.display()))?;
-    Ok(())
+
+/// What the marker of a just-installed update says.
+pub struct JustUpdated {
+    pub notes: String,
+    pub url: String,
 }
 
 /// At start: remove the previous executable and the update folder. Returns
-/// true when this is the first start after a one-click update.
-pub fn cleanup_after_start(data_dir: &Path) -> bool {
+/// the marker when this is the first start after a one-click update.
+pub fn cleanup_after_start(data_dir: &Path) -> Option<JustUpdated> {
     let update_dir = data_dir.join("update");
     let marker = update_dir.join(MARKER);
     let just_updated = std::fs::read_to_string(&marker)
-        .map(|v| v.trim() == VERSION)
-        .unwrap_or(false);
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .filter(|v| v["version"].as_str() == Some(VERSION))
+        .map(|v| JustUpdated {
+            notes: v["notes"].as_str().unwrap_or("").to_string(),
+            url: v["url"].as_str().unwrap_or("").to_string(),
+        });
     if update_dir.is_dir() {
         let _ = std::fs::remove_dir_all(&update_dir);
     }
@@ -617,7 +651,7 @@ pub fn cleanup_after_start(data_dir: &Path) -> bool {
             });
         }
     }
-    if just_updated {
+    if just_updated.is_some() {
         tracing::info!("first start after the update to {VERSION}");
     }
     just_updated
@@ -902,6 +936,94 @@ mod tests {
             url: format!("{base}/release"),
             _task: task,
         }
+    }
+
+    /// Not a test: writes a fake release for trying the UI against a dev
+    /// instance. `RC_FAKE_DIR` is the output folder, `RC_FAKE_EXE` the
+    /// executable to pack (built with version `RC_FAKE_VERSION`),
+    /// `RC_FAKE_BASE` the URL the folder is served at. Run with
+    /// `cargo test -p replaycut write_fake_release -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn write_fake_release() {
+        use std::io::Write;
+        let dir = PathBuf::from(std::env::var("RC_FAKE_DIR").expect("RC_FAKE_DIR"));
+        let exe = PathBuf::from(std::env::var("RC_FAKE_EXE").expect("RC_FAKE_EXE"));
+        let version = std::env::var("RC_FAKE_VERSION").unwrap_or_else(|_| "9.9.0".into());
+        let base = std::env::var("RC_FAKE_BASE").unwrap_or_else(|_| "http://127.0.0.1:8481".into());
+        std::fs::create_dir_all(&dir).unwrap();
+        let asset_name = format!("replaycut-{version}-windows-x64.zip");
+        let zip_path = dir.join(&asset_name);
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
+            let opts = zip::write::SimpleFileOptions::default();
+            zip.start_file("replaycut.exe", opts).unwrap();
+            zip.write_all(&std::fs::read(&exe).unwrap()).unwrap();
+            zip.add_directory("ui", opts).unwrap();
+            zip.start_file("ui/index.html", opts).unwrap();
+            zip.write_all(
+                &std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../ui/index.html"))
+                    .unwrap(),
+            )
+            .unwrap();
+            zip.start_file("CHANGELOG.md", opts).unwrap();
+            zip.write_all(
+                b"# Changelog
+",
+            )
+            .unwrap();
+            zip.finish().unwrap();
+        }
+        let sums = format!(
+            "{}  {asset_name}
+",
+            sha256_hex(&zip_path).unwrap()
+        );
+        let key = TestKey::new();
+        std::fs::write(dir.join("SHA256SUMS"), &sums).unwrap();
+        std::fs::write(dir.join("SHA256SUMS.minisig"), key.sign(sums.as_bytes())).unwrap();
+        std::fs::write(dir.join("pubkey.txt"), key.public_base64()).unwrap();
+        let size = std::fs::metadata(&zip_path).unwrap().len();
+        let notes = "A fake release for trying the one-click update.
+
+## Added
+
+- One-click update: the service downloads the release ZIP, verifies the **minisign signature** of `SHA256SUMS` and the hash, then restarts into the new version.
+- `GET /api/update` with the phases `idle`, `available`, `downloading`, `ready`.
+
+## Fixed
+
+- A stale toast after OBS restarted.
+
+## Notes
+
+See the [changelog](https://example.com/CHANGELOG.md) for everything.
+
+```
+replaycut --version
+```
+";
+        let doc = serde_json::json!({
+            "tag_name": format!("v{version}"),
+            "html_url": format!("{base}/release.json"),
+            "published_at": "2026-09-05T08:00:00Z",
+            "body": notes,
+            "assets": [
+                { "name": asset_name, "browser_download_url": format!("{base}/{asset_name}"), "size": size },
+                { "name": "SHA256SUMS", "browser_download_url": format!("{base}/SHA256SUMS"), "size": sums.len() },
+                { "name": "SHA256SUMS.minisig", "browser_download_url": format!("{base}/SHA256SUMS.minisig"), "size": 0 }
+            ]
+        });
+        std::fs::write(
+            dir.join("release.json"),
+            serde_json::to_string_pretty(&doc).unwrap(),
+        )
+        .unwrap();
+        println!(
+            "fake release {version} in {} - REPLAYCUT_UPDATE_PUBKEY={}",
+            dir.display(),
+            key.public_base64()
+        );
     }
 
     #[tokio::test]
