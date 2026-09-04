@@ -10,6 +10,12 @@ contract.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-05
+
+The one-click update and the complete tray menu. From this release on,
+every release is signed: the updater installs only what the maintainer's
+minisign key vouches for.
+
 ### Added
 
 - One-click update: `GET /api/update` and `POST /api/update/{check,download,install,seen}`.
