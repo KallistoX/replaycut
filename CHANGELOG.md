@@ -26,6 +26,11 @@ contract.
 - `POST /api/scanning { paused }` and `config.scanning`: pause the folder
   scan from the tray or the API; the UI shows a banner with "Resume".
 
+### Changed
+
+- The address dialog shows no QR code while replaycut listens on this PC
+  only; it says how to change that instead.
+
 ## [2.2.0] - 2026-09-04
 
 The OBS integration: replaycut talks to OBS through obs-websocket, saves

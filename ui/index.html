@@ -937,9 +937,10 @@ function setCheck(row, state, label, detail, fix) {
   const f = row.querySelector('.fix'); if (f) { f.hidden = !fix; f.innerHTML = fix || ''; }
 }
 function fillAddresses(a, codeEl, addrEl) {
-  codeEl.innerHTML = a.qrSvg || '';
+  codeEl.innerHTML = a.qrSvg || ''; codeEl.hidden = !a.qrSvg;
   const svg = codeEl.querySelector('svg'); if (svg) { svg.removeAttribute('width'); svg.removeAttribute('height'); }
-  addrEl.querySelectorAll('.input-group').forEach(e => e.remove());
+  addrEl.querySelectorAll('.input-group, .local-note').forEach(e => e.remove());
+  if (a.local) addrEl.insertAdjacentHTML('afterbegin', '<div class="local-note muted sm">Only this PC can reach replaycut, so there is no QR code. For a phone, set <b>Listen on</b> to all interfaces under Settings › Service.</div>');
   (a.urls || []).forEach(u => {
     const g = document.createElement('div'); g.className = 'input-group';
     g.innerHTML = `<input class="input mono" readonly><button class="btn btn-icon" title="Copy"><svg class="icon"><use href="#i-copy"/></svg></button>`;

@@ -675,10 +675,17 @@ fn t19_addresses_carry_a_qr_code() {
     assert!(urls
         .iter()
         .all(|u| u.as_str().is_some_and(|s| s.starts_with("http://"))));
-    assert!(
-        a["qrSvg"].as_str().is_some_and(|s| s.contains("<svg")),
-        "qrSvg"
-    );
+    // since 2.3 a loopback-only service sends no code (it would lead a phone
+    // to itself) and says so with `local`
+    if a["local"] == true {
+        assert_eq!(a["qrSvg"], "", "{a}");
+        assert_eq!(urls.len(), 1, "{a}");
+    } else {
+        assert!(
+            a["qrSvg"].as_str().is_some_and(|s| s.contains("<svg")),
+            "qrSvg"
+        );
+    }
 }
 
 #[test]

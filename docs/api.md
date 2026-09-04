@@ -367,7 +367,8 @@ run `{ ok: true, dryRun: true }` without sending.
 
 `{ hostname, port, bind, urls: ["http://<host>:<port>/", "http://<ip>:<port>/", "http://localhost:<port>/"], qrSvg }`.
 `qrSvg` is an SVG document encoding `urls[0]`. With `bind` set to loopback
-only the localhost address is listed.
+only the localhost address is listed, `local` is true and `qrSvg` is empty
+(since 2.3): a code for localhost would only lead a phone to itself.
 
 ### `GET /themes/<name>.css`
 

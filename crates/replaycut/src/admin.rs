@@ -332,25 +332,32 @@ pub async fn addresses(State(app): State<App>) -> Json<Value> {
     let settings = app.settings();
     let port = settings.port;
     let mut urls = Vec::new();
-    if settings.bind != "127.0.0.1" && settings.bind != "::1" {
+    let local = settings.bind == "127.0.0.1" || settings.bind == "::1";
+    if !local {
         urls.push(format!("http://{}:{port}/", platform::hostname()));
         if let Some(ip) = platform::primary_ipv4() {
             urls.push(format!("http://{ip}:{port}/"));
         }
     }
     urls.push(format!("http://localhost:{port}/"));
-    let qr_svg = qrcode::QrCode::new(urls[0].as_bytes())
-        .map(|code| {
-            code.render::<qrcode::render::svg::Color>()
-                .min_dimensions(160, 160)
-                .quiet_zone(true)
-                .build()
-        })
-        .unwrap_or_default();
+    // A QR code for localhost would only lead a phone to itself.
+    let qr_svg = if local {
+        String::new()
+    } else {
+        qrcode::QrCode::new(urls[0].as_bytes())
+            .map(|code| {
+                code.render::<qrcode::render::svg::Color>()
+                    .min_dimensions(160, 160)
+                    .quiet_zone(true)
+                    .build()
+            })
+            .unwrap_or_default()
+    };
     Json(json!({
         "hostname": platform::hostname(),
         "port": port,
         "bind": settings.bind,
+        "local": local,
         "urls": urls,
         "qrSvg": qr_svg,
     }))
