@@ -67,6 +67,12 @@ pub fn router(state: App) -> Router {
         .route("/api/update/install", post(admin::update_install))
         .route("/api/update/seen", post(admin::update_seen))
         .route("/api/scanning", post(admin::scanning))
+        .route("/api/oauth/{provider}", get(admin::oauth_status))
+        .route("/api/oauth/{provider}/start", post(admin::oauth_start))
+        .route(
+            "/api/oauth/{provider}/disconnect",
+            post(admin::oauth_disconnect),
+        )
         .route(
             "/api/obs/replay-buffer/start",
             post(admin::obs_start_replay),

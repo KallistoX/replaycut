@@ -691,6 +691,31 @@ notify -> done`, queued like any share (`202 { ok, job, position, source }`).
 404 for an unknown job; 409 when the same publish is already running or
 waiting; 429 when the queue is full.
 
+### OneDrive and `GET /api/oauth/<provider>`
+
+OneDrive is the first storage that is an account rather than a server:
+`integrations.onedrive { enabled, quickShare }` in the settings, the account
+itself a refresh token in the Credential Manager (`replaycut/onedrive`),
+connected through the OAuth device-code flow so it works from a phone as
+well. Uploads land in `Apps/replaycut/<month>/` and get an anonymous view
+link; `page` and `direct` are the same link.
+
+- `GET /api/oauth/<provider>` (`onedrive`): `{ provider, label, configured,
+  connected, account, flow }`. `configured` is false when the build carries
+  no client id (then nothing can be connected); `flow` is `null` or the
+  device flow in progress: `{ status: "pending" | "done" | "failed",
+  userCode, verificationUri, expiresIn, account?, error? }`.
+- `POST /api/oauth/<provider>/start`: begins a device flow and answers with
+  the document above including `userCode` and `verificationUri` (`ok: true`);
+  a running flow is returned as is. 409 without a client id, 502 when the
+  provider cannot be reached, 404 for an unknown provider. The page polls
+  `GET` every few seconds; on `done` the runtime is rebuilt and the storage
+  is a target.
+- `POST /api/oauth/<provider>/disconnect`: forgets the account.
+
+Quick share is exclusive: a `PUT /api/settings` that sets one storage's
+`quickShare` to true clears it on the others.
+
 ## Behaviour
 
 ### Folder scan

@@ -29,6 +29,7 @@ pub struct Published {
 pub enum Storage {
     DryRun { folder: String },
     Nextcloud(Nextcloud),
+    OneDrive(crate::onedrive::OneDrive),
 }
 
 pub enum Notify {
@@ -62,8 +63,9 @@ pub const TARGET_FILE: &str = "file";
 /// them; adding an integration means one line here plus a settings block,
 /// a credential constant, a `Storage`/`Notify` variant, a card and a
 /// diagnostics row.
-pub const KNOWN_TARGETS: [(&str, &str, &str); 2] = [
+pub const KNOWN_TARGETS: [(&str, &str, &str); 3] = [
     ("nextcloud", "Nextcloud", "storage"),
+    ("onedrive", "OneDrive", "storage"),
     ("discord", "Discord", "notify"),
 ];
 
@@ -78,16 +80,28 @@ impl Integrations {
     pub fn build(settings: &Settings, dry_run: bool) -> Result<Self> {
         let nc = &settings.integrations.nextcloud;
         let dc = &settings.integrations.discord;
+        let od = &settings.integrations.onedrive;
         if dry_run {
-            return Ok(Self {
-                storages: vec![StorageEntry {
-                    id: "nextcloud",
-                    label: "Nextcloud",
+            let mut storages = vec![StorageEntry {
+                id: "nextcloud",
+                label: "Nextcloud",
+                storage: Storage::DryRun {
+                    folder: nc.folder.clone(),
+                },
+                quick_share: nc.quick_share,
+            }];
+            if od.enabled {
+                storages.push(StorageEntry {
+                    id: "onedrive",
+                    label: "OneDrive",
                     storage: Storage::DryRun {
-                        folder: nc.folder.clone(),
+                        folder: "Apps/replaycut".into(),
                     },
-                    quick_share: nc.quick_share,
-                }],
+                    quick_share: od.quick_share,
+                });
+            }
+            return Ok(Self {
+                storages,
                 notifies: vec![NotifyEntry {
                     id: "discord",
                     label: "Discord",
@@ -107,6 +121,26 @@ impl Integrations {
                 }),
                 None => tracing::warn!(
                     "Nextcloud is enabled but has no credentials - run `replaycut setup`"
+                ),
+            }
+        }
+        if od.enabled {
+            match credentials::read(credentials::ONEDRIVE)? {
+                Some(cred) => {
+                    let provider = crate::oauth::provider("onedrive")
+                        .ok_or_else(|| anyhow!("no OneDrive provider"))?;
+                    let tokens = std::sync::Arc::new(crate::oauth::TokenSource::new(
+                        provider, cred.user, cred.secret,
+                    ));
+                    storages.push(StorageEntry {
+                        id: "onedrive",
+                        label: "OneDrive",
+                        storage: Storage::OneDrive(crate::onedrive::OneDrive::new(tokens)?),
+                        quick_share: od.quick_share,
+                    });
+                }
+                None => tracing::warn!(
+                    "OneDrive is enabled but not connected - connect it under Settings > Integrations"
                 ),
             }
         }
@@ -164,6 +198,7 @@ impl Integrations {
     pub fn targets(&self, settings: &Settings) -> Value {
         let enabled = |id: &str| match id {
             "nextcloud" => settings.integrations.nextcloud.enabled,
+            "onedrive" => settings.integrations.onedrive.enabled,
             "discord" => settings.integrations.discord.enabled,
             _ => false,
         };
@@ -240,6 +275,7 @@ impl Storage {
         match self {
             Storage::DryRun { folder } => format!("/{folder}/{month}/{file_name}"),
             Storage::Nextcloud(nc) => format!("/{}/{month}/{file_name}", nc.folder),
+            Storage::OneDrive(_) => crate::onedrive::OneDrive::remote_path(month, file_name),
         }
     }
 
@@ -261,6 +297,7 @@ impl Storage {
                 })
             }
             Storage::Nextcloud(nc) => nc.publish(file, month, &path).await,
+            Storage::OneDrive(od) => od.publish(file, month).await,
         }
     }
 
@@ -272,6 +309,7 @@ impl Storage {
                 Ok(paths.len())
             }
             Storage::Nextcloud(nc) => nc.delete(paths).await,
+            Storage::OneDrive(od) => od.delete(paths).await,
         }
     }
 }

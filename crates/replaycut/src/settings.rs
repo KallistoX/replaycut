@@ -76,6 +76,18 @@ pub enum FfmpegPriority {
 pub struct Integrations {
     pub nextcloud: Nextcloud,
     pub discord: Discord,
+    /// since 2.5
+    pub onedrive: OneDrive,
+}
+
+/// OneDrive through Microsoft Graph (since 2.5). The account itself is a
+/// refresh token in the Credential Manager, connected through the device flow.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct OneDrive {
+    pub enabled: bool,
+    /// The target of the plain "Share" button (one storage at most).
+    pub quick_share: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,8 +215,11 @@ const PATCH_KEYS: [&str; 16] = [
     "theme",
     "integrations",
 ];
-const NEXTCLOUD_KEYS: [&str; 4] = ["enabled", "url", "folder", "expireDays"];
-const DISCORD_KEYS: [&str; 1] = ["enabled"];
+const NEXTCLOUD_KEYS: [&str; 5] = ["enabled", "url", "folder", "expireDays", "quickShare"];
+const DISCORD_KEYS: [&str; 2] = ["enabled", "autoPost"];
+const ONEDRIVE_KEYS: [&str; 2] = ["enabled", "quickShare"];
+/// Storage integrations, for the "one quick-share target" rule.
+const STORAGE_GROUPS: [&str; 2] = ["nextcloud", "onedrive"];
 const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
 
 impl Settings {
@@ -216,6 +231,8 @@ impl Settings {
             return Err("body must be a JSON object".into());
         };
         let mut current = serde_json::to_value(self).map_err(|e| e.to_string())?;
+        // a storage switched to quick share takes it from the others
+        let mut quick: Option<String> = None;
         for (key, value) in obj {
             if !PATCH_KEYS.contains(&key.as_str()) {
                 return Err(format!("unknown field: {key}"));
@@ -238,6 +255,7 @@ impl Settings {
                     let allowed: &[&str] = match group.as_str() {
                         "nextcloud" => &NEXTCLOUD_KEYS,
                         "discord" => &DISCORD_KEYS,
+                        "onedrive" => &ONEDRIVE_KEYS,
                         _ => return Err(format!("unknown integration: {group}")),
                     };
                     let Some(fields) = fields.as_object() else {
@@ -247,11 +265,21 @@ impl Settings {
                         if !allowed.contains(&field.as_str()) {
                             return Err(format!("unknown field: integrations.{group}.{field}"));
                         }
+                        if field == "quickShare" && v == &serde_json::Value::Bool(true) {
+                            quick = Some(group.clone());
+                        }
                         current["integrations"][group][field] = v.clone();
                     }
                 }
             } else {
                 current[key] = value.clone();
+            }
+        }
+        if let Some(winner) = &quick {
+            for g in STORAGE_GROUPS {
+                if g != winner {
+                    current["integrations"][g]["quickShare"] = serde_json::Value::Bool(false);
+                }
             }
         }
         let next: Settings = serde_json::from_value(current).map_err(|e| {

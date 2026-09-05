@@ -48,6 +48,10 @@ fine.
     "discord": {
       "enabled": false,
       "autoPost": true
+    },
+    "onedrive": {
+      "enabled": false,
+      "quickShare": false
     }
   }
 }
@@ -78,6 +82,7 @@ restart. Command-line overrides win over the file for as long as the
 process runs but are never written back.
 | `integrations.nextcloud` | `enabled` switches the upload on. `url` is the server, `folder` the target folder (clips land in `<folder>/<YYYY-MM>/`), `expireDays` sets an expiry on the public link (`0` = never; an expired link also kills the Discord post). `quickShare` (default true, since 2.5) makes it the target of the Share button; off keeps the button local and leaves Nextcloud in the button's menu. |
 | `integrations.discord` | `enabled` switches the webhook post on. The webhook URL itself is a credential. `autoPost` (default true, since 2.5) posts every share that produced a link. |
+| `integrations.onedrive` | `enabled` switches the OneDrive upload on (since 2.5); `quickShare` makes it the Share button's target. The account is connected under Settings › Integrations with a code at Microsoft; the refresh token is the credential `replaycut/onedrive`. Uploads land in `Apps/replaycut/<YYYY-MM>/`. |
 
 An enabled integration without stored credentials is skipped with a warning
 in the log; the service still starts.
@@ -254,4 +259,6 @@ sha256sum -c SHA256SUMS
 Two environment variables exist for testing the flow against a fake release
 served locally and are not meant for normal use: `REPLAYCUT_RELEASES_URL`
 replaces the GitHub releases URL, `REPLAYCUT_UPDATE_PUBKEY` replaces the
-built-in signing key (base64, as `minisign -G` prints it).
+built-in signing key (base64, as `minisign -G` prints it). For the OneDrive
+flow, `REPLAYCUT_ONEDRIVE_CLIENT_ID` replaces the built-in client id and
+`REPLAYCUT_MS_LOGIN_BASE` / `REPLAYCUT_GRAPH_BASE` point at a fake Microsoft.

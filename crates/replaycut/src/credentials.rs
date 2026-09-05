@@ -7,6 +7,8 @@ use anyhow::Result;
 pub const NEXTCLOUD: &str = "replaycut/nextcloud";
 pub const DISCORD_WEBHOOK: &str = "replaycut/discord-webhook";
 pub const OBS_WEBSOCKET: &str = "replaycut/obs-websocket";
+/// OneDrive: user = account name, secret = the OAuth refresh token (since 2.5).
+pub const ONEDRIVE: &str = "replaycut/onedrive";
 
 #[derive(Debug, Clone)]
 pub struct Credential {

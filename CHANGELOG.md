@@ -18,6 +18,10 @@ contract.
   with their state.
 - Publish again: `POST /api/jobs/<id>/publish` sends the finished file of a
   share to another storage without cutting it again.
+- OneDrive as a storage: connect with a code at Microsoft (device flow, works
+  from a phone), uploads go to `Apps/replaycut/<month>/` with a link anyone
+  can open. `GET /api/oauth/<provider>`, `POST .../start`, `POST
+  .../disconnect`. Needs a build with a client id.
 
 ### Changed
 

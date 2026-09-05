@@ -79,6 +79,7 @@ fn settings_document(app: &AppState) -> Value {
         "nextcloud": credentials::read(credentials::NEXTCLOUD).ok().flatten().is_some(),
         "discord": credentials::read(credentials::DISCORD_WEBHOOK).ok().flatten().is_some(),
         "obs": credentials::read(credentials::OBS_WEBSOCKET).ok().flatten().is_some(),
+        "onedrive": credentials::read(credentials::ONEDRIVE).ok().flatten().is_some(),
     });
     doc["passwordSet"] = json!(settings.password_hash.is_some());
     doc["autostart"] = json!(autostart_enabled());
@@ -727,4 +728,92 @@ pub async fn scanning(
     };
     app.set_scanning_paused(paused);
     Ok(Json(json!({ "ok": true, "paused": paused })))
+}
+
+// ------------------------------------------------------------ OAuth (since 2.5)
+
+fn oauth_document(app: &AppState, p: &crate::oauth::DeviceProvider) -> Value {
+    let cred = credentials::read(p.credential).ok().flatten();
+    let flow = app.oauth.lock().get(p.id).cloned();
+    json!({
+        "provider": p.id,
+        "label": p.label,
+        "configured": !p.client_id.is_empty(),
+        "connected": cred.is_some(),
+        "account": cred.map(|c| c.user),
+        "flow": flow.map(|f| {
+            let mut v = serde_json::to_value(&f).unwrap_or(Value::Null);
+            v["expiresIn"] = json!(f.expires_at.saturating_duration_since(std::time::Instant::now()).as_secs());
+            v
+        }),
+    })
+}
+
+fn oauth_provider(id: &str) -> Result<crate::oauth::DeviceProvider, ApiError> {
+    crate::oauth::provider(id)
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown provider: {id}")))
+}
+
+/// `GET /api/oauth/<provider>`
+pub async fn oauth_status(
+    State(app): State<App>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let p = oauth_provider(&id)?;
+    Ok(Json(oauth_document(&app, &p)))
+}
+
+/// `POST /api/oauth/<provider>/start`: begin a device flow (or report the
+/// one that is running); the page polls `GET` for the code and the outcome.
+pub async fn oauth_start(
+    State(app): State<App>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let p = oauth_provider(&id)?;
+    if p.client_id.is_empty() {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            format!("this build has no {} client id", p.label),
+        ));
+    }
+    let running = app.oauth.lock().get(p.id).is_some_and(|f| {
+        matches!(f.status, crate::oauth::FlowStatus::Pending)
+            && f.expires_at > std::time::Instant::now()
+    });
+    if !running {
+        // the code comes from the provider first; wait for it so the answer carries it
+        let start = crate::oauth::device_start(&p)
+            .await
+            .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, format!("{e:#}")))?;
+        let state = app.clone();
+        let provider = p.clone();
+        let graph = crate::onedrive::graph_base();
+        tokio::spawn(async move {
+            let _ = crate::oauth::run_started_flow(state, provider, start, move |token| {
+                let graph = graph.clone();
+                Box::pin(async move { crate::onedrive::OneDrive::me(&graph, &token).await })
+            })
+            .await;
+        });
+        // give the task a moment to register the flow
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let mut doc = oauth_document(&app, &p);
+    doc["ok"] = json!(true);
+    Ok(Json(doc))
+}
+
+/// `POST /api/oauth/<provider>/disconnect`: forget the account.
+pub async fn oauth_disconnect(
+    State(app): State<App>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let p = oauth_provider(&id)?;
+    credentials::delete(p.credential).map_err(ApiError::internal)?;
+    app.oauth.lock().remove(p.id);
+    if let Err(e) = app.rebuild_runtime().await {
+        tracing::warn!("rebuild after {} disconnect: {e:#}", p.label);
+    }
+    app.tray_changed();
+    Ok(Json(json!({ "ok": true })))
 }

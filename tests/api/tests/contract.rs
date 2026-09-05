@@ -1368,3 +1368,66 @@ fn t33_share_targets_and_publish_again() {
     assert_eq!(status, 200);
     wait_for_clip_gone(&base, Duration::from_secs(10));
 }
+
+#[test]
+fn t34_oauth_status_and_start_without_a_client() {
+    let _g = serial();
+    if !since_25() {
+        return;
+    }
+    let (status, d) = get_json("/api/oauth/onedrive");
+    assert_eq!(status, 200, "{d}");
+    assert_eq!(d["provider"], "onedrive");
+    assert!(
+        d["configured"].is_boolean() && d["connected"].is_boolean(),
+        "{d}"
+    );
+    let (status, _) = get_json("/api/oauth/bogus");
+    assert_eq!(status, 404);
+    let (status, v) = post_json("/api/oauth/bogus/start", &json!({}));
+    assert_eq!(status, 404, "{v}");
+    if d["configured"] == false {
+        // a build without a client id says so instead of starting a flow
+        let (status, v) = post_json("/api/oauth/onedrive/start", &json!({}));
+        assert_eq!(status, 409, "{v}");
+        assert!(
+            v["error"].as_str().unwrap_or("").contains("client id"),
+            "{v}"
+        );
+    }
+    // the settings document knows the OneDrive block and its credential flag
+    let (_, s) = get_json("/api/settings");
+    assert!(s["integrations"]["onedrive"]["enabled"].is_boolean(), "{s}");
+    assert!(
+        s["integrations"]["onedrive"]["quickShare"].is_boolean(),
+        "{s}"
+    );
+    assert!(s["secrets"]["onedrive"].is_boolean(), "{s}");
+    // switching quick share to another storage takes it from the first
+    let (status, r) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "onedrive": { "quickShare": true } } }),
+    );
+    assert_eq!(status, 200, "{r}");
+    assert_eq!(
+        r["settings"]["integrations"]["onedrive"]["quickShare"],
+        true
+    );
+    assert_eq!(
+        r["settings"]["integrations"]["nextcloud"]["quickShare"],
+        false
+    );
+    let (status, r) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "nextcloud": { "quickShare": true } } }),
+    );
+    assert_eq!(status, 200, "{r}");
+    assert_eq!(
+        r["settings"]["integrations"]["onedrive"]["quickShare"],
+        false
+    );
+    assert_eq!(
+        r["settings"]["integrations"]["nextcloud"]["quickShare"],
+        true
+    );
+}

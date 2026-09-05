@@ -19,10 +19,12 @@ mod lifecycle;
 mod media;
 #[cfg(windows)]
 mod migrate;
+mod oauth;
 mod obs;
 mod obs_link;
 mod obs_status;
 mod obs_ws;
+mod onedrive;
 mod platform;
 mod scanner;
 mod settings;

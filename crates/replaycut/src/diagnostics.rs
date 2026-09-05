@@ -295,6 +295,52 @@ pub async fn run(state: &AppState) -> Report {
         }
     };
 
+    // onedrive (since 2.5)
+    let onedrive_check = {
+        let enabled = settings.integrations.onedrive.enabled;
+        let runtime = runtime.clone();
+        async move {
+            if !enabled {
+                return Check::new("onedrive", "OneDrive", "skip", "integration is off");
+            }
+            let Some(entry) = runtime.integrations.storage("onedrive") else {
+                return Check::new("onedrive", "OneDrive", "fail", "enabled, but not connected")
+                    .with_fix("Settings › Integrations › OneDrive: Connect OneDrive.");
+            };
+            match &entry.storage {
+                integrations::Storage::OneDrive(od) => {
+                    match tokio::time::timeout(TIMEOUT, od.account()).await {
+                        Ok(Ok(acc)) => {
+                            let quota = match (acc.used, acc.total) {
+                                (Some(u), Some(t)) if t > 0 => {
+                                    format!(" · {} of {} used", gb(u), gb(t))
+                                }
+                                _ => String::new(),
+                            };
+                            Check::new(
+                                "onedrive",
+                                "OneDrive",
+                                "ok",
+                                format!("connected as {}{quota}", acc.name),
+                            )
+                        }
+                        Ok(Err(e)) => Check::new("onedrive", "OneDrive", "fail", format!("{e:#}"))
+                            .with_fix(
+                            "Disconnect and connect OneDrive again under Settings › Integrations.",
+                        ),
+                        Err(_) => Check::new(
+                            "onedrive",
+                            "OneDrive",
+                            "fail",
+                            "no answer from Microsoft Graph within 5 s",
+                        ),
+                    }
+                }
+                _ => Check::new("onedrive", "OneDrive", "ok", "dry run"),
+            }
+        }
+    };
+
     // nextcloud and quota
     let nc_check = {
         let settings = settings.clone();
@@ -512,6 +558,7 @@ pub async fn run(state: &AppState) -> Report {
     checks.push(scan);
     checks.push(nextcloud);
     checks.push(quota);
+    checks.push(onedrive_check.await);
     checks.push(webhook);
     checks.push({
         let obs = state.obs.status();

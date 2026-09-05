@@ -313,6 +313,8 @@ pub struct AppState {
     pub inner: Mutex<Inner>,
     /// One token per known job; cancelling it ends the running pipeline.
     pub cancels: Mutex<HashMap<String, CancellationToken>>,
+    /// Device-code flows in progress or just finished (since 2.5).
+    pub oauth: crate::oauth::Flows,
     /// Bumped on every change the UI cares about; `GET /api/events` listens (since 2.4).
     pub events: tokio::sync::watch::Sender<u64>,
     /// Open event streams, capped in the handler.
@@ -461,6 +463,7 @@ impl AppState {
             quota: Mutex::new(None),
             encoder_fallbacks: std::sync::atomic::AtomicU32::new(0),
             events: tokio::sync::watch::channel(0u64).0,
+            oauth: parking_lot::Mutex::new(HashMap::new()),
             sse_clients: std::sync::atomic::AtomicUsize::new(0),
             quota_wake: Notify::new(),
             scan_wake: Notify::new(),

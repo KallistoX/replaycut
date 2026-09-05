@@ -739,7 +739,16 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="row"><button class="btn" id="sNcTest">Test connection</button><span class="test-msg" id="sNcMsg"></span></div>
       </div>
     </div>
-    <div class="card add-card"><span class="sm">OneDrive, S3 (R2, B2, MinIO) and WebDAV arrive with 2.5.0; YouTube and X with 2.6.0.</span></div>
+    <div class="card" id="sOdCard">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>OneDrive</h2><span class="badge">storage</span><span class="badge" id="sOdBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.onedrive.enabled"><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">Uploads go to <code>Apps/replaycut/&lt;month&gt;/</code> in your OneDrive and get a link anyone can open. Connecting signs you in at Microsoft with a code; it works from a phone, too.</p>
+        <div class="row" id="sOdRow"><button class="btn btn-primary" id="sOdConnect">Connect OneDrive</button><button class="btn" id="sOdDisconnect" hidden>Disconnect</button><span class="muted sm" id="sOdStatus"></span></div>
+        <div class="check-row" id="sOdCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label">Enter this code at Microsoft</div><div class="detail">Open <a id="sOdUri" href="#" target="_blank" rel="noopener"></a> and type <b class="mono" id="sOdUserCode" style="font-size:1.2em;letter-spacing:0.08em"></b>. The card updates when you are done.</div></div></div>
+        <label class="switch"><input type="checkbox" data-f="integrations.onedrive.quickShare"><span class="track"></span> Quick share target <span class="muted sm">(only one storage can be; switching it on takes it from the other)</span></label>
+      </div>
+    </div>
+    <div class="card add-card"><span class="sm">S3 (R2, B2, MinIO) and WebDAV arrive with 2.5.0; YouTube and X with 2.6.0.</span></div>
     <h2 class="group-title">Notify</h2>
     <div class="card" id="sDcCard">
       <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge">notify</span><span class="badge" id="sDcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.discord.enabled"><span class="track"></span></label></div>
@@ -1197,6 +1206,26 @@ async function initSettings() {
     for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 1000)); try { const s = await fetch(target.replace('/settings', '/api/session'), { cache: 'no-store' }); if (s.ok) { location.href = target; return; } } catch (e) {} }
     toast('The service did not come back - start it from the Start menu.', 'err');
   };
+  // OneDrive: connect through the device-code flow (since 2.5)
+  let odTimer = null;
+  function showOd(d) {
+    const s = $('sOdStatus'), code = $('sOdCode');
+    $('sOdBadge').textContent = d.connected ? 'connected' : (d.configured ? 'not connected' : 'unavailable'); $('sOdBadge').className = 'badge' + (d.connected ? ' ok' : '');
+    $('sOdConnect').hidden = d.connected; $('sOdDisconnect').hidden = !d.connected;
+    $('sOdConnect').disabled = !d.configured;
+    const f = d.flow;
+    if (d.connected) { s.textContent = `Connected as ${d.account || 'OneDrive'}.`; code.hidden = true; }
+    else if (!d.configured) { s.textContent = 'This build has no OneDrive client id yet.'; code.hidden = true; }
+    else if (f && f.status === 'pending') { s.textContent = ''; code.hidden = false; $('sOdUri').textContent = f.verificationUri; $('sOdUri').href = f.verificationUri; $('sOdUserCode').textContent = f.userCode; }
+    else if (f && f.status === 'failed') { s.textContent = 'Connecting failed: ' + f.error; code.hidden = true; }
+    else { s.textContent = 'Not connected.'; code.hidden = true; }
+    clearTimeout(odTimer);
+    if (f && f.status === 'pending') odTimer = setTimeout(pollOd, 2000);
+  }
+  async function pollOd() { try { const d = await api('/api/oauth/onedrive', {}, { retries: 0 }); showOd(d); if (d.connected && d.flow && d.flow.status === 'done') { toast(`OneDrive connected as ${d.account}`, 'ok'); fill(await api('/api/settings', {}, { retries: 0 })); } } catch (e) {} }
+  $('sOdConnect').onclick = async () => { $('sOdConnect').disabled = true; try { const d = await api('/api/oauth/onedrive/start', { method: 'POST', body: '' }, { retries: 0, timeout: 25000 }); if (!d.ok) toast(d.error, 'err'); else showOd(d); } catch (e) { toast(e.message, 'err'); } $('sOdConnect').disabled = false; };
+  $('sOdDisconnect').onclick = async () => { try { const r = await api('/api/oauth/onedrive/disconnect', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast('OneDrive disconnected') : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } pollOd(); };
+  pollOd();
   // update check on demand (since 2.3)
   function updText(u) {
     if (!u) return '';
