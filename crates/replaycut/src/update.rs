@@ -426,8 +426,20 @@ pub async fn download(state: Arc<AppState>, verify_exe: bool) -> Result<()> {
         let Some(info) = u.latest.clone() else {
             bail!("no update is available");
         };
-        if info.asset_url.is_empty() || info.sums_url.is_empty() || info.minisig_url.is_empty() {
-            bail!("the release is missing an asset (ZIP, SHA256SUMS or SHA256SUMS.minisig)");
+        // A release published but not yet signed is the common case here;
+        // the status must say so, or the UI waits for a download that never
+        // started.
+        let missing = if info.minisig_url.is_empty() {
+            Some("the release is not signed yet (no SHA256SUMS.minisig) - try again later")
+        } else if info.asset_url.is_empty() || info.sums_url.is_empty() {
+            Some("the release is missing the ZIP or SHA256SUMS")
+        } else {
+            None
+        };
+        if let Some(msg) = missing {
+            u.phase = Phase::Error;
+            u.error = Some(msg.to_string());
+            bail!("{msg}");
         }
         u.phase = Phase::Downloading;
         u.percent = 0;

@@ -10,6 +10,11 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- "Update now" on a release that has no signature yet ends in an error
+  ("not signed yet") instead of waiting forever.
+
 ## [2.3.1] - 2026-09-05
 
 A small release to prove the one-click update from 2.3.0.
