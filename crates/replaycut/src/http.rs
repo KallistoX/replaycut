@@ -42,6 +42,7 @@ pub fn router(state: App) -> Router {
         .route("/api/jobs/{id}", get(job))
         .route("/api/jobs/{id}/open-folder", post(job_open_folder))
         .route("/api/jobs/{id}/copy-file", post(job_copy_file))
+        .route("/api/jobs/{id}/cancel", post(job_cancel))
         .route("/api/share", post(share))
         .route("/api/save", post(save))
         .route("/media/{file}", get(media))
@@ -104,7 +105,8 @@ impl ApiError {
 impl From<StateError> for ApiError {
     fn from(e: StateError) -> Self {
         let status = match e {
-            StateError::UnknownClip(_) => StatusCode::NOT_FOUND,
+            StateError::UnknownClip(_) | StateError::UnknownJob => StatusCode::NOT_FOUND,
+            StateError::TooLate(_) => StatusCode::CONFLICT,
             StateError::ClipBusy => StatusCode::CONFLICT,
         };
         ApiError::new(status, e.to_string())
@@ -320,13 +322,25 @@ async fn share(State(app): State<App>, body: Bytes) -> Response {
         audio: v["audio"].as_str().unwrap_or("").to_string(),
     };
     match share::start(&app, req) {
-        Ok(id) => {
-            tokio::spawn(share::run(app.clone(), id.clone()));
-            (StatusCode::ACCEPTED, Json(json!({ "ok": true, "job": id }))).into_response()
+        Ok((id, position)) => {
+            if position == 0 {
+                tokio::spawn(share::run(app.clone(), id.clone()));
+            }
+            (
+                StatusCode::ACCEPTED,
+                Json(json!({ "ok": true, "job": id, "position": position })),
+            )
+                .into_response()
         }
         Err(ShareError::Busy(job)) => (
             StatusCode::CONFLICT,
-            Json(json!({ "ok": false, "error": "a share is already running", "job": job })),
+            Json(json!({ "ok": false, "error": "this share is already running or waiting", "job": job })),
+        )
+            .into_response(),
+        Err(ShareError::QueueFull) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            [("Retry-After", "30")],
+            Json(json!({ "ok": false, "error": "too many shares are waiting - try again in a moment" })),
         )
             .into_response(),
         Err(ShareError::UnknownClip(base)) => {
@@ -335,6 +349,19 @@ async fn share(State(app): State<App>, body: Bytes) -> Response {
         Err(ShareError::Invalid(msg)) => {
             ApiError::new(StatusCode::BAD_REQUEST, msg).into_response()
         }
+    }
+}
+
+/// `POST /api/jobs/<id>/cancel` (since 2.4): a waiting job leaves the queue,
+/// a running one is stopped; past the upload it is too late.
+async fn job_cancel(
+    State(app): State<App>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    match app.cancel_job(&id) {
+        Ok(at_once) => Ok(Json(json!({ "ok": true, "stopped": at_once }))),
+        Err(StateError::UnknownJob) => Err(ApiError::new(StatusCode::NOT_FOUND, "unknown job")),
+        Err(e) => Err(ApiError::new(StatusCode::CONFLICT, e.to_string())),
     }
 }
 

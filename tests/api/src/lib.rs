@@ -304,7 +304,7 @@ pub fn wait_job(id: &str, timeout: Duration) -> (Vec<String>, Value) {
         if stages.last() != Some(&stage) {
             stages.push(stage.clone());
         }
-        if stage == "done" || stage == "error" {
+        if stage == "done" || stage == "error" || stage == "cancelled" {
             return (stages, job);
         }
         assert!(
@@ -315,7 +315,15 @@ pub fn wait_job(id: &str, timeout: Duration) -> (Vec<String>, Value) {
     }
 }
 
-pub const STAGE_ORDER: [&str; 6] = ["queued", "encode", "upload", "discord", "done", "error"];
+pub const STAGE_ORDER: [&str; 7] = [
+    "queued",
+    "encode",
+    "upload",
+    "discord",
+    "done",
+    "error",
+    "cancelled",
+];
 
 /// Stages must appear in contract order and never repeat or go back.
 pub fn assert_stages_monotonic(stages: &[String]) {

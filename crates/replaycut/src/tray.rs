@@ -16,6 +16,8 @@ pub struct TrayInfo {
     /// Percent of the running share, if one runs.
     pub sharing: Option<u8>,
     pub last_failed: bool,
+    /// Shares waiting behind the running one.
+    pub queued: usize,
     /// "Pause scanning" is ticked.
     pub paused: bool,
     /// A newer release is known.
@@ -33,7 +35,11 @@ impl TrayInfo {
         Self {
             clips: inner.clips.len(),
             sharing,
-            last_failed: inner.last.as_ref().is_some_and(|j| j.ok == Some(false)),
+            last_failed: inner
+                .last
+                .as_ref()
+                .is_some_and(|j| j.ok == Some(false) && !j.cancelled),
+            queued: inner.queue.len(),
             paused: state.scanning_paused(),
             update: state
                 .update
@@ -46,7 +52,11 @@ impl TrayInfo {
 
     pub fn tooltip(&self) -> String {
         if let Some(p) = self.sharing {
-            return format!("replaycut - sharing ... {p} %");
+            return if self.queued > 0 {
+                format!("replaycut - sharing ... {p} % (+{} queued)", self.queued)
+            } else {
+                format!("replaycut - sharing ... {p} %")
+            };
         }
         if self.paused {
             return "replaycut - paused".to_string();
@@ -342,6 +352,7 @@ mod tests {
             clips: 1,
             sharing: None,
             last_failed: false,
+            queued: 0,
             paused: false,
             update: None,
         };
@@ -381,5 +392,13 @@ mod tests {
             ..update.clone()
         };
         assert_eq!(sharing_wins.tooltip(), "replaycut - sharing ... 3 %");
+        let with_queue = TrayInfo {
+            queued: 2,
+            ..sharing_wins
+        };
+        assert_eq!(
+            with_queue.tooltip(),
+            "replaycut - sharing ... 3 % (+2 queued)"
+        );
     }
 }

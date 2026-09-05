@@ -1,6 +1,8 @@
 //! The share pipeline: `queued` -> `encode` -> `upload` -> `discord` ->
-//! `done` or `error`, exactly as `docs/api.md` describes it. Stages whose
-//! integration is disabled are skipped.
+//! `done`, `error` or (since 2.4) `cancelled`, exactly as `docs/api.md`
+//! describes it. Stages whose integration is disabled are skipped. One job
+//! runs at a time; the others wait in the queue and start as the running
+//! one ends.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -8,10 +10,11 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Context, Result};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio_util::sync::CancellationToken;
 
 use crate::integrations::random_token;
 use crate::platform;
-use crate::state::{AppState, Job, AUDIO_MODES};
+use crate::state::{AppState, Job, AUDIO_MODES, MAX_QUEUE};
 use crate::toast::{self, Toast};
 use crate::util;
 
@@ -27,9 +30,11 @@ pub struct ShareRequest {
 #[derive(Debug)]
 pub enum ShareError {
     UnknownClip(String),
-    /// A job is running; carries its id.
+    /// The same share is already running or waiting; carries its id.
     Busy(String),
     Invalid(String),
+    /// `MAX_QUEUE` jobs are waiting already.
+    QueueFull,
 }
 
 /// ffmpeg audio mapping per mode (tracks are 0-based: a:0 mix, a:1 mic, a:2 game, a:3 voice chat).
@@ -119,11 +124,10 @@ pub fn post_label(prefix: &str, base: &str, title: &str) -> String {
 
 /// Validate and register a job. Holds the state lock for the whole check so
 /// two concurrent requests cannot both pass the busy check.
-pub fn start(state: &AppState, req: ShareRequest) -> Result<String, ShareError> {
+/// Validate and register a share. Returns the job id and its place in the
+/// queue (0 = runs at once; the caller spawns `run` for it).
+pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), ShareError> {
     let mut inner = state.inner.lock();
-    if let Some(id) = &inner.current_job {
-        return Err(ShareError::Busy(id.clone()));
-    }
     let clip = inner
         .clips
         .get(&req.base)
@@ -151,6 +155,25 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<String, ShareError> 
             clip.tracks, mode.label, mode.need
         )));
     }
+    // the same cut twice (a double click) attaches to the first one
+    let duplicate = inner
+        .current_job
+        .iter()
+        .chain(inner.queue.iter())
+        .filter_map(|id| inner.jobs.get(id))
+        .find(|j| {
+            j.base == clip.base
+                && (j.start - start).abs() < 0.005
+                && (j.end - end).abs() < 0.005
+                && j.audio == audio
+        })
+        .map(|j| j.id.clone());
+    if let Some(id) = duplicate {
+        return Err(ShareError::Busy(id));
+    }
+    if inner.queue.len() >= MAX_QUEUE {
+        return Err(ShareError::QueueFull);
+    }
     let mut id = random_token(8);
     while inner.jobs.contains_key(&id) {
         id = random_token(8);
@@ -168,24 +191,43 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<String, ShareError> 
         at: util::now_local(),
         ..Job::default()
     };
-    state.register_job(&mut inner, job);
-    Ok(id)
+    let position = state.register_job(&mut inner, job);
+    Ok((id, position))
 }
 
-/// Run a registered job to completion. Spawned by the HTTP handler.
-pub async fn run(state: Arc<AppState>, id: String) {
-    let result = pipeline(&state, &id).await;
+/// Run the running job to completion, then the next one from the queue.
+/// Spawned by the HTTP handler for a job that got position 0.
+pub fn run(
+    state: Arc<AppState>,
+    id: String,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+    Box::pin(run_inner(state, id))
+}
+
+async fn run_inner(state: Arc<AppState>, id: String) {
+    let token = state.cancel_token(&id);
+    let result = pipeline(&state, &id, &token).await;
     if let Err(e) = &result {
-        tracing::error!("share [{id}] failed: {e:#}");
+        if token.is_cancelled() {
+            tracing::info!("share [{id}] cancelled");
+        } else {
+            tracing::error!("share [{id}] failed: {e:#}");
+        }
     }
-    state.complete_job(&id, result.map_err(|e| format!("{e:#}")));
+    let next = state.complete_job(&id, result.map_err(|e| format!("{e:#}")));
     if let Some(job) = state.job(&id) {
-        let uploaded = job.direct.is_some();
-        toast::show(&state, Toast::share_result(&job, uploaded, &state.ui_url()));
+        if !job.cancelled {
+            let uploaded = job.direct.is_some();
+            toast::show(&state, Toast::share_result(&job, uploaded, &state.ui_url()));
+        }
+    }
+    state.cancels.lock().remove(&id);
+    if let Some(next) = next {
+        tokio::spawn(run(state, next));
     }
 }
 
-async fn pipeline(state: &AppState, id: &str) -> Result<()> {
+async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Result<()> {
     let job = state.job(id).ok_or_else(|| anyhow!("job vanished"))?;
     // The runtime of the moment the job started; a settings change while
     // it runs does not swap integrations or encoder under its feet.
@@ -224,7 +266,7 @@ async fn pipeline(state: &AppState, id: &str) -> Result<()> {
         j.title = Some(title.clone());
     });
     let started = Instant::now();
-    encode(state, id, &job, &clip_path, &out).await?;
+    encode(state, id, &job, &clip_path, &out, token).await?;
     let size_mb = (std::fs::metadata(&out)?.len() as f64 / 1_048_576.0 * 100.0).round() / 100.0;
     state.with_job(id, |j| {
         j.percent = 100;
@@ -240,10 +282,18 @@ async fn pipeline(state: &AppState, id: &str) -> Result<()> {
     let mut direct: Option<String> = None;
     if let Some(storage) = &runtime.integrations.storage {
         state.with_job(id, |j| j.stage = "upload".into());
-        let published = storage
-            .publish(&out, &month_of(&job.base))
-            .await
-            .context("upload")?;
+        let month = month_of(&job.base);
+        let published = tokio::select! {
+            r = storage.publish(&out, &month) => r.context("upload")?,
+            _ = token.cancelled() => {
+                // the upload may have finished on the server before the request was dropped
+                let path = storage.remote_path(&month, &file_name);
+                if let Err(e) = storage.delete(std::slice::from_ref(&path)).await {
+                    tracing::debug!("share [{id}]: remote cleanup of {path}: {e:#}");
+                }
+                bail!("cancelled during upload");
+            }
+        };
         tracing::info!("share [{id}]: link {}", published.page);
         state.with_job(id, |j| {
             j.link = Some(published.page.clone());
@@ -281,7 +331,14 @@ async fn pipeline(state: &AppState, id: &str) -> Result<()> {
     Ok(())
 }
 
-async fn encode(state: &AppState, id: &str, job: &Job, input: &Path, out: &Path) -> Result<()> {
+async fn encode(
+    state: &AppState,
+    id: &str,
+    job: &Job,
+    input: &Path,
+    out: &Path,
+    token: &CancellationToken,
+) -> Result<()> {
     let kbps = job.kbps;
     let (b, maxrate, bufsize) = (
         format!("{kbps}k"),
@@ -355,12 +412,20 @@ async fn encode(state: &AppState, id: &str, job: &Job, input: &Path, out: &Path)
             }
         }
     };
-    if tokio::time::timeout(ENCODE_TIMEOUT, progress)
-        .await
-        .is_err()
-    {
-        let _ = child.kill().await;
-        bail!("ffmpeg timed out after {} s", ENCODE_TIMEOUT.as_secs());
+    tokio::select! {
+        r = tokio::time::timeout(ENCODE_TIMEOUT, progress) => {
+            if r.is_err() {
+                let _ = child.kill().await;
+                let _ = std::fs::remove_file(out);
+                bail!("ffmpeg timed out after {} s", ENCODE_TIMEOUT.as_secs());
+            }
+        }
+        _ = token.cancelled() => {
+            let _ = child.kill().await;
+            let _ = stderr_task.await;
+            let _ = std::fs::remove_file(out);
+            bail!("cancelled during encode");
+        }
     }
     let status = tokio::time::timeout(Duration::from_secs(30), child.wait())
         .await

@@ -2,7 +2,7 @@
 //! history). File formats are those of the 1.4 service so that a migration
 //! only has to copy files.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
 use std::sync::Arc;
@@ -12,6 +12,7 @@ use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 
 use crate::auth::Sessions;
 use crate::integrations::Integrations;
@@ -25,6 +26,8 @@ use crate::util;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const MAX_JOBS: usize = 30;
+/// Shares waiting behind the running one (since 2.4); more is a misclick.
+pub const MAX_QUEUE: usize = 10;
 pub const MAX_HISTORY: usize = 200;
 pub const HISTORY_IN_STATUS: usize = 50;
 
@@ -107,6 +110,12 @@ pub struct Job {
     pub nc_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discord: Option<String>,
+    // since 2.4: place in the queue while `queued` (1 = next), absent otherwise
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<usize>,
+    // since 2.4: ended by the user (stage `cancelled`)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cancelled: bool,
 }
 
 impl Job {
@@ -114,7 +123,7 @@ impl Job {
     pub fn history_entry(&self) -> Value {
         let mut v = serde_json::to_value(self).unwrap_or(Value::Null);
         if let Some(map) = v.as_object_mut() {
-            for k in ["percent", "stage", "ok", "error"] {
+            for k in ["percent", "stage", "ok", "error", "position"] {
                 map.remove(k);
             }
         }
@@ -163,6 +172,8 @@ pub struct Inner {
     pub jobs: HashMap<String, Job>,
     pub last: Option<Job>,
     pub current_job: Option<String>,
+    /// Jobs waiting for the worker, in order (since 2.4).
+    pub queue: VecDeque<String>,
     pub scan_at: Option<String>,
 }
 
@@ -258,6 +269,8 @@ pub struct AppState {
     /// Restart-only fields that differ from `boot_settings`.
     pub pending_restart: Mutex<Vec<&'static str>>,
     pub inner: Mutex<Inner>,
+    /// One token per known job; cancelling it ends the running pipeline.
+    pub cancels: Mutex<HashMap<String, CancellationToken>>,
     /// Wakes the scanner early (after a delete, for example).
     pub scan_wake: Notify,
     /// "Pause scanning" in the tray: new replays wait in the folder. RAM only.
@@ -272,6 +285,9 @@ pub struct AppState {
 pub enum StateError {
     UnknownClip(String),
     ClipBusy,
+    UnknownJob,
+    /// The job is past the point where cancelling makes sense.
+    TooLate(String),
 }
 
 impl std::fmt::Display for StateError {
@@ -279,6 +295,8 @@ impl std::fmt::Display for StateError {
         match self {
             StateError::UnknownClip(b) => write!(f, "unknown clip: {b}"),
             StateError::ClipBusy => write!(f, "this clip is being shared right now - please wait"),
+            StateError::UnknownJob => write!(f, "unknown job"),
+            StateError::TooLate(stage) => write!(f, "too late to cancel - the job is {stage}"),
         }
     }
 }
@@ -387,6 +405,7 @@ impl AppState {
             shutdown: std::sync::OnceLock::new(),
             pending_restart: Mutex::new(Vec::new()),
             inner: Mutex::new(inner),
+            cancels: Mutex::new(HashMap::new()),
             scan_wake: Notify::new(),
             scanning_paused: std::sync::atomic::AtomicBool::new(false),
             tray: std::sync::OnceLock::new(),
@@ -574,6 +593,7 @@ impl AppState {
             "last": inner.last,
             "busy": inner.current_job.is_some(),
             "job": inner.current_job,
+            "queue": inner.queue,
             "scanAt": inner.scan_at,
             "history": history,
             "config": {
@@ -631,10 +651,13 @@ impl AppState {
             .get(base)
             .cloned()
             .ok_or_else(|| StateError::UnknownClip(base.to_string()))?;
-        if let Some(id) = &inner.current_job {
-            if inner.jobs.get(id).is_some_and(|j| j.base == base) {
-                return Err(StateError::ClipBusy);
-            }
+        let busy = inner
+            .current_job
+            .iter()
+            .chain(inner.queue.iter())
+            .any(|id| inner.jobs.get(id).is_some_and(|j| j.base == base));
+        if busy {
+            return Err(StateError::ClipBusy);
         }
         Ok(clip)
     }
@@ -660,11 +683,21 @@ impl AppState {
         self.tray_changed();
     }
 
-    /// Register a new job as the running one and keep only the newest `MAX_JOBS`.
-    pub fn register_job(&self, inner: &mut Inner, job: Job) {
+    /// Register a new job: it runs at once when nothing runs, else it waits
+    /// in the queue. Returns its position (0 = running). Keeps only the
+    /// newest `MAX_JOBS` finished jobs.
+    pub fn register_job(&self, inner: &mut Inner, mut job: Job) -> usize {
         let id = job.id.clone();
+        let position = if inner.current_job.is_none() {
+            inner.current_job = Some(id.clone());
+            0
+        } else {
+            inner.queue.push_back(id.clone());
+            inner.queue.len()
+        };
+        job.position = (position > 0).then_some(position);
         inner.jobs.insert(id.clone(), job);
-        inner.current_job = Some(id);
+        self.cancels.lock().insert(id, CancellationToken::new());
         self.tray_changed();
         if inner.jobs.len() > MAX_JOBS {
             let mut by_age: Vec<(String, String)> = inner
@@ -673,25 +706,61 @@ impl AppState {
                 .map(|j| (j.at.clone(), j.id.clone()))
                 .collect();
             by_age.sort();
-            for (_, old) in by_age.iter().take(inner.jobs.len() - MAX_JOBS) {
-                if inner.current_job.as_deref() != Some(old.as_str()) {
-                    inner.jobs.remove(old);
-                }
+            let keep: Vec<String> = inner
+                .current_job
+                .iter()
+                .chain(inner.queue.iter())
+                .cloned()
+                .collect();
+            let surplus = inner.jobs.len() - MAX_JOBS;
+            for (_, old) in by_age
+                .iter()
+                .filter(|(_, id)| !keep.contains(id))
+                .take(surplus)
+            {
+                inner.jobs.remove(old);
+                self.cancels.lock().remove(old);
+            }
+        }
+        position
+    }
+
+    /// The token of a job, for the pipeline and for `cancel_job`.
+    pub fn cancel_token(&self, id: &str) -> CancellationToken {
+        self.cancels.lock().get(id).cloned().unwrap_or_default()
+    }
+
+    fn renumber_queue(inner: &mut Inner) {
+        let ids: Vec<String> = inner.queue.iter().cloned().collect();
+        for (i, id) in ids.iter().enumerate() {
+            if let Some(j) = inner.jobs.get_mut(id) {
+                j.position = Some(i + 1);
             }
         }
     }
 
-    /// Finish the running job: `done` goes to history and becomes `last`.
-    pub fn complete_job(&self, id: &str, result: Result<(), String>) {
+    /// Finish the running job: `done` goes to history and becomes `last`;
+    /// a job whose token was cancelled ends as `cancelled`. Returns the next
+    /// queued job, now the running one, for the caller to spawn.
+    pub fn complete_job(&self, id: &str, result: Result<(), String>) -> Option<String> {
+        let cancelled = self
+            .cancels
+            .lock()
+            .get(id)
+            .is_some_and(|t| t.is_cancelled());
         let mut inner = self.inner.lock();
-        let Some(job) = inner.jobs.get_mut(id) else {
-            return;
-        };
+        let job = inner.jobs.get_mut(id)?;
         match result {
             Ok(()) => {
                 job.ok = Some(true);
                 job.error = Some(String::new());
                 job.stage = "done".into();
+            }
+            Err(_) if cancelled => {
+                job.ok = Some(false);
+                job.error = Some("cancelled".into());
+                job.stage = "cancelled".into();
+                job.cancelled = true;
             }
             Err(msg) => {
                 job.ok = Some(false);
@@ -700,18 +769,71 @@ impl AppState {
             }
         }
         job.finished = Some(util::now_local());
+        job.position = None;
         let job = job.clone();
-        if job.ok == Some(true) {
+        if job.ok == Some(true) || job.cancelled {
             inner.history.insert(0, job.history_entry());
             inner.history.truncate(MAX_HISTORY);
             self.save_history(&inner);
         }
         inner.last = Some(job);
+        let mut next = None;
         if inner.current_job.as_deref() == Some(id) {
-            inner.current_job = None;
+            inner.current_job = inner.queue.pop_front();
+            Self::renumber_queue(&mut inner);
+            if let Some(n) = inner.current_job.clone() {
+                if let Some(j) = inner.jobs.get_mut(&n) {
+                    j.position = None;
+                }
+                next = Some(n);
+            }
         }
         drop(inner);
         self.tray_changed();
+        next
+    }
+
+    /// `POST /api/jobs/<id>/cancel`: a waiting job leaves the queue at once
+    /// (returns `true`); a running one gets its token cancelled and ends
+    /// through `complete_job` (returns `false`). Past `upload` it is too late.
+    pub fn cancel_job(&self, id: &str) -> Result<bool, StateError> {
+        let mut inner = self.inner.lock();
+        let Some(job) = inner.jobs.get(id).cloned() else {
+            return Err(StateError::UnknownJob);
+        };
+        match job.stage.as_str() {
+            "queued" => {
+                inner.queue.retain(|q| q != id);
+                Self::renumber_queue(&mut inner);
+                if let Some(j) = inner.jobs.get_mut(id) {
+                    j.ok = Some(false);
+                    j.error = Some("cancelled".into());
+                    j.stage = "cancelled".into();
+                    j.cancelled = true;
+                    j.position = None;
+                    j.finished = Some(util::now_local());
+                    let done = j.clone();
+                    inner.history.insert(0, done.history_entry());
+                    inner.history.truncate(MAX_HISTORY);
+                    self.save_history(&inner);
+                    inner.last = Some(done);
+                }
+                drop(inner);
+                self.cancels.lock().remove(id);
+                self.tray_changed();
+                tracing::info!("share [{id}] cancelled while queued");
+                Ok(true)
+            }
+            "encode" | "upload" => {
+                drop(inner);
+                if let Some(t) = self.cancels.lock().get(id) {
+                    t.cancel();
+                }
+                tracing::info!("share [{id}] cancel requested");
+                Ok(false)
+            }
+            stage => Err(StateError::TooLate(stage.to_string())),
+        }
     }
 
     /// Remote paths recorded in history for a clip.

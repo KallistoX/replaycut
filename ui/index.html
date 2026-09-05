@@ -538,7 +538,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <span class="plan" id="planInfo"></span>
       </div>
       <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>I</kbd><kbd>O</kbd> marks</span><span><kbd>Enter</kbd> share</span></div>
-      <div class="progress" id="prog" hidden><div class="row nowrap"><span class="grow" id="progText"></span><span class="muted sm" id="progPct"></span></div><div class="bar"><i id="progBar"></i></div><div class="stages" id="stages"></div></div>
+      <div class="progress" id="prog" hidden><div class="row nowrap"><span class="grow" id="progText"></span><span class="muted sm" id="progPct"></span><button class="btn btn-sm btn-ghost" id="progCancel" title="Stop this share" hidden><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div><div class="bar"><i id="progBar"></i></div><div class="stages" id="stages"></div></div>
       <div class="result" id="result" hidden></div>
     </div>
   </main>
@@ -1340,6 +1340,12 @@ function initClips() {
   $('bIn').onclick = setIn; $('bOut').onclick = setOut; $('bPrev').onclick = playSel;
   $('bAll').onclick = () => { if (!cur) return; tIn = 0; tOut = cur.duration; edited = false; render(); };
   $('bShare').onclick = share;
+  $('progCancel').onclick = async () => {
+    const id = $('progCancel').dataset.job; if (!id) return; $('progCancel').disabled = true;
+    try { const r = await api('/api/jobs/' + id + '/cancel', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(r.stopped ? 'Share removed from the queue' : 'Stopping the share …') : toast(r.error, 'err'); }
+    catch (e) { toast(e.message, 'err'); }
+    $('progCancel').disabled = false;
+  };
   $('btnSave').onclick = $('btnSave2').onclick = sendF9;
 
   // Title: Enter or leaving the field saves it (empty = remove title)
@@ -1445,10 +1451,13 @@ async function deleteClip() {
 function stageList() { const s = [['encode', 'Cut + encode']]; if (cfg.nextcloud) s.push(['upload', 'Nextcloud']); if (cfg.webhook) s.push(['discord', 'Discord']); return s; }
 const STAGE_TEXT = { queued: 'Queued …', encode: 'Encoding', upload: 'Uploading to Nextcloud …', discord: 'Posting to Discord …' };
 function showProgress(j) {
-  const p = $('prog'); if (!j || j.stage === 'done' || j.stage === 'error') { p.hidden = true; return; }
+  const p = $('prog'); if (!j || j.stage === 'done' || j.stage === 'error' || j.stage === 'cancelled') { p.hidden = true; return; }
   p.hidden = false;
   const pct = j.stage === 'encode' ? (j.percent || 0) : (j.stage === 'queued' ? 0 : 100);
-  $('progText').textContent = (STAGE_TEXT[j.stage] || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)} at ${j.kbps} kbit/s, ${audioLabel(j.audio)}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
+  const queued = j.stage === 'queued' ? (j.position ? `Queued - ${j.position} share${j.position === 1 ? '' : 's'} ahead` : 'Queued …') : null;
+  $('progText').textContent = (queued || STAGE_TEXT[j.stage] || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)} at ${j.kbps} kbit/s, ${audioLabel(j.audio)}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
+  const canCancel = ['queued', 'encode', 'upload'].includes(j.stage);
+  $('progCancel').hidden = !canCancel; $('progCancel').dataset.job = j.id;
   $('progPct').textContent = pct + ' %';
   $('progBar').style.width = pct + '%';
   const list = stageList(), idx = list.findIndex(([id]) => id === j.stage);
@@ -1458,6 +1467,11 @@ function showResult(r) {
   const box = $('result'); if (!r) { box.hidden = true; return; }
   box.hidden = false;
   const when = (r.finished || r.at) ? ` <span class="muted sm">${esc((r.finished || r.at).replace('T', ' ').slice(0, 16))} · ${esc(r.title ? r.title + ' - ' : '')}${esc(short(r.base))}</span>` : '';
+  if (r.cancelled) {
+    box.className = 'result';
+    box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-close"/></svg> Share cancelled</div>${when ? '<div>' + when + '</div>' : ''}`;
+    return;
+  }
   if (!r.ok) {
     box.className = 'result err';
     box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-error"/></svg> Share failed</div><div class="sm">${esc(r.error || 'unknown error')}</div>${when ? '<div>' + when + '</div>' : ''}
@@ -1494,6 +1508,11 @@ function renderHistory(h) {
   const box = $('hist'); box.innerHTML = (h && h.length) ? '' : '<div class="empty compact">Nothing shared yet.</div>';
   (h || []).forEach(e => {
     const d = document.createElement('div'); d.className = 'hist';
+    if (e.cancelled) {
+      d.innerHTML = `<b class="truncate muted"></b><div class="meta">${fmt(e.seconds)} · ${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · <span class="badge">cancelled</span></div>`;
+      d.querySelector('b').textContent = e.title || short(e.base);
+      box.appendChild(d); return;
+    }
     const local = !e.direct;
     d.innerHTML = `<b class="truncate"></b><div class="meta">${fmt(e.seconds)} · ${e.sizeMB} MB · ${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · ${esc(audioLabel(e.audio))}${local ? ' <span class="badge accent">local</span>' : ''}</div>
       <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(e.link)}" target="_blank" rel="noopener">Open</a>`}</div>`;
@@ -1503,26 +1522,31 @@ function renderHistory(h) {
     box.appendChild(d);
   });
 }
-function setBusy(b) { busy = b; const s = $('bShare'); s.disabled = b; s.innerHTML = b ? '<span class="spinner"></span> Sharing' : '<svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd>'; s.classList.toggle('is-busy', b); setDot(b ? 'busy' : (cfg._lastFailed ? 'err' : ''), b ? 'Sharing' : (cfg._lastFailed ? 'Last share failed' : 'Service running')); }
+// since 2.4 the Share button stays usable while a job runs: further shares queue up
+function setBusy(b) { busy = b; const s = $('bShare'); s.innerHTML = b ? '<span class="spinner"></span> Share (queue)' : '<svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd>'; s.classList.toggle('is-busy', b); setDot(b ? 'busy' : (cfg._lastFailed ? 'err' : ''), b ? 'Sharing' : (cfg._lastFailed ? 'Last share failed' : 'Service running')); }
 async function share() {
-  if (!cur || busy) return; setBusy(true); $('result').hidden = true;
+  if (!cur) return; setBusy(true); $('result').hidden = true;
   // Save the title first: clicking "Share" also triggers the blur of the title field, and without
   // this await the share POST would overtake the title PUT - the clip would then be posted without a title.
   await saveTitle();
   try {
     const r = await api('/api/share', jsonOpts('POST', { base: cur.base, start: tIn, end: tOut, audio: $('audio').value }), { retries: 0, timeout: 10000 });
-    if (!r.ok) { if (r.job) { watchJob(r.job); toast(r.error, 'err'); } else { showResult(r); setBusy(false); } return; }
-    watchJob(r.job);
+    if (!r.ok) { if (r.job) { watchJob(r.job, true); toast(r.error, 'err'); } else { showResult(r); setBusy(false); } return; }
+    if (r.position > 0) toast(`Queued - ${r.position} share${r.position === 1 ? '' : 's'} ahead`);
+    watchJob(r.job, true);
   } catch (e) { showResult({ ok: false, error: e.message }); setBusy(false); }
 }
 // Job progress: /api/jobs/<id> every second, until done/error. Survives a reload (poll() finds the active job in /api/clips).
-async function watchJob(id) {
-  if (watchingJob === id) return; watchingJob = id; setBusy(true);
+async function watchJob(id, mine) {
+  if (watchingJob === id) return;
+  // a share of our own replaces whatever we were watching; the poll never does
+  if (watchingJob && !mine) return;
+  watchingJob = id; setBusy(true);
   let misses = 0;
   while (watchingJob === id) {
     try {
       const j = await api('/api/jobs/' + id, {}, { retries: 0 });
-      if (j.stage === 'done' || j.stage === 'error') { watchingJob = null; showProgress(null); showResult(j); shownLast = id; cfg._lastFailed = j.ok === false; cfg._lastFailedId = id; setBusy(false); poll.now(); return; }
+      if (j.stage === 'done' || j.stage === 'error' || j.stage === 'cancelled') { watchingJob = null; showProgress(null); showResult(j); shownLast = id; cfg._lastFailed = j.ok === false && !j.cancelled; cfg._lastFailedId = id; setBusy(false); poll.now(); return; }
       if (j.error && j.ok === false && !j.stage) throw new Error(j.error);
       showProgress(j); misses = 0;
     } catch (e) { if (++misses >= 8) { watchingJob = null; showProgress(null); showResult({ ok: false, error: 'Connection to the service lost: ' + e.message }); setBusy(false); return; } }
@@ -1678,8 +1702,8 @@ async function poll() {
     } else { if (cur) unload(); showEmpty(cfg.setupDone === false ? 'setup' : 'none'); }
     buildAudio(); renderHistory(d.history);
     if (d.job && watchingJob !== d.job) watchJob(d.job);                      // running job (e.g. after reload)
-    else if (!d.job && !watchingJob && d.last && d.last.id !== shownLast) { showResult(d.last); shownLast = d.last.id; cfg._lastFailed = d.last.ok === false; cfg._lastFailedId = d.last.id; setBusy(false); }
-    const failed = !watchingJob && d.last && d.last.ok === false && failedDismissed !== d.last.id;
+    else if (!d.job && !watchingJob && d.last && d.last.id !== shownLast) { showResult(d.last); shownLast = d.last.id; cfg._lastFailed = d.last.ok === false && !d.last.cancelled; cfg._lastFailedId = d.last.id; setBusy(false); }
+    const failed = !watchingJob && d.last && d.last.ok === false && !d.last.cancelled && failedDismissed !== d.last.id;
     banner('b-failed', failed, failed ? (d.last.error || 'unknown error') : '');
     if (!busy) setDot(failed ? 'err' : '', failed ? 'Last share failed' : 'Service running');
     const paused = !!(cfg.scanning && cfg.scanning.paused);

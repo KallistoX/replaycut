@@ -87,9 +87,10 @@ Body: `{ "base": "<clip base>", "start": <seconds>, "end": <seconds>, "audio": "
   | `game` | `-map 0:a:2` | 3 |
   | `gamediscord` | amix of `0:a:2` and `0:a:3`, `normalize=0` | 4 |
 
-- Only one job runs at a time. While a job runs, every share request answers
-  `409 { ok: false, error, job: "<running id>" }`. The UI attaches itself to
-  that job id.
+- Only one job runs at a time. Before 2.4, every share request while a job
+  runs answers `409 { ok: false, error, job: "<running id>" }` and the UI
+  attaches itself to that job id. Since 2.4 the request joins a queue
+  instead; see [Since 2.4](#since-24).
 - Unknown `base`: `404 { ok: false, error }`.
 - Validation failures (too short, unknown audio mode, clip has fewer tracks
   than the mode needs): `500 { ok: false, error }` in 1.4, `400` in 2.0; the
@@ -217,7 +218,7 @@ reach OBS is not detectable and still answers `ok: true`.
 ```
 
 - `stage` moves through `queued`, `encode`, `upload`, `discord`, then ends in
-  `done` or `error`. Stages are never revisited. A client polling at
+  `done` or `error` (since 2.4 also `cancelled`). Stages are never revisited. A client polling at
   intervals may miss intermediate stages.
 - `percent` is only meaningful during `encode`: it follows ffmpeg's progress
   and stays at most `99` until ffmpeg exits, then `100`. The UI shows `100`
@@ -589,6 +590,34 @@ resumes, when they appear as usual. Answers `{ "ok": true, "paused": ... }`;
 again. `config.scanning` in `GET /api/clips` is `{ "paused": bool }`; the
 UI shows a banner with "Resume" while paused and the tray menu carries the
 same switch ("Pause scanning").
+
+## Since 2.4
+
+### The share queue
+
+`POST /api/share` no longer answers 409 while a job runs: the new job waits
+and the answer is `202 { ok: true, job, position }` with `position` 0 when
+it runs at once, else its place in the queue (1 = next). At most 10 jobs
+wait; then `429 { ok: false, error }` with `Retry-After`. The same cut (same
+`base`, `start`, `end` and `audio`) while it runs or waits still answers
+`409 { ok: false, error, job }` naming that job, so a double click attaches
+to the first request. One job runs at a time; the next one starts as soon as
+the running one ends, in order.
+
+The [Job](#job) carries `position` while `queued` (dropped once it runs) and
+`cancelled: true` after a cancel. `GET /api/clips` lists the waiting ids as
+`queue` (an array, oldest first) next to `busy` and `job`.
+
+### `POST /api/jobs/<id>/cancel`
+
+Ends a job: a waiting one leaves the queue at once (`{ ok: true, stopped:
+true }`, its stage is `cancelled` immediately); a job in `encode` or `upload`
+is stopped (`{ ok: true, stopped: false }`): ffmpeg is killed and the partial
+file removed, an upload in flight is dropped and the started remote file
+deleted, then the job ends with stage `cancelled`, `ok: false`, `error:
+"cancelled"`, `cancelled: true`. A job in `discord`, `done`, `error` or
+already `cancelled` answers 409; an unknown id 404. Cancelled jobs appear in
+the history with `cancelled: true` and no link.
 
 ## Behaviour
 

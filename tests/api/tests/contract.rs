@@ -379,10 +379,19 @@ fn t08_second_share_gets_409() {
         "/api/share",
         &json!({ "base": f.base, "start": 0, "end": 3, "audio": "mix" }),
     );
-    assert_eq!(status, 409, "second share while busy: {v}");
-    assert_eq!(v["ok"], false);
-    assert_eq!(v["job"], first.as_str(), "409 names the running job");
-    assert!(v["error"].is_string());
+    // since 2.4 a second share waits in the queue instead of a 409
+    let queued = if since_24() {
+        assert_eq!(status, 202, "second share while busy: {v}");
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["position"], 1, "{v}");
+        Some(v["job"].as_str().unwrap_or("").to_string())
+    } else {
+        assert_eq!(status, 409, "second share while busy: {v}");
+        assert_eq!(v["ok"], false);
+        assert_eq!(v["job"], first.as_str(), "409 names the running job");
+        assert!(v["error"].is_string());
+        None
+    };
 
     let st = state();
     assert_eq!(st["busy"], true);
@@ -397,6 +406,14 @@ fn t08_second_share_gets_409() {
         (end - FIXTURE_SECONDS).abs() <= 0.5,
         "end is clamped to the clip duration, got {end}"
     );
+    if let Some(second) = queued {
+        let (_, job) = wait_job(&second, JOB_TIMEOUT);
+        assert_eq!(job["stage"], "done", "queued job: {}", job["error"]);
+        assert!(
+            job.get("position").is_none(),
+            "position is dropped once done: {job}"
+        );
+    }
 }
 
 #[test]
@@ -964,6 +981,116 @@ fn t27_pause_scanning_holds_a_new_clip_back() {
     assert_eq!(state()["config"]["scanning"]["paused"], false);
     let clip = wait_for_clip(&base, Duration::from_secs(20));
     assert_eq!(clip["base"], base);
+    let (status, _) = delete(&format!("/api/clips/{}", encode(&base)));
+    assert_eq!(status, 200);
+    wait_for_clip_gone(&base, Duration::from_secs(10));
+}
+
+// Since 2.4: the share queue and cancelling.
+
+fn since_24() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    let ok = (major, minor) >= (2, 4);
+    if !ok {
+        eprintln!("skipped: needs replaycut 2.4, service is {v}");
+    }
+    ok
+}
+
+#[test]
+fn t28_queue_runs_shares_in_order_and_cancel_ends_them() {
+    let _g = serial();
+    if !since_24() {
+        return;
+    }
+    // the fixture is gone after t11: this test brings its own clip
+    let base = format!("{} queue", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let body =
+        |start: f64, end: f64| json!({ "base": base, "start": start, "end": end, "audio": "mix" });
+
+    // three shares: the first runs, the others wait with a position
+    let a = share(&base, 0.0, 3.0, "mix");
+    let (status, v) = post_json("/api/share", &body(3.0, 6.0));
+    assert_eq!(status, 202, "{v}");
+    assert_eq!(v["position"], 1, "{v}");
+    let b = v["job"].as_str().unwrap_or("").to_string();
+    let (status, v) = post_json("/api/share", &body(6.0, 9.0));
+    assert_eq!(status, 202, "{v}");
+    assert_eq!(v["position"], 2, "{v}");
+    let c = v["job"].as_str().unwrap_or("").to_string();
+    let st = state();
+    assert_eq!(st["job"], a.as_str());
+    assert_eq!(st["queue"], json!([b, c]), "{}", st["queue"]);
+    let (_, jb) = get_json(&format!("/api/jobs/{b}"));
+    assert_eq!(jb["stage"], "queued");
+    assert_eq!(jb["position"], 1);
+
+    // the same cut again attaches to the waiting one
+    let (status, v) = post_json("/api/share", &body(3.0, 6.0));
+    assert_eq!(status, 409, "{v}");
+    assert_eq!(v["job"], b.as_str());
+
+    // a waiting job leaves the queue at once
+    let (status, v) = post_json(&format!("/api/jobs/{c}/cancel"), &json!({}));
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["stopped"], true);
+    let (_, jc) = get_json(&format!("/api/jobs/{c}"));
+    assert_eq!(jc["stage"], "cancelled");
+    assert_eq!(jc["cancelled"], true);
+    assert_eq!(jc["ok"], false);
+    assert_eq!(state()["queue"], json!([b]));
+
+    // the first finishes, the second takes over and gets cancelled while it runs
+    let (stages, ja) = wait_job(&a, JOB_TIMEOUT);
+    assert_stages_monotonic(&stages);
+    assert_eq!(ja["stage"], "done", "{}", ja["error"]);
+    let (status, v) = post_json(&format!("/api/jobs/{b}/cancel"), &json!({}));
+    assert!(
+        status == 200 || status == 409,
+        "cancel running: {status} {v}"
+    );
+    let (stages, jb) = wait_job(&b, JOB_TIMEOUT);
+    assert_stages_monotonic(&stages);
+    assert!(
+        jb["stage"] == "cancelled" || jb["stage"] == "done",
+        "second job: {jb}"
+    );
+    if jb["stage"] == "cancelled" {
+        assert_eq!(jb["cancelled"], true);
+        let prefix = base.replace(char::is_whitespace, "_");
+        let leftover = std::fs::read_dir(env().clip_dir.join("shared"))
+            .map(|rd| {
+                rd.flatten()
+                    .filter_map(|e| e.file_name().to_str().map(str::to_string))
+                    .any(|n| n.starts_with(&prefix) && n.contains("_3-6"))
+            })
+            .unwrap_or(false);
+        assert!(
+            !leftover,
+            "the partial file of a cancelled encode must be removed"
+        );
+    }
+
+    // finished and unknown jobs cannot be cancelled
+    let (status, _) = post_json(&format!("/api/jobs/{a}/cancel"), &json!({}));
+    assert_eq!(status, 409);
+    let (status, _) = post_json("/api/jobs/nope/cancel", &json!({}));
+    assert_eq!(status, 404);
+
+    // the queue is empty again: a new share runs at once
+    assert_eq!(state()["busy"], false);
+    let (status, v) = post_json("/api/share", &body(0.0, 2.0));
+    assert_eq!(status, 202, "{v}");
+    assert_eq!(v["position"], 0);
+    let (_, jd) = wait_job(v["job"].as_str().unwrap_or(""), JOB_TIMEOUT);
+    assert_eq!(jd["stage"], "done", "{}", jd["error"]);
     let (status, _) = delete(&format!("/api/clips/{}", encode(&base)));
     assert_eq!(status, 200);
     wait_for_clip_gone(&base, Duration::from_secs(10));

@@ -10,6 +10,21 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- Shares queue up instead of answering "a share is already running": the
+  Share button stays usable, the card shows the place in the queue, and the
+  next job starts as soon as the running one ends (`position` in the
+  answer and the job, `queue` in `GET /api/clips`).
+- Cancel a share: `POST /api/jobs/<id>/cancel` and the Cancel button on the
+  progress card. Waiting jobs leave the queue at once; a running encode or
+  upload is stopped and its partial output removed.
+
+### Changed
+
+- Contract: a second `POST /api/share` while a job runs answers 202 with a
+  queue position (409 only for the same cut twice).
+
 ### Fixed
 
 - "Update now" on a release that has no signature yet ends in an error
