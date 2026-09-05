@@ -10,6 +10,10 @@ contract.
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-09-05
+
+A small release to prove the one-click update from 2.3.0.
+
 ### Fixed
 
 - README and CHANGELOG: the install path `%LOCALAPPDATA%\replaycut\app` had
