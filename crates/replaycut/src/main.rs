@@ -97,6 +97,12 @@ enum Command {
     Setup,
     /// Check the enabled integrations and their credentials.
     Test,
+    /// Encode part of the newest clip with every encoder profile and print the timings.
+    Bench {
+        /// Seconds of the clip to encode.
+        #[arg(long, default_value_t = 30)]
+        seconds: u32,
+    },
     /// Stop the running service.
     Stop,
     /// Install or update replaycut for this user (files, shortcuts, optional autostart and firewall rule).
@@ -173,6 +179,7 @@ fn real_main(cli: Cli, console: bool) -> Result<()> {
     match cli.command {
         Some(Command::Setup) => runtime()?.block_on(setup::run(&settings_path, &mut settings)),
         Some(Command::Test) => runtime()?.block_on(setup::test(&settings)),
+        Some(Command::Bench { seconds }) => runtime()?.block_on(bench(&settings, seconds)),
         Some(Command::Stop) => stop(settings.port),
         #[cfg(windows)]
         Some(Command::Install) => install::install(
@@ -209,6 +216,64 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
         .enable_all()
         .build()
         .context("cannot start the async runtime")
+}
+
+/// `replaycut bench`: the encoder profiles head to head on the newest clip.
+async fn bench(settings: &Settings, seconds: u32) -> Result<()> {
+    let media =
+        Media::locate()?.with_resource_limits(settings.ffmpeg_priority, settings.ffmpeg_threads());
+    let newest = std::fs::read_dir(&settings.clip_dir)
+        .with_context(|| format!("cannot read {}", settings.clip_dir.display()))?
+        .flatten()
+        .filter(|e| {
+            e.path()
+                .extension()
+                .and_then(|x| x.to_str())
+                .is_some_and(|x| x.eq_ignore_ascii_case("mkv"))
+        })
+        .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+        .map(|e| e.path())
+        .ok_or_else(|| anyhow::anyhow!("no .mkv in {}", settings.clip_dir.display()))?;
+    let info = media.video_info(&newest).await;
+    println!(
+        "replaycut {} bench: {} s of {} ({} {}x{} @ {:.0} fps), ffmpeg {}",
+        state::VERSION,
+        seconds,
+        newest.display(),
+        info.codec,
+        info.width,
+        info.height,
+        info.fps,
+        media.ffmpeg.display()
+    );
+    println!("profile      encoder       wall s    cpu s   x real       MB  note");
+    for r in media.bench(&newest, seconds).await? {
+        let cpu = r
+            .cpu
+            .map(|c| format!("{c:.1}"))
+            .unwrap_or_else(|| "-".into());
+        let speed = if r.ok && r.wall > 0.0 {
+            format!("{:.1}", seconds as f64 / r.wall)
+        } else {
+            "-".into()
+        };
+        println!(
+            "{:<12} {:<11} {:>8.1} {:>8} {:>8} {:>8.1}  {}",
+            r.label,
+            r.encoder,
+            r.wall,
+            cpu,
+            speed,
+            r.size_mb,
+            if r.ok {
+                "ok".to_string()
+            } else {
+                format!("failed: {}", r.error)
+            }
+        );
+    }
+    println!("Send this table to the maintainer; the defaults per GPU vendor are set from it.");
+    Ok(())
 }
 
 /// `replaycut stop`: signal the stop event and wait for the instance to go.

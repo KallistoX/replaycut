@@ -483,17 +483,31 @@ pub async fn run(state: &AppState) -> Report {
         network_check
     );
     checks.push(ffmpeg);
-    checks.push(Check::new(
+    let fallbacks = state
+        .encoder_fallbacks
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let mut encoder = Check::new(
         "encoder",
         "Encoder",
-        "ok",
+        if fallbacks > 0 { "warn" } else { "ok" },
         format!(
-            "{} · priority {:?} · {} threads",
-            runtime.encoder.name,
+            "{} · priority {:?} · {} threads{}",
+            runtime.encoder.describe(),
             settings.ffmpeg_priority,
-            settings.ffmpeg_threads()
+            settings.ffmpeg_threads(),
+            if fallbacks > 0 {
+                format!(" · fell back to software decoding {fallbacks} time(s) since start")
+            } else {
+                String::new()
+            }
         ),
-    ));
+    );
+    if fallbacks > 0 {
+        encoder = encoder.with_fix(
+            "The GPU decode path failed at least once (driver?). Set Hardware decoding to 'none' under Settings › Encoding if it keeps happening; run 'replaycut bench' to compare.",
+        );
+    }
+    checks.push(encoder);
     checks.push(folder);
     checks.push(scan);
     checks.push(nextcloud);

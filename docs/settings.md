@@ -60,7 +60,7 @@ fine.
 | `displayName` | Prefix of the Discord post (`**<displayName>** ...`) and the webhook user name. Clip names that start with this word are shortened in the post. |
 | `shareKbps` | Video bitrate of the shared H.264 file in kbit/s, constant bit rate. |
 | `encoder` | `auto` tries `h264_amf`, `h264_nvenc`, `h264_qsv`, `libx264` in that order with a real test encode and uses the first that works. An encoder name forces that encoder. |
-| `hwaccel` | ffmpeg `-hwaccel` value for decoding, for example `d3d11va` or `cuda`. Empty means software decoding. |
+| `hwaccel` | `auto` (or empty, the default since 2.4): the encoder profile decides, GPU decoding where the test encode proves it works; `none`: software decoding; `cuda`, `d3d11va` or `qsv`: passed to ffmpeg as `-hwaccel` with CPU scaling. |
 | `ffmpegPriority` | Windows priority class of every ffmpeg process: `normal`, `belowNormal` (default) or `idle`. Keeps the game responsive while a clip is encoded. |
 | `ffmpegThreads` | `-threads` for decoder and encoder. `0` (default) means half of the logical cores, at least 2. Set it to the core count and `ffmpegPriority` to `normal` for maximum speed when nothing else is running. |
 | `logLevel` | `error`, `warn`, `info`, `debug` or `trace`. The `RUST_LOG` environment variable overrides it. |
@@ -121,6 +121,41 @@ back. `--dry-run` is what the API test suite uses: the pipeline runs every
 stage, but the storage and notify integrations are replaced by simulations
 that return links on `dry-run.invalid`, and neither the replay hotkey nor
 the clipboard is touched.
+
+## Encoder profiles and `replaycut bench`
+
+Since 2.4 the encoder detection tries, per GPU vendor, the full GPU path
+first and the same encoder with software decoding second, each with a real
+two-second encode of the newest preview (without a clip only the software
+profiles are tried; the next settings change or restart with a clip picks the
+GPU path up). A share whose GPU path fails at run time is retried once with
+software decoding; the diagnostics count such fallbacks.
+
+| Profile | Decode | Scale | Encode |
+|---|---|---|---|
+| `amf-d3d11` | `-hwaccel d3d11va` (frames come back to RAM) | CPU | `h264_amf` |
+| `amf` | software | CPU | `h264_amf` |
+| `nvenc-cuda` | `-hwaccel cuda -hwaccel_output_format cuda` | `scale_cuda` | `h264_nvenc` |
+| `nvenc` | software | CPU | `h264_nvenc` |
+| `qsv-full` | `-hwaccel qsv -hwaccel_output_format qsv` | `scale_qsv` | `h264_qsv` |
+| `qsv` | software | CPU | `h264_qsv` |
+| `libx264` | software | CPU | `libx264 -preset veryfast` |
+
+`replaycut bench [--seconds N]` encodes N seconds (default 30) of the newest
+clip with every profile the ffmpeg build knows and prints wall time, CPU
+time, speed and size. Measured so far (AV1 2560x1440 @ 60 fps from OBS,
+ffmpeg 9.0.1, 30 s):
+
+| GPU | Profile | Wall | CPU | Speed |
+|---|---|---|---|---|
+| AMD Radeon (RDNA) | `amf-d3d11` | 13.0 s | 13.5 s | 2.3x real time |
+| AMD Radeon (RDNA) | `amf` | 21.2 s | 42.6 s | 1.4x |
+| AMD Radeon (RDNA) | `libx264` | 22.3 s | 90.2 s | 1.3x |
+| NVIDIA | `nvenc-cuda` | pending | | |
+| Intel | `qsv-full` | pending | | |
+
+The AV1 decode is the CPU cost; the GPU decoder takes it away. Send your
+table to the maintainer when your vendor is still pending.
 
 ## Resource limits while sharing
 

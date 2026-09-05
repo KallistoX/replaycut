@@ -26,6 +26,13 @@ contract.
 - Fast copy: a share mode that keeps the OBS video stream instead of
   re-encoding (keyframe-accurate, `mode: copy`, `actualStart` in the job).
   The choice is remembered in the browser; the default stays H.264.
+- GPU decoding: the encoder detection now tries the full GPU path of each
+  vendor with a real clip (AMD `d3d11va`, NVIDIA `cuda` with `scale_cuda`,
+  Intel `qsv`) and falls back to software decoding per share when it fails.
+  On an AMD card the AV1 decode moves off the CPU (13 s instead of 42 s CPU
+  time for 30 s of 1440p60). `hwaccel` gains `auto` (the default) and `none`.
+- `replaycut bench`: encodes part of the newest clip with every profile and
+  prints wall time, CPU time and speed.
 
 ### Changed
 

@@ -30,19 +30,175 @@ pub fn priority_flag(priority: FfmpegPriority) -> u32 {
     }
 }
 
+/// How a share is encoded: the H.264 encoder plus, since 2.4, the decode
+/// options and the scale filter that go with it (the "full GPU path" keeps
+/// decode, scaling and encode on the card where ffmpeg can).
 #[derive(Debug, Clone)]
 pub struct Encoder {
+    /// Short name of the profile, for the log and the diagnostics.
+    pub label: &'static str,
     pub name: String,
+    /// Input options before `-i` (`-hwaccel ...`), empty for software decoding.
+    pub decode: Vec<&'static str>,
+    /// The `-vf` chain that scales to 1080p.
+    pub filter: &'static str,
+    /// Rate-control and preset options of the encoder.
     pub opts: Vec<&'static str>,
+    /// `-pix_fmt yuv420p` on the encoder input (software frames only).
+    pub pix_fmt: bool,
 }
 
-/// Candidates in preference order with their rate-control options.
-const ENCODER_PROFILES: [(&str, &[&str]); 4] = [
-    ("h264_amf", &["-quality", "quality", "-rc", "cbr"]),
-    ("h264_nvenc", &["-preset", "p5", "-rc", "cbr"]),
-    ("h264_qsv", &["-preset", "medium"]),
-    ("libx264", &["-preset", "veryfast"]),
+impl Encoder {
+    /// A hardware decode or GPU filter is in play, so a share may fall back.
+    pub fn is_gpu_path(&self) -> bool {
+        !self.decode.is_empty() || self.filter != SW_SCALE
+    }
+
+    /// The same encoder with software decoding and CPU scaling.
+    pub fn software_fallback(&self) -> Self {
+        Self {
+            label: "fallback",
+            name: self.name.clone(),
+            decode: Vec::new(),
+            filter: SW_SCALE,
+            opts: self.opts.clone(),
+            pix_fmt: true,
+        }
+    }
+
+    /// What the diagnostics show: `h264_amf (amf-d3d11: d3d11va decode)`.
+    pub fn describe(&self) -> String {
+        let decode = self
+            .decode
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .copied()
+            .collect::<Vec<_>>()
+            .join(" ");
+        if self.decode.is_empty() {
+            format!("{} ({}: software decode)", self.name, self.label)
+        } else {
+            format!("{} ({}: {decode} decode)", self.name, self.label)
+        }
+    }
+}
+
+const SW_SCALE: &str = "scale=-2:1080";
+
+/// One candidate of the detection, in preference order per vendor: the
+/// full GPU path first, then the same encoder with software decoding.
+struct Profile {
+    label: &'static str,
+    encoder: &'static str,
+    decode: &'static [&'static str],
+    filter: &'static str,
+    opts: &'static [&'static str],
+    pix_fmt: bool,
+}
+
+const AMF_OPTS: &[&str] = &["-quality", "quality", "-rc", "cbr"];
+const NVENC_OPTS: &[&str] = &["-preset", "p5", "-rc", "cbr"];
+const QSV_OPTS: &[&str] = &["-preset", "medium"];
+
+const PROFILES: [Profile; 7] = [
+    // The winget ffmpeg has no scale_amf: decode on the GPU, ffmpeg brings the
+    // frames back on its own (no hwaccel_output_format), scale on the CPU.
+    Profile {
+        label: "amf-d3d11",
+        encoder: "h264_amf",
+        decode: &["-hwaccel", "d3d11va"],
+        filter: SW_SCALE,
+        opts: AMF_OPTS,
+        pix_fmt: true,
+    },
+    Profile {
+        label: "amf",
+        encoder: "h264_amf",
+        decode: &[],
+        filter: SW_SCALE,
+        opts: AMF_OPTS,
+        pix_fmt: true,
+    },
+    Profile {
+        label: "nvenc-cuda",
+        encoder: "h264_nvenc",
+        decode: &["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"],
+        filter: "scale_cuda=-2:1080",
+        opts: NVENC_OPTS,
+        pix_fmt: false,
+    },
+    Profile {
+        label: "nvenc",
+        encoder: "h264_nvenc",
+        decode: &[],
+        filter: SW_SCALE,
+        opts: NVENC_OPTS,
+        pix_fmt: true,
+    },
+    Profile {
+        label: "qsv-full",
+        encoder: "h264_qsv",
+        decode: &["-hwaccel", "qsv", "-hwaccel_output_format", "qsv"],
+        filter: "scale_qsv=-1:1080",
+        opts: QSV_OPTS,
+        pix_fmt: false,
+    },
+    Profile {
+        label: "qsv",
+        encoder: "h264_qsv",
+        decode: &[],
+        filter: SW_SCALE,
+        opts: QSV_OPTS,
+        pix_fmt: true,
+    },
+    Profile {
+        label: "libx264",
+        encoder: "libx264",
+        decode: &[],
+        filter: SW_SCALE,
+        opts: &["-preset", "veryfast"],
+        pix_fmt: true,
+    },
 ];
+
+/// The `hwaccel` setting: `auto` (or empty) takes the profile's decode,
+/// `none` forces software decoding, anything else is passed to ffmpeg as
+/// `-hwaccel <value>` with CPU scaling.
+pub fn hwaccel_mode(setting: &str) -> HwAccel {
+    match setting.trim() {
+        "" | "auto" => HwAccel::Auto,
+        "none" => HwAccel::None,
+        other => HwAccel::Manual(other.to_string()),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HwAccel {
+    Auto,
+    None,
+    Manual(String),
+}
+
+/// Values `hwaccel` accepts in settings.json.
+pub const HWACCEL_VALUES: [&str; 6] = ["", "auto", "none", "cuda", "d3d11va", "qsv"];
+
+/// The newest preview in the clip folder, the sample for testing a GPU path
+/// (lavfi sources cannot exercise a hardware decoder).
+pub fn newest_preview(clip_dir: &Path) -> Option<PathBuf> {
+    let dir = clip_dir.join(".preview");
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .filter(|e| {
+            e.path()
+                .extension()
+                .and_then(|x| x.to_str())
+                .is_some_and(|x| x.eq_ignore_ascii_case("mp4"))
+        })
+        .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+        .map(|e| e.path())
+}
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -138,53 +294,69 @@ impl Media {
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }
 
-    /// Probe each candidate with a real two-frame encode: the ffmpeg build
-    /// knows all hardware encoders even without the matching GPU.
-    pub async fn detect_encoder(&self, preferred: &str) -> Result<Encoder> {
+    /// Probe each candidate with a real short encode: the ffmpeg build knows
+    /// all hardware encoders even without the matching GPU. `sample` (the
+    /// newest preview) lets the GPU decode paths prove themselves; without
+    /// one only the software-decode profiles are tried.
+    pub async fn detect_encoder(
+        &self,
+        preferred: &str,
+        hwaccel: &HwAccel,
+        sample: Option<&Path>,
+    ) -> Result<Encoder> {
         let have = self
             .ffmpeg(&["-hide_banner", "-encoders"], Duration::from_secs(60))
             .await?;
         let have = String::from_utf8_lossy(&have.stdout).into_owned();
-        let candidates: Vec<(&str, &[&str])> = if preferred.is_empty() || preferred == "auto" {
-            ENCODER_PROFILES.to_vec()
-        } else {
-            ENCODER_PROFILES
-                .iter()
-                .copied()
-                .filter(|(n, _)| *n == preferred)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .chain(std::iter::once((preferred, &[][..])))
-                .take(1)
-                .collect()
-        };
-        let mut tried = Vec::new();
-        for (name, opts) in candidates {
-            tried.push(name.to_string());
-            if !have
-                .lines()
+        let known = |name: &str| {
+            have.lines()
                 .any(|l| l.split_whitespace().nth(1) == Some(name))
-            {
+        };
+        let auto = preferred.is_empty() || preferred == "auto";
+        let mut candidates: Vec<Encoder> = PROFILES
+            .iter()
+            .filter(|p| auto || p.encoder == preferred)
+            .filter(|p| match hwaccel {
+                HwAccel::Auto => true,
+                _ => p.decode.is_empty() && p.filter == SW_SCALE,
+            })
+            .filter(|p| p.decode.is_empty() || sample.is_some())
+            .map(|p| Encoder {
+                label: p.label,
+                name: p.encoder.to_string(),
+                decode: p.decode.to_vec(),
+                filter: p.filter,
+                opts: p.opts.to_vec(),
+                pix_fmt: p.pix_fmt,
+            })
+            .collect();
+        if !auto && candidates.is_empty() {
+            // an encoder we have no profile for: bare, as the user asked
+            candidates.push(Encoder {
+                label: "custom",
+                name: preferred.to_string(),
+                decode: Vec::new(),
+                filter: SW_SCALE,
+                opts: Vec::new(),
+                pix_fmt: true,
+            });
+        }
+        if let HwAccel::Manual(value) = hwaccel {
+            let leaked: &'static str = Box::leak(value.clone().into_boxed_str());
+            for c in &mut candidates {
+                c.decode = vec!["-hwaccel", leaked];
+            }
+        }
+        let mut tried = Vec::new();
+        for enc in candidates {
+            tried.push(enc.label.to_string());
+            if !known(&enc.name) {
                 continue;
             }
-            let mut args = vec![
-                "-v",
-                "error",
-                "-f",
-                "lavfi",
-                "-i",
-                "testsrc=size=320x240:rate=30:duration=0.2",
-                "-c:v",
-                name,
-            ];
-            args.extend_from_slice(opts);
-            args.extend_from_slice(&["-b:v", "1000k", "-pix_fmt", "yuv420p", "-f", "null", "-"]);
-            let out = self.ffmpeg(&args, Duration::from_secs(60)).await?;
+            let out = self.test_encode(&enc, sample).await?;
             if out.status.success() {
-                return Ok(Encoder {
-                    name: name.to_string(),
-                    opts: opts.to_vec(),
-                });
+                tracing::info!("encoder: {}", enc.describe());
+                return Ok(enc);
             }
             let first = String::from_utf8_lossy(&out.stderr);
             let first = first
@@ -193,12 +365,88 @@ impl Media {
                 .unwrap_or("")
                 .trim()
                 .to_string();
-            tracing::warn!("encoder {name} not usable: {first}");
+            tracing::warn!("encoder profile {} not usable: {first}", enc.label);
         }
         bail!(
             "no usable H.264 encoder found (tried: {})",
             tried.join(", ")
         )
+    }
+
+    /// Two seconds through the whole path (decode, scale, encode) into
+    /// `-f null`, or a synthetic source when no sample exists.
+    async fn test_encode(&self, enc: &Encoder, sample: Option<&Path>) -> Result<Output> {
+        let mut args: Vec<&str> = vec!["-v", "error"];
+        let sample_s = sample.map(|p| p.to_string_lossy().into_owned());
+        match &sample_s {
+            Some(s) => {
+                args.extend(enc.decode.iter().copied());
+                args.extend(["-t", "2", "-i", s, "-map", "0:v:0", "-an"]);
+            }
+            None => args.extend([
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=1280x720:rate=30:duration=0.5",
+            ]),
+        }
+        args.extend(["-vf", enc.filter, "-c:v", &enc.name]);
+        args.extend(enc.opts.iter().copied());
+        args.extend(["-b:v", "2000k"]);
+        if enc.pix_fmt {
+            args.extend(["-pix_fmt", "yuv420p"]);
+        }
+        args.extend(["-f", "null", "-"]);
+        self.ffmpeg(&args, Duration::from_secs(90)).await
+    }
+
+    /// `replaycut bench`: every profile the build knows, on `seconds` of the
+    /// newest clip, with wall time, CPU time and output size.
+    pub async fn bench(&self, clip: &Path, seconds: u32) -> Result<Vec<BenchRow>> {
+        let have = self
+            .ffmpeg(&["-hide_banner", "-encoders"], Duration::from_secs(60))
+            .await?;
+        let have = String::from_utf8_lossy(&have.stdout).into_owned();
+        let mut rows = Vec::new();
+        let clip_s = clip.to_string_lossy().into_owned();
+        let secs = seconds.to_string();
+        for p in PROFILES.iter() {
+            if !have
+                .lines()
+                .any(|l| l.split_whitespace().nth(1) == Some(p.encoder))
+            {
+                continue;
+            }
+            let out = std::env::temp_dir().join(format!("replaycut-bench-{}.mp4", p.label));
+            let out_s = out.to_string_lossy().into_owned();
+            let mut args: Vec<&str> = vec!["-y", "-v", "error"];
+            args.extend(p.decode.iter().copied());
+            args.extend(["-t", &secs, "-i", &clip_s, "-map", "0:v:0", "-an"]);
+            args.extend(["-vf", p.filter, "-c:v", p.encoder]);
+            args.extend(p.opts.iter().copied());
+            args.extend(["-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"]);
+            if p.pix_fmt {
+                args.extend(["-pix_fmt", "yuv420p"]);
+            }
+            args.push(&out_s);
+            let started = std::time::Instant::now();
+            let (ok, cpu, err) = run_timed(&self.ffmpeg, &args);
+            let wall = started.elapsed().as_secs_f64();
+            let size_mb = std::fs::metadata(&out)
+                .map(|m| m.len() as f64 / 1_048_576.0)
+                .unwrap_or(0.0);
+            let _ = std::fs::remove_file(&out);
+            rows.push(BenchRow {
+                label: p.label,
+                encoder: p.encoder,
+                ok,
+                wall,
+                cpu,
+                size_mb,
+                error: err,
+            });
+        }
+        Ok(rows)
     }
 
     /// Preview = original video plus audio track 1, remuxed with faststart.
@@ -335,6 +583,80 @@ impl Media {
             }
         }
     }
+}
+
+/// One line of `replaycut bench`.
+#[derive(Debug)]
+pub struct BenchRow {
+    pub label: &'static str,
+    pub encoder: &'static str,
+    pub ok: bool,
+    pub wall: f64,
+    /// Kernel plus user time of the ffmpeg process, seconds (Windows only).
+    pub cpu: Option<f64>,
+    pub size_mb: f64,
+    pub error: String,
+}
+
+/// Run ffmpeg to completion and report success, its CPU time and the first
+/// error line. Blocking on purpose: the bench is a console command.
+fn run_timed(exe: &Path, args: &[&str]) -> (bool, Option<f64>, String) {
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return (false, None, format!("cannot start ffmpeg: {e}")),
+    };
+    let stderr = child.stderr.take();
+    let reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut s) = stderr {
+            use std::io::Read;
+            let _ = s.read_to_end(&mut buf);
+        }
+        String::from_utf8_lossy(&buf).into_owned()
+    });
+    let status = match child.wait() {
+        Ok(s) => s,
+        Err(e) => return (false, None, format!("ffmpeg: {e}")),
+    };
+    let cpu = process_cpu_seconds(&child);
+    let err = reader
+        .join()
+        .unwrap_or_default()
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    (status.success(), cpu, err)
+}
+
+/// Kernel plus user time of a finished child, while its handle is still open.
+#[cfg(windows)]
+fn process_cpu_seconds(child: &std::process::Child) -> Option<f64> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::{FILETIME, HANDLE};
+    use windows::Win32::System::Threading::GetProcessTimes;
+    let handle = HANDLE(child.as_raw_handle());
+    let (mut c, mut e, mut k, mut u) = (
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+    );
+    // SAFETY: the handle belongs to `child`, which outlives this call.
+    unsafe { GetProcessTimes(handle, &mut c, &mut e, &mut k, &mut u) }.ok()?;
+    let ticks = |t: FILETIME| ((t.dwHighDateTime as u64) << 32) | t.dwLowDateTime as u64;
+    Some((ticks(k) + ticks(u)) as f64 / 10_000_000.0)
+}
+
+#[cfg(not(windows))]
+fn process_cpu_seconds(_child: &std::process::Child) -> Option<f64> {
+    None
 }
 
 /// What the setup wizard and the OBS page say about a clip's video.

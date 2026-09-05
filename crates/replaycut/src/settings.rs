@@ -322,6 +322,10 @@ impl Settings {
             "obs.host must not be empty"
         );
         anyhow::ensure!(
+            crate::media::HWACCEL_VALUES.contains(&self.hwaccel.trim()),
+            "hwaccel must be auto, none, cuda, d3d11va or qsv"
+        );
+        anyhow::ensure!(
             self.ffmpeg_threads <= 256,
             "ffmpegThreads must be 0 (auto) or at most 256"
         );

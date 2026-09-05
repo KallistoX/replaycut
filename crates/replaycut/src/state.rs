@@ -208,7 +208,7 @@ pub struct Inner {
 pub struct Runtime {
     pub media: Media,
     pub encoder: Encoder,
-    /// The `encoder` setting the detection ran for (`auto` or a name).
+    /// The `encoder` and `hwaccel` settings the detection ran for.
     pub encoder_setting: String,
     pub integrations: Integrations,
 }
@@ -225,15 +225,25 @@ impl Runtime {
         let media = base
             .clone()
             .with_resource_limits(settings.ffmpeg_priority, settings.ffmpeg_threads());
+        let encoder_setting = format!("{}|{}", settings.encoder, settings.hwaccel);
         let encoder = match previous {
-            Some(p) if p.encoder_setting == settings.encoder => p.encoder.clone(),
-            _ => media.detect_encoder(&settings.encoder).await?,
+            Some(p) if p.encoder_setting == encoder_setting => p.encoder.clone(),
+            _ => {
+                let sample = crate::media::newest_preview(&settings.clip_dir);
+                media
+                    .detect_encoder(
+                        &settings.encoder,
+                        &crate::media::hwaccel_mode(&settings.hwaccel),
+                        sample.as_deref(),
+                    )
+                    .await?
+            }
         };
         let integrations = Integrations::build(settings, dry_run)?;
         Ok(Self {
             media,
             encoder,
-            encoder_setting: settings.encoder.clone(),
+            encoder_setting,
             integrations,
         })
     }
@@ -297,6 +307,8 @@ pub struct AppState {
     pub inner: Mutex<Inner>,
     /// One token per known job; cancelling it ends the running pipeline.
     pub cancels: Mutex<HashMap<String, CancellationToken>>,
+    /// Shares that had to retry with software decoding since start (since 2.4).
+    pub encoder_fallbacks: std::sync::atomic::AtomicU32,
     /// The storage quota, when the account has one (since 2.4).
     pub quota: Mutex<Option<Quota>>,
     /// Asks the quota loop to refresh now (after an upload, a settings change).
@@ -437,6 +449,7 @@ impl AppState {
             inner: Mutex::new(inner),
             cancels: Mutex::new(HashMap::new()),
             quota: Mutex::new(None),
+            encoder_fallbacks: std::sync::atomic::AtomicU32::new(0),
             quota_wake: Notify::new(),
             scan_wake: Notify::new(),
             scanning_paused: std::sync::atomic::AtomicBool::new(false),

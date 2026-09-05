@@ -286,7 +286,32 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         j.title = Some(title.clone());
     });
     let started = Instant::now();
-    encode(state, id, &job, &clip_path, &out, token).await?;
+    // The GPU path may fail on a driver quirk: try once more with software
+    // decoding and CPU scaling before giving up (since 2.4).
+    let profile = runtime.encoder.clone();
+    if let Err(e) = encode(state, id, &job, &clip_path, &out, token, &profile).await {
+        if token.is_cancelled() || job.mode == "copy" || !profile.is_gpu_path() {
+            return Err(e);
+        }
+        tracing::warn!(
+            "share [{id}]: {} failed ({e:#}) - retrying with software decoding",
+            profile.label
+        );
+        state
+            .encoder_fallbacks
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let _ = std::fs::remove_file(&out);
+        encode(
+            state,
+            id,
+            &job,
+            &clip_path,
+            &out,
+            token,
+            &profile.software_fallback(),
+        )
+        .await?;
+    }
     let size_mb = (std::fs::metadata(&out)?.len() as f64 / 1_048_576.0 * 100.0).round() / 100.0;
     // copy mode cuts at the keyframe before `start`: say where the file really begins
     let actual_start = if job.mode == "copy" {
@@ -374,6 +399,7 @@ async fn encode(
     input: &Path,
     out: &Path,
     token: &CancellationToken,
+    enc: &crate::media::Encoder,
 ) -> Result<()> {
     let kbps = job.kbps;
     let (b, maxrate, bufsize) = (
@@ -386,14 +412,13 @@ async fn encode(
     let out_s = out.to_string_lossy().into_owned();
     let mut args: Vec<&str> = vec!["-nostats", "-progress", "pipe:1", "-y", "-v", "error"];
     let runtime = state.runtime();
-    let settings = state.settings();
     let threads = runtime.media.threads.to_string();
     let copy = job.mode == "copy";
-    if !copy && runtime.media.threads > 0 {
+    if !copy && enc.decode.is_empty() && runtime.media.threads > 0 {
         args.extend(["-threads", &threads]); // decoder (dav1d takes every core otherwise)
     }
-    if !copy && !settings.hwaccel.is_empty() {
-        args.extend(["-hwaccel", settings.hwaccel.as_str()]);
+    if !copy {
+        args.extend(enc.decode.iter().copied());
     }
     args.extend([
         "-ss", &start, "-t", &seconds, "-i", &input_s, "-map", "0:v:0",
@@ -411,14 +436,15 @@ async fn encode(
             args.extend(["-c:a", "aac", "-b:a", "128k"]);
         }
     } else {
-        args.extend(["-vf", "scale=-2:1080", "-c:v", &runtime.encoder.name]);
+        args.extend(["-vf", enc.filter, "-c:v", &enc.name]);
         if runtime.media.threads > 0 {
             args.extend(["-threads", &threads]); // encoder and filters
         }
-        args.extend(runtime.encoder.opts.iter().copied());
-        args.extend([
-            "-b:v", &b, "-maxrate", &maxrate, "-bufsize", &bufsize, "-pix_fmt", "yuv420p",
-        ]);
+        args.extend(enc.opts.iter().copied());
+        args.extend(["-b:v", &b, "-maxrate", &maxrate, "-bufsize", &bufsize]);
+        if enc.pix_fmt {
+            args.extend(["-pix_fmt", "yuv420p"]);
+        }
         args.extend(["-c:a", "aac", "-b:a", "128k"]);
     }
     args.extend(["-movflags", "+faststart", &out_s]);
