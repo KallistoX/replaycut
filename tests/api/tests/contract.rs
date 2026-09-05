@@ -1197,3 +1197,68 @@ fn t31_copy_share_keeps_the_stream_and_reports_the_real_start() {
     assert_eq!(status, 200);
     wait_for_clip_gone(&base, Duration::from_secs(10));
 }
+
+#[test]
+fn t32_event_stream_pushes_the_state_after_a_change() {
+    let _g = serial();
+    if !since_24() {
+        return;
+    }
+    use std::io::Read;
+    let base = format!("{} sse", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let mut resp = client()
+        .get(url("/api/events"))
+        .timeout(Duration::from_secs(10))
+        .send()
+        .expect("GET /api/events");
+    assert_eq!(resp.status().as_u16(), 200);
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    assert!(ct.starts_with("text/event-stream"), "content-type {ct}");
+    // the first event comes at once, the second after the change below
+    let (status, _) = put_json(
+        &format!("/api/clips/{}/name", encode(&base)),
+        &json!({ "name": "SSE title" }),
+    );
+    assert_eq!(status, 200);
+    let started = std::time::Instant::now();
+    let mut text = String::new();
+    let mut buf = [0u8; 4096];
+    // an event ends with a blank line; read until the one with the new title is complete
+    while text.matches("event: state").count() < 2
+        || !text.contains("SSE title")
+        || !text.ends_with(
+            "
+
+",
+        )
+    {
+        let n = resp.read(&mut buf).expect("read event stream");
+        assert!(n > 0, "event stream ended early");
+        text.push_str(&String::from_utf8_lossy(&buf[..n]));
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "no state event with the new title within 5 s: {text}"
+        );
+    }
+    let data_line = text
+        .lines()
+        .rev()
+        .find(|l| l.starts_with("data: "))
+        .expect("data line");
+    let doc: serde_json::Value = serde_json::from_str(&data_line[6..]).expect("state JSON");
+    assert!(
+        doc["clips"].is_array() && doc["config"]["version"].is_string(),
+        "{doc}"
+    );
+    drop(resp);
+    let (status, _) = delete(&format!("/api/clips/{}", encode(&base)));
+    assert_eq!(status, 200);
+    wait_for_clip_gone(&base, Duration::from_secs(10));
+}

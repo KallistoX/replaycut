@@ -257,6 +257,7 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 .md code { font-family: var(--font-mono); font-size: 0.92em; background: var(--surface-2); border-radius: var(--radius-sm); padding: 0 4px; }
 .md pre { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); overflow-x: auto; } .md pre code { background: none; padding: 0; }
 .md a { color: var(--accent); }
+.keys { border-collapse: collapse; width: 100%; } .keys td { padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--line); vertical-align: top; } .keys td:first-child { white-space: nowrap; width: 1%; }
 
 .toast-stack { position: fixed; right: var(--space-4); bottom: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); z-index: 20; max-width: min(360px, calc(100vw - 2 * var(--space-4))); }
 .toast { display: flex; gap: var(--space-2); align-items: center; padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 4px 16px var(--scrim); }
@@ -474,6 +475,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <div class="right">
     <span class="badge" id="encoder" hidden></span>
     <span class="badge" id="quota" hidden></span>
+    <button class="btn btn-ghost btn-icon" id="helpBtn" title="Keyboard shortcuts (?)">?</button>
     <span class="status" id="dotWrap" title="Service running"><i class="dot" id="dot"></i></span>
     <span class="version" id="ver"></span>
   </div>
@@ -818,6 +820,24 @@ ol.steps b { color: var(--fg); font-weight: normal; }
     <div class="brand"><svg class="icon"><use href="#i-logo"/></svg> <span id="soonTitle"></span></div>
     <p class="muted sm" id="soonText"></p>
     <a class="btn btn-primary" href="/">Back to clips</a>
+  </div>
+</div>
+
+<div class="modal" id="helpModal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true">
+    <h2>Keyboard shortcuts</h2>
+    <div class="md"><table class="keys">
+      <tr><td><kbd>Space</kbd></td><td>Play or pause</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>1 s back or forward, with <kbd>Shift</kbd> 5 s</td></tr>
+      <tr><td><kbd>,</kbd> <kbd>.</kbd></td><td>One frame back or forward</td></tr>
+      <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Start or end of the clip</td></tr>
+      <tr><td><kbd>I</kbd> <kbd>O</kbd></td><td>Set the in or out mark at the playhead</td></tr>
+      <tr><td><kbd>P</kbd></td><td>Play the selection</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Share the selection; in the title field: save the title (empty takes the suggestion)</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Close a dialog; in the title field: undo the edit</td></tr>
+      <tr><td><kbd>?</kbd></td><td>This list</td></tr>
+    </table></div>
+    <div class="actions"><button class="btn" id="helpClose">Close <kbd>Esc</kbd></button></div>
   </div>
 </div>
 
@@ -1356,7 +1376,7 @@ function initClips() {
   $('btnSave').onclick = $('btnSave2').onclick = sendF9;
 
   // Title: Enter or leaving the field saves it (empty = remove title)
-  $('title').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('title').blur(); } else if (e.key === 'Escape') { $('title').value = cur ? (cur.title || '') : ''; $('title').blur(); } });
+  $('title').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (!$('title').value.trim() && $('title').placeholder) $('title').value = $('title').placeholder; $('title').blur(); } else if (e.key === 'Escape') { $('title').value = cur ? (cur.title || '') : ''; $('title').blur(); } });
   $('title').addEventListener('blur', saveTitle);
 
   // Delete: dialog with the Nextcloud toggle, files go to the recycle bin
@@ -1407,12 +1427,17 @@ function buildAudio() {
     if (cur && (cur.tracks || 1) < a.need) { o.disabled = true; o.textContent += ' (clip has only ' + (cur.tracks || 1) + ' tracks)'; } s.appendChild(o); });
   s.value = keep && [...s.options].some(o => o.value === keep && !o.disabled) ? keep : 'mix';
 }
+// a title suggestion from the recording time ("Fri 21:34"); Enter on the empty field takes it (since 2.4)
+function suggestTitle(c) {
+  const d = new Date(c.created); if (isNaN(d)) return '';
+  try { return d.toLocaleDateString(undefined, { weekday: 'short' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; }
+}
 function load(c, keepSel) {
   cur = c; $('vidErr').hidden = true; $('editorBody').hidden = false; $('emptyEditor').hidden = true;
   v.src = c.preview; v.poster = c.thumb || ''; v.load();
   if (!keepSel) { tIn = 0; tOut = c.duration; edited = false; }
   document.querySelectorAll('.clip').forEach(e => e.classList.toggle('active', e.dataset.base === c.base));
-  $('title').value = c.title || ''; $('title').disabled = false; $('bDel').disabled = false;
+  $('title').value = c.title || ''; $('title').placeholder = suggestTitle(c); $('title').disabled = false; $('bDel').disabled = false;
   ticks(c.duration); buildAudio(); render();
 }
 function unload() {
@@ -1681,13 +1706,44 @@ $('b-update-notes').onclick = () => { const l = upd && upd.latest; if (l) showNo
 $('b-updated-notes').onclick = () => showNotes(`What's new in ${upd.current}`, upd.updatedNotes, upd.updatedUrl, false);
 $('b-updated-close').onclick = async () => { banner('b-updated', false); if (upd) upd.justUpdated = false; try { await api('/api/update/seen', { method: 'POST', body: '' }, { retries: 0 }); } catch (e) {} };
 $('updClose').onclick = () => { $('updModal').hidden = true; };
+$('helpBtn').onclick = () => { $('helpModal').hidden = false; };
+$('helpClose').onclick = () => { $('helpModal').hidden = true; };
+$('helpModal').addEventListener('click', e => { if (e.target === $('helpModal')) $('helpModal').hidden = true; });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('helpModal').hidden) { $('helpModal').hidden = true; return; }
+  if ((e.key === '?' || (e.key === '/' && e.shiftKey)) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) { e.preventDefault(); $('helpModal').hidden = !$('helpModal').hidden; }
+});
 $('updModal').addEventListener('click', e => { if (e.target === $('updModal')) $('updModal').hidden = true; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('updModal').hidden) $('updModal').hidden = true; });
 
+// Live updates (since 2.4): the service pushes the /api/clips document over Server-Sent Events;
+// the 3-s poll stays as the fallback and as a slow safety net while the stream is up.
+let es = null, live = false, esFails = 0, esRetryAt = 0;
+function startEvents() {
+  if (!window.EventSource || es || page === 'login') return;
+  try { es = new EventSource('/api/events'); } catch (e) { return; }
+  es.addEventListener('state', ev => { live = true; esFails = 0; try { applyState(JSON.parse(ev.data)); } catch (e) {} });
+  es.onerror = () => { live = false; if (++esFails >= 2) { es.close(); es = null; esRetryAt = Date.now() + 60000; } poll.now(); };
+}
 async function poll() {
   clearTimeout(pollT);
   try {
     const d = await api('/api/clips');
+    applyState(d, true);
+    if (!es && Date.now() >= esRetryAt) { esFails = 0; startEvents(); }
+  } catch (e) {
+    if (e.message === 'login required') return;
+    failures++;
+    banner('b-unreachable', true, `(${e.message}) - attempt ${failures}, retrying every 3 s. Is replaycut running on the PC? Look for the tray icon.`);
+    setDot('off', 'Service not responding');
+    if (page === 'clips' && !clips.length) showEmpty('offline');
+  }
+  pollT = setTimeout(poll, live ? 30000 : 3000);
+}
+// `polled`: the document is fresh from /api/clips; a pushed one may carry an older scanAt, so
+// the "scan stuck" check only runs on polled documents (the safety poll every 30 s while live)
+function applyState(d, polled) {
+  {
     failures = 0; banner('b-unreachable', false);
     cfg = Object.assign(cfg, d.config); clips = d.clips || [];
     applyTheme(cfg.theme);
@@ -1699,7 +1755,7 @@ async function poll() {
     const ob = cfg.obs || {};
     banner('b-replaystop', !!ob.connected && !ob.replayActive);
     banner('b-paused', !!(cfg.scanning && cfg.scanning.paused));
-    if (page !== 'clips') { pollT = setTimeout(poll, 3000); return; }
+    if (page !== 'clips') return;
     clips.forEach(c => { if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; if (document.activeElement !== $('title')) $('title').value = c.title || ''; } });
     renderList();
     if (clips.length) {
@@ -1719,24 +1775,19 @@ async function poll() {
     banner('b-failed', failed, failed ? (d.last.error || 'unknown error') : '');
     if (!busy) setDot(failed ? 'err' : '', failed ? 'Last share failed' : 'Service running');
     const paused = !!(cfg.scanning && cfg.scanning.paused);
-    const stuck = !paused && d.scanAt && (Date.now() - new Date(d.scanAt).getTime()) > 30000;
-    banner('b-scan', !!stuck, stuck ? `for ${Math.round((Date.now() - new Date(d.scanAt).getTime()) / 1000)} s - the folder watcher stopped reporting. Check the log on the PC.` : '');
-    if (stuck && !busy && !failed) setDot('warn', 'Clip scan stuck');
-  } catch (e) {
-    if (e.message === 'login required') return;
-    failures++;
-    banner('b-unreachable', true, `(${e.message}) - attempt ${failures}, retrying every 3 s. Is replaycut running on the PC? Look for the tray icon.`);
-    setDot('off', 'Service not responding');
-    if (page === 'clips' && !clips.length) showEmpty('offline');
+    if (polled) {
+      const stuck = !paused && d.scanAt && (Date.now() - new Date(d.scanAt).getTime()) > 30000;
+      banner('b-scan', !!stuck, stuck ? `for ${Math.round((Date.now() - new Date(d.scanAt).getTime()) / 1000)} s - the folder watcher stopped reporting. Check the log on the PC.` : '');
+      if (stuck && !busy && !failed) setDot('warn', 'Clip scan stuck');
+    }
   }
-  pollT = setTimeout(poll, 3000);
 }
 poll.now = () => { clearTimeout(pollT); pollT = setTimeout(poll, 50); };
 
 // ------------------------------------------------------------ start
 (async function init() {
   if (page === 'login') { initLogin(); return; }
-  refreshUpdate();
+  refreshUpdate(); startEvents();
   if (page === 'setup') { initSetup(); poll(); return; }
   if (page === 'settings') { initSettings(); poll(); return; }
   if (page === 'diagnostics') { initDiagnostics(); poll(); return; }

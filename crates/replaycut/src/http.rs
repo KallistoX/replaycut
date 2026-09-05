@@ -33,6 +33,7 @@ pub fn router(state: App) -> Router {
         .route("/login", get(ui))
         .route("/obs", get(ui))
         .route("/api/clips", get(clips))
+        .route("/api/events", get(events))
         .route("/api/clips/{base}", axum::routing::delete(delete_clip))
         .route(
             "/api/clips/{base}/name",
@@ -156,6 +157,72 @@ async fn ui(State(app): State<App>) -> Result<Response, ApiError> {
 
 async fn clips(State(app): State<App>) -> Json<Value> {
     Json(app.status())
+}
+
+/// Counts an open event stream; the count drops with the stream.
+struct SseGuard(App);
+
+impl Drop for SseGuard {
+    fn drop(&mut self) {
+        self.0
+            .sse_clients
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+const MAX_SSE_CLIENTS: usize = 8;
+
+/// `GET /api/events` (since 2.4): the `/api/clips` document as an
+/// `event: state` whenever something changed (bursts coalesced), a ping
+/// every 25 s, closed on shutdown so a restart does not wait for it.
+async fn events(State(app): State<App>) -> Response {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use std::sync::atomic::Ordering;
+    if app.sse_clients.fetch_add(1, Ordering::Relaxed) >= MAX_SSE_CLIENTS {
+        app.sse_clients.fetch_sub(1, Ordering::Relaxed);
+        return ApiError::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "too many event streams open - the page falls back to polling",
+        )
+        .into_response();
+    }
+    let guard = SseGuard(app.clone());
+    let rx = app.events.subscribe();
+    let shutdown = app.shutdown.get().cloned();
+    let stream = futures_util::stream::unfold(
+        (rx, app, guard, shutdown, true),
+        |(mut rx, app, guard, shutdown, first)| async move {
+            if !first {
+                let changed = rx.changed();
+                let stop = async {
+                    match &shutdown {
+                        Some(s) => {
+                            s.wait().await;
+                        }
+                        None => std::future::pending::<()>().await,
+                    }
+                };
+                tokio::select! {
+                    r = changed => r.ok()?,
+                    _ = stop => return None,
+                }
+                // a burst of changes (job progress, scan) becomes one event
+                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                rx.borrow_and_update();
+            }
+            let data = app.status().to_string();
+            let event: Result<Event, std::convert::Infallible> =
+                Ok(Event::default().event("state").data(data));
+            Some((event, (rx, app, guard, shutdown, false)))
+        },
+    );
+    Sse::new(stream)
+        .keep_alive(
+            KeepAlive::new()
+                .interval(std::time::Duration::from_secs(25))
+                .text("ping"),
+        )
+        .into_response()
 }
 
 async fn history(State(app): State<App>) -> Json<Value> {

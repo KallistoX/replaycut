@@ -648,6 +648,16 @@ the keyframe before `start`, so the job reports `actualStart` (seconds,
 an AV1 or HEVC recording plays in Chrome, Edge and Firefox; Discord embeds and
 iPhones need `h264`.
 
+### `GET /api/events`
+
+A Server-Sent Events stream (`text/event-stream`). On connect and after
+every change the service sends `event: state` with the `GET /api/clips`
+document as `data`; bursts of changes (job progress, a scan) become one
+event. A `ping` comment goes out every 25 s. At most 8 streams are open at a
+time, a ninth answers 503; the UI then polls `/api/clips` every 3 s as before
+2.4 and tries the stream again later. The stream ends when the service shuts
+down, so a restart does not wait for open connections.
+
 ## Behaviour
 
 ### Folder scan

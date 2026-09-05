@@ -307,6 +307,10 @@ pub struct AppState {
     pub inner: Mutex<Inner>,
     /// One token per known job; cancelling it ends the running pipeline.
     pub cancels: Mutex<HashMap<String, CancellationToken>>,
+    /// Bumped on every change the UI cares about; `GET /api/events` listens (since 2.4).
+    pub events: tokio::sync::watch::Sender<u64>,
+    /// Open event streams, capped in the handler.
+    pub sse_clients: std::sync::atomic::AtomicUsize,
     /// Shares that had to retry with software decoding since start (since 2.4).
     pub encoder_fallbacks: std::sync::atomic::AtomicU32,
     /// The storage quota, when the account has one (since 2.4).
@@ -450,6 +454,8 @@ impl AppState {
             cancels: Mutex::new(HashMap::new()),
             quota: Mutex::new(None),
             encoder_fallbacks: std::sync::atomic::AtomicU32::new(0),
+            events: tokio::sync::watch::channel(0u64).0,
+            sse_clients: std::sync::atomic::AtomicUsize::new(0),
             quota_wake: Notify::new(),
             scan_wake: Notify::new(),
             scanning_paused: std::sync::atomic::AtomicBool::new(false),
@@ -574,6 +580,7 @@ impl AppState {
             _ => None,
         });
         *self.quota.lock() = quota;
+        self.tray_changed();
     }
 
     /// Ask the storage account for its quota (one request; errors clear it).
@@ -592,11 +599,12 @@ impl AppState {
         self.set_quota(info.as_ref());
     }
 
-    /// Tell the tray that clips or jobs changed.
+    /// Tell the tray and the event streams that clips, jobs or status changed.
     pub fn tray_changed(&self) {
         if let Some(tray) = self.tray.get() {
             tray.refresh();
         }
+        self.events.send_modify(|v| *v = v.wrapping_add(1));
     }
 
     // --- persistence (called with the lock held; the files are tiny) ---
@@ -718,6 +726,7 @@ impl AppState {
         }
         self.save_names(&inner);
         tracing::info!("title for {base}: {title:?}");
+        self.tray_changed();
         Ok(title)
     }
 
@@ -743,6 +752,7 @@ impl AppState {
     pub fn forget_clip(&self, base: &str) {
         let mut inner = self.inner.lock();
         inner.clips.remove(base);
+        self.events.send_modify(|v| *v = v.wrapping_add(1));
         if inner.names.remove(base).is_some() {
             self.save_names(&inner);
         }

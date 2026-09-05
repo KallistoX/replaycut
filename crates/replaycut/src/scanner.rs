@@ -120,6 +120,8 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
     let known: Vec<String> = state.inner.lock().clips.keys().cloned().collect();
     let mut retry: Option<Duration> = None;
     let mut seen_dirty = false;
+    // only a changed clip set wakes the tray and the event streams
+    let mut changed = false;
 
     for (path, mtime, size) in &files {
         let Some(base) = path
@@ -191,6 +193,7 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
             let (new_to_seen, ready) = {
                 let mut inner = state.inner.lock();
                 inner.clips.insert(base.clone(), clip.clone());
+                changed = true;
                 (inner.seen.insert(base.clone()), inner.seen_ready)
             };
             if new_to_seen {
@@ -231,6 +234,7 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
             Ok(()) => {
                 if let Some(c) = state.inner.lock().clips.get_mut(&base) {
                     c.thumb = Some(format!("/media/{}.jpg", util::encode_path_segment(&base)));
+                    changed = true;
                 }
             }
             Err(e) => {
@@ -249,7 +253,11 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
         .collect();
     {
         let mut inner = state.inner.lock();
+        let before = inner.clips.len();
         inner.clips.retain(|base, _| existing.contains(base));
+        if inner.clips.len() != before {
+            changed = true;
+        }
         let before = inner.seen.len();
         inner.seen.retain(|base| existing.contains(base));
         if inner.seen.len() != before {
@@ -261,7 +269,9 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
         inner.seen_ready = true;
         inner.scan_at = Some(util::now_local());
     }
-    state.tray_changed();
+    if changed {
+        state.tray_changed();
+    }
     if let Ok(previews) = std::fs::read_dir(&paths.preview_dir) {
         for p in previews.flatten() {
             let path = p.path();

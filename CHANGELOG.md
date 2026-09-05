@@ -33,6 +33,13 @@ contract.
   time for 30 s of 1440p60). `hwaccel` gains `auto` (the default) and `none`.
 - `replaycut bench`: encodes part of the newest clip with every profile and
   prints wall time, CPU time and speed.
+- The page listens to `GET /api/events` (Server-Sent Events) instead of
+  asking every 3 s: changes show up at once, an idle page costs nothing,
+  and a restart no longer waits for open connections. Polling stays as the
+  fallback.
+- The title field suggests the recording day and time as a placeholder;
+  Enter on the empty field takes it.
+- A keyboard shortcut list behind the "?" button and the "?" key.
 
 ### Changed
 
