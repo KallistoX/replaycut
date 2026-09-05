@@ -12,7 +12,7 @@ grows; nothing is generated at build time.
 | `components.html` | The component sheet: every component in every state, both themes, a live contrast table, the UI icon sprite. |
 | `mockups/*.html` | One mockup per page with a state switcher (bottom left) and a theme switcher. Widths come from the window: 1000 px and up is two columns on the clips page, 700 px is "the window beside the game", 375 px is a phone. |
 | `mockups/mock.js`, `mock.css` | The switchers. Not part of the UI, except the three `matchMedia` lines that open the clip list on wide screens. |
-| `icons/` | SVG sources of the app icon and the two tray states, `mkico`, the tool that renders them to `.ico`, and `social.svg`, the 1280x640 social preview for the GitHub repository. |
+| `icons/` | SVG sources of the app icon and the two tray states, `mkico`, the tool that renders them to `.ico`, and `social.svg`, the 1280x640 social preview for the GitHub repository (rendered to `social.png`). |
 
 Open any of the HTML files straight from disk; there is no build step and
 no external asset.
