@@ -36,67 +36,202 @@ pub enum Notify {
     Discord(Discord),
 }
 
+/// A configured storage as a share target (since 2.5). `id` is what
+/// `POST /api/share` takes as `target`.
+pub struct StorageEntry {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub storage: Storage,
+    /// The target of the plain "Share" button.
+    pub quick_share: bool,
+}
+
+/// A configured notify integration (since 2.5).
+pub struct NotifyEntry {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub notify: Notify,
+    /// Posts every share without being asked.
+    pub auto_post: bool,
+}
+
+pub const TARGET_FILE: &str = "file";
+
+/// Every integration replaycut knows, whether configured or not: id, label,
+/// kind. `config.targets` lists them with their state so the UI can offer
+/// them; adding an integration means one line here plus a settings block,
+/// a credential constant, a `Storage`/`Notify` variant, a card and a
+/// diagnostics row.
+pub const KNOWN_TARGETS: [(&str, &str, &str); 2] = [
+    ("nextcloud", "Nextcloud", "storage"),
+    ("discord", "Discord", "notify"),
+];
+
 pub struct Integrations {
-    pub storage: Option<Storage>,
-    pub notify: Option<Notify>,
+    pub storages: Vec<StorageEntry>,
+    pub notifies: Vec<NotifyEntry>,
 }
 
 impl Integrations {
     /// Build from settings and the Credential Manager. An enabled integration
     /// without credentials is disabled with a warning, not an error.
     pub fn build(settings: &Settings, dry_run: bool) -> Result<Self> {
+        let nc = &settings.integrations.nextcloud;
+        let dc = &settings.integrations.discord;
         if dry_run {
             return Ok(Self {
-                storage: Some(Storage::DryRun {
-                    folder: settings.integrations.nextcloud.folder.clone(),
-                }),
-                notify: Some(Notify::DryRun),
+                storages: vec![StorageEntry {
+                    id: "nextcloud",
+                    label: "Nextcloud",
+                    storage: Storage::DryRun {
+                        folder: nc.folder.clone(),
+                    },
+                    quick_share: nc.quick_share,
+                }],
+                notifies: vec![NotifyEntry {
+                    id: "discord",
+                    label: "Discord",
+                    notify: Notify::DryRun,
+                    auto_post: dc.auto_post,
+                }],
             });
         }
-        let mut storage = None;
-        if settings.integrations.nextcloud.enabled {
+        let mut storages = Vec::new();
+        if nc.enabled {
             match credentials::read(credentials::NEXTCLOUD)? {
-                Some(cred) => {
-                    storage = Some(Storage::Nextcloud(Nextcloud::new(
-                        settings,
-                        cred.user,
-                        cred.secret,
-                    )?))
-                }
+                Some(cred) => storages.push(StorageEntry {
+                    id: "nextcloud",
+                    label: "Nextcloud",
+                    storage: Storage::Nextcloud(Nextcloud::new(settings, cred.user, cred.secret)?),
+                    quick_share: nc.quick_share,
+                }),
                 None => tracing::warn!(
                     "Nextcloud is enabled but has no credentials - run `replaycut setup`"
                 ),
             }
         }
-        let mut notify = None;
-        if settings.integrations.discord.enabled {
+        let mut notifies = Vec::new();
+        if dc.enabled {
             match credentials::read(credentials::DISCORD_WEBHOOK)? {
-                Some(cred) => {
-                    notify = Some(Notify::Discord(Discord::new(
+                Some(cred) => notifies.push(NotifyEntry {
+                    id: "discord",
+                    label: "Discord",
+                    notify: Notify::Discord(Discord::new(
                         cred.secret,
                         settings.display_name.clone(),
-                    )?))
-                }
+                    )?),
+                    auto_post: dc.auto_post,
+                }),
                 None => {
                     tracing::warn!("Discord is enabled but has no webhook - run `replaycut setup`")
                 }
             }
         }
-        Ok(Self { storage, notify })
+        Ok(Self { storages, notifies })
+    }
+
+    /// The storage behind the plain "Share" button, if one is configured.
+    pub fn default_storage(&self) -> Option<&StorageEntry> {
+        self.storages.iter().find(|s| s.quick_share)
+    }
+
+    pub fn storage(&self, id: &str) -> Option<&StorageEntry> {
+        self.storages.iter().find(|s| s.id == id)
+    }
+
+    /// Resolve a `target` from the API: empty means the default (or `file`
+    /// when none), `file` means no upload, anything else must be configured.
+    pub fn resolve_target(&self, target: &str) -> Option<String> {
+        if target.is_empty() {
+            return Some(
+                self.default_storage()
+                    .map(|s| s.id.to_string())
+                    .unwrap_or_else(|| TARGET_FILE.to_string()),
+            );
+        }
+        if target == TARGET_FILE || self.storage(target).is_some() {
+            return Some(target.to_string());
+        }
+        None
+    }
+
+    /// Notify integrations that post every share.
+    pub fn auto_notifies(&self) -> impl Iterator<Item = &NotifyEntry> {
+        self.notifies.iter().filter(|n| n.auto_post)
+    }
+
+    /// `config.targets`: every known integration with its state.
+    pub fn targets(&self, settings: &Settings) -> Value {
+        let enabled = |id: &str| match id {
+            "nextcloud" => settings.integrations.nextcloud.enabled,
+            "discord" => settings.integrations.discord.enabled,
+            _ => false,
+        };
+        Value::Array(
+            KNOWN_TARGETS
+                .iter()
+                .map(|(id, label, kind)| {
+                    let mut v = serde_json::json!({
+                        "id": id, "label": label, "kind": kind, "enabled": enabled(id),
+                    });
+                    if *kind == "storage" {
+                        let s = self.storage(id);
+                        v["connected"] = Value::Bool(s.is_some());
+                        v["quickShare"] = Value::Bool(s.is_some_and(|s| s.quick_share));
+                    } else {
+                        let n = self.notifies.iter().find(|n| n.id == *id);
+                        v["connected"] = Value::Bool(n.is_some());
+                        v["autoPost"] = Value::Bool(n.is_some_and(|n| n.auto_post));
+                    }
+                    v
+                })
+                .collect(),
+        )
     }
 
     pub fn describe(&self) -> String {
-        let s = match &self.storage {
-            Some(Storage::DryRun { .. }) => "storage: dry run",
-            Some(Storage::Nextcloud(_)) => "storage: Nextcloud",
-            None => "storage: none",
+        let name = |id: &str, dry: bool| {
+            if dry {
+                format!("{id} (dry run)")
+            } else {
+                id.to_string()
+            }
         };
-        let n = match &self.notify {
-            Some(Notify::DryRun) => "notify: dry run",
-            Some(Notify::Discord(_)) => "notify: Discord",
-            None => "notify: none",
-        };
-        format!("{s}, {n}")
+        let s: Vec<String> = self
+            .storages
+            .iter()
+            .map(|e| {
+                let mut n = name(e.label, matches!(e.storage, Storage::DryRun { .. }));
+                if e.quick_share {
+                    n.push_str(" [quick share]");
+                }
+                n
+            })
+            .collect();
+        let n: Vec<String> = self
+            .notifies
+            .iter()
+            .map(|e| {
+                let mut n = name(e.label, matches!(e.notify, Notify::DryRun));
+                if e.auto_post {
+                    n.push_str(" [auto]");
+                }
+                n
+            })
+            .collect();
+        format!(
+            "storage: {}, notify: {}",
+            if s.is_empty() {
+                "none".to_string()
+            } else {
+                s.join(", ")
+            },
+            if n.is_empty() {
+                "none".to_string()
+            } else {
+                n.join(", ")
+            }
+        )
     }
 }
 

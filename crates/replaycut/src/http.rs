@@ -44,6 +44,7 @@ pub fn router(state: App) -> Router {
         .route("/api/jobs/{id}/open-folder", post(job_open_folder))
         .route("/api/jobs/{id}/copy-file", post(job_copy_file))
         .route("/api/jobs/{id}/cancel", post(job_cancel))
+        .route("/api/jobs/{id}/publish", post(job_publish))
         .route("/api/share", post(share))
         .route("/api/save", post(save))
         .route("/media/{file}", get(media))
@@ -328,7 +329,12 @@ async fn delete_clip(
     }
     let remote_deleted = if remote {
         let runtime = app.runtime();
-        let Some(storage) = &runtime.integrations.storage else {
+        // remote copies live in Nextcloud (the only storage with a delete so far)
+        let Some(storage) = runtime
+            .integrations
+            .storage("nextcloud")
+            .map(|e| &e.storage)
+        else {
             return Err(ApiError::new(
                 StatusCode::BAD_REQUEST,
                 "no storage integration is enabled",
@@ -388,6 +394,7 @@ async fn share(State(app): State<App>, body: Bytes) -> Response {
         end: number(&v["end"]),
         audio: v["audio"].as_str().unwrap_or("").to_string(),
         mode: v["mode"].as_str().unwrap_or("").to_string(),
+        target: v["target"].as_str().unwrap_or("").to_string(),
     };
     match share::start(&app, req) {
         Ok((id, position)) => {
@@ -414,8 +421,48 @@ async fn share(State(app): State<App>, body: Bytes) -> Response {
         Err(ShareError::UnknownClip(base)) => {
             ApiError::new(StatusCode::NOT_FOUND, format!("unknown clip: {base}")).into_response()
         }
+        Err(ShareError::UnknownJob(id)) => {
+            ApiError::new(StatusCode::NOT_FOUND, format!("unknown job: {id}")).into_response()
+        }
         Err(ShareError::Invalid(msg)) => {
             ApiError::new(StatusCode::BAD_REQUEST, msg).into_response()
+        }
+    }
+}
+
+/// `POST /api/jobs/<id>/publish { target }` (since 2.5): the finished file
+/// of a job goes to another storage, without cutting again.
+async fn job_publish(State(app): State<App>, Path(id): Path<String>, body: Bytes) -> Response {
+    let v = parse_body(&body);
+    let target = v["target"].as_str().unwrap_or("");
+    match share::publish(&app, &id, target) {
+        Ok((job, position)) => {
+            if position == 0 {
+                tokio::spawn(share::run(app.clone(), job.clone()));
+            }
+            (
+                StatusCode::ACCEPTED,
+                Json(json!({ "ok": true, "job": job, "position": position, "source": id })),
+            )
+                .into_response()
+        }
+        Err(ShareError::UnknownJob(id)) => {
+            ApiError::new(StatusCode::NOT_FOUND, format!("unknown job: {id}")).into_response()
+        }
+        Err(ShareError::Busy(job)) => (
+            StatusCode::CONFLICT,
+            Json(json!({ "ok": false, "error": "this publish is already running or waiting", "job": job })),
+        )
+            .into_response(),
+        Err(ShareError::QueueFull) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            [("Retry-After", "30")],
+            Json(json!({ "ok": false, "error": "too many shares are waiting - try again in a moment" })),
+        )
+            .into_response(),
+        Err(ShareError::Invalid(msg)) => ApiError::new(StatusCode::BAD_REQUEST, msg).into_response(),
+        Err(ShareError::UnknownClip(base)) => {
+            ApiError::new(StatusCode::NOT_FOUND, format!("unknown clip: {base}")).into_response()
         }
     }
 }

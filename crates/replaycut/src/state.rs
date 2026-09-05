@@ -115,6 +115,12 @@ pub struct Job {
     // since 2.4: `h264` (re-encode, the default) or `copy` (keyframe-accurate, no re-encode)
     #[serde(default = "default_mode")]
     pub mode: String,
+    // since 2.5: the storage this job goes to, or `file`; empty in history entries from before
+    #[serde(default)]
+    pub target: String,
+    // since 2.5: a publish job re-uses the file of this finished job
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     // since 2.4, copy mode: where the file really starts (the keyframe before `start`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actual_start: Option<f64>,
@@ -586,7 +592,11 @@ impl AppState {
     /// Ask the storage account for its quota (one request; errors clear it).
     pub async fn refresh_quota(&self) {
         let runtime = self.runtime();
-        let info = match &runtime.integrations.storage {
+        let info = match runtime
+            .integrations
+            .storage("nextcloud")
+            .map(|e| &e.storage)
+        {
             Some(Storage::Nextcloud(nc)) => match nc.user_info().await {
                 Ok(i) => Some(i),
                 Err(e) => {
@@ -670,8 +680,9 @@ impl AppState {
         let runtime = self.runtime();
         let obs = self.obs.status();
         let settings = self.settings.read();
-        let nextcloud = runtime.integrations.storage.is_some();
-        let webhook = runtime.integrations.notify.is_some();
+        let nextcloud = runtime.integrations.default_storage().is_some();
+        let webhook = runtime.integrations.auto_notifies().next().is_some();
+        let targets = runtime.integrations.targets(&settings);
         json!({
             "clips": clips,
             "last": inner.last,
@@ -701,6 +712,8 @@ impl AppState {
                 "scanning": { "paused": self.scanning_paused() },
                 // since 2.4
                 "quota": *self.quota.lock(),
+                // since 2.5
+                "targets": targets,
             }
         })
     }

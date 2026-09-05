@@ -10,6 +10,21 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- Share targets: every configured storage is a target, `POST /api/share`
+  takes `target` (a storage id or `file`), the default is the storage marked
+  "quick share" in the settings. `config.targets` lists the integrations
+  with their state.
+- Publish again: `POST /api/jobs/<id>/publish` sends the finished file of a
+  share to another storage without cutting it again.
+
+### Changed
+
+- The post stage of a job is called `notify` (was `discord`); the status
+  text stays in `discord`. Settings gain `integrations.nextcloud.quickShare`
+  and `integrations.discord.autoPost`, both default on.
+
 ## [2.4.0] - 2026-09-05
 
 Cutting gets comfortable: shares queue up and can be cancelled, every clip

@@ -86,12 +86,31 @@ pub struct Nextcloud {
     pub folder: String,
     /// Public links expire after this many days; 0 = never.
     pub expire_days: u32,
+    /// The target of the plain "Share" button (since 2.5; one storage at most).
+    #[serde(default = "default_true")]
+    pub quick_share: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Discord {
     pub enabled: bool,
+    /// Posts every share without being asked (since 2.5).
+    #[serde(default = "default_true")]
+    pub auto_post: bool,
+}
+
+impl Default for Discord {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            auto_post: true,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Nextcloud {
@@ -101,6 +120,7 @@ impl Default for Nextcloud {
             url: "https://cloud.example.com".into(),
             folder: "Clips".into(),
             expire_days: 0,
+            quick_share: true,
         }
     }
 }

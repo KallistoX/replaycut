@@ -27,6 +27,8 @@ pub struct ShareRequest {
     pub audio: String,
     /// `h264` (default) or `copy` (since 2.4).
     pub mode: String,
+    /// A storage id, `file`, or empty for the default (since 2.5).
+    pub target: String,
 }
 
 pub const SHARE_MODES: [&str; 2] = ["h264", "copy"];
@@ -34,6 +36,8 @@ pub const SHARE_MODES: [&str; 2] = ["h264", "copy"];
 #[derive(Debug)]
 pub enum ShareError {
     UnknownClip(String),
+    /// `publish` of a job id nobody knows.
+    UnknownJob(String),
     /// The same share is already running or waiting; carries its id.
     Busy(String),
     Invalid(String),
@@ -181,7 +185,85 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
                 && (j.end - end).abs() < 0.005
                 && j.audio == audio
                 && j.mode == share_mode
+                && j.source.is_none()
         })
+        .map(|j| j.id.clone());
+    if let Some(id) = duplicate {
+        return Err(ShareError::Busy(id));
+    }
+    if inner.queue.len() >= MAX_QUEUE {
+        return Err(ShareError::QueueFull);
+    }
+    let target = state
+        .runtime()
+        .integrations
+        .resolve_target(&req.target)
+        .ok_or_else(|| {
+            ShareError::Invalid(format!(
+                "unknown or unconfigured target: {} (a storage id or 'file')",
+                req.target
+            ))
+        })?;
+    let mut id = random_token(8);
+    while inner.jobs.contains_key(&id) {
+        id = random_token(8);
+    }
+    let job = Job {
+        id: id.clone(),
+        base: clip.base.clone(),
+        target,
+        start,
+        end,
+        seconds,
+        audio,
+        mode: share_mode,
+        kbps: state.settings().share_kbps,
+        stage: "queued".into(),
+        percent: 0,
+        at: util::now_local(),
+        ..Job::default()
+    };
+    let position = state.register_job(&mut inner, job);
+    Ok((id, position))
+}
+
+/// `POST /api/jobs/<id>/publish` (since 2.5): send the file of a finished
+/// job to another target without cutting again. Returns id and position.
+pub fn publish(
+    state: &AppState,
+    source: &str,
+    target: &str,
+) -> Result<(String, usize), ShareError> {
+    let mut inner = state.inner.lock();
+    let src = inner
+        .jobs
+        .get(source)
+        .cloned()
+        .ok_or_else(|| ShareError::UnknownJob(source.to_string()))?;
+    let Some(file) = src.file.clone().filter(|_| src.ok == Some(true)) else {
+        return Err(ShareError::Invalid(
+            "the source job has no finished file".to_string(),
+        ));
+    };
+    if !state.paths().shared_dir.join(&file).is_file() {
+        return Err(ShareError::Invalid("the shared file is gone".to_string()));
+    }
+    let runtime = state.runtime();
+    let target = runtime
+        .integrations
+        .resolve_target(target)
+        .filter(|t| t != crate::integrations::TARGET_FILE)
+        .ok_or_else(|| {
+            ShareError::Invalid(format!(
+                "publish needs a configured storage target, not '{target}'"
+            ))
+        })?;
+    let duplicate = inner
+        .current_job
+        .iter()
+        .chain(inner.queue.iter())
+        .filter_map(|id| inner.jobs.get(id))
+        .find(|j| j.source.as_deref() == Some(source) && j.target == target)
         .map(|j| j.id.clone());
     if let Some(id) = duplicate {
         return Err(ShareError::Busy(id));
@@ -195,15 +277,21 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
     }
     let job = Job {
         id: id.clone(),
-        base: clip.base.clone(),
-        start,
-        end,
-        seconds,
-        audio,
-        mode: share_mode,
-        kbps: state.settings().share_kbps,
+        base: src.base.clone(),
+        target,
+        source: Some(source.to_string()),
+        start: src.start,
+        end: src.end,
+        seconds: src.seconds,
+        audio: src.audio.clone(),
+        mode: src.mode.clone(),
+        kbps: src.kbps,
+        title: src.title.clone(),
+        file: Some(file),
+        size_mb: src.size_mb,
+        actual_start: src.actual_start,
         stage: "queued".into(),
-        percent: 0,
+        percent: 100,
         at: util::now_local(),
         ..Job::default()
     };
@@ -249,7 +337,11 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
     // it runs does not swap integrations or encoder under its feet.
     let runtime = state.runtime();
     let settings = state.settings();
-    let (clip_path, title) = {
+    // A publish job (since 2.5) re-uses the file of its source; a share cuts one.
+    let republish = job.source.is_some();
+    let (clip_path, title) = if republish {
+        (PathBuf::new(), job.title.clone().unwrap_or_default())
+    } else {
         let inner = state.inner.lock();
         let clip = inner
             .clips
@@ -260,8 +352,29 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
             inner.names.get(&job.base).cloned().unwrap_or_default(),
         )
     };
-    let file_name = share_file_name(&job.base, job.start, job.end, &slug(&title));
+    let file_name = match &job.file {
+        Some(f) if republish => f.clone(),
+        _ => share_file_name(&job.base, job.start, job.end, &slug(&title)),
+    };
     let out = state.paths().shared_dir.join(&file_name);
+    // the storage this job goes to, or none for `file`
+    let storage = if job.target == crate::integrations::TARGET_FILE {
+        None
+    } else {
+        Some(
+            runtime
+                .integrations
+                .storage(&job.target)
+                .ok_or_else(|| anyhow!("target '{}' is no longer configured", job.target))?,
+        )
+    };
+    if republish {
+        tracing::info!(
+            "publish [{id}]: {file_name} from job {} -> {}",
+            job.source.as_deref().unwrap_or("?"),
+            job.target
+        );
+    }
     let mode_label = AUDIO_MODES
         .iter()
         .find(|m| m.id == job.audio)
@@ -280,67 +393,70 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         }
     );
 
-    // encode
-    state.with_job(id, |j| {
-        j.stage = "encode".into();
-        j.title = Some(title.clone());
-    });
-    let started = Instant::now();
-    // The GPU path may fail on a driver quirk: try once more with software
-    // decoding and CPU scaling before giving up (since 2.4).
-    let profile = runtime.encoder.clone();
-    if let Err(e) = encode(state, id, &job, &clip_path, &out, token, &profile).await {
-        if token.is_cancelled() || job.mode == "copy" || !profile.is_gpu_path() {
-            return Err(e);
-        }
-        tracing::warn!(
-            "share [{id}]: {} failed ({e:#}) - retrying with software decoding",
-            profile.label
-        );
-        state
-            .encoder_fallbacks
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let _ = std::fs::remove_file(&out);
-        encode(
-            state,
-            id,
-            &job,
-            &clip_path,
-            &out,
-            token,
-            &profile.software_fallback(),
-        )
-        .await?;
-    }
-    let size_mb = (std::fs::metadata(&out)?.len() as f64 / 1_048_576.0 * 100.0).round() / 100.0;
-    // copy mode cuts at the keyframe before `start`: say where the file really begins
-    let actual_start = if job.mode == "copy" {
-        let len = runtime.media.duration(&out).await.unwrap_or(job.seconds);
-        let s = ((job.start - (len - job.seconds)).max(0.0) * 100.0).round() / 100.0;
-        if s < job.start {
-            tracing::info!(
-                "share [{id}]: copy starts {:.1} s earlier (keyframe)",
-                job.start - s
+    // encode (skipped when the file already exists from the source job)
+    if !republish {
+        state.with_job(id, |j| {
+            j.stage = "encode".into();
+            j.title = Some(title.clone());
+        });
+        let started = Instant::now();
+        // The GPU path may fail on a driver quirk: try once more with software
+        // decoding and CPU scaling before giving up (since 2.4).
+        let profile = runtime.encoder.clone();
+        if let Err(e) = encode(state, id, &job, &clip_path, &out, token, &profile).await {
+            if token.is_cancelled() || job.mode == "copy" || !profile.is_gpu_path() {
+                return Err(e);
+            }
+            tracing::warn!(
+                "share [{id}]: {} failed ({e:#}) - retrying with software decoding",
+                profile.label
             );
+            state
+                .encoder_fallbacks
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let _ = std::fs::remove_file(&out);
+            encode(
+                state,
+                id,
+                &job,
+                &clip_path,
+                &out,
+                token,
+                &profile.software_fallback(),
+            )
+            .await?;
         }
-        Some(s)
-    } else {
-        None
-    };
-    state.with_job(id, |j| {
-        j.percent = 100;
-        j.size_mb = Some(size_mb);
-        j.file = Some(file_name.clone());
-        j.actual_start = actual_start;
-    });
-    tracing::info!(
-        "share [{id}]: encoded in {} s, {size_mb} MB",
-        started.elapsed().as_secs()
-    );
+        let size_mb = (std::fs::metadata(&out)?.len() as f64 / 1_048_576.0 * 100.0).round() / 100.0;
+        // copy mode cuts at the keyframe before `start`: say where the file really begins
+        let actual_start = if job.mode == "copy" {
+            let len = runtime.media.duration(&out).await.unwrap_or(job.seconds);
+            let s = ((job.start - (len - job.seconds)).max(0.0) * 100.0).round() / 100.0;
+            if s < job.start {
+                tracing::info!(
+                    "share [{id}]: copy starts {:.1} s earlier (keyframe)",
+                    job.start - s
+                );
+            }
+            Some(s)
+        } else {
+            None
+        };
+        state.with_job(id, |j| {
+            j.percent = 100;
+            j.size_mb = Some(size_mb);
+            j.file = Some(file_name.clone());
+            j.actual_start = actual_start;
+        });
+        tracing::info!(
+            "share [{id}]: encoded in {} s, {size_mb} MB",
+            started.elapsed().as_secs()
+        );
+    }
 
     // upload
     let mut direct: Option<String> = None;
-    if let Some(storage) = &runtime.integrations.storage {
+    if let Some(entry) = storage {
+        let storage = &entry.storage;
         state.with_job(id, |j| j.stage = "upload".into());
         let month = month_of(&job.base);
         let published = tokio::select! {
@@ -370,26 +486,41 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         state.quota_wake.notify_one();
     }
 
-    // notify
-    if let (Some(notify), Some(direct)) = (&runtime.integrations.notify, direct) {
-        state.with_job(id, |j| j.stage = "discord".into());
-        let prefix = &settings.display_name;
-        let label = post_label(prefix, &job.base, &title);
-        let text = format!(
-            "**{prefix}** {label} ({} s) - {direct}",
-            job.seconds.round() as i64
-        );
-        let status = match notify.post(&text).await {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::warn!("share [{id}]: post failed: {e:#}");
-                format!("post failed: {e}")
+    // notify: every integration that posts automatically (stage `notify` since 2.5)
+    if let Some(direct) = direct {
+        let notifies: Vec<_> = runtime.integrations.auto_notifies().collect();
+        if !notifies.is_empty() {
+            state.with_job(id, |j| j.stage = "notify".into());
+            let prefix = &settings.display_name;
+            let label = post_label(prefix, &job.base, &title);
+            let text = format!(
+                "**{prefix}** {label} ({} s) - {direct}",
+                job.seconds.round() as i64
+            );
+            let mut statuses = Vec::new();
+            for entry in notifies {
+                let status = match entry.notify.post(&text).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!("share [{id}]: {} post failed: {e:#}", entry.label);
+                        format!("post failed: {e}")
+                    }
+                };
+                tracing::info!("share [{id}]: {}: {status}", entry.label);
+                statuses.push(if notifies_len_is_one(&runtime) {
+                    status
+                } else {
+                    format!("{}: {status}", entry.label)
+                });
             }
-        };
-        tracing::info!("share [{id}]: post: {status}");
-        state.with_job(id, |j| j.discord = Some(status));
+            state.with_job(id, |j| j.discord = Some(statuses.join(" · ")));
+        }
     }
     Ok(())
+}
+
+fn notifies_len_is_one(runtime: &crate::state::Runtime) -> bool {
+    runtime.integrations.auto_notifies().count() == 1
 }
 
 async fn encode(

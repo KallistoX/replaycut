@@ -315,11 +315,12 @@ pub fn wait_job(id: &str, timeout: Duration) -> (Vec<String>, Value) {
     }
 }
 
-pub const STAGE_ORDER: [&str; 7] = [
+pub const STAGE_ORDER: [&str; 8] = [
     "queued",
     "encode",
     "upload",
     "discord",
+    "notify",
     "done",
     "error",
     "cancelled",

@@ -658,6 +658,39 @@ time, a ninth answers 503; the UI then polls `/api/clips` every 3 s as before
 2.4 and tries the stream again later. The stream ends when the service shuts
 down, so a restart does not wait for open connections.
 
+## Since 2.5
+
+### Share targets
+
+Every configured storage integration is a target; `POST /api/share` takes
+`target`: a storage id (`nextcloud`; more with 2.5.0) or `file` for no
+upload. Missing or empty means the default: the storage marked
+`quickShare` in the settings, or `file` when none is. An unknown or
+unconfigured id is a 400. The job carries `target`. Notify integrations with
+`autoPost` post every share that produced a link; their stage is `notify`
+(2.4 and earlier called it `discord`; clients accept both). The status text
+of the post stays in `discord` and names the integration when more than one
+posted.
+
+`config.targets` in `GET /api/clips` lists every integration replaycut knows:
+`[{ id, label, kind: "storage" | "notify", enabled, connected, quickShare |
+autoPost }]`. `connected` is true when the integration is enabled and has
+its credentials. `config.nextcloud` keeps meaning "a default storage is
+configured" and `config.webhook` "a notify integration posts automatically".
+
+Settings: `integrations.nextcloud.quickShare` (default true) and
+`integrations.discord.autoPost` (default true).
+
+### `POST /api/jobs/<id>/publish`
+
+`{ "target": "<storage id>" }` sends the finished file of a `done` job to
+that storage without cutting again: a new job with `source: "<id>"`, the
+same base, range, audio, mode, title and file, stages `queued -> upload ->
+notify -> done`, queued like any share (`202 { ok, job, position, source }`).
+400 for `file`, an unconfigured target or a source without a finished file;
+404 for an unknown job; 409 when the same publish is already running or
+waiting; 429 when the queue is full.
+
 ## Behaviour
 
 ### Folder scan

@@ -1262,3 +1262,109 @@ fn t32_event_stream_pushes_the_state_after_a_change() {
     assert_eq!(status, 200);
     wait_for_clip_gone(&base, Duration::from_secs(10));
 }
+
+// Since 2.5: share targets and publishing a finished job again.
+
+fn since_25() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    let ok = (major, minor) >= (2, 5);
+    if !ok {
+        eprintln!("skipped: needs replaycut 2.5, service is {v}");
+    }
+    ok
+}
+
+#[test]
+fn t33_share_targets_and_publish_again() {
+    let _g = serial();
+    if !since_25() {
+        return;
+    }
+    let base = format!("{} target", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+
+    // the known integrations with their state
+    let targets = state()["config"]["targets"].clone();
+    let list = targets.as_array().expect("config.targets is an array");
+    assert!(
+        list.iter()
+            .any(|t| t["id"] == "nextcloud" && t["kind"] == "storage"),
+        "{targets}"
+    );
+    assert!(
+        list.iter()
+            .any(|t| t["id"] == "discord" && t["kind"] == "notify"),
+        "{targets}"
+    );
+    for t in list {
+        assert!(
+            t["label"].is_string() && t["enabled"].is_boolean() && t["connected"].is_boolean(),
+            "{t}"
+        );
+    }
+
+    // an unknown target is a 400, `file` skips the upload
+    let (status, v) = post_json(
+        "/api/share",
+        &json!({ "base": base, "start": 0, "end": 2, "audio": "mix", "target": "bogus" }),
+    );
+    assert_eq!(status, 400, "{v}");
+    let (status, v) = post_json(
+        "/api/share",
+        &json!({ "base": base, "start": 0, "end": 2, "audio": "mix", "target": "file" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let (stages, job) = wait_job(v["job"].as_str().unwrap_or(""), JOB_TIMEOUT);
+    assert_eq!(job["stage"], "done", "{}", job["error"]);
+    assert_eq!(job["target"], "file");
+    assert!(
+        !stages.iter().any(|s| s == "upload"),
+        "file target must not upload: {stages:?}"
+    );
+    assert!(job.get("link").is_none() || job["link"].is_null(), "{job}");
+
+    // the default target is the quick-share storage (the dry run stands in for Nextcloud)
+    let id = share(&base, 2.0, 4.0, "mix");
+    let (stages, job) = wait_job(&id, JOB_TIMEOUT);
+    assert_stages_monotonic(&stages);
+    assert_eq!(job["stage"], "done", "{}", job["error"]);
+    assert_eq!(job["target"], "nextcloud", "{job}");
+    // the dry-run upload is too quick to be seen by a poll; the link proves it ran
+    assert!(job["link"].is_string(), "{job}");
+
+    // publish the finished file again, without cutting
+    let (status, v) = post_json(
+        &format!("/api/jobs/{id}/publish"),
+        &json!({ "target": "nextcloud" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    assert_eq!(v["source"], id.as_str());
+    let (stages, again) = wait_job(v["job"].as_str().unwrap_or(""), JOB_TIMEOUT);
+    assert_eq!(again["stage"], "done", "{}", again["error"]);
+    assert_eq!(again["source"], id.as_str());
+    assert_eq!(again["file"], job["file"], "the same file is published");
+    assert!(
+        !stages.iter().any(|s| s == "encode"),
+        "publish must not encode: {stages:?}"
+    );
+    assert!(again["link"].is_string(), "{again}");
+
+    // publish to `file` makes no sense, unknown jobs are 404
+    let (status, v) = post_json(
+        &format!("/api/jobs/{id}/publish"),
+        &json!({ "target": "file" }),
+    );
+    assert_eq!(status, 400, "{v}");
+    let (status, _) = post_json("/api/jobs/nope/publish", &json!({ "target": "nextcloud" }));
+    assert_eq!(status, 404);
+
+    let (status, _) = delete(&format!("/api/clips/{}", encode(&base)));
+    assert_eq!(status, 200);
+    wait_for_clip_gone(&base, Duration::from_secs(10));
+}
