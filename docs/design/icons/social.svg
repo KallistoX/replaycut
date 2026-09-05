@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <!-- replaycut social preview (GitHub: Settings > General > Social preview), 1280x640. Brand colours from tokens.css, not themed. Render with resvg. -->
+  <rect width="1280" height="640" fill="#111418"/>
+
+  <!-- app icon, 220 px tile -->
+  <g transform="translate(110 140) scale(3.4375)">
+    <rect width="64" height="64" rx="14" fill="#0b0e12"/>
+    <path d="M22 16v32l26-16z" fill="#f2b632"/>
+    <path d="M12 24h7M12 40h7" stroke="#f2b632" stroke-width="5" stroke-linecap="round"/>
+  </g>
+
+  <!-- wordmark and tagline -->
+  <text x="390" y="243" font-family="Segoe UI, Roboto, sans-serif" font-weight="700" font-size="112" fill="#e6e9ee" letter-spacing="-2">replaycut</text>
+  <text x="394" y="318" font-family="Segoe UI, Roboto, sans-serif" font-weight="400" font-size="40" fill="#8a94a3">Clip manager for the OBS replay buffer</text>
+
+  <!-- timeline motif: track, selected range, in/out handles -->
+  <rect x="110" y="430" width="1060" height="56" rx="10" fill="#0b0e12"/>
+  <rect x="470" y="430" width="360" height="56" fill="#f2b632" fill-opacity="0.22"/>
+  <rect x="464" y="418" width="12" height="80" rx="4" fill="#f2b632"/>
+  <rect x="824" y="418" width="12" height="80" rx="4" fill="#f2b632"/>
+  <path d="M482 458l14 -10v20z" fill="#f2b632"/>
+  <path d="M818 458l-14 -10v20z" fill="#f2b632"/>
+  <!-- faint tick marks -->
+  <path d="M170 476v-10M230 476v-10M290 476v-10M350 476v-10M410 476v-10M890 476v-10M950 476v-10M1010 476v-10M1070 476v-10M1130 476v-10" stroke="#2a313b" stroke-width="2"/>
+
+  <!-- bottom line -->
+  <text x="110" y="560" font-family="Segoe UI, Roboto, sans-serif" font-size="30" fill="#8a94a3">F9 in the game  ·  trim on your phone  ·  link in Discord</text>
+  <text x="1170" y="84" text-anchor="end" font-family="Segoe UI, Roboto, sans-serif" font-size="26" fill="#5f6876">Windows · Rust · AGPL-3.0</text>
+</svg>
