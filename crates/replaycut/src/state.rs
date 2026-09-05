@@ -15,7 +15,7 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use crate::auth::Sessions;
-use crate::integrations::Integrations;
+use crate::integrations::{Integrations, Storage, UserInfo};
 use crate::lifecycle::Shutdown;
 use crate::media::{Encoder, Media};
 use crate::platform;
@@ -77,6 +77,8 @@ pub struct Clip {
     pub width: u32,
     pub height: u32,
     pub fps: f64,
+    // since 2.4: `/media/<base>.jpg`, null until the thumbnail exists
+    pub thumb: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -110,12 +112,32 @@ pub struct Job {
     pub nc_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discord: Option<String>,
+    // since 2.4: `h264` (re-encode, the default) or `copy` (keyframe-accurate, no re-encode)
+    #[serde(default = "default_mode")]
+    pub mode: String,
+    // since 2.4, copy mode: where the file really starts (the keyframe before `start`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_start: Option<f64>,
     // since 2.4: place in the queue while `queued` (1 = next), absent otherwise
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<usize>,
     // since 2.4: ended by the user (stage `cancelled`)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub cancelled: bool,
+}
+
+fn default_mode() -> String {
+    "h264".to_string()
+}
+
+/// Nextcloud quota of the storage account, refreshed in the background (since 2.4).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Quota {
+    pub used_percent: f64,
+    pub free: u64,
+    pub total: u64,
+    pub checked_at: String,
 }
 
 impl Job {
@@ -158,6 +180,10 @@ impl Paths {
 
     pub fn preview_of(&self, base: &str) -> PathBuf {
         self.preview_dir.join(format!("{base}.mp4"))
+    }
+
+    pub fn thumb_of(&self, base: &str) -> PathBuf {
+        self.preview_dir.join(format!("{base}.jpg"))
     }
 }
 
@@ -271,6 +297,10 @@ pub struct AppState {
     pub inner: Mutex<Inner>,
     /// One token per known job; cancelling it ends the running pipeline.
     pub cancels: Mutex<HashMap<String, CancellationToken>>,
+    /// The storage quota, when the account has one (since 2.4).
+    pub quota: Mutex<Option<Quota>>,
+    /// Asks the quota loop to refresh now (after an upload, a settings change).
+    pub quota_wake: Notify,
     /// Wakes the scanner early (after a delete, for example).
     pub scan_wake: Notify,
     /// "Pause scanning" in the tray: new replays wait in the folder. RAM only.
@@ -406,6 +436,8 @@ impl AppState {
             pending_restart: Mutex::new(Vec::new()),
             inner: Mutex::new(inner),
             cancels: Mutex::new(HashMap::new()),
+            quota: Mutex::new(None),
+            quota_wake: Notify::new(),
             scan_wake: Notify::new(),
             scanning_paused: std::sync::atomic::AtomicBool::new(false),
             tray: std::sync::OnceLock::new(),
@@ -471,6 +503,7 @@ impl AppState {
         *self.settings.write() = next;
         *self.pending_restart.lock() = restart.clone();
         self.scan_wake.notify_one();
+        self.quota_wake.notify_one();
         self.tray_changed();
         Ok(restart)
     }
@@ -514,6 +547,36 @@ impl AppState {
             self.scan_wake.notify_one();
             self.tray_changed();
         }
+    }
+
+    /// Remember what the storage account reports; `None` clears it.
+    pub fn set_quota(&self, info: Option<&UserInfo>) {
+        let quota = info.and_then(|i| match (i.free, i.total) {
+            (Some(free), Some(total)) if total > 0 => Some(Quota {
+                used_percent: ((1.0 - free as f64 / total as f64) * 1000.0).round() / 10.0,
+                free,
+                total,
+                checked_at: util::now_local(),
+            }),
+            _ => None,
+        });
+        *self.quota.lock() = quota;
+    }
+
+    /// Ask the storage account for its quota (one request; errors clear it).
+    pub async fn refresh_quota(&self) {
+        let runtime = self.runtime();
+        let info = match &runtime.integrations.storage {
+            Some(Storage::Nextcloud(nc)) => match nc.user_info().await {
+                Ok(i) => Some(i),
+                Err(e) => {
+                    tracing::debug!("quota: {e:#}");
+                    None
+                }
+            },
+            _ => None,
+        };
+        self.set_quota(info.as_ref());
     }
 
     /// Tell the tray that clips or jobs changed.
@@ -615,6 +678,8 @@ impl AppState {
                 "obs": { "connected": obs.connected, "replayActive": obs.replay_active, "enabled": obs.enabled },
                 // since 2.3
                 "scanning": { "paused": self.scanning_paused() },
+                // since 2.4
+                "quota": *self.quota.lock(),
             }
         })
     }
@@ -862,6 +927,22 @@ fn read_json(path: &Path) -> Result<Value> {
     let text = std::fs::read_to_string(path)?;
     let text = text.trim_start_matches('\u{feff}');
     Ok(serde_json::from_str(text)?)
+}
+
+/// Background task: the quota five seconds after start, then every 15
+/// minutes or when `quota_wake` says so.
+pub async fn quota_loop(state: Arc<AppState>) {
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    loop {
+        state.refresh_quota().await;
+        tokio::select! {
+            _ = tokio::time::sleep(std::time::Duration::from_secs(15 * 60)) => {}
+            _ = state.quota_wake.notified() => {
+                // let a burst of changes settle
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

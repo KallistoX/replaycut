@@ -74,6 +74,23 @@ pub async fn run(state: Arc<AppState>) {
     }
 }
 
+/// Where the thumbnail is taken: the moment that made someone press F9 is
+/// near the end of the buffer.
+fn thumb_at(duration: f64) -> f64 {
+    if duration >= 15.0 {
+        duration - 10.0
+    } else {
+        (duration / 2.0).max(0.0)
+    }
+}
+
+/// Clips whose thumbnail failed once; not retried until the next start.
+fn thumb_failed() -> &'static parking_lot::Mutex<std::collections::HashSet<String>> {
+    static FAILED: std::sync::OnceLock<parking_lot::Mutex<std::collections::HashSet<String>>> =
+        std::sync::OnceLock::new();
+    FAILED.get_or_init(Default::default)
+}
+
 /// One scan. Returns how soon a re-scan is worthwhile when a file was
 /// skipped for being too young or still open.
 async fn scan(state: &AppState) -> Result<Option<Duration>> {
@@ -132,6 +149,16 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
                 runtime.media.remux_preview(path, &preview).await?;
             }
             let duration = runtime.media.duration(&preview).await?;
+            let thumb = paths.thumb_of(&base);
+            if !thumb.is_file() {
+                if let Err(e) = runtime
+                    .media
+                    .thumbnail(&preview, &thumb, thumb_at(duration))
+                    .await
+                {
+                    tracing::warn!("thumbnail for {base}: {e:#}");
+                }
+            }
             let tracks = runtime.media.audio_tracks(path).await;
             let video = runtime.media.video_info(path).await;
             let clip = Clip {
@@ -147,6 +174,9 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
                 tracks,
                 created: util::system_time_local(*mtime),
                 preview: format!("/media/{}.mp4", util::encode_path_segment(&base)),
+                thumb: thumb
+                    .is_file()
+                    .then(|| format!("/media/{}.jpg", util::encode_path_segment(&base))),
                 status: "ready",
                 codec: video.codec,
                 width: video.width,
@@ -179,7 +209,40 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
         }
     }
 
-    // Clips whose MKV disappeared, orphaned previews, stale seen entries.
+    // Clips from before thumbnails existed (or whose thumbnail failed once):
+    // one per pass, a second apart, so the first scan after the update does
+    // not hog ffmpeg.
+    let candidate = {
+        let failed = thumb_failed().lock();
+        let inner = state.inner.lock();
+        inner
+            .clips
+            .values()
+            .find(|c| c.thumb.is_none() && !failed.contains(&c.base))
+            .map(|c| (c.base.clone(), c.duration))
+    };
+    if let Some((base, duration)) = candidate {
+        let thumb = paths.thumb_of(&base);
+        match runtime
+            .media
+            .thumbnail(&paths.preview_of(&base), &thumb, thumb_at(duration))
+            .await
+        {
+            Ok(()) => {
+                if let Some(c) = state.inner.lock().clips.get_mut(&base) {
+                    c.thumb = Some(format!("/media/{}.jpg", util::encode_path_segment(&base)));
+                }
+            }
+            Err(e) => {
+                tracing::warn!("thumbnail for {base}: {e:#}");
+                thumb_failed().lock().insert(base);
+            }
+        }
+        let soon = Duration::from_secs(1);
+        retry = Some(retry.map_or(soon, |r| r.min(soon)));
+    }
+
+    // Clips whose MKV disappeared, orphaned previews and thumbnails, stale seen entries.
     let existing: Vec<String> = files
         .iter()
         .filter_map(|(p, _, _)| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
@@ -205,7 +268,7 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
             let is_mp4 = path
                 .extension()
                 .and_then(|e| e.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("mp4"));
+                .is_some_and(|e| e.eq_ignore_ascii_case("mp4") || e.eq_ignore_ascii_case("jpg"));
             let orphan = path
                 .file_stem()
                 .and_then(|s| s.to_str())

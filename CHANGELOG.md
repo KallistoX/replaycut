@@ -19,6 +19,13 @@ contract.
 - Cancel a share: `POST /api/jobs/<id>/cancel` and the Cancel button on the
   progress card. Waiting jobs leave the queue at once; a running encode or
   upload is stopped and its partial output removed.
+- Thumbnails: every clip shows a picture from 10 s before its end in the
+  list and as the player poster (`thumb` on the clip, `GET /media/<base>.jpg`).
+- The Nextcloud quota in the header ("Nextcloud 63 %", yellow from 80 %,
+  red from 95 %), refreshed in the background (`config.quota`).
+- Fast copy: a share mode that keeps the OBS video stream instead of
+  re-encoding (keyframe-accurate, `mode: copy`, `actualStart` in the job).
+  The choice is remembered in the browser; the default stays H.264.
 
 ### Changed
 

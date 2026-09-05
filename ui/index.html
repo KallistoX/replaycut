@@ -350,7 +350,9 @@ video, .video { width: 100%; max-height: 58vh; background: var(--surface-2); bor
 .video { aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; color: var(--fg-faint); }
 .video .icon { width: 48px; height: 48px; stroke-width: 1.25; }
 
-.clip { display: flex; flex-direction: column; gap: 2px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid transparent; cursor: pointer; }
+.clip { display: grid; grid-template-columns: 64px 1fr; column-gap: var(--space-2); row-gap: 2px; align-items: center; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid transparent; cursor: pointer; }
+.clip .thumb { grid-row: 1 / span 2; width: 64px; height: 36px; object-fit: cover; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--line); display: block; }
+.clip .thumb.none { display: flex; align-items: center; justify-content: center; color: var(--fg-muted); }
 .clip:hover, .clip.is-hover { background: var(--surface); }
 .clip.active { border-color: var(--accent); background: var(--surface); }
 .clip .name { display: flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-strong); min-width: 0; }
@@ -471,6 +473,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   </nav>
   <div class="right">
     <span class="badge" id="encoder" hidden></span>
+    <span class="badge" id="quota" hidden></span>
     <span class="status" id="dotWrap" title="Service running"><i class="dot" id="dot"></i></span>
     <span class="version" id="ver"></span>
   </div>
@@ -535,6 +538,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <div class="share-row">
         <button class="btn btn-primary" id="bShare"><svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd></button>
         <select class="select" id="audio" title="Which audio tracks go into the shared clip"></select>
+        <select class="select" id="mode" title="H.264: re-encoded at 1080p, plays everywhere. Fast copy: the OBS stream as it is, keyframe-accurate, no re-encode"><option value="h264">H.264 1080p</option><option value="copy">Fast copy</option></select>
         <span class="plan" id="planInfo"></span>
       </div>
       <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>I</kbd><kbd>O</kbd> marks</span><span><kbd>Enter</kbd> share</span></div>
@@ -1340,6 +1344,9 @@ function initClips() {
   $('bIn').onclick = setIn; $('bOut').onclick = setOut; $('bPrev').onclick = playSel;
   $('bAll').onclick = () => { if (!cur) return; tIn = 0; tOut = cur.duration; edited = false; render(); };
   $('bShare').onclick = share;
+  // share mode: remembered per browser (since 2.4)
+  try { const m = localStorage.getItem('rc-mode'); if (m === 'copy' || m === 'h264') $('mode').value = m; } catch (e) {}
+  $('mode').onchange = () => { try { localStorage.setItem('rc-mode', $('mode').value); } catch (e) {} render(); };
   $('progCancel').onclick = async () => {
     const id = $('progCancel').dataset.job; if (!id) return; $('progCancel').disabled = true;
     try { const r = await api('/api/jobs/' + id + '/cancel', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(r.stopped ? 'Share removed from the queue' : 'Stopping the share …') : toast(r.error, 'err'); }
@@ -1386,9 +1393,11 @@ function render() {
   hin.dataset.time = fmt(tIn); hout.dataset.time = fmt(tOut);
   hin.title = 'In: ' + fmt(tIn); hout.title = 'Out: ' + fmt(tOut);
   ph.style.left = (v.currentTime / d * 100) + '%';
-  const len = tOut - tIn, p = plan(Math.max(1, len));
+  const len = tOut - tIn, p = plan(Math.max(1, len)), copy = $('mode').value === 'copy';
   $('selInfo').innerHTML = `${fmt(tIn)} - ${fmt(tOut)} · <b>${len.toFixed(1)} s</b>`;
-  $('planInfo').innerHTML = `about <b>${p.mb.toFixed(0)} MB</b> at ${p.kbps.toFixed(0)} kbit/s` +
+  const size = copy ? `about <b>${(cur.size * Math.max(1, len) / (d || 1) / 1048576).toFixed(0)} MB</b> as recorded (${esc((cur.codec || 'copy').toUpperCase())}, keyframe-accurate)` : `about <b>${p.mb.toFixed(0)} MB</b> at ${p.kbps.toFixed(0)} kbit/s`;
+  const warn = copy && cur.codec && cur.codec !== 'h264' && !cfg.localMode ? ' · <span class="badge warn">Discord embeds and iPhones need H.264</span>' : '';
+  $('planInfo').innerHTML = size + warn +
     (cfg.localMode ? ` · <span class="badge accent">local</span> no storage integration - the file stays in <code>shared\\</code>` : ` · ${esc(expiry())}${cfg.webhook ? ' + Discord post' : ''}`);
 }
 function buildAudio() {
@@ -1400,7 +1409,7 @@ function buildAudio() {
 }
 function load(c, keepSel) {
   cur = c; $('vidErr').hidden = true; $('editorBody').hidden = false; $('emptyEditor').hidden = true;
-  v.src = c.preview; v.load();
+  v.src = c.preview; v.poster = c.thumb || ''; v.load();
   if (!keepSel) { tIn = 0; tOut = c.duration; edited = false; }
   document.querySelectorAll('.clip').forEach(e => e.classList.toggle('active', e.dataset.base === c.base));
   $('title').value = c.title || ''; $('title').disabled = false; $('bDel').disabled = false;
@@ -1455,7 +1464,7 @@ function showProgress(j) {
   p.hidden = false;
   const pct = j.stage === 'encode' ? (j.percent || 0) : (j.stage === 'queued' ? 0 : 100);
   const queued = j.stage === 'queued' ? (j.position ? `Queued - ${j.position} share${j.position === 1 ? '' : 's'} ahead` : 'Queued …') : null;
-  $('progText').textContent = (queued || STAGE_TEXT[j.stage] || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)} at ${j.kbps} kbit/s, ${audioLabel(j.audio)}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
+  $('progText').textContent = (queued || (j.stage === 'encode' && j.mode === 'copy' ? 'Copying' : STAGE_TEXT[j.stage]) || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)}${j.mode === 'copy' ? ' as recorded' : ` at ${j.kbps} kbit/s`}, ${audioLabel(j.audio)}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
   const canCancel = ['queued', 'encode', 'upload'].includes(j.stage);
   $('progCancel').hidden = !canCancel; $('progCancel').dataset.job = j.id;
   $('progPct').textContent = pct + ' %';
@@ -1479,7 +1488,8 @@ function showResult(r) {
     $('rRetry').onclick = share;
     return;
   }
-  const meta = `${Number(r.seconds).toFixed(1)} s, ${r.sizeMB} MB, ${esc(audioLabel(r.audio))}`;
+  const earlier = r.mode === 'copy' && r.actualStart != null && r.actualStart < r.start - 0.05 ? `, starts ${(r.start - r.actualStart).toFixed(1)} s earlier (keyframe)` : '';
+  const meta = `${Number(r.seconds).toFixed(1)} s, ${r.sizeMB} MB, ${esc(audioLabel(r.audio))}${r.mode === 'copy' ? ' <span class="badge">copy</span>' : ''}${earlier}`;
   if (!r.direct) {
     // local mode: the file is the result
     box.className = 'result';
@@ -1530,7 +1540,7 @@ async function share() {
   // this await the share POST would overtake the title PUT - the clip would then be posted without a title.
   await saveTitle();
   try {
-    const r = await api('/api/share', jsonOpts('POST', { base: cur.base, start: tIn, end: tOut, audio: $('audio').value }), { retries: 0, timeout: 10000 });
+    const r = await api('/api/share', jsonOpts('POST', { base: cur.base, start: tIn, end: tOut, audio: $('audio').value, mode: $('mode').value }), { retries: 0, timeout: 10000 });
     if (!r.ok) { if (r.job) { watchJob(r.job, true); toast(r.error, 'err'); } else { showResult(r); setBusy(false); } return; }
     if (r.position > 0) toast(`Queued - ${r.position} share${r.position === 1 ? '' : 's'} ahead`);
     watchJob(r.job, true);
@@ -1571,11 +1581,11 @@ function showEmpty(kind) {
 }
 
 function renderList() {
-  const key = JSON.stringify(clips.map(c => [c.base, c.title, c.tracks])) + (cur ? cur.base : ''); if (key === listKey) return; listKey = key;
+  const key = JSON.stringify(clips.map(c => [c.base, c.title, c.tracks, c.thumb])) + (cur ? cur.base : ''); if (key === listKey) return; listKey = key;
   const list = $('list'); list.innerHTML = clips.length ? '' : '<div class="empty compact"><div><b>No clips yet</b><br>Press <kbd>F9</kbd> in OBS while the replay buffer runs.</div></div>';
   clips.forEach(c => {
     const e = document.createElement('div'); e.className = 'clip' + (cur && cur.base === c.base ? ' active' : ''); e.dataset.base = c.base;
-    e.innerHTML = `<div class="name"><span></span></div><div class="meta"><span>${fmt(c.duration)}</span><span>${(c.size / 1048576).toFixed(0)} MB</span>${c.tracks ? `<span>${c.tracks} track${c.tracks === 1 ? '' : 's'}</span>` : ''}<span>${esc((c.created || '').slice(11, 16))}</span></div>`;
+    e.innerHTML = `${c.thumb ? `<img class="thumb" src="${esc(c.thumb)}" alt="" loading="lazy">` : '<div class="thumb none"><svg class="icon icon-sm"><use href="#i-film"/></svg></div>'}<div class="name"><span></span></div><div class="meta"><span>${fmt(c.duration)}</span><span>${(c.size / 1048576).toFixed(0)} MB</span>${c.tracks ? `<span>${c.tracks} track${c.tracks === 1 ? '' : 's'}</span>` : ''}<span>${esc((c.created || '').slice(11, 16))}</span></div>`;
     const n = e.querySelector('.name span'); if (c.title) { n.innerHTML = `<b></b>`; n.firstChild.textContent = c.title; n.title = short(c.base); } else n.textContent = short(c.base);
     e.onclick = () => { load(c); if (!matchMedia('(min-width: 1000px)').matches) $('cliplist').open = false; };
     list.appendChild(e);
@@ -1683,6 +1693,8 @@ async function poll() {
     applyTheme(cfg.theme);
     $('ver').textContent = cfg.version ? cfg.version : '';
     $('encoder').textContent = cfg.encoder || ''; $('encoder').hidden = !cfg.encoder;
+    const q = cfg.quota; $('quota').hidden = !q;
+    if (q) { const gb = b => (b / 1073741824).toFixed(1) + ' GB'; $('quota').textContent = `Nextcloud ${Math.round(q.usedPercent)} %`; $('quota').className = 'badge' + (q.usedPercent >= 95 ? ' err' : q.usedPercent >= 80 ? ' warn' : ''); $('quota').title = `${gb(q.free)} free of ${gb(q.total)}` + (q.usedPercent >= 80 ? ' - delete old uploads or raise the quota' : ''); }
     if ((cfg.update || (upd && upd.latest)) && !updBusy) refreshUpdate();
     const ob = cfg.obs || {};
     banner('b-replaystop', !!ob.connected && !ob.replayActive);

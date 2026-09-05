@@ -421,6 +421,7 @@ async fn serve(
         obs_events,
     ));
     tokio::spawn(obs_link::refresh_loop(state.obs.clone()));
+    tokio::spawn(crate::state::quota_loop(state.clone()));
     if state.settings().check_updates {
         tokio::spawn(update::run(state.clone()));
     }

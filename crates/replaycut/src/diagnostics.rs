@@ -340,6 +340,7 @@ pub async fn run(state: &AppState) -> Report {
             .await;
             match result {
                 Ok(info) => {
+                    state.set_quota(Some(&info));
                     let ms = started.elapsed().as_millis();
                     let nextcloud = Check::new(
                         "nextcloud",

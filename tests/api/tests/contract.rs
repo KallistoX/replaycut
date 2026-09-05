@@ -1095,3 +1095,105 @@ fn t28_queue_runs_shares_in_order_and_cancel_ends_them() {
     assert_eq!(status, 200);
     wait_for_clip_gone(&base, Duration::from_secs(10));
 }
+
+#[test]
+fn t29_thumbnail_is_listed_and_served_cacheable() {
+    let _g = serial();
+    if !since_24() {
+        return;
+    }
+    let base = format!("{} thumb", fixture().base);
+    make_clip(&base);
+    let clip = wait_for_clip(&base, Duration::from_secs(20));
+    let thumb = clip["thumb"].as_str().unwrap_or("").to_string();
+    assert_eq!(thumb, format!("/media/{}.jpg", encode(&base)), "{clip}");
+    let resp = get(&thumb);
+    assert_eq!(resp.status().as_u16(), 200);
+    let header = |k: &str| {
+        resp.headers()
+            .get(k)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string()
+    };
+    assert!(
+        header("content-type").starts_with("image/jpeg"),
+        "content-type"
+    );
+    assert!(header("cache-control").contains("max-age"), "cache-control");
+    let body = resp.bytes().unwrap();
+    assert!(
+        body.len() > 1000 && body[0] == 0xFF && body[1] == 0xD8,
+        "JPEG magic"
+    );
+    let (status, _) = get_json("/media/nope.jpg");
+    assert_eq!(status, 404);
+    let (status, _) = delete(&format!("/api/clips/{}", encode(&base)));
+    assert_eq!(status, 200);
+    wait_for_clip_gone(&base, Duration::from_secs(10));
+}
+
+#[test]
+fn t30_quota_is_null_without_a_storage_account() {
+    let _g = serial();
+    if !since_24() {
+        return;
+    }
+    // the service under test runs without Nextcloud (dry run or integrations off)
+    let cfg = state()["config"].clone();
+    assert!(cfg.get("quota").is_some(), "config.quota missing: {cfg}");
+    if cfg["quota"].is_object() {
+        assert!(cfg["quota"]["usedPercent"].is_number(), "{cfg}");
+        assert!(
+            cfg["quota"]["free"].is_number() && cfg["quota"]["total"].is_number(),
+            "{cfg}"
+        );
+    } else {
+        assert!(cfg["quota"].is_null(), "{cfg}");
+    }
+}
+
+#[test]
+fn t31_copy_share_keeps_the_stream_and_reports_the_real_start() {
+    let _g = serial();
+    if !since_24() {
+        return;
+    }
+    let base = format!("{} copy", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let (status, v) = post_json(
+        "/api/share",
+        &json!({ "base": base, "start": 5, "end": 9, "audio": "mix", "mode": "bogus" }),
+    );
+    assert_eq!(status, 400, "{v}");
+    let (status, v) = post_json(
+        "/api/share",
+        &json!({ "base": base, "start": 5, "end": 9, "audio": "mix", "mode": "copy" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let id = v["job"].as_str().unwrap_or("").to_string();
+    let (stages, job) = wait_job(&id, JOB_TIMEOUT);
+    assert_stages_monotonic(&stages);
+    assert_eq!(job["stage"], "done", "{}", job["error"]);
+    assert_eq!(job["mode"], "copy");
+    let actual = job["actualStart"].as_f64().expect("actualStart");
+    assert!((0.0..=5.0).contains(&actual), "actualStart {actual}");
+    assert_eq!(job["file"], share_file_name(&base, 5, 9, ""));
+    assert!(
+        env()
+            .clip_dir
+            .join("shared")
+            .join(job["file"].as_str().unwrap_or(""))
+            .is_file(),
+        "shared file exists"
+    );
+    // the default mode is h264 and says so
+    let id = share(&base, 0.0, 2.0, "mix");
+    let (_, job) = wait_job(&id, JOB_TIMEOUT);
+    assert_eq!(job["mode"], "h264", "{job}");
+    assert!(job.get("actualStart").is_none(), "{job}");
+    let (status, _) = delete(&format!("/api/clips/{}", encode(&base)));
+    assert_eq!(status, 200);
+    wait_for_clip_gone(&base, Duration::from_secs(10));
+}

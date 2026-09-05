@@ -25,7 +25,11 @@ pub struct ShareRequest {
     pub start: f64,
     pub end: f64,
     pub audio: String,
+    /// `h264` (default) or `copy` (since 2.4).
+    pub mode: String,
 }
+
+pub const SHARE_MODES: [&str; 2] = ["h264", "copy"];
 
 #[derive(Debug)]
 pub enum ShareError {
@@ -155,6 +159,16 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
             clip.tracks, mode.label, mode.need
         )));
     }
+    let share_mode = if req.mode.is_empty() {
+        "h264".to_string()
+    } else if SHARE_MODES.contains(&req.mode.as_str()) {
+        req.mode
+    } else {
+        return Err(ShareError::Invalid(format!(
+            "unknown mode: {} (h264 or copy)",
+            req.mode
+        )));
+    };
     // the same cut twice (a double click) attaches to the first one
     let duplicate = inner
         .current_job
@@ -166,6 +180,7 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
                 && (j.start - start).abs() < 0.005
                 && (j.end - end).abs() < 0.005
                 && j.audio == audio
+                && j.mode == share_mode
         })
         .map(|j| j.id.clone());
     if let Some(id) = duplicate {
@@ -185,6 +200,7 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
         end,
         seconds,
         audio,
+        mode: share_mode,
         kbps: state.settings().share_kbps,
         stage: "queued".into(),
         percent: 0,
@@ -252,12 +268,16 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         .map(|m| m.label)
         .unwrap_or("?");
     tracing::info!(
-        "share [{id}]: {} {}-{} s ({} s) @ {} kbps, audio '{mode_label}' -> {file_name}",
+        "share [{id}]: {} {}-{} s ({} s) {}, audio '{mode_label}' -> {file_name}",
         job.base,
         job.start,
         job.end,
         job.seconds,
-        job.kbps
+        if job.mode == "copy" {
+            "copy (no re-encode)".to_string()
+        } else {
+            format!("@ {} kbps", job.kbps)
+        }
     );
 
     // encode
@@ -268,10 +288,25 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
     let started = Instant::now();
     encode(state, id, &job, &clip_path, &out, token).await?;
     let size_mb = (std::fs::metadata(&out)?.len() as f64 / 1_048_576.0 * 100.0).round() / 100.0;
+    // copy mode cuts at the keyframe before `start`: say where the file really begins
+    let actual_start = if job.mode == "copy" {
+        let len = runtime.media.duration(&out).await.unwrap_or(job.seconds);
+        let s = ((job.start - (len - job.seconds)).max(0.0) * 100.0).round() / 100.0;
+        if s < job.start {
+            tracing::info!(
+                "share [{id}]: copy starts {:.1} s earlier (keyframe)",
+                job.start - s
+            );
+        }
+        Some(s)
+    } else {
+        None
+    };
     state.with_job(id, |j| {
         j.percent = 100;
         j.size_mb = Some(size_mb);
         j.file = Some(file_name.clone());
+        j.actual_start = actual_start;
     });
     tracing::info!(
         "share [{id}]: encoded in {} s, {size_mb} MB",
@@ -307,6 +342,7 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
             }
         }
         direct = Some(published.direct);
+        state.quota_wake.notify_one();
     }
 
     // notify
@@ -352,33 +388,40 @@ async fn encode(
     let runtime = state.runtime();
     let settings = state.settings();
     let threads = runtime.media.threads.to_string();
-    if runtime.media.threads > 0 {
+    let copy = job.mode == "copy";
+    if !copy && runtime.media.threads > 0 {
         args.extend(["-threads", &threads]); // decoder (dav1d takes every core otherwise)
     }
-    if !settings.hwaccel.is_empty() {
+    if !copy && !settings.hwaccel.is_empty() {
         args.extend(["-hwaccel", settings.hwaccel.as_str()]);
     }
     args.extend([
         "-ss", &start, "-t", &seconds, "-i", &input_s, "-map", "0:v:0",
     ]);
     args.extend(audio_args(&job.audio).ok_or_else(|| anyhow!("unknown audio mode {}", job.audio))?);
-    args.extend(["-vf", "scale=-2:1080", "-c:v", &runtime.encoder.name]);
-    if runtime.media.threads > 0 {
-        args.extend(["-threads", &threads]); // encoder and filters
+    if copy {
+        // The OBS video stream as it is; audio only re-encoded when tracks are
+        // mixed. The keyframe before `start` comes along, and its frames are
+        // shifted to time zero instead of hidden behind an edit list, so every
+        // player shows the same thing (the job says where the file really begins).
+        args.extend(["-c:v", "copy", "-avoid_negative_ts", "make_zero"]);
+        if job.audio == "mix" {
+            args.extend(["-c:a", "copy"]);
+        } else {
+            args.extend(["-c:a", "aac", "-b:a", "128k"]);
+        }
+    } else {
+        args.extend(["-vf", "scale=-2:1080", "-c:v", &runtime.encoder.name]);
+        if runtime.media.threads > 0 {
+            args.extend(["-threads", &threads]); // encoder and filters
+        }
+        args.extend(runtime.encoder.opts.iter().copied());
+        args.extend([
+            "-b:v", &b, "-maxrate", &maxrate, "-bufsize", &bufsize, "-pix_fmt", "yuv420p",
+        ]);
+        args.extend(["-c:a", "aac", "-b:a", "128k"]);
     }
-    args.extend(runtime.encoder.opts.iter().copied());
-    args.extend([
-        "-b:v", &b, "-maxrate", &maxrate, "-bufsize", &bufsize, "-pix_fmt", "yuv420p",
-    ]);
-    args.extend([
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        "-movflags",
-        "+faststart",
-        &out_s,
-    ]);
+    args.extend(["-movflags", "+faststart", &out_s]);
 
     let mut cmd = runtime.media.ffmpeg_command();
     cmd.args(&args);

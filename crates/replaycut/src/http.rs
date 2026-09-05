@@ -320,6 +320,7 @@ async fn share(State(app): State<App>, body: Bytes) -> Response {
         start: number(&v["start"]),
         end: number(&v["end"]),
         audio: v["audio"].as_str().unwrap_or("").to_string(),
+        mode: v["mode"].as_str().unwrap_or("").to_string(),
     };
     match share::start(&app, req) {
         Ok((id, position)) => {
@@ -400,6 +401,27 @@ async fn save(State(app): State<App>) -> Result<Json<Value>, ApiError> {
 }
 
 async fn media(State(app): State<App>, Path(file): Path<String>, req: Request) -> Response {
+    // since 2.4: `<base>.jpg` is the thumbnail, cacheable because it never changes
+    if let Some(base) = file.strip_suffix(".jpg") {
+        if base.contains(['/', '\\']) {
+            return ApiError::new(StatusCode::BAD_REQUEST, "bad path").into_response();
+        }
+        let path = app.paths().thumb_of(base);
+        if !path.is_file() {
+            return not_found().await;
+        }
+        return match ServeFile::new(&path).oneshot(req).await {
+            Ok(res) => {
+                let mut res = res.map(Body::new);
+                res.headers_mut()
+                    .insert(CONTENT_TYPE, HeaderValue::from_static("image/jpeg"));
+                res.headers_mut()
+                    .insert(CACHE_CONTROL, HeaderValue::from_static("max-age=86400"));
+                res
+            }
+            Err(e) => ApiError::internal(e).into_response(),
+        };
+    }
     let Some(base) = file.strip_suffix(".mp4") else {
         return not_found().await;
     };

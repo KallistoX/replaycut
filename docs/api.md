@@ -619,6 +619,35 @@ deleted, then the job ends with stage `cancelled`, `ok: false`, `error:
 already `cancelled` answers 409; an unknown id 404. Cancelled jobs appear in
 the history with `cancelled: true` and no link.
 
+### Thumbnails
+
+Every clip gets one JPEG, 320 px wide, taken 10 s before the end (the moment
+that made someone press F9), or in the middle of clips under 15 s. The clip
+carries `thumb: "/media/<base>.jpg"`, or `null` until the picture exists
+(older clips get theirs one per second after the update). `GET
+/media/<base>.jpg` answers `image/jpeg` with `Cache-Control: max-age=86400`;
+the picture never changes. Thumbnails live next to the previews and are
+removed with them.
+
+### Storage quota
+
+`config.quota` in `GET /api/clips` is `null` without a Nextcloud account, an
+unlimited account or a failed check, else `{ usedPercent, free, total }`
+(bytes). The service asks the account five seconds after start, every 15
+minutes, after every upload and after a settings change. The UI shows
+"Nextcloud NN %" in the header, yellow from 80 %, red from 95 %.
+
+### Copy mode
+
+`POST /api/share` accepts `mode`: `h264` (default: cut, scale to 1080p and
+re-encode as today) or `copy` (the OBS video stream as it is, in an MP4
+with `+faststart`; audio is copied for `mix` and mixed to AAC for the other
+modes). Anything else is a 400. Copy is keyframe-accurate: the file starts at
+the keyframe before `start`, so the job reports `actualStart` (seconds,
+`<= start`) once the encode finished; `mode` is always in the job. A copy of
+an AV1 or HEVC recording plays in Chrome, Edge and Firefox; Discord embeds and
+iPhones need `h264`.
+
 ## Behaviour
 
 ### Folder scan

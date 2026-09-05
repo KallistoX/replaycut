@@ -232,6 +232,38 @@ impl Media {
         Ok(())
     }
 
+    /// One JPEG frame of the preview at `at` seconds, 320 px wide (since 2.4).
+    pub async fn thumbnail(&self, preview: &Path, out: &Path, at: f64) -> Result<()> {
+        let at_s = format!("{at:.2}");
+        let preview_s = preview.to_string_lossy();
+        let out_s = out.to_string_lossy();
+        let args = [
+            "-y",
+            "-v",
+            "error",
+            "-ss",
+            &at_s,
+            "-i",
+            &preview_s,
+            "-frames:v",
+            "1",
+            "-vf",
+            "scale=320:-2",
+            "-q:v",
+            "4",
+            &out_s,
+        ];
+        let res = self.ffmpeg(&args, Duration::from_secs(60)).await?;
+        if !res.status.success() || !out.is_file() {
+            let _ = std::fs::remove_file(out);
+            bail!(
+                "ffmpeg thumbnail: {}",
+                String::from_utf8_lossy(&res.stderr).trim()
+            );
+        }
+        Ok(())
+    }
+
     /// Container duration in seconds, rounded to two decimals.
     pub async fn duration(&self, path: &Path) -> Result<f64> {
         let p = path.to_string_lossy();
