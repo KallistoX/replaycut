@@ -10,6 +10,13 @@ contract.
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-09-05
+
+Cutting gets comfortable: shares queue up and can be cancelled, every clip
+has a picture, the Nextcloud quota sits in the header, a fast copy mode
+skips the re-encode, the GPU decodes where it can, and the page hears about
+changes the moment they happen.
+
 ### Added
 
 - Shares queue up instead of answering "a share is already running": the
