@@ -10,6 +10,13 @@ contract.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-09-05
+
+Share where you like: every configured storage is a target with its own
+entry in the Share menu, a finished clip can be published to another one,
+and three new storages join Nextcloud - OneDrive (connected with a code at
+Microsoft), any S3-compatible bucket and any WebDAV server.
+
 ### Added
 
 - Share targets: every configured storage is a target, `POST /api/share`
