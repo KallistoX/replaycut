@@ -24,6 +24,10 @@ contract.
 - The post stage of a job is called `notify` (was `discord`); the status
   text stays in `discord`. Settings gain `integrations.nextcloud.quickShare`
   and `integrations.discord.autoPost`, both default on.
+- Integrations tab in two groups, Storage and Notify, with "Quick share
+  target" and "Post automatically" switches; the Share button gets a menu
+  with the other storages and "file only"; result card and history show the
+  target and offer "Publish to ..." for every other storage.
 
 ## [2.4.0] - 2026-09-05
 

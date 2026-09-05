@@ -396,6 +396,11 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; background: var(--
 .plan b { color: var(--fg); }
 .share-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 .share-row .select { width: auto; min-width: 180px; }
+.split { position: relative; display: inline-flex; } .split > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; } .split > .btn-icon { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 1px; }
+.menu { position: absolute; left: 0; top: calc(100% + 4px); min-width: 220px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(0,0,0,0.35); padding: var(--space-1); z-index: 5; display: flex; flex-direction: column; }
+.menu button { text-align: left; background: none; border: 0; color: var(--fg); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; font: inherit; display: flex; gap: var(--space-2); align-items: center; }
+.menu button:hover { background: var(--surface-2); } .menu .muted { margin-left: auto; }
+.group-title { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); margin: var(--space-2) 0 calc(-1 * var(--space-2)); }
 .list-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2) var(--space-2); }
 .list-head .count { color: var(--fg-muted); font-size: var(--text-sm); }
 .editor.is-off { opacity: 0.5; pointer-events: none; }
@@ -538,7 +543,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <span class="plan" id="selInfo"></span>
       </div>
       <div class="share-row">
-        <button class="btn btn-primary" id="bShare"><svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd></button>
+        <div class="split"><button class="btn btn-primary" id="bShare"><svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd></button><button class="btn btn-primary btn-icon" id="bShareMenu" title="Share to another target">▾</button><div class="menu" id="shareMenu" hidden></div></div>
         <select class="select" id="audio" title="Which audio tracks go into the shared clip"></select>
         <select class="select" id="mode" title="H.264: re-encoded at 1080p, plays everywhere. Fast copy: the OBS stream as it is, keyframe-accurate, no re-encode"><option value="h264">H.264 1080p</option><option value="copy">Fast copy</option></select>
         <span class="plan" id="planInfo"></span>
@@ -716,7 +721,8 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   </div>
 
   <div class="stack-4" id="tabIntegrations" hidden>
-    <p class="muted">Each integration has its own switch, its own settings and its own test. Off means the stage is skipped when sharing. Storage integrations produce the link, notify integrations post it.</p>
+    <p class="muted">Each integration has its own switch, its own settings and its own test. <b>Storage</b> integrations produce the link; the one marked as quick share is what the Share button uses, the others sit in its menu. <b>Notify</b> integrations post the link; with "post automatically" they do so for every share.</p>
+    <h2 class="group-title">Storage</h2>
     <div class="card" id="sNcCard">
       <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>Nextcloud</h2><span class="badge">storage</span><span class="badge" id="sNcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.nextcloud.enabled"><span class="track"></span></label></div>
       <div class="card-body stack-3">
@@ -729,18 +735,22 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="field"><label>Folder</label><input class="input" data-f="integrations.nextcloud.folder"></div>
           <div class="field"><label>Link expiry</label><select class="select" data-f="integrations.nextcloud.expireDays"><option value="0">never</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></div>
         </div>
+        <label class="switch"><input type="checkbox" data-f="integrations.nextcloud.quickShare"><span class="track"></span> Quick share target <span class="muted sm">(the Share button uploads here; off = the button keeps the file local and Nextcloud stays in the menu)</span></label>
         <div class="row"><button class="btn" id="sNcTest">Test connection</button><span class="test-msg" id="sNcMsg"></span></div>
       </div>
     </div>
+    <div class="card add-card"><span class="sm">OneDrive, S3 (R2, B2, MinIO) and WebDAV arrive with 2.5.0; YouTube and X with 2.6.0.</span></div>
+    <h2 class="group-title">Notify</h2>
     <div class="card" id="sDcCard">
       <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge">notify</span><span class="badge" id="sDcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.discord.enabled"><span class="track"></span></label></div>
       <div class="card-body stack-3">
         <div class="field"><label>Webhook URL</label><div class="input-group"><input class="input mono" id="sDcHook" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sDcHook" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint" id="sDcHookHint"></span></div>
         <div class="field"><label>Display name</label><input class="input" data-f="displayName" data-mirror="displayName"><span class="hint">Same field as in General.</span></div>
+        <label class="switch"><input type="checkbox" data-f="integrations.discord.autoPost"><span class="track"></span> Post automatically <span class="muted sm">(every share that produced a link)</span></label>
         <div class="row"><button class="btn" id="sDcTest">Send test message</button><span class="test-msg" id="sDcMsg"></span></div>
       </div>
     </div>
-    <div class="card add-card"><span class="sm">More integrations (Dropbox, Google Drive, WebDAV, S3) arrive as one more card each.</span></div>
+    <div class="card add-card"><span class="sm">Telegram and a generic webhook arrive with 2.6.0.</span></div>
   </div>
 
   <div class="save-bar" id="saveBar">
@@ -1363,7 +1373,9 @@ function initClips() {
   });
   $('bIn').onclick = setIn; $('bOut').onclick = setOut; $('bPrev').onclick = playSel;
   $('bAll').onclick = () => { if (!cur) return; tIn = 0; tOut = cur.duration; edited = false; render(); };
-  $('bShare').onclick = share;
+  $('bShare').onclick = () => share('');
+  $('bShareMenu').onclick = e => { e.stopPropagation(); buildShareMenu(); $('shareMenu').hidden = !$('shareMenu').hidden; };
+  document.addEventListener('click', e => { if (!$('shareMenu').hidden && !e.target.closest('.split')) $('shareMenu').hidden = true; });
   // share mode: remembered per browser (since 2.4)
   try { const m = localStorage.getItem('rc-mode'); if (m === 'copy' || m === 'h264') $('mode').value = m; } catch (e) {}
   $('mode').onchange = () => { try { localStorage.setItem('rc-mode', $('mode').value); } catch (e) {} render(); };
@@ -1417,8 +1429,9 @@ function render() {
   $('selInfo').innerHTML = `${fmt(tIn)} - ${fmt(tOut)} · <b>${len.toFixed(1)} s</b>`;
   const size = copy ? `about <b>${(cur.size * Math.max(1, len) / (d || 1) / 1048576).toFixed(0)} MB</b> as recorded (${esc((cur.codec || 'copy').toUpperCase())}, keyframe-accurate)` : `about <b>${p.mb.toFixed(0)} MB</b> at ${p.kbps.toFixed(0)} kbit/s`;
   const warn = copy && cur.codec && cur.codec !== 'h264' && !cfg.localMode ? ' · <span class="badge warn">Discord embeds and iPhones need H.264</span>' : '';
+  const def = defaultTarget();
   $('planInfo').innerHTML = size + warn +
-    (cfg.localMode ? ` · <span class="badge accent">local</span> no storage integration - the file stays in <code>shared\\</code>` : ` · ${esc(expiry())}${cfg.webhook ? ' + Discord post' : ''}`);
+    (def === 'file' ? ` · <span class="badge accent">file only</span> no quick-share storage - the file stays in <code>shared\\</code>${storageTargets().length ? ', the menu offers ' + esc(storageTargets().map(t => t.label).join(', ')) : ''}` : ` · to <b>${esc(targetLabel(def))}</b>, ${esc(expiry())}${cfg.webhook ? ' + post' : ''}`);
 }
 function buildAudio() {
   const key = JSON.stringify(cfg.audio) + '|' + (cur ? cur.tracks : 0); if (key === audioBuilt) return; audioBuilt = key;
@@ -1511,36 +1524,52 @@ function showResult(r) {
     box.className = 'result err';
     box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-error"/></svg> Share failed</div><div class="sm">${esc(r.error || 'unknown error')}</div>${when ? '<div>' + when + '</div>' : ''}
       <div class="row"><button class="btn btn-sm" id="rRetry"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Try again</button></div>`;
-    $('rRetry').onclick = share;
+    $('rRetry').onclick = () => share('');
     return;
   }
   const earlier = r.mode === 'copy' && r.actualStart != null && r.actualStart < r.start - 0.05 ? `, starts ${(r.start - r.actualStart).toFixed(1)} s earlier (keyframe)` : '';
   const meta = `${Number(r.seconds).toFixed(1)} s, ${r.sizeMB} MB, ${esc(audioLabel(r.audio))}${r.mode === 'copy' ? ' <span class="badge">copy</span>' : ''}${earlier}`;
   if (!r.direct) {
-    // local mode: the file is the result
+    // file only: the file is the result
     box.className = 'result';
-    box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-check"/></svg> Ready - ${meta} <span class="badge accent">local</span></div>
+    box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-check"/></svg> Ready - ${meta} <span class="badge accent">file only</span></div>
       <div class="muted sm break">shared\\${esc(r.file || '')}</div>
-      <div class="row"><button class="btn" id="rOpen"><svg class="icon"><use href="#i-folder"/></svg> Open folder</button><button class="btn" id="rCopy"><svg class="icon"><use href="#i-copy"/></svg> Copy file</button><span class="muted sm">Then Ctrl+V in Discord attaches it.</span></div>${when ? '<div>' + when + '</div>' : ''}`;
+      <div class="row"><button class="btn" id="rOpen"><svg class="icon"><use href="#i-folder"/></svg> Open folder</button><button class="btn" id="rCopy"><svg class="icon"><use href="#i-copy"/></svg> Copy file</button>${publishButtons(r)}<span class="muted sm">Then Ctrl+V in Discord attaches it.</span></div>${when ? '<div>' + when + '</div>' : ''}`;
     $('rOpen').onclick = () => jobAction(r.id, 'open-folder', 'Folder opened on the PC');
     $('rCopy').onclick = () => jobAction(r.id, 'copy-file', 'File copied - paste it with Ctrl+V');
+    wirePublish(box, r.id);
     return;
   }
   const postFailed = r.discord && !/^link posted/i.test(r.discord);
   box.className = 'result' + (postFailed ? ' partial' : '');
-  box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-${postFailed ? 'warning' : 'check'}"/></svg> ${postFailed ? 'Uploaded, but not posted' : 'Shared'} - ${meta}, link copied</div>
+  const to = r.target && r.target !== 'file' ? ' to ' + esc(targetLabel(r.target)) : '';
+  box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-${postFailed ? 'warning' : 'check'}"/></svg> ${postFailed ? `Uploaded${to}, but not posted` : `Shared${to}`} - ${meta}, link copied</div>
     <div class="input-group"><input class="input mono" readonly value="${esc(r.direct)}" onclick="this.select()"><button class="btn" id="cp"><svg class="icon"><use href="#i-copy"/></svg> Direct</button><button class="btn" id="cp2" title="Copy the share page link"><svg class="icon"><use href="#i-external"/></svg> Page</button></div>
-    ${r.discord ? `<div class="line ${postFailed ? 'err' : 'ok'}"><svg class="icon icon-sm"><use href="#i-${postFailed ? 'error' : 'check'}"/></svg> Discord: ${esc(r.discord)}</div>` : ''}
-    <div class="line"><span class="muted sm">${esc(expiry())}</span>${when}</div>`;
+    ${r.discord ? `<div class="line ${postFailed ? 'err' : 'ok'}"><svg class="icon icon-sm"><use href="#i-${postFailed ? 'error' : 'check'}"/></svg> ${esc(r.discord)}</div>` : ''}
+    <div class="line"><span class="muted sm">${esc(expiry())}</span>${when}</div>${publishButtons(r) ? `<div class="row">${publishButtons(r)}</div>` : ''}`;
   $('cp').onclick = () => copyText(r.direct).then(() => toast('Direct link copied', 'ok'));
   $('cp2').onclick = () => copyText(r.link).then(() => toast('Page link copied', 'ok'));
+  wirePublish(box, r.id);
+}
+// "Publish to X" for every connected storage the job did not go to (since 2.5)
+function publishButtons(j) {
+  if (!j.file || j.ok !== true) return '';
+  return storageTargets().filter(t => t.id !== j.target).map(t => `<button class="btn btn-sm" data-publish="${esc(t.id)}"><svg class="icon icon-sm"><use href="#i-share"/></svg> Publish to ${esc(t.label)}</button>`).join('');
+}
+function wirePublish(root, id) {
+  root.querySelectorAll('button[data-publish]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/publish', jsonOpts('POST', { target: b.dataset.publish }), { retries: 0 }); if (r.ok) { toast(`Publishing to ${targetLabel(b.dataset.publish)}${r.position > 0 ? ` - ${r.position} ahead` : ''}`); watchJob(r.job, true); } else toast(r.error, 'err'); }
+    catch (e) { toast(e.message, 'err'); }
+    b.disabled = false;
+  });
 }
 async function jobAction(id, action, okText) {
   try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/' + action, { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(okText, 'ok') : toast(r.error, 'err'); }
   catch (e) { toast(e.message, 'err'); }
 }
 function renderHistory(h) {
-  const key = JSON.stringify((h || []).map(e => e.id)) + cfg.displayName; if (key === histKey) return; histKey = key;
+  const key = JSON.stringify((h || []).map(e => e.id)) + cfg.displayName + JSON.stringify(cfg.targets || null); if (key === histKey) return; histKey = key;
   const box = $('hist'); box.innerHTML = (h && h.length) ? '' : '<div class="empty compact">Nothing shared yet.</div>';
   (h || []).forEach(e => {
     const d = document.createElement('div'); d.className = 'hist';
@@ -1550,23 +1579,37 @@ function renderHistory(h) {
       box.appendChild(d); return;
     }
     const local = !e.direct;
-    d.innerHTML = `<b class="truncate"></b><div class="meta">${fmt(e.seconds)} · ${e.sizeMB} MB · ${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · ${esc(audioLabel(e.audio))}${local ? ' <span class="badge accent">local</span>' : ''}</div>
-      <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(e.link)}" target="_blank" rel="noopener">Open</a>`}</div>`;
+    const target = e.target && e.target !== 'file' ? `<span class="badge">${esc(targetLabel(e.target))}</span>` : (local ? '<span class="badge accent">file only</span>' : '');
+    d.innerHTML = `<b class="truncate"></b><div class="meta">${fmt(e.seconds)} · ${e.sizeMB} MB · ${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · ${esc(audioLabel(e.audio))} ${target}${e.source ? ' <span class="badge">republished</span>' : ''}</div>
+      <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(e.link)}" target="_blank" rel="noopener">Open</a>`}${publishButtons(Object.assign({ ok: true }, e))}</div>`;
     d.querySelector('b').textContent = e.title || short(e.base);
     d.querySelectorAll('button[data-c]').forEach(b => b.onclick = () => copyText(e[b.dataset.c]).then(() => toast(b.dataset.c === 'direct' ? 'Direct link copied' : 'Page link copied', 'ok')));
     d.querySelectorAll('button[data-a]').forEach(b => b.onclick = () => jobAction(e.id, b.dataset.a, b.dataset.a === 'copy-file' ? 'File copied - paste it with Ctrl+V' : 'Folder opened on the PC'));
+    wirePublish(d, e.id);
     box.appendChild(d);
   });
 }
 // since 2.4 the Share button stays usable while a job runs: further shares queue up
 function setBusy(b) { busy = b; const s = $('bShare'); s.innerHTML = b ? '<span class="spinner"></span> Share (queue)' : '<svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd>'; s.classList.toggle('is-busy', b); setDot(b ? 'busy' : (cfg._lastFailed ? 'err' : ''), b ? 'Sharing' : (cfg._lastFailed ? 'Last share failed' : 'Service running')); }
-async function share() {
+// share targets (since 2.5): the button takes the quick-share storage, the menu any other configured one or file only
+function storageTargets() { return (cfg.targets || []).filter(t => t.kind === 'storage' && t.connected); }
+function targetLabel(id) { if (id === 'file') return 'file only'; const t = (cfg.targets || []).find(t => t.id === id); return t ? t.label : id; }
+function defaultTarget() { const q = storageTargets().find(t => t.quickShare); return q ? q.id : 'file'; }
+function buildShareMenu() {
+  const m = $('shareMenu'); m.innerHTML = '';
+  const def = defaultTarget();
+  storageTargets().forEach(t => { const b = document.createElement('button'); b.innerHTML = `<svg class="icon icon-sm"><use href="#i-share"/></svg> Share to ${esc(t.label)}${t.id === def ? ' <span class="muted sm">default</span>' : ''}`; b.onclick = () => { m.hidden = true; share(t.id); }; m.appendChild(b); });
+  const f = document.createElement('button'); f.innerHTML = `<svg class="icon icon-sm"><use href="#i-folder"/></svg> File only${def === 'file' ? ' <span class="muted sm">default</span>' : ''}`; f.onclick = () => { m.hidden = true; share('file'); }; m.appendChild(f);
+}
+async function share(target) {
+  if (typeof target !== 'string') target = '';
   if (!cur) return; setBusy(true); $('result').hidden = true;
   // Save the title first: clicking "Share" also triggers the blur of the title field, and without
   // this await the share POST would overtake the title PUT - the clip would then be posted without a title.
   await saveTitle();
   try {
-    const r = await api('/api/share', jsonOpts('POST', { base: cur.base, start: tIn, end: tOut, audio: $('audio').value, mode: $('mode').value }), { retries: 0, timeout: 10000 });
+    const body = { base: cur.base, start: tIn, end: tOut, audio: $('audio').value, mode: $('mode').value }; if (target) body.target = target;
+    const r = await api('/api/share', jsonOpts('POST', body), { retries: 0, timeout: 10000 });
     if (!r.ok) { if (r.job) { watchJob(r.job, true); toast(r.error, 'err'); } else { showResult(r); setBusy(false); } return; }
     if (r.position > 0) toast(`Queued - ${r.position} share${r.position === 1 ? '' : 's'} ahead`);
     watchJob(r.job, true);

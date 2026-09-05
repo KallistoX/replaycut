@@ -42,10 +42,12 @@ fine.
       "enabled": false,
       "url": "https://cloud.example.com",
       "folder": "Clips",
-      "expireDays": 0
+      "expireDays": 0,
+      "quickShare": true
     },
     "discord": {
-      "enabled": false
+      "enabled": false,
+      "autoPost": true
     }
   }
 }
@@ -74,8 +76,8 @@ Since 2.1 the settings page and `PUT /api/settings` change the file at
 runtime; everything but `port`, `bind` and `uiFile` takes effect without a
 restart. Command-line overrides win over the file for as long as the
 process runs but are never written back.
-| `integrations.nextcloud` | `enabled` switches the upload on. `url` is the server, `folder` the target folder (clips land in `<folder>/<YYYY-MM>/`), `expireDays` sets an expiry on the public link (`0` = never; an expired link also kills the Discord post). |
-| `integrations.discord` | `enabled` switches the webhook post on. The webhook URL itself is a credential. |
+| `integrations.nextcloud` | `enabled` switches the upload on. `url` is the server, `folder` the target folder (clips land in `<folder>/<YYYY-MM>/`), `expireDays` sets an expiry on the public link (`0` = never; an expired link also kills the Discord post). `quickShare` (default true, since 2.5) makes it the target of the Share button; off keeps the button local and leaves Nextcloud in the button's menu. |
+| `integrations.discord` | `enabled` switches the webhook post on. The webhook URL itself is a credential. `autoPost` (default true, since 2.5) posts every share that produced a link. |
 
 An enabled integration without stored credentials is skipped with a warning
 in the log; the service still starts.
