@@ -1431,3 +1431,60 @@ fn t34_oauth_status_and_start_without_a_client() {
         true
     );
 }
+
+#[test]
+fn t35_s3_and_webdav_are_targets_with_tests() {
+    let _g = serial();
+    if !since_25() {
+        return;
+    }
+    let list = state()["config"]["targets"].clone();
+    let list = list.as_array().expect("targets");
+    for id in ["s3", "webdav"] {
+        assert!(
+            list.iter().any(|t| t["id"] == id && t["kind"] == "storage"),
+            "{id} missing: {list:?}"
+        );
+    }
+    // the settings know both blocks and their credential flags
+    let (_, s) = get_json("/api/settings");
+    assert!(s["integrations"]["s3"]["endpoint"].is_string(), "{s}");
+    assert!(s["integrations"]["s3"]["presignDays"].is_number(), "{s}");
+    assert!(s["integrations"]["webdav"]["url"].is_string(), "{s}");
+    assert!(
+        s["secrets"]["s3"].is_boolean() && s["secrets"]["webdav"].is_boolean(),
+        "{s}"
+    );
+    // half a credential pair is a 400
+    let (status, v) = put_json("/api/settings", &json!({ "s3AccessKey": "AK" }));
+    assert_eq!(status, 400, "{v}");
+    let (status, v) = put_json("/api/settings", &json!({ "webdavPassword": "x" }));
+    assert_eq!(status, 400, "{v}");
+    // the connection tests validate before they talk to anyone
+    let (status, v) = post_json(
+        "/api/test/s3",
+        &json!({ "endpoint": "ftp://nope", "bucket": "b", "accessKey": "a", "secretKey": "b" }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["ok"], false);
+    assert!(v["error"].as_str().unwrap_or("").contains("http"), "{v}");
+    let (status, v) = post_json(
+        "/api/test/webdav",
+        &json!({ "url": "https://dav.example.com", "publicBase": "", "user": "u", "password": "p" }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["ok"], false);
+    assert!(
+        v["error"].as_str().unwrap_or("").contains("public base"),
+        "{v}"
+    );
+    // without stored keys the test says so instead of failing on the network
+    let (status, v) = post_json("/api/test/s3", &json!({}));
+    assert_eq!(status, 200, "{v}");
+    if s["secrets"]["s3"] == false {
+        assert!(
+            v["error"].as_str().unwrap_or("").contains("no S3 keys"),
+            "{v}"
+        );
+    }
+}

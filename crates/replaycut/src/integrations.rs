@@ -30,6 +30,8 @@ pub enum Storage {
     DryRun { folder: String },
     Nextcloud(Nextcloud),
     OneDrive(crate::onedrive::OneDrive),
+    S3(crate::s3::S3),
+    WebDav(crate::dav::WebDav),
 }
 
 pub enum Notify {
@@ -63,9 +65,11 @@ pub const TARGET_FILE: &str = "file";
 /// them; adding an integration means one line here plus a settings block,
 /// a credential constant, a `Storage`/`Notify` variant, a card and a
 /// diagnostics row.
-pub const KNOWN_TARGETS: [(&str, &str, &str); 3] = [
+pub const KNOWN_TARGETS: [(&str, &str, &str); 5] = [
     ("nextcloud", "Nextcloud", "storage"),
     ("onedrive", "OneDrive", "storage"),
+    ("s3", "S3", "storage"),
+    ("webdav", "WebDAV", "storage"),
     ("discord", "Discord", "notify"),
 ];
 
@@ -98,6 +102,26 @@ impl Integrations {
                         folder: "Apps/replaycut".into(),
                     },
                     quick_share: od.quick_share,
+                });
+            }
+            if settings.integrations.s3.enabled {
+                storages.push(StorageEntry {
+                    id: "s3",
+                    label: "S3",
+                    storage: Storage::DryRun {
+                        folder: settings.integrations.s3.bucket.clone(),
+                    },
+                    quick_share: settings.integrations.s3.quick_share,
+                });
+            }
+            if settings.integrations.webdav.enabled {
+                storages.push(StorageEntry {
+                    id: "webdav",
+                    label: "WebDAV",
+                    storage: Storage::DryRun {
+                        folder: settings.integrations.webdav.folder.clone(),
+                    },
+                    quick_share: settings.integrations.webdav.quick_share,
                 });
             }
             return Ok(Self {
@@ -141,6 +165,47 @@ impl Integrations {
                 }
                 None => tracing::warn!(
                     "OneDrive is enabled but not connected - connect it under Settings > Integrations"
+                ),
+            }
+        }
+        let s3 = &settings.integrations.s3;
+        if s3.enabled {
+            match credentials::read(credentials::S3)? {
+                Some(cred) => storages.push(StorageEntry {
+                    id: "s3",
+                    label: "S3",
+                    storage: Storage::S3(crate::s3::S3::new(
+                        &s3.endpoint,
+                        &s3.region,
+                        &s3.bucket,
+                        &s3.prefix,
+                        &s3.public_base,
+                        s3.presign_days,
+                        cred.user,
+                        cred.secret,
+                    )?),
+                    quick_share: s3.quick_share,
+                }),
+                None => tracing::warn!("S3 is enabled but has no access keys - enter them under Settings > Integrations"),
+            }
+        }
+        let dav = &settings.integrations.webdav;
+        if dav.enabled {
+            match credentials::read(credentials::WEBDAV)? {
+                Some(cred) => storages.push(StorageEntry {
+                    id: "webdav",
+                    label: "WebDAV",
+                    storage: Storage::WebDav(crate::dav::WebDav::new(
+                        &dav.url,
+                        &dav.folder,
+                        &dav.public_base,
+                        &cred.user,
+                        &cred.secret,
+                    )?),
+                    quick_share: dav.quick_share,
+                }),
+                None => tracing::warn!(
+                    "WebDAV is enabled but has no login - enter it under Settings > Integrations"
                 ),
             }
         }
@@ -199,6 +264,8 @@ impl Integrations {
         let enabled = |id: &str| match id {
             "nextcloud" => settings.integrations.nextcloud.enabled,
             "onedrive" => settings.integrations.onedrive.enabled,
+            "s3" => settings.integrations.s3.enabled,
+            "webdav" => settings.integrations.webdav.enabled,
             "discord" => settings.integrations.discord.enabled,
             _ => false,
         };
@@ -276,6 +343,8 @@ impl Storage {
             Storage::DryRun { folder } => format!("/{folder}/{month}/{file_name}"),
             Storage::Nextcloud(nc) => format!("/{}/{month}/{file_name}", nc.folder),
             Storage::OneDrive(_) => crate::onedrive::OneDrive::remote_path(month, file_name),
+            Storage::S3(s3) => s3.key(month, file_name),
+            Storage::WebDav(d) => d.remote_path(month, file_name),
         }
     }
 
@@ -298,6 +367,8 @@ impl Storage {
             }
             Storage::Nextcloud(nc) => nc.publish(file, month, &path).await,
             Storage::OneDrive(od) => od.publish(file, month).await,
+            Storage::S3(s3) => s3.publish(file, month).await,
+            Storage::WebDav(d) => d.publish(file, month).await,
         }
     }
 
@@ -310,6 +381,8 @@ impl Storage {
             }
             Storage::Nextcloud(nc) => nc.delete(paths).await,
             Storage::OneDrive(od) => od.delete(paths).await,
+            Storage::S3(s3) => s3.delete(paths).await,
+            Storage::WebDav(d) => d.delete(paths).await,
         }
     }
 }

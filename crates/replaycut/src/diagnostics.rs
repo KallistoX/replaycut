@@ -341,6 +341,52 @@ pub async fn run(state: &AppState) -> Report {
         }
     };
 
+    // s3 and webdav (since 2.5): configured and reachable, no probe writes here
+    let s3_check = {
+        let enabled = settings.integrations.s3.enabled;
+        let runtime = runtime.clone();
+        async move {
+            if !enabled {
+                return Check::new("s3", "S3", "skip", "integration is off");
+            }
+            let Some(entry) = runtime.integrations.storage("s3") else {
+                return Check::new("s3", "S3", "fail", "enabled, but no access keys stored")
+                    .with_fix("Settings › Integrations › S3: enter access key and secret key.");
+            };
+            match &entry.storage {
+                integrations::Storage::S3(s3) => match tokio::time::timeout(TIMEOUT, s3.head_bucket()).await {
+                    Ok(Ok(())) => Check::new("s3", "S3", "ok", format!("bucket reachable · {}", s3.describe_link_mode())),
+                    Ok(Err(e)) => Check::new("s3", "S3", "fail", format!("{e:#}"))
+                        .with_fix("Check endpoint, region, bucket and keys under Settings › Integrations › S3 (Test connection)."),
+                    Err(_) => Check::new("s3", "S3", "fail", "no answer from the endpoint within 5 s"),
+                },
+                _ => Check::new("s3", "S3", "ok", "dry run"),
+            }
+        }
+    };
+    let webdav_check = {
+        let enabled = settings.integrations.webdav.enabled;
+        let runtime = runtime.clone();
+        async move {
+            if !enabled {
+                return Check::new("webdav", "WebDAV", "skip", "integration is off");
+            }
+            let Some(entry) = runtime.integrations.storage("webdav") else {
+                return Check::new("webdav", "WebDAV", "fail", "enabled, but no login stored")
+                    .with_fix("Settings › Integrations › WebDAV: enter user and password.");
+            };
+            match &entry.storage {
+                integrations::Storage::WebDav(d) => match tokio::time::timeout(TIMEOUT, d.check()).await {
+                    Ok(Ok(())) => Check::new("webdav", "WebDAV", "ok", "server reachable, login accepted"),
+                    Ok(Err(e)) => Check::new("webdav", "WebDAV", "fail", format!("{e:#}"))
+                        .with_fix("Check URL, user and password under Settings › Integrations › WebDAV (Test connection)."),
+                    Err(_) => Check::new("webdav", "WebDAV", "fail", "no answer from the server within 5 s"),
+                },
+                _ => Check::new("webdav", "WebDAV", "ok", "dry run"),
+            }
+        }
+    };
+
     // nextcloud and quota
     let nc_check = {
         let settings = settings.clone();
@@ -559,6 +605,8 @@ pub async fn run(state: &AppState) -> Report {
     checks.push(nextcloud);
     checks.push(quota);
     checks.push(onedrive_check.await);
+    checks.push(s3_check.await);
+    checks.push(webdav_check.await);
     checks.push(webhook);
     checks.push({
         let obs = state.obs.status();

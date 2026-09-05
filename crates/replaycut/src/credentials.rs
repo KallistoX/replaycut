@@ -9,6 +9,10 @@ pub const DISCORD_WEBHOOK: &str = "replaycut/discord-webhook";
 pub const OBS_WEBSOCKET: &str = "replaycut/obs-websocket";
 /// OneDrive: user = account name, secret = the OAuth refresh token (since 2.5).
 pub const ONEDRIVE: &str = "replaycut/onedrive";
+/// S3: user = access key id, secret = secret access key (since 2.5).
+pub const S3: &str = "replaycut/s3";
+/// WebDAV: user and password of the DAV login (since 2.5).
+pub const WEBDAV: &str = "replaycut/webdav";
 
 #[derive(Debug, Clone)]
 pub struct Credential {

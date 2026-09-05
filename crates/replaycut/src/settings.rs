@@ -78,6 +78,72 @@ pub struct Integrations {
     pub discord: Discord,
     /// since 2.5
     pub onedrive: OneDrive,
+    /// since 2.5
+    pub s3: S3,
+    /// since 2.5
+    pub webdav: WebDav,
+}
+
+/// S3-compatible object storage (since 2.5): AWS, R2, B2, MinIO, Wasabi. Keys
+/// are the credential `replaycut/s3`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct S3 {
+    pub enabled: bool,
+    pub quick_share: bool,
+    /// `https://<account>.r2.cloudflarestorage.com`, `https://s3.eu-central-1.amazonaws.com`, `http://minio:9000`.
+    pub endpoint: String,
+    /// `auto` for R2, the AWS region otherwise.
+    pub region: String,
+    pub bucket: String,
+    /// Key prefix inside the bucket, may be empty.
+    pub prefix: String,
+    /// Public URL under which the keys are served (custom domain, public bucket); empty = presigned links.
+    pub public_base: String,
+    /// Lifetime of presigned links in days (1-7) when `publicBase` is empty.
+    pub presign_days: u32,
+}
+
+impl Default for S3 {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            quick_share: false,
+            endpoint: String::new(),
+            region: "auto".into(),
+            bucket: String::new(),
+            prefix: "replaycut".into(),
+            public_base: String::new(),
+            presign_days: 7,
+        }
+    }
+}
+
+/// Generic WebDAV (since 2.5): any DAV server plus a public URL that serves
+/// the same folder. Login is the credential `replaycut/webdav`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WebDav {
+    pub enabled: bool,
+    pub quick_share: bool,
+    /// The DAV root, for example `https://u123.your-storagebox.de` or `https://dav.example.com/remote.php/dav/files/me`.
+    pub url: String,
+    /// Folder below the root, may be empty.
+    pub folder: String,
+    /// Public URL that serves `<folder>`; the link is `<publicBase>/<month>/<file>`.
+    pub public_base: String,
+}
+
+impl Default for WebDav {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            quick_share: false,
+            url: String::new(),
+            folder: "replaycut".into(),
+            public_base: String::new(),
+        }
+    }
 }
 
 /// OneDrive through Microsoft Graph (since 2.5). The account itself is a
@@ -218,8 +284,19 @@ const PATCH_KEYS: [&str; 16] = [
 const NEXTCLOUD_KEYS: [&str; 5] = ["enabled", "url", "folder", "expireDays", "quickShare"];
 const DISCORD_KEYS: [&str; 2] = ["enabled", "autoPost"];
 const ONEDRIVE_KEYS: [&str; 2] = ["enabled", "quickShare"];
+const S3_KEYS: [&str; 8] = [
+    "enabled",
+    "quickShare",
+    "endpoint",
+    "region",
+    "bucket",
+    "prefix",
+    "publicBase",
+    "presignDays",
+];
+const WEBDAV_KEYS: [&str; 5] = ["enabled", "quickShare", "url", "folder", "publicBase"];
 /// Storage integrations, for the "one quick-share target" rule.
-const STORAGE_GROUPS: [&str; 2] = ["nextcloud", "onedrive"];
+const STORAGE_GROUPS: [&str; 4] = ["nextcloud", "onedrive", "s3", "webdav"];
 const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
 
 impl Settings {
@@ -256,6 +333,8 @@ impl Settings {
                         "nextcloud" => &NEXTCLOUD_KEYS,
                         "discord" => &DISCORD_KEYS,
                         "onedrive" => &ONEDRIVE_KEYS,
+                        "s3" => &S3_KEYS,
+                        "webdav" => &WEBDAV_KEYS,
                         _ => return Err(format!("unknown integration: {group}")),
                     };
                     let Some(fields) = fields.as_object() else {

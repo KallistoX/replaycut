@@ -941,12 +941,29 @@ impl AppState {
     }
 
     /// Remote paths recorded in history for a clip.
+    /// Entries from before 2.5 carry no target: they were Nextcloud uploads.
     pub fn history_paths_for(&self, base: &str) -> Vec<String> {
         self.inner
             .lock()
             .history
             .iter()
             .filter(|e| e["base"] == base)
+            .filter(|e| {
+                e["target"]
+                    .as_str()
+                    .is_none_or(|t| t.is_empty() || t == "nextcloud")
+            })
+            .filter_map(|e| e["ncPath"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    /// Remote paths a clip's jobs recorded for one storage target (since 2.5).
+    pub fn history_paths_for_target(&self, base: &str, target: &str) -> Vec<String> {
+        self.inner
+            .lock()
+            .history
+            .iter()
+            .filter(|e| e["base"] == base && e["target"] == target)
             .filter_map(|e| e["ncPath"].as_str().map(str::to_string))
             .collect()
     }

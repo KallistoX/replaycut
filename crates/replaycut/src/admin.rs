@@ -80,6 +80,8 @@ fn settings_document(app: &AppState) -> Value {
         "discord": credentials::read(credentials::DISCORD_WEBHOOK).ok().flatten().is_some(),
         "obs": credentials::read(credentials::OBS_WEBSOCKET).ok().flatten().is_some(),
         "onedrive": credentials::read(credentials::ONEDRIVE).ok().flatten().is_some(),
+        "s3": credentials::read(credentials::S3).ok().flatten().is_some(),
+        "webdav": credentials::read(credentials::WEBDAV).ok().flatten().is_some(),
     });
     doc["passwordSet"] = json!(settings.password_hash.is_some());
     doc["autostart"] = json!(autostart_enabled());
@@ -119,6 +121,10 @@ pub async fn put_settings(
     let nextcloud_password = obj.remove("nextcloudPassword");
     let discord_webhook = obj.remove("discordWebhook");
     let obs_password = obj.remove("obsPassword");
+    let s3_access_key = obj.remove("s3AccessKey");
+    let s3_secret_key = obj.remove("s3SecretKey");
+    let webdav_user = obj.remove("webdavUser");
+    let webdav_password = obj.remove("webdavPassword");
 
     // Fields a running job depends on.
     if app.inner.lock().current_job.is_some() {
@@ -180,6 +186,42 @@ pub async fn put_settings(
             StatusCode::BAD_REQUEST,
             "send nextcloudUser and nextcloudPassword together",
         ));
+    }
+    // S3 keys and WebDAV login (since 2.5): both halves together, empty removes
+    for (a, b, target, name) in [
+        (
+            &s3_access_key,
+            &s3_secret_key,
+            credentials::S3,
+            "s3AccessKey and s3SecretKey",
+        ),
+        (
+            &webdav_user,
+            &webdav_password,
+            credentials::WEBDAV,
+            "webdavUser and webdavPassword",
+        ),
+    ] {
+        match (
+            a.as_ref().and_then(Value::as_str),
+            b.as_ref().and_then(Value::as_str),
+        ) {
+            (Some(""), Some("")) => {
+                credentials::delete(target).map_err(ApiError::internal)?;
+                credentials_changed = true;
+            }
+            (Some(u), Some(p)) if !u.is_empty() && !p.is_empty() => {
+                credentials::write(target, u, p).map_err(ApiError::internal)?;
+                credentials_changed = true;
+            }
+            (None, None) => {}
+            _ => {
+                return Err(ApiError::new(
+                    StatusCode::BAD_REQUEST,
+                    format!("send {name} together (both empty removes them)"),
+                ))
+            }
+        }
     }
     if let Some(webhook) = discord_webhook.as_ref().and_then(Value::as_str) {
         if !crate::integrations::is_webhook_url(webhook) {
@@ -816,4 +858,92 @@ pub async fn oauth_disconnect(
     }
     app.tray_changed();
     Ok(Json(json!({ "ok": true })))
+}
+
+// ------------------------------------------------------------ S3 and WebDAV tests (since 2.5)
+
+/// `POST /api/test/s3`: HEAD the bucket, PUT and DELETE a probe. Fields from
+/// the body override the settings; keys from the body or the credential.
+pub async fn test_s3(
+    State(app): State<App>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    let v = parse_json(&headers, &body)?;
+    let s = app.settings().integrations.s3.clone();
+    let pick = |k: &str, cur: &str| v[k].as_str().unwrap_or(cur).to_string();
+    let (ak, sk) = match (v["accessKey"].as_str(), v["secretKey"].as_str()) {
+        (Some(a), Some(b)) if !a.is_empty() && !b.is_empty() => (a.to_string(), b.to_string()),
+        _ => match credentials::read(credentials::S3) {
+            Ok(Some(c)) => (c.user, c.secret),
+            _ => {
+                return Ok(Json(
+                    json!({ "ok": false, "error": "no S3 keys stored - enter access key and secret key" }),
+                ))
+            }
+        },
+    };
+    let started = std::time::Instant::now();
+    let result = async {
+        let s3 = crate::s3::S3::new(
+            &pick("endpoint", &s.endpoint),
+            &pick("region", &s.region),
+            &pick("bucket", &s.bucket),
+            &pick("prefix", &s.prefix),
+            &pick("publicBase", &s.public_base),
+            v["presignDays"]
+                .as_u64()
+                .map(|d| d as u32)
+                .unwrap_or(s.presign_days),
+            ak,
+            sk,
+        )?;
+        s3.probe().await?;
+        Ok::<String, anyhow::Error>(s3.describe_link_mode())
+    }
+    .await;
+    Ok(Json(match result {
+        Ok(mode) => {
+            json!({ "ok": true, "links": mode, "ms": started.elapsed().as_millis() as u64 })
+        }
+        Err(e) => json!({ "ok": false, "error": format!("{e:#}") }),
+    }))
+}
+
+/// `POST /api/test/webdav`: PROPFIND the root, PUT and DELETE a probe.
+pub async fn test_webdav(
+    State(app): State<App>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    let v = parse_json(&headers, &body)?;
+    let s = app.settings().integrations.webdav.clone();
+    let pick = |k: &str, cur: &str| v[k].as_str().unwrap_or(cur).to_string();
+    let (user, pw) = match (v["user"].as_str(), v["password"].as_str()) {
+        (Some(a), Some(b)) if !a.is_empty() && !b.is_empty() => (a.to_string(), b.to_string()),
+        _ => match credentials::read(credentials::WEBDAV) {
+            Ok(Some(c)) => (c.user, c.secret),
+            _ => {
+                return Ok(Json(
+                    json!({ "ok": false, "error": "no WebDAV login stored - enter user and password" }),
+                ))
+            }
+        },
+    };
+    let started = std::time::Instant::now();
+    let result = async {
+        let d = crate::dav::WebDav::new(
+            &pick("url", &s.url),
+            &pick("folder", &s.folder),
+            &pick("publicBase", &s.public_base),
+            &user,
+            &pw,
+        )?;
+        d.probe().await
+    }
+    .await;
+    Ok(Json(match result {
+        Ok(()) => json!({ "ok": true, "user": user, "ms": started.elapsed().as_millis() as u64 }),
+        Err(e) => json!({ "ok": false, "error": format!("{e:#}") }),
+    }))
 }

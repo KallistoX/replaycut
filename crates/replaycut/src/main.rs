@@ -10,6 +10,7 @@
 mod admin;
 mod auth;
 mod credentials;
+mod dav;
 mod diagnostics;
 mod http;
 #[cfg(windows)]
@@ -26,6 +27,7 @@ mod obs_status;
 mod obs_ws;
 mod onedrive;
 mod platform;
+mod s3;
 mod scanner;
 mod settings;
 mod setup;

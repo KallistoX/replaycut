@@ -55,6 +55,8 @@ pub fn router(state: App) -> Router {
         )
         .route("/api/test/nextcloud", post(admin::test_nextcloud))
         .route("/api/test/discord", post(admin::test_discord))
+        .route("/api/test/s3", post(admin::test_s3))
+        .route("/api/test/webdav", post(admin::test_webdav))
         .route("/api/addresses", get(admin::addresses))
         .route("/api/setup/obs", get(admin::setup_obs))
         .route("/api/diagnostics", get(admin::diagnostics))
@@ -335,30 +337,35 @@ async fn delete_clip(
     }
     let remote_deleted = if remote {
         let runtime = app.runtime();
-        // remote copies live in Nextcloud (the only storage with a delete so far)
-        let Some(storage) = runtime
-            .integrations
-            .storage("nextcloud")
-            .map(|e| &e.storage)
-        else {
+        if runtime.integrations.storages.is_empty() {
             return Err(ApiError::new(
                 StatusCode::BAD_REQUEST,
                 "no storage integration is enabled",
             ));
-        };
+        }
+        // since 2.5 every configured storage gets the paths its jobs recorded;
+        // Nextcloud also gets the pre-2.5 ones derived from the shared file names
         let month = share::month_of(&base);
-        let mut paths: Vec<String> = files
-            .iter()
-            .skip(1)
-            .filter_map(|f| {
-                f.file_name()
-                    .map(|n| storage.remote_path(&month, &n.to_string_lossy()))
-            })
-            .collect();
-        paths.extend(app.history_paths_for(&base));
-        paths.sort();
-        paths.dedup();
-        let n = storage.delete(&paths).await.map_err(ApiError::internal)?;
+        let mut n = 0usize;
+        for entry in &runtime.integrations.storages {
+            let mut paths = app.history_paths_for_target(&base, entry.id);
+            if entry.id == "nextcloud" {
+                paths.extend(files.iter().skip(1).filter_map(|f| {
+                    f.file_name()
+                        .map(|n| entry.storage.remote_path(&month, &n.to_string_lossy()))
+                }));
+                paths.extend(app.history_paths_for(&base));
+            }
+            paths.sort();
+            paths.dedup();
+            if !paths.is_empty() {
+                n += entry
+                    .storage
+                    .delete(&paths)
+                    .await
+                    .map_err(ApiError::internal)?;
+            }
+        }
         app.remove_history_for(&base);
         n
     } else {

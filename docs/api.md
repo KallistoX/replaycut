@@ -716,6 +716,33 @@ link; `page` and `direct` are the same link.
 Quick share is exclusive: a `PUT /api/settings` that sets one storage's
 `quickShare` to true clears it on the others.
 
+### S3 and WebDAV
+
+Two more storages, both server-style like Nextcloud:
+
+- `integrations.s3 { enabled, quickShare, endpoint, region, bucket, prefix,
+  publicBase, presignDays }` with the keys as the write-only pair
+  `s3AccessKey` / `s3SecretKey` in `PUT /api/settings` (credential
+  `replaycut/s3`; both empty removes them). Objects land at
+  `<prefix>/<month>/<file>`; the link is `<publicBase>/<key>` or, with an
+  empty `publicBase`, a presigned GET that expires after `presignDays`
+  (1-7). Requests use Signature Version 4 with an unsigned payload and
+  path-style addressing, which AWS S3, Cloudflare R2, Backblaze B2, MinIO
+  and Wasabi accept.
+- `integrations.webdav { enabled, quickShare, url, folder, publicBase }` with
+  the login as `webdavUser` / `webdavPassword` (credential
+  `replaycut/webdav`). Files go to `<url>/<folder>/<month>/<file>`, the link
+  is `<publicBase>/<month>/<file>`: a plain DAV server has no public links,
+  so the same folder must be served publicly and `publicBase` is required.
+- `POST /api/test/s3` and `POST /api/test/webdav` take the same fields as the
+  settings block (plus the credential pair) and answer `{ ok, ... }` after a
+  reachability check and a probe file that is written and removed; `{ ok:
+  false, error }` names what to fix. Validation errors are reported the same
+  way, not as 400.
+- `DELETE /api/clips/<base>?nextcloud=1` removes the remote copies from every
+  configured storage a job of the clip went to (paths from the history);
+  `nextcloud` in the answer counts them all.
+
 ## Behaviour
 
 ### Folder scan

@@ -748,7 +748,40 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <label class="switch"><input type="checkbox" data-f="integrations.onedrive.quickShare"><span class="track"></span> Quick share target <span class="muted sm">(only one storage can be; switching it on takes it from the other)</span></label>
       </div>
     </div>
-    <div class="card add-card"><span class="sm">S3 (R2, B2, MinIO) and WebDAV arrive with 2.5.0; YouTube and X with 2.6.0.</span></div>
+    <div class="card" id="sS3Card">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>S3</h2><span class="badge">storage</span><span class="badge" id="sS3Badge"></span><label class="switch"><input type="checkbox" data-f="integrations.s3.enabled"><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">Any S3-compatible bucket: AWS S3, Cloudflare R2, Backblaze B2, MinIO, Wasabi. Files go to <code>&lt;prefix&gt;/&lt;month&gt;/</code>. Links come from a public URL for the bucket (custom domain, public bucket) or, without one, as presigned links that expire.</p>
+        <div class="fields-2">
+          <div class="field"><label>Endpoint</label><input class="input mono" data-f="integrations.s3.endpoint" placeholder="https://<account>.r2.cloudflarestorage.com"></div>
+          <div class="field"><label>Region</label><input class="input mono" data-f="integrations.s3.region" placeholder="auto"><span class="hint"><code>auto</code> for R2, the AWS region otherwise (<code>eu-central-1</code>), <code>us-east-1</code> for MinIO and B2.</span></div>
+          <div class="field"><label>Bucket</label><input class="input mono" data-f="integrations.s3.bucket"></div>
+          <div class="field"><label>Prefix</label><input class="input mono" data-f="integrations.s3.prefix"><span class="hint">Folder inside the bucket, may be empty.</span></div>
+          <div class="field"><label>Access key ID</label><input class="input mono" id="sS3Key" autocomplete="off" placeholder="leave empty to keep"><span class="hint" id="sS3KeyHint"></span></div>
+          <div class="field"><label>Secret access key</label><div class="input-group"><input class="input mono" id="sS3Secret" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sS3Secret" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the Credential Manager as <code>replaycut/s3</code>.</span></div>
+          <div class="field"><label>Public URL</label><input class="input mono" data-f="integrations.s3.publicBase" placeholder="https://clips.example.com"><span class="hint">Serves the bucket publicly; the link is this URL plus the key. Leave empty for presigned links.</span></div>
+          <div class="field"><label>Presigned links expire after</label><select class="select" data-f="integrations.s3.presignDays"><option value="1">1 day</option><option value="3">3 days</option><option value="7">7 days (maximum)</option></select></div>
+        </div>
+        <label class="switch"><input type="checkbox" data-f="integrations.s3.quickShare"><span class="track"></span> Quick share target</label>
+        <div class="row"><button class="btn" id="sS3Test">Test connection</button><span class="test-msg" id="sS3Msg"></span></div>
+      </div>
+    </div>
+    <div class="card" id="sDavCard">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>WebDAV</h2><span class="badge">storage</span><span class="badge" id="sDavBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.webdav.enabled"><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">Any WebDAV server (a Storage Box, nginx, rclone). A plain DAV server has no public links of its own, so the same folder must also be reachable under a public URL: that is what the link points to.</p>
+        <div class="fields-2">
+          <div class="field"><label>DAV URL</label><input class="input mono" data-f="integrations.webdav.url" placeholder="https://u123.your-storagebox.de"></div>
+          <div class="field"><label>Folder</label><input class="input mono" data-f="integrations.webdav.folder"><span class="hint">Below the DAV root, may be empty.</span></div>
+          <div class="field"><label>User</label><input class="input" id="sDavUser" autocomplete="off" placeholder="leave empty to keep"><span class="hint" id="sDavUserHint"></span></div>
+          <div class="field"><label>Password</label><div class="input-group"><input class="input" id="sDavPw" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sDavPw" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the Credential Manager as <code>replaycut/webdav</code>.</span></div>
+          <div class="field"><label>Public URL of the folder</label><input class="input mono" data-f="integrations.webdav.publicBase" placeholder="https://files.example.com/clips"><span class="hint">The link is this URL plus <code>&lt;month&gt;/&lt;file&gt;</code>.</span></div>
+        </div>
+        <label class="switch"><input type="checkbox" data-f="integrations.webdav.quickShare"><span class="track"></span> Quick share target</label>
+        <div class="row"><button class="btn" id="sDavTest">Test connection</button><span class="test-msg" id="sDavMsg"></span></div>
+      </div>
+    </div>
+    <div class="card add-card"><span class="sm">YouTube and X arrive with 2.6.0.</span></div>
     <h2 class="group-title">Notify</h2>
     <div class="card" id="sDcCard">
       <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge">notify</span><span class="badge" id="sDcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.discord.enabled"><span class="track"></span></label></div>
@@ -1002,6 +1035,8 @@ async function runTest(kind, body, btn, msg) {
     if (r.ok) {
       msg.className = 'test-msg ok';
       if (kind === 'nextcloud') { const free = r.freeBytes != null ? ` · ${(r.freeBytes / 1073741824).toFixed(1)} GB free` : ''; msg.textContent = `Logged in as ${r.displayName || r.user}${free} (${r.ms} ms)`; }
+      else if (kind === 's3') msg.textContent = `Bucket reachable, probe written and removed · ${r.links} (${r.ms} ms)`;
+      else if (kind === 'webdav') msg.textContent = `Server reachable as ${r.user}, probe written and removed (${r.ms} ms)`;
       else msg.textContent = r.dryRun ? 'Dry run: nothing sent, the URL looks right.' : 'Test message posted - check the channel.';
     } else { msg.className = 'test-msg err'; msg.textContent = r.error || 'failed'; }
     return r.ok;
@@ -1150,6 +1185,11 @@ async function initSettings() {
     $('sAutostart').checked = !!s.autostart;
     $('sPwOn').checked = !!s.passwordSet; $('sPwFields').hidden = !$('sPwOn').checked; $('sPw1').value = ''; $('sPw2').value = ''; $('sPw1').placeholder = s.passwordSet ? 'leave empty to keep' : 'at least 6 characters';
     $('sNcUser').value = ''; $('sNcPw').value = ''; $('sDcHook').value = '';
+    $('sS3Key').value = ''; $('sS3Secret').value = ''; $('sDavUser').value = ''; $('sDavPw').value = '';
+    $('sS3KeyHint').textContent = s.secrets && s.secrets.s3 ? 'Keys are stored; fill both fields to replace them.' : 'No keys stored yet.';
+    $('sDavUserHint').textContent = s.secrets && s.secrets.webdav ? 'A login is stored; fill both fields to replace it.' : 'No login stored yet.';
+    $('sS3Badge').textContent = s.integrations.s3.enabled ? (s.secrets.s3 ? 'on' : 'on, no keys') : 'off'; $('sS3Badge').className = 'badge' + (s.integrations.s3.enabled && !s.secrets.s3 ? ' warn' : '');
+    $('sDavBadge').textContent = s.integrations.webdav.enabled ? (s.secrets.webdav ? 'on' : 'on, no login') : 'off'; $('sDavBadge').className = 'badge' + (s.integrations.webdav.enabled && !s.secrets.webdav ? ' warn' : '');
     $('sNcUserHint').textContent = s.secrets && s.secrets.nextcloud ? 'A credential is stored; fill both fields to replace it.' : 'No credential stored yet.';
     $('sDcHookHint').textContent = s.secrets && s.secrets.discord ? 'A webhook is stored; paste a new one to replace it.' : 'No webhook stored yet. Discord: Server settings › Integrations › Webhooks › Copy Webhook URL.';
     $('sNcBadge').textContent = s.integrations.nextcloud.enabled ? (s.secrets.nextcloud ? 'on' : 'on, no credentials') : 'off'; $('sNcBadge').className = 'badge' + (s.integrations.nextcloud.enabled && !s.secrets.nextcloud ? ' warn' : '');
@@ -1163,10 +1203,12 @@ async function initSettings() {
     if ($('sPwOn').checked && $('sPw1').value) c.password = $('sPw1').value;
     if (!$('sPwOn').checked && orig.passwordSet) c.password = '';
     if ($('sNcUser').value.trim() || $('sNcPw').value) { c.nextcloudUser = $('sNcUser').value.trim(); c.nextcloudPassword = $('sNcPw').value; }
+    if ($('sS3Key').value.trim() || $('sS3Secret').value) { c.s3AccessKey = $('sS3Key').value.trim(); c.s3SecretKey = $('sS3Secret').value; }
+    if ($('sDavUser').value.trim() || $('sDavPw').value) { c.webdavUser = $('sDavUser').value.trim(); c.webdavPassword = $('sDavPw').value; }
     if ($('sDcHook').value.trim()) c.discordWebhook = $('sDcHook').value.trim();
     return c;
   }
-  function labels(c) { const names = { clipDir: 'Recording folder', displayName: 'Display name', theme: 'Theme', shareKbps: 'Video bitrate', encoder: 'Encoder', hwaccel: 'Hardware decoding', ffmpegPriority: 'ffmpeg priority', ffmpegThreads: 'ffmpeg threads', port: 'Port', bind: 'Listen on', logLevel: 'Log level', checkUpdates: 'Update check', integrations: 'Integrations', password: 'Password', nextcloudUser: 'Nextcloud credentials', nextcloudPassword: '', discordWebhook: 'Discord webhook' }; return Object.keys(c).map(k => names[k]).filter(Boolean).join(', '); }
+  function labels(c) { const names = { clipDir: 'Recording folder', displayName: 'Display name', theme: 'Theme', shareKbps: 'Video bitrate', encoder: 'Encoder', hwaccel: 'Hardware decoding', ffmpegPriority: 'ffmpeg priority', ffmpegThreads: 'ffmpeg threads', port: 'Port', bind: 'Listen on', logLevel: 'Log level', checkUpdates: 'Update check', integrations: 'Integrations', password: 'Password', nextcloudUser: 'Nextcloud credentials', nextcloudPassword: '', discordWebhook: 'Discord webhook', s3AccessKey: 'S3 keys', s3SecretKey: '', webdavUser: 'WebDAV login', webdavPassword: '' }; return Object.keys(c).map(k => names[k]).filter(Boolean).join(', '); }
   function dirty() {
     const c = changes(), n = Object.keys(c).length;
     $('saveBar').classList.toggle('dirty', n > 0); $('sSave').disabled = !n; $('sDiscard').hidden = !n;
@@ -1177,7 +1219,7 @@ async function initSettings() {
     b.hidden = !restartPending.length; $('b-restart-text').textContent = restartPending.length ? `Changed: ${restartPending.join(', ')}. They take effect after a restart.` : '';
   }
   fields.forEach(el => { el.addEventListener('input', () => { if (el.dataset.f === 'displayName') fields.filter(o => o !== el && o.dataset.f === 'displayName').forEach(o => o.value = el.value); dirty(); }); el.addEventListener('change', dirty); });
-  ['sPw1', 'sPw2', 'sNcUser', 'sNcPw', 'sDcHook'].forEach(id => $(id).addEventListener('input', dirty));
+  ['sPw1', 'sPw2', 'sNcUser', 'sNcPw', 'sDcHook', 'sS3Key', 'sS3Secret', 'sDavUser', 'sDavPw'].forEach(id => $(id).addEventListener('input', dirty));
   $('sPwOn').onchange = () => { $('sPwFields').hidden = !$('sPwOn').checked; dirty(); };
   $('sAutostart').onchange = async () => { try { const r = await api('/api/settings', jsonOpts('PUT', { autostart: $('sAutostart').checked }), { retries: 0 }); r.ok ? toast('Autostart ' + ($('sAutostart').checked ? 'on' : 'off'), 'ok') : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } };
   $('sDiscard').onclick = () => fill(orig);
@@ -1193,6 +1235,9 @@ async function initSettings() {
     } catch (e) { toast(e.message, 'err'); }
     $('sSave').innerHTML = 'Save'; dirty();
   };
+  const fv = f => document.querySelector(`[data-f="${f}"]`).value.trim();
+  $('sS3Test').onclick = () => runTest('s3', { endpoint: fv('integrations.s3.endpoint'), region: fv('integrations.s3.region'), bucket: fv('integrations.s3.bucket'), prefix: fv('integrations.s3.prefix'), publicBase: fv('integrations.s3.publicBase'), presignDays: Number(fv('integrations.s3.presignDays')), accessKey: $('sS3Key').value.trim(), secretKey: $('sS3Secret').value }, $('sS3Test'), $('sS3Msg'));
+  $('sDavTest').onclick = () => runTest('webdav', { url: fv('integrations.webdav.url'), folder: fv('integrations.webdav.folder'), publicBase: fv('integrations.webdav.publicBase'), user: $('sDavUser').value.trim(), password: $('sDavPw').value }, $('sDavTest'), $('sDavMsg'));
   $('sNcTest').onclick = () => runTest('nextcloud', { url: document.querySelector('[data-f="integrations.nextcloud.url"]').value.trim(), folder: document.querySelector('[data-f="integrations.nextcloud.folder"]').value.trim(), user: $('sNcUser').value.trim(), password: $('sNcPw').value }, $('sNcTest'), $('sNcMsg'));
   $('sDcTest').onclick = () => runTest('discord', { webhook: $('sDcHook').value.trim(), displayName: document.querySelector('[data-f="displayName"]').value.trim() }, $('sDcTest'), $('sDcMsg'));
   $('sAddr').onclick = async () => { $('addrModal').hidden = false; await loadAddresses($('mQrCode'), $('mAddr')); };

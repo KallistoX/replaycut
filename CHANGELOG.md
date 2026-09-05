@@ -22,6 +22,13 @@ contract.
   from a phone), uploads go to `Apps/replaycut/<month>/` with a link anyone
   can open. `GET /api/oauth/<provider>`, `POST .../start`, `POST
   .../disconnect`. Needs a build with a client id.
+- S3-compatible storage (AWS S3, Cloudflare R2, Backblaze B2, MinIO, Wasabi):
+  SigV4-signed uploads to `<prefix>/<month>/`, links from a public URL or
+  presigned with an expiry; `POST /api/test/s3` checks bucket and keys.
+- Generic WebDAV storage: any DAV server plus a public URL that serves the
+  folder; `POST /api/test/webdav` checks server and login.
+- Deleting a clip with "also remove from storage" now removes the remote
+  copies from every storage its shares went to.
 
 ### Changed
 
