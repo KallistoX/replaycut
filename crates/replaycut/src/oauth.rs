@@ -17,11 +17,12 @@ use serde_json::Value;
 use crate::credentials;
 use crate::state::AppState;
 
-/// Registered with Microsoft by the maintainer; empty until then (the UI
-/// then says the build has no OneDrive client). `REPLAYCUT_ONEDRIVE_CLIENT_ID`
-/// overrides it for tests.
-pub const ONEDRIVE_CLIENT_ID: &str = "";
-const MS_LOGIN_BASE: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0";
+/// The replaycut app registration in the maintainer's Entra tenant (public
+/// client, no secret). `REPLAYCUT_ONEDRIVE_CLIENT_ID` overrides it for tests;
+/// an empty value makes the card say the build has no client.
+pub const ONEDRIVE_CLIENT_ID: &str = "985879f2-d85e-4032-bdfa-665b08b8734a";
+// `common`: the app is registered for personal and work accounts alike.
+const MS_LOGIN_BASE: &str = "https://login.microsoftonline.com/common/oauth2/v2.0";
 const TIMEOUT: Duration = Duration::from_secs(20);
 
 /// An OAuth provider with a device-code flow.
