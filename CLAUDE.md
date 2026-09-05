@@ -86,7 +86,8 @@ docs/design/            design system: tokens, component sheet, page mockups,
    That section is what the UI shows as "What's new": headings, lists,
    paragraphs, `code`, bold and links render; keep it in that shape.
 3. Sign it: on the machine with the minisign secret key (never in CI), run
-   `dist\sign-release.ps1 v<version>`. It downloads `SHA256SUMS`, signs it,
+   `powershell -ExecutionPolicy Bypass -File dist\sign-release.ps1 v<version>`.
+   It downloads `SHA256SUMS`, signs it,
    verifies the signature against the public key in
    `crates/replaycut/src/update.rs` (`PUBLIC_KEYS`) and uploads
    `SHA256SUMS.minisig` as the third asset. Until that asset exists the

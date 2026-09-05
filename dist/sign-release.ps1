@@ -5,8 +5,11 @@
 # Run this on the machine that holds the minisign secret key - never in CI.
 # The updater refuses a release without a valid SHA256SUMS.minisig.
 #
-#   dist\sign-release.ps1 v2.3.0
-#   dist\sign-release.ps1 v2.3.0 -SecretKey D:\keys\replaycut.key
+#   powershell -ExecutionPolicy Bypass -File dist\sign-release.ps1 v2.3.0
+#   powershell -ExecutionPolicy Bypass -File dist\sign-release.ps1 v2.3.0 -SecretKey D:\keys\replaycut.key
+#
+# (-ExecutionPolicy Bypass because Windows blocks scripts by default; it
+# applies to this one call only.)
 #
 # Needs: minisign (winget install jedisct1.minisign), and either gh (to
 # upload) or a browser (the script tells you what to upload where).
