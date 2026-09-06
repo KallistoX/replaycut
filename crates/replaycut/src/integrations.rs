@@ -180,7 +180,7 @@ impl Integrations {
         if od.enabled {
             match credentials::read(credentials::ONEDRIVE)? {
                 Some(cred) => {
-                    let provider = crate::oauth::provider("onedrive")
+                    let provider = crate::oauth::provider("onedrive", settings)
                         .ok_or_else(|| anyhow!("no OneDrive provider"))?;
                     let tokens = std::sync::Arc::new(crate::oauth::TokenSource::new(
                         provider, cred.user, cred.secret,
@@ -240,8 +240,8 @@ impl Integrations {
         }
         let yt = &settings.integrations.youtube;
         if yt.enabled {
-            let provider =
-                crate::oauth::provider("youtube").ok_or_else(|| anyhow!("no YouTube provider"))?;
+            let provider = crate::oauth::provider("youtube", settings)
+                .ok_or_else(|| anyhow!("no YouTube provider"))?;
             match credentials::read(credentials::YOUTUBE)? {
                 _ if provider.client_id.is_empty() => tracing::warn!(
                     "YouTube is enabled but has no Google client - enter client id and secret under Settings > Integrations"

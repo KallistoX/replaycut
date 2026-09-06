@@ -796,11 +796,12 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <div class="card-body stack-3">
         <p class="muted sm">Every share becomes its own video on your channel, unlisted unless you choose otherwise; the link is <code>youtu.be/…</code>. A vertical cut (9:16 in the share row) is uploaded as a Short. YouTube's quota allows about six uploads a day per Google project, so replaycut uses <b>your own</b> Google client: <a href="https://github.com/KallistoX/replaycut/blob/main/docs/youtube.md" target="_blank" rel="noopener">how to create it in five minutes</a>.</p>
         <div class="fields-2">
+          <div class="field"><label>Client type</label><select class="select" data-f="integrations.youtube.clientType"><option value="tv">TVs and Limited Input devices - connect with a code, from any device</option><option value="desktop">Desktop app - connect in the browser on this PC</option></select><span class="hint">The application type you chose when creating the client in the Google console.</span></div>
           <div class="field"><label>Client ID</label><input class="input mono" id="sYtId" autocomplete="off" placeholder="1234-abcd.apps.googleusercontent.com"><span class="hint" id="sYtIdHint"></span></div>
           <div class="field"><label>Client secret</label><div class="input-group"><input class="input mono" id="sYtSecret" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sYtSecret" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the Credential Manager as <code>replaycut/youtube-client</code>. Save, then connect.</span></div>
         </div>
         <div class="row" id="sYtRow"><button class="btn btn-primary" id="sYtConnect">Connect YouTube</button><button class="btn" id="sYtDisconnect" hidden>Disconnect</button><span class="muted sm" id="sYtStatus"></span></div>
-        <div class="check-row" id="sYtCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label">Enter this code at Google</div><div class="detail">Open <a id="sYtUri" href="#" target="_blank" rel="noopener"></a> and type <b class="mono" id="sYtUserCode" style="font-size:1.2em;letter-spacing:0.08em"></b>, then pick the channel. The card updates when you are done.</div></div></div>
+        <div class="check-row" id="sYtCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label" id="sYtCodeLabel">Enter this code at Google</div><div class="detail" id="sYtCodeDetail">Open <a id="sYtUri" href="#" target="_blank" rel="noopener"></a> and type <b class="mono" id="sYtUserCode" style="font-size:1.2em;letter-spacing:0.08em"></b>, then pick the channel. The card updates when you are done.</div></div></div>
         <div class="fields-2">
           <div class="field"><label>Privacy</label><select class="select" data-f="integrations.youtube.privacy"><option value="unlisted">unlisted - anyone with the link</option><option value="private">private - only you</option><option value="public">public</option></select></div>
           <div class="field"><label>Description</label><textarea class="input" data-f="integrations.youtube.description" rows="3"></textarea><span class="hint"><code>{title}</code>, <code>{clip}</code> and <code>{date}</code> are filled in. The video title is the clip's title (or its name), plus <code>#Shorts</code> for a vertical cut.</span></div>
@@ -1285,24 +1286,41 @@ async function initSettings() {
     toast('The service did not come back - start it from the Start menu.', 'err');
   };
   // account integrations connect through the device-code flow: OneDrive (since 2.5), YouTube (since 2.6)
+  // two ways in: a code typed at the provider (device flow), or - a provider with `loopback` - the browser on
+  // this PC sent to the provider and back to 127.0.0.1 (since 2.6); that one only works from the PC itself
+  const onThisPc = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
   function oauthCard(provider, label, p, noClient) {
     let timer = null, announced = false;
     function show(d) {
       const s = $(p + 'Status'), code = $(p + 'Code');
       $(p + 'Badge').textContent = d.connected ? 'connected' : (d.configured ? 'not connected' : 'no client'); $(p + 'Badge').className = 'badge' + (d.connected ? ' ok' : '');
       $(p + 'Connect').hidden = d.connected; $(p + 'Disconnect').hidden = !d.connected;
-      $(p + 'Connect').disabled = !d.configured;
-      const f = d.flow;
+      $(p + 'Connect').disabled = !d.configured || (d.loopback && !onThisPc);
+      $(p + 'Connect').textContent = d.loopback ? `Connect ${label} in this browser` : `Connect ${label}`;
+      const f = d.flow, lbl = $(p + 'CodeLabel'), det = $(p + 'CodeDetail');
       if (d.connected) { s.textContent = `Connected as ${d.account || label}.`; code.hidden = true; }
       else if (!d.configured) { s.textContent = noClient; code.hidden = true; }
-      else if (f && f.status === 'pending') { s.textContent = ''; code.hidden = false; $(p + 'Uri').textContent = f.verificationUri; $(p + 'Uri').href = f.verificationUri; $(p + 'UserCode').textContent = f.userCode; }
+      else if (f && f.status === 'pending' && d.loopback) { s.textContent = ''; code.hidden = false; if (lbl) lbl.textContent = 'Finish the login in the tab that opened'; if (det) det.innerHTML = `Nothing opened? <a href="${esc(f.verificationUri)}" target="_blank" rel="noopener">Open the Google login</a>. The card updates when you are done.`; }
+      else if (f && f.status === 'pending') { s.textContent = ''; code.hidden = false; if (lbl) lbl.textContent = 'Enter this code at ' + (provider === 'youtube' ? 'Google' : 'Microsoft'); if (det) det.innerHTML = `Open <a id="${p}Uri" href="${esc(f.verificationUri)}" target="_blank" rel="noopener">${esc(f.verificationUri)}</a> and type <b class="mono" style="font-size:1.2em;letter-spacing:0.08em">${esc(f.userCode)}</b>, then pick the account. The card updates when you are done.`; else { $(p + 'Uri').textContent = f.verificationUri; $(p + 'Uri').href = f.verificationUri; $(p + 'UserCode').textContent = f.userCode; } }
       else if (f && f.status === 'failed') { s.textContent = 'Connecting failed: ' + f.error; code.hidden = true; }
+      else if (d.loopback && !onThisPc) { s.textContent = `Not connected. A desktop client connects from the browser on the PC that runs replaycut - open http://localhost:${location.port}/settings#integrations there, or switch the client type.`; code.hidden = true; }
       else { s.textContent = 'Not connected.'; code.hidden = true; }
       clearTimeout(timer);
       if (f && f.status === 'pending') { announced = false; timer = setTimeout(poll, 2000); }
     }
     async function poll() { try { const d = await api('/api/oauth/' + provider, {}, { retries: 0 }); show(d); if (d.connected && d.flow && d.flow.status === 'done' && !announced) { announced = true; toast(`${label} connected as ${d.account}`, 'ok'); } } catch (e) {} }
-    $(p + 'Connect').onclick = async () => { $(p + 'Connect').disabled = true; try { const d = await api('/api/oauth/' + provider + '/start', { method: 'POST', body: '' }, { retries: 0, timeout: 25000 }); if (!d.ok) toast(d.error, 'err'); else show(d); } catch (e) { toast(e.message, 'err'); } $(p + 'Connect').disabled = false; };
+    $(p + 'Connect').onclick = async () => {
+      $(p + 'Connect').disabled = true;
+      try {
+        const d0 = await api('/api/oauth/' + provider, {}, { retries: 0 });
+        // the browser login must open from the click, or popup blockers eat it
+        const win = d0.loopback ? window.open('about:blank', '_blank') : null;
+        const d = await api('/api/oauth/' + provider + (d0.loopback ? '/loopback' : '/start'), { method: 'POST', body: '' }, { retries: 0, timeout: 25000 });
+        if (!d.ok) { if (win) win.close(); toast(d.error, 'err'); }
+        else { if (win && d.url) win.location = d.url; show(d); }
+      } catch (e) { toast(e.message, 'err'); }
+      $(p + 'Connect').disabled = false;
+    };
     $(p + 'Disconnect').onclick = async () => { try { const r = await api('/api/oauth/' + provider + '/disconnect', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(`${label} disconnected`) : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } poll(); };
     return { poll };
   }

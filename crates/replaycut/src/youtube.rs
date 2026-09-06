@@ -298,7 +298,7 @@ fn api_error(v: &Value) -> String {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::oauth::DeviceProvider;
+    use crate::oauth::Provider;
     use axum::body::Bytes;
     use axum::extract::Query;
     use axum::http::{HeaderMap, StatusCode};
@@ -312,9 +312,31 @@ pub(crate) mod tests {
     /// refresh token, as Google does.
     pub(crate) async fn fake_google_login() -> (String, tokio::task::JoinHandle<()>) {
         let polls = Arc::new(AtomicU64::new(0));
+        // the PKCE challenge the browser login announced, checked at the token exchange
+        let challenge = Arc::new(parking_lot::Mutex::new(String::new()));
+        let challenge_auth = challenge.clone();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let app = Router::new()
+            .route(
+                "/auth",
+                get(move |Query(q): Query<HashMap<String, String>>| {
+                    let challenge = challenge_auth.clone();
+                    async move {
+                        assert_eq!(q.get("client_id").map(String::as_str), Some("gid.apps"));
+                        assert_eq!(q.get("response_type").map(String::as_str), Some("code"));
+                        assert_eq!(q.get("access_type").map(String::as_str), Some("offline"));
+                        assert_eq!(q.get("code_challenge_method").map(String::as_str), Some("S256"));
+                        *challenge.lock() = q.get("code_challenge").cloned().unwrap_or_default();
+                        let to = format!(
+                            "{}?code=GCODE&state={}",
+                            q.get("redirect_uri").cloned().unwrap_or_default(),
+                            q.get("state").cloned().unwrap_or_default()
+                        );
+                        (StatusCode::FOUND, [(axum::http::header::LOCATION, to)])
+                    }
+                }),
+            )
             .route(
                 "/device/code",
                 post(|Form(f): Form<HashMap<String, String>>| async move {
@@ -334,10 +356,23 @@ pub(crate) mod tests {
                 "/token",
                 post(move |Form(f): Form<HashMap<String, String>>| {
                     let polls = polls.clone();
+                    let challenge = challenge.clone();
                     async move {
                         assert_eq!(f.get("client_id").map(String::as_str), Some("gid.apps"));
                         assert_eq!(f.get("client_secret").map(String::as_str), Some("gsecret"));
                         match f.get("grant_type").map(String::as_str) {
+                            Some("authorization_code") => {
+                                assert_eq!(f.get("code").map(String::as_str), Some("GCODE"));
+                                assert!(f.get("redirect_uri").is_some_and(|r| r.ends_with("/oauth/youtube/callback")));
+                                let verifier = f.get("code_verifier").cloned().unwrap_or_default();
+                                assert_eq!(crate::oauth::pkce_challenge(&verifier), *challenge.lock(), "PKCE verifier");
+                                (
+                                    StatusCode::OK,
+                                    Json(serde_json::json!({
+                                        "access_token": "GAT1", "refresh_token": "GRT1", "expires_in": 3599
+                                    })),
+                                )
+                            }
                             Some("urn:ietf:params:oauth:grant-type:device_code") => {
                                 assert_eq!(f.get("device_code").map(String::as_str), Some("GDEV"));
                                 if polls.fetch_add(1, Ordering::Relaxed) < 1 {
@@ -375,12 +410,14 @@ pub(crate) mod tests {
         (base, task)
     }
 
-    pub(crate) fn google_provider(base: &str) -> DeviceProvider {
-        DeviceProvider {
+    pub(crate) fn google_provider(base: &str) -> Provider {
+        Provider {
             id: "youtube",
             label: "YouTube",
             login_base: base.to_string(),
             device_path: "device/code",
+            auth_url: format!("{base}/auth"),
+            loopback: false,
             client_id: "gid.apps".into(),
             client_secret: Some("gsecret".into()),
             scope: "https://www.googleapis.com/auth/youtube",
@@ -492,6 +529,48 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn loopback_login_exchanges_the_code_with_pkce() {
+        let (base, _srv) = fake_google_login().await;
+        let mut p = google_provider(&base);
+        p.loopback = true;
+        let redirect = "http://127.0.0.1:8420/oauth/youtube/callback";
+        let (url, pending) = crate::oauth::loopback_start(&p, redirect).unwrap();
+        // the browser would follow this; here the redirect is read by hand
+        let res = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap()
+            .get(&url)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 302);
+        let to = res.headers()["location"].to_str().unwrap().to_string();
+        assert!(to.starts_with(redirect), "{to}");
+        let query: HashMap<String, String> = to
+            .split_once('?')
+            .unwrap()
+            .1
+            .split('&')
+            .filter_map(|kv| kv.split_once('='))
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        assert_eq!(query["state"], pending.state);
+        let t = crate::oauth::loopback_exchange(&p, &pending, &query["code"])
+            .await
+            .unwrap();
+        assert_eq!(t.refresh_token.as_deref(), Some("GRT1"));
+        // a wrong verifier is refused by the fake as Google would
+        let bad = crate::oauth::LoopbackPending {
+            verifier: "nope".into(),
+            ..pending.clone()
+        };
+        assert!(crate::oauth::loopback_exchange(&p, &bad, "GCODE")
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
     async fn publish_uploads_resumably_and_links_youtu_be() {
         let (login, _l) = fake_google_login().await;
         let (api, _y) = fake_youtube().await;
@@ -576,8 +655,10 @@ mod fake_servers {
     /// Not a test: serves the fake Google (login on 8484, YouTube API on
     /// 8485) for trying the YouTube card against a dev instance started with
     /// `REPLAYCUT_GOOGLE_LOGIN_BASE=http://127.0.0.1:8484
+    /// REPLAYCUT_GOOGLE_AUTH_URL=http://127.0.0.1:8484/auth
     /// REPLAYCUT_YOUTUBE_API_BASE=http://127.0.0.1:8485` (store any client id
-    /// and secret in the card first). Run with
+    /// and secret in the card first; `/auth` sends the browser straight
+    /// back with a code, so the desktop client type can be tried too). Run with
     /// `cargo test -p replaycut serve_fake_google -- --ignored --nocapture`, stop with Ctrl+C.
     #[tokio::test]
     #[ignore]
@@ -588,6 +669,18 @@ mod fake_servers {
         use axum::routing::{delete, get, post, put};
         use axum::{Json, Router};
         let login = Router::new()
+            .route(
+                "/auth",
+                get(|axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>| async move {
+                    let to = format!(
+                        "{}?code=GCODE&state={}",
+                        q.get("redirect_uri").cloned().unwrap_or_default(),
+                        q.get("state").cloned().unwrap_or_default()
+                    );
+                    println!("browser login -> {to}");
+                    (StatusCode::FOUND, [(axum::http::header::LOCATION, to)])
+                }),
+            )
             .route(
                 "/device/code",
                 post(|| async {

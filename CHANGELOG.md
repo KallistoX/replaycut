@@ -16,7 +16,10 @@ contract.
   (unlisted by default, private or public by choice), title from the clip,
   description from a template, link `youtu.be/<id>`. Uses your own Google
   client because of YouTube's upload quota; connected with a code at Google
-  like OneDrive. `docs/youtube.md` walks through the five-minute setup.
+  like OneDrive, or, with a Desktop client, in the browser on this PC
+  (loopback login with PKCE: `POST /api/oauth/<provider>/loopback`,
+  `GET /oauth/<provider>/callback`). `docs/youtube.md` walks through the
+  five-minute setup.
 - Vertical cut: "Vertical 9:16 (Short)" in the share row crops a full-height
   window (position by slider, shown over the player) and scales it to
   1080x1920 - a Short on YouTube, or a file for TikTok, Reels and WhatsApp

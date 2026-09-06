@@ -234,7 +234,7 @@ fn encode_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::oauth::DeviceProvider;
+    use crate::oauth::Provider;
     use axum::body::Bytes;
     use axum::extract::Path as AxPath;
     use axum::http::HeaderMap;
@@ -318,7 +318,7 @@ mod tests {
     async fn publish_uploads_in_chunks_and_links_anonymously() {
         let (login, _l) = crate::oauth::tests::fake_login().await;
         let (graph, _g) = fake_graph().await;
-        let provider = DeviceProvider {
+        let provider = Provider {
             credential: "replaycut/test-onedrive",
             ..crate::oauth::tests::test_provider(&login)
         };

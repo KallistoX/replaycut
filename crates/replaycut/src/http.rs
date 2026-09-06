@@ -75,6 +75,12 @@ pub fn router(state: App) -> Router {
             "/api/oauth/{provider}/disconnect",
             post(admin::oauth_disconnect),
         )
+        // since 2.6: the loopback flow
+        .route(
+            "/api/oauth/{provider}/loopback",
+            post(admin::oauth_loopback),
+        )
+        .route("/oauth/{provider}/callback", get(admin::oauth_callback))
         .route(
             "/api/obs/replay-buffer/start",
             post(admin::obs_start_replay),

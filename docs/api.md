@@ -775,6 +775,31 @@ not made for kids, category Gaming. `page` and `direct` are both
 - A vertical share (below) gets ` #Shorts` appended to its title; YouTube
   lists it as a Short by its format and length.
 
+### Loopback login
+
+A second way to connect an account, for providers or client types without
+a device flow: `integrations.youtube.clientType` is `tv` (default, the
+device flow above) or `desktop` (a Google "Desktop app" client). The
+provider document carries `loopback: true` then, and:
+
+- `POST /api/oauth/<provider>/loopback` starts the login: it answers the
+  document plus `url`, the provider's authorization page with PKCE (S256),
+  `state`, `access_type=offline` and `prompt=consent`, and the redirect
+  `http://127.0.0.1:<port>/oauth/<provider>/callback`. The page opens the
+  URL in a new tab; that only works in a browser on the PC that runs
+  replaycut, so the card says so when the page was loaded from elsewhere.
+  409 without a client, 400 when the provider connects with a code (and
+  `/start` answers 400 for a loopback provider), 404 for an unknown one.
+  The login expires after ten minutes.
+- `GET /oauth/<provider>/callback?code&state` is where the provider sends
+  the browser back. It checks `state`, exchanges the code with the
+  verifier, stores the refresh token and answers a small HTML page for that
+  tab (200 connected, 400 refused or unknown state, 404 unknown provider);
+  `error` and `error_description` from the provider end the flow as
+  `failed`. The settings card keeps polling `GET /api/oauth/<provider>` and
+  sees `done` or `failed` like with the device flow. The route sits outside
+  `/api/` and needs no session: the state token is the proof.
+
 ### Vertical cut
 
 `POST /api/share` takes `vertical: true` and `verticalPos` (0..1, default

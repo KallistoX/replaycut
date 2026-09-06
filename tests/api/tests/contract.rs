@@ -1626,3 +1626,59 @@ fn t36_youtube_target_and_vertical_cut() {
     assert_eq!(status, 200);
     wait_for_clip_gone(&base, Duration::from_secs(10));
 }
+
+#[test]
+fn t37_loopback_login_is_a_second_way_in() {
+    let _g = serial();
+    if !since_26() {
+        return;
+    }
+    // the provider document says which way it connects
+    let (status, d) = get_json("/api/oauth/youtube");
+    assert_eq!(status, 200, "{d}");
+    assert!(d["loopback"].is_boolean(), "{d}");
+    let (_, od) = get_json("/api/oauth/onedrive");
+    assert_eq!(od["loopback"], false, "{od}");
+    // the client type is a validated setting
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "youtube": { "clientType": "phone" } } }),
+    );
+    assert_eq!(status, 400, "{v}");
+    let (status, r) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "youtube": { "clientType": "desktop" } } }),
+    );
+    assert_eq!(status, 200, "{r}");
+    let (_, d) = get_json("/api/oauth/youtube");
+    assert_eq!(d["loopback"], true, "{d}");
+    // a desktop client cannot start a device flow and vice versa; without a client nothing starts
+    if d["configured"] == false {
+        let (status, v) = post_json("/api/oauth/youtube/loopback", &json!({}));
+        assert_eq!(status, 409, "{v}");
+    }
+    let (status, v) = post_json("/api/oauth/onedrive/loopback", &json!({}));
+    assert!(status == 400 || status == 409, "{status} {v}");
+    let (status, _) = post_json("/api/oauth/bogus/loopback", &json!({}));
+    assert_eq!(status, 404);
+    // the callback refuses answers that belong to no waiting login, as a page
+    let res = get("/oauth/youtube/callback?code=x&state=nope");
+    assert_eq!(res.status().as_u16(), 400);
+    assert!(
+        res.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .starts_with("text/html"),
+        "the callback answers a page for the browser tab"
+    );
+    let res = get("/oauth/youtube/callback?error=access_denied");
+    assert_eq!(res.status().as_u16(), 400);
+    let res = get("/oauth/bogus/callback?code=x&state=y");
+    assert_eq!(res.status().as_u16(), 404);
+    let (status, r) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "youtube": { "clientType": "tv" } } }),
+    );
+    assert_eq!(status, 200, "{r}");
+}

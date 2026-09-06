@@ -94,6 +94,10 @@ pub struct Integrations {
 pub struct YouTube {
     pub enabled: bool,
     pub quick_share: bool,
+    /// `tv` (a "TVs and Limited Input devices" client, connected with a
+    /// code from any device) or `desktop` (a "Desktop app" client, connected
+    /// in the browser on this PC through the loopback redirect).
+    pub client_type: String,
     /// `unlisted` (default), `private` or `public`.
     pub privacy: String,
     /// Description template; `{title}`, `{clip}` and `{date}` are replaced.
@@ -101,12 +105,14 @@ pub struct YouTube {
 }
 
 pub const YOUTUBE_PRIVACY: [&str; 3] = ["unlisted", "private", "public"];
+pub const YOUTUBE_CLIENT_TYPES: [&str; 2] = ["tv", "desktop"];
 
 impl Default for YouTube {
     fn default() -> Self {
         Self {
             enabled: false,
             quick_share: false,
+            client_type: "tv".into(),
             privacy: "unlisted".into(),
             description: "{title}\n\nClip from {date}, shared with replaycut.".into(),
         }
@@ -324,7 +330,13 @@ const S3_KEYS: [&str; 8] = [
     "presignDays",
 ];
 const WEBDAV_KEYS: [&str; 5] = ["enabled", "quickShare", "url", "folder", "publicBase"];
-const YOUTUBE_KEYS: [&str; 4] = ["enabled", "quickShare", "privacy", "description"];
+const YOUTUBE_KEYS: [&str; 5] = [
+    "enabled",
+    "quickShare",
+    "clientType",
+    "privacy",
+    "description",
+];
 /// Storage integrations, for the "one quick-share target" rule.
 const STORAGE_GROUPS: [&str; 5] = ["nextcloud", "onedrive", "s3", "webdav", "youtube"];
 const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
@@ -504,6 +516,10 @@ impl Settings {
             "integrations.youtube.privacy must be unlisted, private or public"
         );
         anyhow::ensure!(
+            YOUTUBE_CLIENT_TYPES.contains(&self.integrations.youtube.client_type.as_str()),
+            "integrations.youtube.clientType must be tv or desktop"
+        );
+        anyhow::ensure!(
             self.integrations.youtube.description.chars().count() <= 4000,
             "integrations.youtube.description must be at most 4000 characters"
         );
@@ -610,6 +626,13 @@ mod tests {
             .with_patch(&serde_json::json!({ "integrations": { "youtube": { "channel": "x" } } }))
             .unwrap_err();
         assert!(err.contains("unknown field"), "{err}");
+        let err = s
+            .with_patch(
+                &serde_json::json!({ "integrations": { "youtube": { "clientType": "phone" } } }),
+            )
+            .unwrap_err();
+        assert!(err.contains("clientType"), "{err}");
+        assert_eq!(s.integrations.youtube.client_type, "tv");
     }
 
     #[test]

@@ -41,20 +41,31 @@ click afterwards.
 ## 3. Create the client
 
 1. **APIs & Services › Credentials › Create credentials › OAuth client ID**.
-2. Application type: **TVs and Limited Input devices**. This is the type
-   that supports the code login replaycut uses (you type a short code at
-   <https://www.google.com/device>, from any device, the phone included). A
-   *Desktop app* client does **not** work with that flow.
+2. Application type, one of two:
+   - **TVs and Limited Input devices** (recommended): replaycut shows a
+     short code, you type it at <https://www.google.com/device> from any
+     device, the phone included.
+   - **Desktop app**: replaycut opens Google's login in the browser on the
+     PC that runs it, and Google sends the browser back to
+     `http://127.0.0.1:<port>/oauth/youtube/callback` (a Desktop client
+     accepts any loopback port). Only works from that PC's browser.
 3. Name it `replaycut` and create it. Google shows a **Client ID** (ends in
    `.apps.googleusercontent.com`) and a **Client secret**. Copy both.
 
+Both types ask for the same permission, `.../auth/youtube` ("manage your
+YouTube account"): uploading needs less, but reading the channel name and
+deleting a video from replaycut's delete dialog need this one.
+
 ## 4. Connect replaycut
 
-1. Settings › Integrations › **YouTube**: paste client ID and client secret,
-   click **Save**. They go to the Windows Credential Manager
-   (`replaycut/youtube-client`); nothing is written to a file.
-2. Switch the card on and click **Connect YouTube**. Open the link shown,
-   enter the code, pick the channel, allow the access. The card says
+1. Settings › Integrations › **YouTube**: choose the client type you
+   created, paste client ID and client secret, click **Save**. They go to
+   the Windows Credential Manager (`replaycut/youtube-client`); nothing is
+   written to a file.
+2. Switch the card on and click **Connect YouTube**. With a TV client: open
+   the link shown, enter the code, pick the channel, allow the access. With
+   a Desktop client: a tab with Google's login opens; sign in, pick the
+   channel, allow, and the tab says it is done. Either way the card says
    *Connected as <channel>* when the tokens arrived (the refresh token is
    the credential `replaycut/youtube`).
 3. Choose the privacy (unlisted, private, public) and edit the description

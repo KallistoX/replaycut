@@ -28,17 +28,26 @@ const MS_LOGIN_BASE: &str = "https://login.microsoftonline.com/common/oauth2/v2.
 /// secret along; the allowed scopes include `youtube` but not
 /// `youtube.upload`.
 const GOOGLE_LOGIN_BASE: &str = "https://oauth2.googleapis.com";
+/// Google's authorization endpoint for the loopback flow (a "Desktop app"
+/// client); `REPLAYCUT_GOOGLE_AUTH_URL` points it at a fake.
+const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TIMEOUT: Duration = Duration::from_secs(20);
 
-/// An OAuth provider with a device-code flow.
+/// An OAuth provider: the device-code flow (the default) or, since 2.6, the
+/// loopback flow with PKCE (the browser on this PC is sent to the provider
+/// and comes back to `http://127.0.0.1:<port>/oauth/<provider>/callback`).
 #[derive(Debug, Clone)]
-pub struct DeviceProvider {
+pub struct Provider {
     pub id: &'static str,
     pub label: &'static str,
     /// `<base>/<device_path>` and `<base>/token`.
     pub login_base: String,
     /// `devicecode` (Microsoft) or `device/code` (Google).
     pub device_path: &'static str,
+    /// The authorization endpoint of the loopback flow.
+    pub auth_url: String,
+    /// Connect through the browser redirect instead of a code.
+    pub loopback: bool,
     pub client_id: String,
     /// Sent with the token requests when the provider wants it (Google).
     pub client_secret: Option<String>,
@@ -52,15 +61,17 @@ pub struct DeviceProvider {
 /// The provider behind a target id, if it has one. OneDrive uses the
 /// replaycut app registration; YouTube the user's own Google client from
 /// the Credential Manager (since 2.6), so `client_id` is empty until one is
-/// stored.
-pub fn provider(id: &str) -> Option<DeviceProvider> {
+/// stored, and its `clientType` setting decides the flow.
+pub fn provider(id: &str, settings: &crate::settings::Settings) -> Option<Provider> {
     match id {
-        "onedrive" => Some(DeviceProvider {
+        "onedrive" => Some(Provider {
             id: "onedrive",
             label: "OneDrive",
             login_base: std::env::var("REPLAYCUT_MS_LOGIN_BASE")
                 .unwrap_or_else(|_| MS_LOGIN_BASE.to_string()),
             device_path: "devicecode",
+            auth_url: format!("{MS_LOGIN_BASE}/authorize"),
+            loopback: false,
             client_id: std::env::var("REPLAYCUT_ONEDRIVE_CLIENT_ID")
                 .ok()
                 .filter(|s| !s.trim().is_empty())
@@ -75,12 +86,15 @@ pub fn provider(id: &str) -> Option<DeviceProvider> {
                 .ok()
                 .flatten()
                 .filter(|c| !c.user.trim().is_empty() && !c.secret.trim().is_empty());
-            Some(DeviceProvider {
+            Some(Provider {
                 id: "youtube",
                 label: "YouTube",
                 login_base: std::env::var("REPLAYCUT_GOOGLE_LOGIN_BASE")
                     .unwrap_or_else(|_| GOOGLE_LOGIN_BASE.to_string()),
                 device_path: "device/code",
+                auth_url: std::env::var("REPLAYCUT_GOOGLE_AUTH_URL")
+                    .unwrap_or_else(|_| GOOGLE_AUTH_URL.to_string()),
+                loopback: settings.integrations.youtube.client_type == "desktop",
                 client_id: client
                     .as_ref()
                     .map(|c| c.user.trim().to_string())
@@ -95,7 +109,92 @@ pub fn provider(id: &str) -> Option<DeviceProvider> {
     }
 }
 
-impl DeviceProvider {
+// ------------------------------------------------------------ loopback flow (since 2.6)
+
+/// What the callback needs to finish a loopback login.
+#[derive(Debug, Clone)]
+pub struct LoopbackPending {
+    pub state: String,
+    pub verifier: String,
+    pub redirect_uri: String,
+}
+
+fn base64url(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
+
+fn random_urlsafe(bytes: usize) -> String {
+    use argon2::password_hash::rand_core::{OsRng, RngCore};
+    let mut buf = vec![0u8; bytes];
+    OsRng.fill_bytes(&mut buf);
+    base64url(&buf)
+}
+
+/// The PKCE challenge of a verifier (S256).
+pub fn pkce_challenge(verifier: &str) -> String {
+    use sha2::Digest;
+    base64url(&sha2::Sha256::digest(verifier.as_bytes()))
+}
+
+/// The URL the browser is sent to, plus what the callback needs. Google
+/// only hands out a refresh token with `access_type=offline` and
+/// `prompt=consent`.
+pub fn loopback_start(p: &Provider, redirect_uri: &str) -> Result<(String, LoopbackPending)> {
+    if p.client_id.is_empty() {
+        bail!("{}", p.missing_client);
+    }
+    let pending = LoopbackPending {
+        state: random_urlsafe(24),
+        verifier: random_urlsafe(48),
+        redirect_uri: redirect_uri.to_string(),
+    };
+    let q = |s: &str| crate::util::encode_path_segment(s);
+    let url = format!(
+        "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent&state={}&code_challenge={}&code_challenge_method=S256",
+        p.auth_url,
+        q(&p.client_id),
+        q(redirect_uri),
+        q(p.scope),
+        q(&pending.state),
+        q(&pkce_challenge(&pending.verifier)),
+    );
+    Ok((url, pending))
+}
+
+/// Exchange the code from the callback for tokens.
+pub async fn loopback_exchange(
+    p: &Provider,
+    pending: &LoopbackPending,
+    code: &str,
+) -> Result<Tokens> {
+    let mut form = p.client_form();
+    form.push(("grant_type", "authorization_code".to_string()));
+    form.push(("code", code.to_string()));
+    form.push(("redirect_uri", pending.redirect_uri.clone()));
+    form.push(("code_verifier", pending.verifier.clone()));
+    let v: Value = client()?
+        .post(format!("{}/token", p.login_base))
+        .form(&form)
+        .send()
+        .await?
+        .json()
+        .await?;
+    if let Some(e) = v["error"].as_str() {
+        bail!(
+            "{e}: {}",
+            v["error_description"]
+                .as_str()
+                .unwrap_or("")
+                .lines()
+                .next()
+                .unwrap_or("")
+        );
+    }
+    parse_tokens(&v)
+}
+
+impl Provider {
     /// The form fields every token request starts with.
     fn client_form(&self) -> Vec<(&'static str, String)> {
         let mut f = vec![("client_id", self.client_id.clone())];
@@ -136,7 +235,7 @@ pub enum Poll {
     Tokens(Tokens),
 }
 
-pub async fn device_start(p: &DeviceProvider) -> Result<DeviceStart> {
+pub async fn device_start(p: &Provider) -> Result<DeviceStart> {
     if p.client_id.is_empty() {
         bail!("{}", p.missing_client);
     }
@@ -172,7 +271,7 @@ fn parse_tokens(v: &Value) -> Result<Tokens> {
     })
 }
 
-pub async fn device_poll(p: &DeviceProvider, device_code: &str) -> Result<Poll> {
+pub async fn device_poll(p: &Provider, device_code: &str) -> Result<Poll> {
     let mut form = p.client_form();
     form.push((
         "grant_type",
@@ -202,7 +301,7 @@ pub async fn device_poll(p: &DeviceProvider, device_code: &str) -> Result<Poll> 
     }
 }
 
-pub async fn refresh(p: &DeviceProvider, refresh_token: &str) -> Result<Tokens> {
+pub async fn refresh(p: &Provider, refresh_token: &str) -> Result<Tokens> {
     let mut form = p.client_form();
     form.push(("grant_type", "refresh_token".to_string()));
     form.push(("refresh_token", refresh_token.to_string()));
@@ -231,14 +330,14 @@ pub async fn refresh(p: &DeviceProvider, refresh_token: &str) -> Result<Tokens> 
 /// Access tokens for one connected account: refreshed on demand, the new
 /// refresh token written back to the Credential Manager.
 pub struct TokenSource {
-    provider: DeviceProvider,
+    provider: Provider,
     account: String,
     refresh_token: Mutex<String>,
     access: Mutex<Option<(String, Instant)>>,
 }
 
 impl TokenSource {
-    pub fn new(provider: DeviceProvider, account: String, refresh_token: String) -> Self {
+    pub fn new(provider: Provider, account: String, refresh_token: String) -> Self {
         Self {
             provider,
             account,
@@ -294,7 +393,9 @@ pub enum FlowStatus {
     Failed { error: String },
 }
 
-/// A device flow the page can watch through `GET /api/oauth/<provider>`.
+/// A login in progress the page can watch through `GET /api/oauth/<provider>`:
+/// a device flow (code and link) or a loopback flow (the link only; the
+/// callback finishes it).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Flow {
@@ -302,61 +403,38 @@ pub struct Flow {
     pub verification_uri: String,
     #[serde(skip)]
     pub expires_at: Instant,
+    #[serde(skip)]
+    pub loopback: Option<LoopbackPending>,
     #[serde(flatten)]
     pub status: FlowStatus,
 }
 
 pub type Flows = Mutex<HashMap<String, Flow>>;
 
-/// Poll a started device flow to the end in the background; the outcome
-/// lands in `state.oauth` and, on success, the refresh token in the
-/// Credential Manager and the runtime is rebuilt. The HTTP handler calls
-/// `device_start` itself so its answer can carry the code.
-pub async fn run_started_flow(
-    state: Arc<AppState>,
-    p: DeviceProvider,
-    start: DeviceStart,
-    account_name: impl Fn(String) -> futures_util::future::BoxFuture<'static, Result<String>>,
-) -> Result<()> {
-    let expires_at = Instant::now() + Duration::from_secs(start.expires_in);
-    state.oauth.lock().insert(
-        p.id.to_string(),
-        Flow {
-            user_code: start.user_code.clone(),
-            verification_uri: start.verification_uri.clone(),
-            expires_at,
-            status: FlowStatus::Pending,
-        },
-    );
-    tracing::info!(
-        "{}: device flow started, code {} at {}",
-        p.label,
-        start.user_code,
-        start.verification_uri
-    );
-    let mut interval = start.interval;
+/// The account name once the tokens are there, per provider.
+pub type AccountLookup =
+    Box<dyn Fn(String) -> futures_util::future::BoxFuture<'static, Result<String>> + Send + Sync>;
+
+/// Store the tokens of a finished login: the refresh token in the Credential
+/// Manager under the account's name, the outcome in the flow, the runtime
+/// rebuilt so the storage becomes a target.
+async fn finish_login(
+    state: &AppState,
+    p: &Provider,
+    tokens: Result<Tokens>,
+    account_name: &AccountLookup,
+) -> Result<String> {
     let outcome: Result<String> = async {
-        loop {
-            tokio::time::sleep(Duration::from_secs(interval)).await;
-            if Instant::now() > expires_at {
-                bail!("the code expired before it was entered");
-            }
-            match device_poll(&p, &start.device_code).await? {
-                Poll::Pending => {}
-                Poll::SlowDown => interval += 5,
-                Poll::Tokens(t) => {
-                    let refresh = t
-                        .refresh_token
-                        .clone()
-                        .ok_or_else(|| anyhow!("the provider sent no refresh token"))?;
-                    let account = account_name(t.access_token.clone())
-                        .await
-                        .unwrap_or_else(|_| p.label.to_string());
-                    credentials::write(p.credential, &account, &refresh)?;
-                    return Ok(account);
-                }
-            }
-        }
+        let t = tokens?;
+        let refresh = t
+            .refresh_token
+            .clone()
+            .ok_or_else(|| anyhow!("the provider sent no refresh token"))?;
+        let account = account_name(t.access_token.clone())
+            .await
+            .unwrap_or_else(|_| p.label.to_string());
+        credentials::write(p.credential, &account, &refresh)?;
+        Ok(account)
     }
     .await;
     let status = match &outcome {
@@ -367,7 +445,7 @@ pub async fn run_started_flow(
             }
         }
         Err(e) => {
-            tracing::warn!("{}: device flow failed: {e:#}", p.label);
+            tracing::warn!("{}: login failed: {e:#}", p.label);
             FlowStatus::Failed {
                 error: format!("{e:#}"),
             }
@@ -375,6 +453,7 @@ pub async fn run_started_flow(
     };
     if let Some(f) = state.oauth.lock().get_mut(p.id) {
         f.status = status;
+        f.loopback = None;
     }
     if outcome.is_ok() {
         if let Err(e) = state.rebuild_runtime().await {
@@ -382,7 +461,105 @@ pub async fn run_started_flow(
         }
         state.tray_changed();
     }
-    outcome.map(|_| ())
+    outcome
+}
+
+/// Begin a loopback flow: remembers state and verifier, returns the URL the
+/// browser must open. The flow expires after ten minutes.
+pub fn start_loopback_flow(state: &AppState, p: &Provider, redirect_uri: &str) -> Result<String> {
+    let (url, pending) = loopback_start(p, redirect_uri)?;
+    state.oauth.lock().insert(
+        p.id.to_string(),
+        Flow {
+            user_code: String::new(),
+            verification_uri: url.clone(),
+            expires_at: Instant::now() + Duration::from_secs(600),
+            loopback: Some(pending),
+            status: FlowStatus::Pending,
+        },
+    );
+    tracing::info!("{}: browser login started", p.label);
+    Ok(url)
+}
+
+/// `GET /oauth/<provider>/callback`: the code comes back from the provider.
+/// Checks the state, exchanges the code and stores the account.
+pub async fn finish_loopback_flow(
+    state: &AppState,
+    p: &Provider,
+    code: &str,
+    state_param: &str,
+    account_name: AccountLookup,
+) -> Result<String> {
+    let pending = {
+        let flows = state.oauth.lock();
+        let flow = flows
+            .get(p.id)
+            .ok_or_else(|| anyhow!("no {} login is waiting", p.label))?;
+        let pending = flow
+            .loopback
+            .clone()
+            .ok_or_else(|| anyhow!("no {} browser login is waiting", p.label))?;
+        if flow.expires_at < Instant::now() {
+            bail!("the {} login expired - start it again", p.label);
+        }
+        if pending.state != state_param {
+            bail!(
+                "the login answer does not belong to the waiting {} login",
+                p.label
+            );
+        }
+        pending
+    };
+    let tokens = loopback_exchange(p, &pending, code).await;
+    finish_login(state, p, tokens, &account_name).await
+}
+
+/// Poll a started device flow to the end in the background; the outcome
+/// lands in `state.oauth` and, on success, the refresh token in the
+/// Credential Manager and the runtime is rebuilt. The HTTP handler calls
+/// `device_start` itself so its answer can carry the code.
+pub async fn run_started_flow(
+    state: Arc<AppState>,
+    p: Provider,
+    start: DeviceStart,
+    account_name: AccountLookup,
+) -> Result<()> {
+    let expires_at = Instant::now() + Duration::from_secs(start.expires_in);
+    state.oauth.lock().insert(
+        p.id.to_string(),
+        Flow {
+            user_code: start.user_code.clone(),
+            verification_uri: start.verification_uri.clone(),
+            expires_at,
+            loopback: None,
+            status: FlowStatus::Pending,
+        },
+    );
+    tracing::info!(
+        "{}: device flow started, code {} at {}",
+        p.label,
+        start.user_code,
+        start.verification_uri
+    );
+    let mut interval = start.interval;
+    let tokens: Result<Tokens> = async {
+        loop {
+            tokio::time::sleep(Duration::from_secs(interval)).await;
+            if Instant::now() > expires_at {
+                bail!("the code expired before it was entered");
+            }
+            match device_poll(&p, &start.device_code).await? {
+                Poll::Pending => {}
+                Poll::SlowDown => interval += 5,
+                Poll::Tokens(t) => return Ok(t),
+            }
+        }
+    }
+    .await;
+    finish_login(&state, &p, tokens, &account_name)
+        .await
+        .map(|_| ())
 }
 
 #[cfg(test)]
@@ -443,12 +620,14 @@ pub(crate) mod tests {
         (base, task)
     }
 
-    pub(crate) fn test_provider(base: &str) -> DeviceProvider {
-        DeviceProvider {
+    pub(crate) fn test_provider(base: &str) -> Provider {
+        Provider {
             id: "onedrive",
             label: "OneDrive",
             login_base: base.to_string(),
             device_path: "devicecode",
+            auth_url: format!("{base}/authorize"),
+            loopback: false,
             client_id: "test-client".into(),
             client_secret: None,
             scope: "Files.ReadWrite.AppFolder offline_access",
@@ -481,6 +660,38 @@ pub(crate) mod tests {
         let t = refresh(&p, "RT1").await.unwrap();
         assert_eq!(t.access_token, "AT2");
         assert_eq!(t.refresh_token.as_deref(), Some("RT2"));
+    }
+
+    #[test]
+    fn loopback_url_carries_pkce_and_state() {
+        let p = test_provider("http://127.0.0.1:1");
+        let (url, pending) = loopback_start(&p, "http://127.0.0.1:8420/oauth/x/callback").unwrap();
+        assert!(
+            url.starts_with("http://127.0.0.1:1/authorize?client_id=test-client&"),
+            "{url}"
+        );
+        assert!(
+            url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A8420%2Foauth%2Fx%2Fcallback"),
+            "{url}"
+        );
+        assert!(url.contains(&format!("state={}", pending.state)), "{url}");
+        assert!(
+            url.contains(&format!(
+                "code_challenge={}&code_challenge_method=S256",
+                pkce_challenge(&pending.verifier)
+            )),
+            "{url}"
+        );
+        assert!(url.contains("access_type=offline&prompt=consent"), "{url}");
+        assert_eq!(pending.verifier.len(), 64);
+        // RFC 7636 appendix B
+        assert_eq!(
+            pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        );
+        let mut none = p.clone();
+        none.client_id = String::new();
+        assert!(loopback_start(&none, "http://127.0.0.1:1/cb").is_err());
     }
 
     #[tokio::test]

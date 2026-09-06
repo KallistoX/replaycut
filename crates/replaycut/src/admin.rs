@@ -796,7 +796,7 @@ pub async fn scanning(
 
 // ------------------------------------------------------------ OAuth (since 2.5)
 
-fn oauth_document(app: &AppState, p: &crate::oauth::DeviceProvider) -> Value {
+fn oauth_document(app: &AppState, p: &crate::oauth::Provider) -> Value {
     let cred = credentials::read(p.credential).ok().flatten();
     let flow = app.oauth.lock().get(p.id).cloned();
     json!({
@@ -805,6 +805,8 @@ fn oauth_document(app: &AppState, p: &crate::oauth::DeviceProvider) -> Value {
         "configured": !p.client_id.is_empty(),
         "connected": cred.is_some(),
         "account": cred.map(|c| c.user),
+        // since 2.6: the provider connects through the browser on this PC
+        "loopback": p.loopback,
         "flow": flow.map(|f| {
             let mut v = serde_json::to_value(&f).unwrap_or(Value::Null);
             v["expiresIn"] = json!(f.expires_at.saturating_duration_since(std::time::Instant::now()).as_secs());
@@ -813,9 +815,29 @@ fn oauth_document(app: &AppState, p: &crate::oauth::DeviceProvider) -> Value {
     })
 }
 
-fn oauth_provider(id: &str) -> Result<crate::oauth::DeviceProvider, ApiError> {
-    crate::oauth::provider(id)
+fn oauth_provider(app: &AppState, id: &str) -> Result<crate::oauth::Provider, ApiError> {
+    crate::oauth::provider(id, &app.settings())
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown provider: {id}")))
+}
+
+/// Who the account is, once the tokens are there: per provider.
+fn account_lookup(p: &crate::oauth::Provider) -> crate::oauth::AccountLookup {
+    let youtube = p.id == "youtube";
+    let api = if youtube {
+        crate::youtube::api_base()
+    } else {
+        crate::onedrive::graph_base()
+    };
+    Box::new(move |token| {
+        let api = api.clone();
+        Box::pin(async move {
+            if youtube {
+                crate::youtube::YouTube::channel_title(&api, &token).await
+            } else {
+                crate::onedrive::OneDrive::me(&api, &token).await
+            }
+        })
+    })
 }
 
 /// `GET /api/oauth/<provider>`
@@ -823,8 +845,15 @@ pub async fn oauth_status(
     State(app): State<App>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    let p = oauth_provider(&id)?;
+    let p = oauth_provider(&app, &id)?;
     Ok(Json(oauth_document(&app, &p)))
+}
+
+fn flow_running(app: &AppState, id: &str) -> bool {
+    app.oauth.lock().get(id).is_some_and(|f| {
+        matches!(f.status, crate::oauth::FlowStatus::Pending)
+            && f.expires_at > std::time::Instant::now()
+    })
 }
 
 /// `POST /api/oauth/<provider>/start`: begin a device flow (or report the
@@ -833,40 +862,29 @@ pub async fn oauth_start(
     State(app): State<App>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    let p = oauth_provider(&id)?;
+    let p = oauth_provider(&app, &id)?;
     if p.client_id.is_empty() {
         return Err(ApiError::new(StatusCode::CONFLICT, p.missing_client));
     }
-    let running = app.oauth.lock().get(p.id).is_some_and(|f| {
-        matches!(f.status, crate::oauth::FlowStatus::Pending)
-            && f.expires_at > std::time::Instant::now()
-    });
-    if !running {
+    if p.loopback {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "{} connects through the browser on this PC - use /loopback",
+                p.label
+            ),
+        ));
+    }
+    if !flow_running(&app, p.id) {
         // the code comes from the provider first; wait for it so the answer carries it
         let start = crate::oauth::device_start(&p)
             .await
             .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, format!("{e:#}")))?;
         let state = app.clone();
         let provider = p.clone();
-        // who the account is, once the tokens are there: per provider
-        let api = if p.id == "youtube" {
-            crate::youtube::api_base()
-        } else {
-            crate::onedrive::graph_base()
-        };
-        let youtube = p.id == "youtube";
+        let lookup = account_lookup(&p);
         tokio::spawn(async move {
-            let _ = crate::oauth::run_started_flow(state, provider, start, move |token| {
-                let api = api.clone();
-                Box::pin(async move {
-                    if youtube {
-                        crate::youtube::YouTube::channel_title(&api, &token).await
-                    } else {
-                        crate::onedrive::OneDrive::me(&api, &token).await
-                    }
-                })
-            })
-            .await;
+            let _ = crate::oauth::run_started_flow(state, provider, start, lookup).await;
         });
         // give the task a moment to register the flow
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -876,12 +894,116 @@ pub async fn oauth_start(
     Ok(Json(doc))
 }
 
+/// `POST /api/oauth/<provider>/loopback` (since 2.6): begin a browser login.
+/// Answers the document plus `url`; the page opens it on this PC, the
+/// provider sends the browser back to `/oauth/<provider>/callback`.
+pub async fn oauth_loopback(
+    State(app): State<App>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let p = oauth_provider(&app, &id)?;
+    if p.client_id.is_empty() {
+        return Err(ApiError::new(StatusCode::CONFLICT, p.missing_client));
+    }
+    if !p.loopback {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("{} connects with a code - use /start", p.label),
+        ));
+    }
+    let redirect_uri = format!(
+        "http://127.0.0.1:{}/oauth/{}/callback",
+        app.settings().port,
+        p.id
+    );
+    let url = crate::oauth::start_loopback_flow(&app, &p, &redirect_uri)
+        .map_err(|e| ApiError::new(StatusCode::CONFLICT, format!("{e:#}")))?;
+    let mut doc = oauth_document(&app, &p);
+    doc["ok"] = json!(true);
+    doc["url"] = json!(url);
+    Ok(Json(doc))
+}
+
+/// `GET /oauth/<provider>/callback?code&state` (since 2.6): the provider
+/// sends the browser back here. Answers a small page for that tab; the
+/// settings card learns the outcome through `GET /api/oauth/<provider>`.
+pub async fn oauth_callback(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    let page = |status: StatusCode, title: &str, text: &str| {
+        let body = format!(
+            "<!doctype html><meta charset=\"utf-8\"><title>replaycut - {title}</title>\
+             <body style=\"font-family:system-ui,sans-serif;background:#141519;color:#e8e8ec;\
+             display:flex;align-items:center;justify-content:center;height:100vh;margin:0\">\
+             <div style=\"max-width:32rem;padding:2rem\"><h1 style=\"font-size:1.4rem\">{title}</h1>\
+             <p>{}</p><p style=\"color:#9a9aa6\">You can close this tab and go back to replaycut.</p></div>",
+            html_escape(text)
+        );
+        (
+            status,
+            [
+                (CONTENT_TYPE, "text/html; charset=utf-8"),
+                (CACHE_CONTROL, "no-store"),
+            ],
+            body,
+        )
+            .into_response()
+    };
+    let p = match oauth_provider(&app, &id) {
+        Ok(p) => p,
+        Err(e) => return page(StatusCode::NOT_FOUND, "Unknown provider", &e.message),
+    };
+    if let Some(err) = q.get("error") {
+        let text = format!(
+            "{err}: {}",
+            q.get("error_description").map(String::as_str).unwrap_or("")
+        );
+        if let Some(f) = app.oauth.lock().get_mut(p.id) {
+            f.status = crate::oauth::FlowStatus::Failed {
+                error: text.clone(),
+            };
+            f.loopback = None;
+        }
+        tracing::warn!("{}: browser login refused: {text}", p.label);
+        return page(StatusCode::BAD_REQUEST, "Not connected", &text);
+    }
+    let (code, state) = (
+        q.get("code").map(String::as_str).unwrap_or(""),
+        q.get("state").map(String::as_str).unwrap_or(""),
+    );
+    if code.is_empty() || state.is_empty() {
+        return page(
+            StatusCode::BAD_REQUEST,
+            "Not connected",
+            "the answer carries no code and state",
+        );
+    }
+    let lookup = account_lookup(&p);
+    match crate::oauth::finish_loopback_flow(&app, &p, code, state, lookup).await {
+        Ok(account) => page(
+            StatusCode::OK,
+            &format!("{} connected", p.label),
+            &format!("Connected as {account}."),
+        ),
+        Err(e) => page(StatusCode::BAD_REQUEST, "Not connected", &format!("{e:#}")),
+    }
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 /// `POST /api/oauth/<provider>/disconnect`: forget the account.
 pub async fn oauth_disconnect(
     State(app): State<App>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    let p = oauth_provider(&id)?;
+    let p = oauth_provider(&app, &id)?;
     credentials::delete(p.credential).map_err(ApiError::internal)?;
     app.oauth.lock().remove(p.id);
     if let Err(e) = app.rebuild_runtime().await {
