@@ -132,6 +132,10 @@ pub struct Job {
     // since 2.6: a preview made at scan time runs ffmpeg with idle priority
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub idle: bool,
+    // since 2.7: the target's height cap the encode was scaled to (0 = the
+    // recording's resolution); `kbps` is its bitrate cap, 0 = quality-driven
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub max_height: u32,
     // since 2.6: a 9:16 cut (`crop` at `verticalPos`, 0 = left edge, 1 = right edge)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub vertical: bool,
@@ -154,6 +158,10 @@ fn default_mode() -> String {
 
 fn default_kind() -> String {
     "share".to_string()
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 fn is_share(kind: &str) -> bool {
@@ -738,7 +746,7 @@ impl AppState {
             "scanAt": inner.scan_at,
             "history": history,
             "config": {
-                "shareKbps": settings.share_kbps,
+                "shareKbps": 0,
                 "expireDays": settings.integrations.nextcloud.expire_days,
                 "version": VERSION,
                 "encoder": runtime.encoder.name,
@@ -783,6 +791,46 @@ impl AppState {
             .iter()
             .find(|e| e["id"] == id)
             .and_then(|e| e["file"].as_str().map(str::to_string))
+    }
+
+    /// A finished job read back from its history entry (since 2.6.1).
+    pub fn history_job(&self, id: &str) -> Option<Job> {
+        self.inner
+            .lock()
+            .history
+            .iter()
+            .find(|e| e["id"] == id)
+            .and_then(|e| serde_json::from_value::<Job>(e.clone()).ok())
+            .map(|mut j| {
+                j.ok = Some(true);
+                j
+            })
+    }
+
+    /// Append a manual post's status to the job's `discord` field, in the
+    /// jobs and in the history (since 2.7).
+    pub fn note_post(&self, id: &str, note: &str) {
+        let mut inner = self.inner.lock();
+        let join = |cur: Option<&str>| match cur {
+            Some(c) if !c.is_empty() => format!("{c} · {note}"),
+            _ => note.to_string(),
+        };
+        if let Some(j) = inner.jobs.get_mut(id) {
+            j.discord = Some(join(j.discord.as_deref()));
+        }
+        let mut changed = false;
+        for e in inner.history.iter_mut() {
+            if e["id"] == id {
+                let cur = e["discord"].as_str().map(str::to_string);
+                e["discord"] = json!(join(cur.as_deref()));
+                changed = true;
+            }
+        }
+        if changed {
+            self.save_history(&inner);
+        }
+        drop(inner);
+        self.tray_changed();
     }
 
     /// Record that a clip's H.264 preview exists (or is gone).

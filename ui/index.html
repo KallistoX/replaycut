@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="view/Kbps|Threads|port|expireDays|Height/" content="width=device-width, initial-scale=1">
 <title>replaycut</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
@@ -357,6 +357,7 @@ video, .video { width: 100%; max-height: 58vh; background: var(--surface-2); bor
 .crop-ov span { position: absolute; top: var(--space-2); left: 50%; transform: translateX(-50%); font-size: var(--text-xs); color: var(--fg); background: rgba(0,0,0,0.55); padding: 1px var(--space-2); border-radius: var(--radius-pill); }
 .vpos-row { display: flex; gap: var(--space-3); align-items: center; font-size: var(--text-sm); color: var(--fg-muted); }
 .vpos-row input[type=range] { flex: 1; min-width: 120px; max-width: 420px; accent-color: var(--accent); }
+details.limits summary { cursor: pointer; list-style: none; } details.limits summary::before { content: "▸ "; } details.limits[open] summary::before { content: "▾ "; } details.limits .fields-2 { margin-top: var(--space-2); }
 .video .icon { width: 48px; height: 48px; stroke-width: 1.25; }
 
 .clip { display: grid; grid-template-columns: 64px 1fr; column-gap: var(--space-2); row-gap: 2px; align-items: center; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid transparent; cursor: pointer; }
@@ -555,7 +556,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <div class="share-row">
         <div class="split"><button class="btn btn-primary" id="bShare"><svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd></button><button class="btn btn-primary btn-icon" id="bShareMenu" title="Share to another target">▾</button><div class="menu" id="shareMenu" hidden></div></div>
         <select class="select" id="audio" title="Which audio tracks go into the shared clip"></select>
-        <select class="select" id="mode" title="H.264: re-encoded at 1080p, plays everywhere. Fast copy: the OBS stream as it is, keyframe-accurate, no re-encode"><option value="h264">H.264 1080p</option><option value="copy">Fast copy</option></select>
+        <select class="select" id="mode" title="H.264: re-encoded in the recording's resolution at best quality, plays everywhere. As recorded: the OBS stream as it is - instant, no GPU, starts at the previous keyframe, plays only where the recording codec plays"><option value="h264">H.264 (best quality)</option><option value="copy">As recorded (no re-encode)</option></select>
         <select class="select" id="frame" title="Landscape: the frame as recorded. Vertical: a 9:16 window of full height, scaled to 1080x1920 for YouTube Shorts, TikTok or Reels"><option value="wide">Landscape 16:9</option><option value="vertical">Vertical 9:16 (Short)</option></select>
         <span class="plan" id="planInfo"></span>
       </div>
@@ -704,7 +705,6 @@ ol.steps b { color: var(--fg); font-weight: normal; }
     <div class="group">
       <h2>Encoding</h2>
       <div class="fields-2">
-        <div class="field"><label>Video bitrate (kbit/s)</label><input class="input" data-f="shareKbps" type="number" min="500" max="100000" step="100"><span class="hint">Constant bitrate of the shared H.264 file. 6000 is about 45 MB per minute.</span></div>
         <div class="field"><label>Encoder</label><select class="select" data-f="encoder"><option value="auto">auto</option><option value="h264_nvenc">h264_nvenc (NVIDIA)</option><option value="h264_amf">h264_amf (AMD)</option><option value="h264_qsv">h264_qsv (Intel)</option><option value="libx264">libx264 (software)</option></select><span class="hint" id="encHint"></span></div>
         <div class="field"><label>Hardware decoding</label><select class="select" data-f="hwaccel"><option value="">auto (the measured profile of the encoder)</option><option value="none">none (software)</option><option value="cuda">cuda (NVIDIA)</option><option value="d3d11va">d3d11va</option><option value="qsv">qsv (Intel)</option></select><span class="hint">auto tries the GPU path (decode and scale on the card) with a real clip and falls back to software decoding when it fails. <code>replaycut bench</code> compares them.</span></div>
         <div class="field"><label>ffmpeg priority</label><select class="select" data-f="ffmpegPriority"><option value="normal">normal</option><option value="belowNormal">below normal</option><option value="idle">idle</option></select><span class="hint">Keeps the game smooth while a clip is encoded.</span></div>
@@ -749,6 +749,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="field"><label>Link expiry</label><select class="select" data-f="integrations.nextcloud.expireDays"><option value="0">never</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></div>
         </div>
         <label class="switch"><input type="checkbox" data-f="integrations.nextcloud.quickShare"><span class="track"></span> Quick share target <span class="muted sm">(the Share button uploads here; off = the button keeps the file local and Nextcloud stays in the menu)</span></label>
+        <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.nextcloud.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.nextcloud.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
         <div class="row"><button class="btn" id="sNcTest">Test connection</button><span class="test-msg" id="sNcMsg"></span></div>
       </div>
     </div>
@@ -759,6 +760,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="row" id="sOdRow"><button class="btn btn-primary" id="sOdConnect">Connect OneDrive</button><button class="btn" id="sOdDisconnect" hidden>Disconnect</button><span class="muted sm" id="sOdStatus"></span></div>
         <div class="check-row" id="sOdCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label">Enter this code at Microsoft</div><div class="detail">Open <a id="sOdUri" href="#" target="_blank" rel="noopener"></a> and type <b class="mono" id="sOdUserCode" style="font-size:1.2em;letter-spacing:0.08em"></b>. The card updates when you are done.</div></div></div>
         <label class="switch"><input type="checkbox" data-f="integrations.onedrive.quickShare"><span class="track"></span> Quick share target <span class="muted sm">(only one storage can be; switching it on takes it from the other)</span></label>
+        <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.onedrive.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.onedrive.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
       </div>
     </div>
     <div class="card" id="sS3Card">
@@ -776,6 +778,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="field"><label>Presigned links expire after</label><select class="select" data-f="integrations.s3.presignDays"><option value="1">1 day</option><option value="3">3 days</option><option value="7">7 days (maximum)</option></select></div>
         </div>
         <label class="switch"><input type="checkbox" data-f="integrations.s3.quickShare"><span class="track"></span> Quick share target</label>
+        <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.s3.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.s3.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
         <div class="row"><button class="btn" id="sS3Test">Test connection</button><span class="test-msg" id="sS3Msg"></span></div>
       </div>
     </div>
@@ -791,6 +794,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="field"><label>Public URL of the folder</label><input class="input mono" data-f="integrations.webdav.publicBase" placeholder="https://files.example.com/clips"><span class="hint">The link is this URL plus <code>&lt;month&gt;/&lt;file&gt;</code>.</span></div>
         </div>
         <label class="switch"><input type="checkbox" data-f="integrations.webdav.quickShare"><span class="track"></span> Quick share target</label>
+        <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.webdav.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.webdav.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
         <div class="row"><button class="btn" id="sDavTest">Test connection</button><span class="test-msg" id="sDavMsg"></span></div>
       </div>
     </div>
@@ -810,6 +814,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="field"><label>Description</label><textarea class="input" data-f="integrations.youtube.description" rows="3"></textarea><span class="hint"><code>{title}</code>, <code>{clip}</code> and <code>{date}</code> are filled in. The video title is the clip's title (or its name), plus <code>#Shorts</code> for a vertical cut.</span></div>
         </div>
         <label class="switch"><input type="checkbox" data-f="integrations.youtube.quickShare"><span class="track"></span> Quick share target</label>
+        <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.youtube.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.youtube.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
       </div>
     </div>
     <div class="card" id="sXCard">
@@ -820,6 +825,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="check-row" id="sXCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label" id="sXCodeLabel"></div><div class="detail" id="sXCodeDetail"></div></div></div>
         <div class="field"><label>Post text</label><input class="input" data-f="integrations.x.text" maxlength="280"><span class="hint"><code>{title}</code>, <code>{clip}</code> and <code>{date}</code> are filled in; an empty title falls back to the clip's name. At most 280 characters.</span></div>
         <label class="switch"><input type="checkbox" data-f="integrations.x.quickShare"><span class="track"></span> Quick share target</label>
+        <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.x.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.x.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
       </div>
     </div>
     <h2 class="group-title">Notify</h2>
@@ -985,7 +991,7 @@ const fmt = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60), r = s 
 const fmtShort = s => { s = Math.max(0, Math.round(s || 0)); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r; };
 const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup': 'setup', '/settings': 'settings', '/diagnostics': 'diagnostics', '/obs': 'obs' };
 const page = PAGES[location.pathname] || 'clips';
-let cfg = { shareKbps: 6000, expireDays: 0, audio: [{ id: 'mix', label: 'Mix (all)', need: 1 }], displayName: '' };
+let cfg = { shareKbps: 0, expireDays: 0, audio: [{ id: 'mix', label: 'Mix (all)', need: 1 }], displayName: '' };
 
 // theme: remembered per browser so the page does not flash the default first
 function applyTheme(name) {
@@ -1230,7 +1236,7 @@ async function initSetup() {
 }
 
 // ------------------------------------------------------------ settings
-const SETTINGS_FIELDS = ['clipDir', 'displayName', 'theme', 'shareKbps', 'encoder', 'hwaccel', 'ffmpegPriority', 'ffmpegThreads', 'port', 'bind', 'logLevel', 'checkUpdates', 'integrations.nextcloud.enabled', 'integrations.nextcloud.url', 'integrations.nextcloud.folder', 'integrations.nextcloud.expireDays', 'integrations.discord.enabled'];
+const SETTINGS_FIELDS = ['clipDir', 'displayName', 'theme', 'encoder', 'hwaccel', 'ffmpegPriority', 'ffmpegThreads', 'port', 'bind', 'logLevel', 'checkUpdates', 'integrations.nextcloud.enabled', 'integrations.nextcloud.url', 'integrations.nextcloud.folder', 'integrations.nextcloud.expireDays', 'integrations.discord.enabled'];
 const getPath = (o, p) => p.split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
 const setPath = (o, p, v) => { const ks = p.split('.'); let a = o; ks.slice(0, -1).forEach(k => { a[k] = a[k] || {}; a = a[k]; }); a[ks[ks.length - 1]] = v; };
 async function initSettings() {
@@ -1284,7 +1290,7 @@ async function initSettings() {
     if ($('sDcHook').value.trim()) c.discordWebhook = $('sDcHook').value.trim();
     return c;
   }
-  function labels(c) { const names = { clipDir: 'Recording folder', displayName: 'Display name', theme: 'Theme', shareKbps: 'Video bitrate', encoder: 'Encoder', hwaccel: 'Hardware decoding', ffmpegPriority: 'ffmpeg priority', ffmpegThreads: 'ffmpeg threads', port: 'Port', bind: 'Listen on', logLevel: 'Log level', checkUpdates: 'Update check', integrations: 'Integrations', password: 'Password', nextcloudUser: 'Nextcloud credentials', nextcloudPassword: '', discordWebhook: 'Discord webhook', s3AccessKey: 'S3 keys', s3SecretKey: '', webdavUser: 'WebDAV login', webdavPassword: '', youtubeClientId: 'YouTube client', youtubeClientSecret: '', telegramToken: 'Telegram token', webhookSecret: 'Webhook secret' }; return Object.keys(c).map(k => names[k]).filter(Boolean).join(', '); }
+  function labels(c) { const names = { clipDir: 'Recording folder', displayName: 'Display name', theme: 'Theme', encoder: 'Encoder', hwaccel: 'Hardware decoding', ffmpegPriority: 'ffmpeg priority', ffmpegThreads: 'ffmpeg threads', port: 'Port', bind: 'Listen on', logLevel: 'Log level', checkUpdates: 'Update check', integrations: 'Integrations', password: 'Password', nextcloudUser: 'Nextcloud credentials', nextcloudPassword: '', discordWebhook: 'Discord webhook', s3AccessKey: 'S3 keys', s3SecretKey: '', webdavUser: 'WebDAV login', webdavPassword: '', youtubeClientId: 'YouTube client', youtubeClientSecret: '', telegramToken: 'Telegram token', webhookSecret: 'Webhook secret' }; return Object.keys(c).map(k => names[k]).filter(Boolean).join(', '); }
   function dirty() {
     const c = changes(), n = Object.keys(c).length;
     $('saveBar').classList.toggle('dirty', n > 0); $('sSave').disabled = !n; $('sDiscard').hidden = !n;
@@ -1505,7 +1511,8 @@ let v, tl, sel, hin, hout, ph;
 const short = b => { const p = (cfg.displayName || '').trim(); return p && b && b.toLowerCase().startsWith(p.toLowerCase()) ? b.slice(p.length).trim() : (b || ''); };
 const audioLabel = id => (cfg.audio.find(a => a.id === id) || {}).label || id || 'Mix';
 function expiry() { return cfg.expireDays > 0 ? 'link expires in ' + cfg.expireDays + ' days' : 'link never expires'; }
-function plan(d) { const a = 128000, vb = cfg.shareKbps * 1000; return { mb: (vb + a) * d / 8 / 1048576, kbps: vb / 1000 }; }
+// size estimate (since 2.7): the share keeps the recording's quality, so the recording's own rate is the guide
+function plan(d) { const a = 128000; if (cfg.shareKbps > 0) { const vb = cfg.shareKbps * 1000; return { mb: (vb + a) * d / 8 / 1048576, kbps: vb / 1000 }; } const bps = cur && cur.size && cur.duration ? cur.size * 8 / cur.duration : 12e6; return { mb: (bps + a) * d / 8 / 1048576, kbps: 0 }; }
 
 function initClips() {
   v = $('v'); tl = $('tl'); sel = $('sel'); hin = $('hin'); hout = $('hout'); ph = $('ph');
@@ -1615,7 +1622,7 @@ function render() {
   ph.style.left = (v.currentTime / d * 100) + '%';
   const len = tOut - tIn, p = plan(Math.max(1, len)), copy = $('mode').value === 'copy';
   $('selInfo').innerHTML = `${fmt(tIn)} - ${fmt(tOut)} · <b>${len.toFixed(1)} s</b>`;
-  const size = copy ? `about <b>${(cur.size * Math.max(1, len) / (d || 1) / 1048576).toFixed(0)} MB</b> as recorded (${esc((cur.codec || 'copy').toUpperCase())}, keyframe-accurate)` : `about <b>${p.mb.toFixed(0)} MB</b> at ${p.kbps.toFixed(0)} kbit/s`;
+  const size = copy ? `about <b>${(cur.size * Math.max(1, len) / (d || 1) / 1048576).toFixed(0)} MB</b> as recorded (${esc((cur.codec || 'copy').toUpperCase())}, keyframe-accurate)` : `about <b>${p.mb.toFixed(0)} MB</b> ${p.kbps ? `at ${p.kbps.toFixed(0)} kbit/s` : `H.264, ${cur.height ? cur.height + 'p' : 'recording resolution'} at best quality`}`;
   const warn = copy && cur.codec && cur.codec !== 'h264' && !cfg.localMode ? ' · <span class="badge warn">Discord embeds and iPhones need H.264</span>' : '';
   const def = defaultTarget();
   const vert = $('frame').value === 'vertical' ? ' · <span class="badge accent">9:16</span> 1080x1920, <code>#Shorts</code> on YouTube' : '';
@@ -1704,7 +1711,8 @@ async function deleteClip() {
 
 // the stages of a share: only the integrations that are on (API contract)
 // since 2.5 the post stage is called `notify` (2.4 and earlier said `discord`); both render the same
-function stageList() { const s = [['encode', 'Cut + encode']]; if (cfg.nextcloud) s.push(['upload', 'Upload']); if (cfg.webhook) s.push(['notify', 'Post']); return s; }
+// since 2.7 only the quick share (a share to the default storage) posts automatically
+function stageList(j) { const s = []; if (!j || !j.source) s.push(['encode', 'Cut + encode']); const target = j ? j.target : defaultTarget(); if (target && target !== 'file') s.push(['upload', 'Upload']); if (cfg.webhook && (!j || (!j.source && j.target === defaultTarget()))) s.push(['notify', 'Post']); return s; }
 const STAGE_TEXT = { queued: 'Queued …', encode: 'Encoding', upload: 'Uploading …', discord: 'Posting …', notify: 'Posting …' };
 function showProgress(j) {
   const p = $('prog'); if (!j || j.stage === 'done' || j.stage === 'error' || j.stage === 'cancelled') { p.hidden = true; return; }
@@ -1712,12 +1720,12 @@ function showProgress(j) {
   const pct = j.stage === 'encode' ? (j.percent || 0) : (j.stage === 'queued' ? 0 : 100);
   const queued = j.stage === 'queued' ? (j.position ? `Queued - ${j.position} share${j.position === 1 ? '' : 's'} ahead` : 'Queued …') : null;
   if (j.kind === 'preview') $('progText').textContent = (queued || `Making the playable preview (720p H.264) of ${short(j.base)}`);
-  else $('progText').textContent = (queued || (j.stage === 'encode' && j.mode === 'copy' ? 'Copying' : STAGE_TEXT[j.stage]) || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)}${j.mode === 'copy' ? ' as recorded' : ` at ${j.kbps} kbit/s`}${j.vertical ? ', vertical 9:16' : ''}, ${audioLabel(j.audio)}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
+  else $('progText').textContent = (queued || (j.stage === 'encode' && j.mode === 'copy' ? 'Copying' : STAGE_TEXT[j.stage]) || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)}${j.mode === 'copy' ? ' as recorded' : (j.kbps ? ` at ${j.kbps} kbit/s` : ' at best quality')}${j.maxHeight ? `, ${j.maxHeight}p` : ''}${j.vertical ? ', vertical 9:16' : ''}, ${audioLabel(j.audio)}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
   const canCancel = ['queued', 'encode', 'upload'].includes(j.stage);
   $('progCancel').hidden = !canCancel; $('progCancel').dataset.job = j.id;
   $('progPct').textContent = pct + ' %';
   $('progBar').style.width = pct + '%';
-  const list = j.kind === 'preview' ? [['encode', 'Encode 720p']] : stageList(), idx = list.findIndex(([id]) => id === j.stage || (id === 'notify' && j.stage === 'discord'));
+  const list = j.kind === 'preview' ? [['encode', 'Encode 720p']] : stageList(j), idx = list.findIndex(([id]) => id === j.stage || (id === 'notify' && j.stage === 'discord'));
   $('stages').innerHTML = list.map(([id, label], i) => `<span class="${i < idx ? 'done' : (i === idx ? 'on' : '')}">${i + 1} ${label}</span>`).join('');
 }
 function showResult(r) {
@@ -1762,15 +1770,28 @@ function showResult(r) {
   box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-${postFailed ? 'warning' : 'check'}"/></svg> ${postFailed ? `Uploaded${to}, but not posted` : `Shared${to}`} - ${meta}, link copied</div>
     <div class="input-group"><input class="input mono" readonly value="${esc(r.direct)}" onclick="this.select()"><button class="btn" id="cp"><svg class="icon"><use href="#i-copy"/></svg> Direct</button><button class="btn" id="cp2" title="Copy the share page link"><svg class="icon"><use href="#i-external"/></svg> Page</button></div>
     ${r.discord ? `<div class="line ${postFailed ? 'err' : 'ok'}"><svg class="icon icon-sm"><use href="#i-${postFailed ? 'error' : 'check'}"/></svg> ${esc(r.discord)}</div>` : ''}
-    <div class="line"><span class="muted sm">${esc(expiry())}</span>${when}</div><div class="row">${downloadButton(r)}${publishButtons(r)}</div>`;
+    <div class="line"><span class="muted sm">${esc(expiry())}</span>${when}</div><div class="row">${downloadButton(r)}${r.discord ? '' : postButtons(r)}${publishButtons(r)}</div>`;
   $('cp').onclick = () => copyText(r.direct).then(() => toast('Direct link copied', 'ok'));
   $('cp2').onclick = () => copyText(r.link).then(() => toast('Page link copied', 'ok'));
-  wirePublish(box, r.id);
+  wirePublish(box, r.id); wirePost(box, r.id);
 }
 // "Download" (since 2.6): the MP4 lands on the device the page is open on - the phone's gallery, the PC's downloads
 function downloadButton(j) {
   if (!j.file || j.ok !== true) return '';
   return `<a class="btn btn-sm" href="/api/jobs/${encodeURIComponent(j.id)}/file" download="${esc(j.file)}" title="Save the MP4 on this device"><svg class="icon icon-sm"><use href="#i-download"/></svg> Download</a>`;
+}
+// "Post to Discord" for every connected notify integration (since 2.7): menu shares and publishes do not post on their own
+function postButtons(j) {
+  if (!j.direct || j.ok !== true) return '';
+  return (cfg.targets || []).filter(t => t.kind === 'notify' && t.connected).map(t => `<button class="btn btn-sm" data-post="${esc(t.id)}" title="Post the link to ${esc(t.label)} now"><svg class="icon icon-sm"><use href="#i-info"/></svg> Post to ${esc(t.label)}</button>`).join('');
+}
+function wirePost(root, id) {
+  root.querySelectorAll('button[data-post]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/post', jsonOpts('POST', { target: b.dataset.post }), { retries: 0, timeout: 30000 }); r.ok ? toast(`${targetLabel(b.dataset.post)}: ${r.status}`, 'ok') : toast(r.error, 'err'); }
+    catch (e) { toast(e.message, 'err'); }
+    b.disabled = false;
+  });
 }
 // "Publish to X" for every connected storage the job did not go to (since 2.5)
 function publishButtons(j) {
@@ -1790,7 +1811,7 @@ async function jobAction(id, action, okText) {
   catch (e) { toast(e.message, 'err'); }
 }
 function renderHistory(h) {
-  const key = JSON.stringify((h || []).map(e => e.id)) + cfg.displayName + JSON.stringify(cfg.targets || null); if (key === histKey) return; histKey = key;
+  const key = JSON.stringify((h || []).map(e => e.id + (e.discord ? '+' : ''))) + cfg.displayName + JSON.stringify(cfg.targets || null); if (key === histKey) return; histKey = key;
   const box = $('hist'); box.innerHTML = (h && h.length) ? '' : '<div class="empty compact">Nothing shared yet.</div>';
   (h || []).forEach(e => {
     const d = document.createElement('div'); d.className = 'hist';
@@ -1802,11 +1823,11 @@ function renderHistory(h) {
     const local = !e.direct;
     const target = e.target && e.target !== 'file' ? `<span class="badge">${esc(targetLabel(e.target))}</span>` : (local ? '<span class="badge accent">file only</span>' : '');
     d.innerHTML = `<b class="truncate"></b><div class="meta">${fmt(e.seconds)} · ${e.sizeMB} MB · ${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · ${esc(audioLabel(e.audio))} ${target}${e.vertical ? ' <span class="badge accent">9:16</span>' : ''}${e.source ? ' <span class="badge">republished</span>' : ''}</div>
-      <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(e.link)}" target="_blank" rel="noopener">Open</a>`}${downloadButton(Object.assign({ ok: true }, e))}${publishButtons(Object.assign({ ok: true }, e))}</div>`;
+      <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(e.link)}" target="_blank" rel="noopener">Open</a>`}${downloadButton(Object.assign({ ok: true }, e))}${e.discord ? '' : postButtons(Object.assign({ ok: true }, e))}${publishButtons(Object.assign({ ok: true }, e))}</div>`;
     d.querySelector('b').textContent = e.title || short(e.base);
     d.querySelectorAll('button[data-c]').forEach(b => b.onclick = () => copyText(e[b.dataset.c]).then(() => toast(b.dataset.c === 'direct' ? 'Direct link copied' : 'Page link copied', 'ok')));
     d.querySelectorAll('button[data-a]').forEach(b => b.onclick = () => jobAction(e.id, b.dataset.a, b.dataset.a === 'copy-file' ? 'File copied - paste it with Ctrl+V' : 'Folder opened on the PC'));
-    wirePublish(d, e.id);
+    wirePublish(d, e.id); wirePost(d, e.id);
     box.appendChild(d);
   });
 }

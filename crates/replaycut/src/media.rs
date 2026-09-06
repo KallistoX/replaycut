@@ -40,10 +40,15 @@ pub struct Encoder {
     pub name: String,
     /// Input options before `-i` (`-hwaccel ...`), empty for software decoding.
     pub decode: Vec<&'static str>,
-    /// The `-vf` chain that scales to 1080p.
-    pub filter: &'static str,
-    /// Rate-control and preset options of the encoder.
+    /// The scale filter of the profile with `{h}` for the height; only used
+    /// when a target limits the height (since 2.7 shares keep the
+    /// recording's resolution).
+    pub scale: &'static str,
+    /// Preset plus rate control for a bitrate cap (`-b:v` follows).
     pub opts: Vec<&'static str>,
+    /// Preset plus quality-driven rate control (since 2.7, the default: no
+    /// bitrate, the encoder spends what the picture needs).
+    pub quality: Vec<&'static str>,
     /// `-pix_fmt yuv420p` on the encoder input (software frames only).
     pub pix_fmt: bool,
 }
@@ -51,7 +56,17 @@ pub struct Encoder {
 impl Encoder {
     /// A hardware decode or GPU filter is in play, so a share may fall back.
     pub fn is_gpu_path(&self) -> bool {
-        !self.decode.is_empty() || self.filter != SW_SCALE
+        !self.decode.is_empty() || self.gpu_frames()
+    }
+
+    /// The frames stay on the card (cuda, qsv): CPU filters cannot touch them.
+    pub fn gpu_frames(&self) -> bool {
+        self.scale != SW_SCALE
+    }
+
+    /// The `-vf` value that scales to `height`.
+    pub fn filter_for(&self, height: u32) -> String {
+        self.scale.replace("{h}", &height.to_string())
     }
 
     /// The same encoder with software decoding and CPU scaling.
@@ -60,8 +75,9 @@ impl Encoder {
             label: "fallback",
             name: self.name.clone(),
             decode: Vec::new(),
-            filter: SW_SCALE,
+            scale: SW_SCALE,
             opts: self.opts.clone(),
+            quality: self.quality.clone(),
             pix_fmt: true,
         }
     }
@@ -84,7 +100,7 @@ impl Encoder {
     }
 }
 
-pub const SW_SCALE: &str = "scale=-2:1080";
+pub const SW_SCALE: &str = "scale=-2:{h}";
 
 /// One candidate of the detection, in preference order per vendor: the
 /// full GPU path first, then the same encoder with software decoding.
@@ -92,14 +108,25 @@ struct Profile {
     label: &'static str,
     encoder: &'static str,
     decode: &'static [&'static str],
-    filter: &'static str,
+    scale: &'static str,
     opts: &'static [&'static str],
+    quality: &'static [&'static str],
     pix_fmt: bool,
 }
 
+// Bitrate-capped rate control, for targets with a limit (and the test encodes).
 const AMF_OPTS: &[&str] = &["-quality", "quality", "-rc", "cbr"];
 const NVENC_OPTS: &[&str] = &["-preset", "p5", "-rc", "cbr"];
 const QSV_OPTS: &[&str] = &["-preset", "medium"];
+const X264_OPTS: &[&str] = &["-preset", "veryfast"];
+// Quality-driven rate control (since 2.7): one fixed step per encoder that
+// looks like the recording; the size follows the picture.
+const AMF_QUALITY: &[&str] = &[
+    "-quality", "quality", "-rc", "cqp", "-qp_i", "18", "-qp_p", "20", "-qp_b", "22",
+];
+const NVENC_QUALITY: &[&str] = &["-preset", "p5", "-rc", "vbr", "-cq", "19", "-b:v", "0"];
+const QSV_QUALITY: &[&str] = &["-preset", "medium", "-global_quality", "20"];
+const X264_QUALITY: &[&str] = &["-preset", "veryfast", "-crf", "18"];
 
 const PROFILES: [Profile; 7] = [
     // The winget ffmpeg has no scale_amf: decode on the GPU, ffmpeg brings the
@@ -108,56 +135,63 @@ const PROFILES: [Profile; 7] = [
         label: "amf-d3d11",
         encoder: "h264_amf",
         decode: &["-hwaccel", "d3d11va"],
-        filter: SW_SCALE,
+        scale: SW_SCALE,
         opts: AMF_OPTS,
+        quality: AMF_QUALITY,
         pix_fmt: true,
     },
     Profile {
         label: "amf",
         encoder: "h264_amf",
         decode: &[],
-        filter: SW_SCALE,
+        scale: SW_SCALE,
         opts: AMF_OPTS,
+        quality: AMF_QUALITY,
         pix_fmt: true,
     },
     Profile {
         label: "nvenc-cuda",
         encoder: "h264_nvenc",
         decode: &["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"],
-        filter: "scale_cuda=-2:1080",
+        scale: "scale_cuda=-2:{h}",
         opts: NVENC_OPTS,
+        quality: NVENC_QUALITY,
         pix_fmt: false,
     },
     Profile {
         label: "nvenc",
         encoder: "h264_nvenc",
         decode: &[],
-        filter: SW_SCALE,
+        scale: SW_SCALE,
         opts: NVENC_OPTS,
+        quality: NVENC_QUALITY,
         pix_fmt: true,
     },
     Profile {
         label: "qsv-full",
         encoder: "h264_qsv",
         decode: &["-hwaccel", "qsv", "-hwaccel_output_format", "qsv"],
-        filter: "scale_qsv=-1:1080",
+        scale: "scale_qsv=-1:{h}",
         opts: QSV_OPTS,
+        quality: QSV_QUALITY,
         pix_fmt: false,
     },
     Profile {
         label: "qsv",
         encoder: "h264_qsv",
         decode: &[],
-        filter: SW_SCALE,
+        scale: SW_SCALE,
         opts: QSV_OPTS,
+        quality: QSV_QUALITY,
         pix_fmt: true,
     },
     Profile {
         label: "libx264",
         encoder: "libx264",
         decode: &[],
-        filter: SW_SCALE,
-        opts: &["-preset", "veryfast"],
+        scale: SW_SCALE,
+        opts: X264_OPTS,
+        quality: X264_QUALITY,
         pix_fmt: true,
     },
 ];
@@ -318,15 +352,16 @@ impl Media {
             .filter(|p| auto || p.encoder == preferred)
             .filter(|p| match hwaccel {
                 HwAccel::Auto => true,
-                _ => p.decode.is_empty() && p.filter == SW_SCALE,
+                _ => p.decode.is_empty() && p.scale == SW_SCALE,
             })
             .filter(|p| p.decode.is_empty() || sample.is_some())
             .map(|p| Encoder {
                 label: p.label,
                 name: p.encoder.to_string(),
                 decode: p.decode.to_vec(),
-                filter: p.filter,
+                scale: p.scale,
                 opts: p.opts.to_vec(),
+                quality: p.quality.to_vec(),
                 pix_fmt: p.pix_fmt,
             })
             .collect();
@@ -336,8 +371,9 @@ impl Media {
                 label: "custom",
                 name: preferred.to_string(),
                 decode: Vec::new(),
-                filter: SW_SCALE,
+                scale: SW_SCALE,
                 opts: Vec::new(),
+                quality: Vec::new(),
                 pix_fmt: true,
             });
         }
@@ -390,7 +426,8 @@ impl Media {
                 "testsrc=size=1280x720:rate=30:duration=0.5",
             ]),
         }
-        args.extend(["-vf", enc.filter, "-c:v", &enc.name]);
+        let vf = enc.filter_for(1080);
+        args.extend(["-vf", &vf, "-c:v", &enc.name]);
         args.extend(enc.opts.iter().copied());
         args.extend(["-b:v", "2000k"]);
         if enc.pix_fmt {
@@ -422,7 +459,8 @@ impl Media {
             let mut args: Vec<&str> = vec!["-y", "-v", "error"];
             args.extend(p.decode.iter().copied());
             args.extend(["-t", &secs, "-i", &clip_s, "-map", "0:v:0", "-an"]);
-            args.extend(["-vf", p.filter, "-c:v", p.encoder]);
+            let vf = p.scale.replace("{h}", "1080");
+            args.extend(["-vf", &vf, "-c:v", p.encoder]);
             args.extend(p.opts.iter().copied());
             args.extend(["-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"]);
             if p.pix_fmt {

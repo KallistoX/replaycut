@@ -819,11 +819,10 @@ pub async fn run(state: &AppState) -> Report {
         }
     }
     text.push_str(&format!(
-        "settings  clipDir={} port={} bind={} shareKbps={} encoder={} hwaccel={:?} ffmpegPriority={:?} ffmpegThreads={} theme={} nextcloud={} discord={} password={}\n",
+        "settings  clipDir={} port={} bind={} encoder={} hwaccel={:?} ffmpegPriority={:?} ffmpegThreads={} theme={} nextcloud={} discord={} password={}\n",
         settings.clip_dir.display(),
         settings.port,
         settings.bind,
-        settings.share_kbps,
         settings.encoder,
         settings.hwaccel,
         settings.ffmpeg_priority,

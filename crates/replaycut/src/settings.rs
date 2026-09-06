@@ -19,8 +19,6 @@ pub struct Settings {
     pub ui_file: PathBuf,
     /// Prefix of the Discord post and webhook user name.
     pub display_name: String,
-    /// Video bitrate of the shared H.264 file in kbit/s.
-    pub share_kbps: u32,
     /// `auto` or an ffmpeg encoder name such as `h264_nvenc` or `libx264`.
     pub encoder: String,
     /// ffmpeg `-hwaccel` value for decoding, empty for software decoding.
@@ -148,6 +146,10 @@ impl Default for Webhook {
 pub struct X {
     pub enabled: bool,
     pub quick_share: bool,
+    /// Limits of this target (since 2.7): 0 = none, else the share is
+    /// scaled to at most this height and capped at this bitrate.
+    pub max_height: u32,
+    pub max_kbps: u32,
     /// Text template of the post; `{title}`, `{clip}` and `{date}` are replaced.
     pub text: String,
 }
@@ -157,6 +159,8 @@ impl Default for X {
         Self {
             enabled: false,
             quick_share: false,
+            max_height: 0,
+            max_kbps: 0,
             text: "{title}".into(),
         }
     }
@@ -170,6 +174,10 @@ impl Default for X {
 pub struct YouTube {
     pub enabled: bool,
     pub quick_share: bool,
+    /// Limits of this target (since 2.7): 0 = none, else the share is
+    /// scaled to at most this height and capped at this bitrate.
+    pub max_height: u32,
+    pub max_kbps: u32,
     /// `tv` (a "TVs and Limited Input devices" client, connected with a
     /// code from any device) or `desktop` (a "Desktop app" client, connected
     /// in the browser on this PC through the loopback redirect).
@@ -188,6 +196,8 @@ impl Default for YouTube {
         Self {
             enabled: false,
             quick_share: false,
+            max_height: 0,
+            max_kbps: 0,
             client_type: "tv".into(),
             privacy: "unlisted".into(),
             description: "{title}\n\nClip from {date}, shared with replaycut.".into(),
@@ -202,6 +212,10 @@ impl Default for YouTube {
 pub struct S3 {
     pub enabled: bool,
     pub quick_share: bool,
+    /// Limits of this target (since 2.7): 0 = none, else the share is
+    /// scaled to at most this height and capped at this bitrate.
+    pub max_height: u32,
+    pub max_kbps: u32,
     /// `https://<account>.r2.cloudflarestorage.com`, `https://s3.eu-central-1.amazonaws.com`, `http://minio:9000`.
     pub endpoint: String,
     /// `auto` for R2, the AWS region otherwise.
@@ -220,6 +234,8 @@ impl Default for S3 {
         Self {
             enabled: false,
             quick_share: false,
+            max_height: 0,
+            max_kbps: 0,
             endpoint: String::new(),
             region: "auto".into(),
             bucket: String::new(),
@@ -237,6 +253,10 @@ impl Default for S3 {
 pub struct WebDav {
     pub enabled: bool,
     pub quick_share: bool,
+    /// Limits of this target (since 2.7): 0 = none, else the share is
+    /// scaled to at most this height and capped at this bitrate.
+    pub max_height: u32,
+    pub max_kbps: u32,
     /// The DAV root, for example `https://u123.your-storagebox.de` or `https://dav.example.com/remote.php/dav/files/me`.
     pub url: String,
     /// Folder below the root, may be empty.
@@ -250,6 +270,8 @@ impl Default for WebDav {
         Self {
             enabled: false,
             quick_share: false,
+            max_height: 0,
+            max_kbps: 0,
             url: String::new(),
             folder: "replaycut".into(),
             public_base: String::new(),
@@ -265,6 +287,10 @@ pub struct OneDrive {
     pub enabled: bool,
     /// The target of the plain "Share" button (one storage at most).
     pub quick_share: bool,
+    /// Limits of this target (since 2.7): 0 = none, else the share is
+    /// scaled to at most this height and capped at this bitrate.
+    pub max_height: u32,
+    pub max_kbps: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -278,6 +304,10 @@ pub struct Nextcloud {
     /// The target of the plain "Share" button (since 2.5; one storage at most).
     #[serde(default = "default_true")]
     pub quick_share: bool,
+    /// Limits of this target (since 2.7): 0 = none, else the share is
+    /// scaled to at most this height and capped at this bitrate.
+    pub max_height: u32,
+    pub max_kbps: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -310,6 +340,8 @@ impl Default for Nextcloud {
             folder: "Clips".into(),
             expire_days: 0,
             quick_share: true,
+            max_height: 0,
+            max_kbps: 0,
         }
     }
 }
@@ -322,7 +354,6 @@ impl Default for Settings {
             bind: "0.0.0.0".into(),
             ui_file: PathBuf::from("ui/index.html"),
             display_name: "replaycut".into(),
-            share_kbps: 6000,
             encoder: "auto".into(),
             hwaccel: String::new(),
             ffmpeg_priority: FfmpegPriority::BelowNormal,
@@ -376,7 +407,7 @@ pub fn is_theme_name(name: &str) -> bool {
 
 /// Top-level keys `PUT /api/settings` accepts, and the nested ones below
 /// `integrations`. Anything else is a 400 with the offending name.
-const PATCH_KEYS: [&str; 17] = [
+const PATCH_KEYS: [&str; 16] = [
     "obs",
     "previewH264",
     "clipDir",
@@ -384,7 +415,6 @@ const PATCH_KEYS: [&str; 17] = [
     "bind",
     "uiFile",
     "displayName",
-    "shareKbps",
     "encoder",
     "hwaccel",
     "ffmpegPriority",
@@ -421,6 +451,50 @@ const YOUTUBE_KEYS: [&str; 5] = [
 /// Storage integrations, for the "one quick-share target" rule.
 const X_KEYS: [&str; 3] = ["enabled", "quickShare", "text"];
 const STORAGE_GROUPS: [&str; 6] = ["nextcloud", "onedrive", "s3", "webdav", "youtube", "x"];
+/// Every storage takes these (since 2.7).
+const LIMIT_KEYS: [&str; 2] = ["maxHeight", "maxKbps"];
+
+/// The limits of a storage target (since 2.7): 0 means none.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Limits {
+    pub max_height: u32,
+    pub max_kbps: u32,
+}
+
+impl Settings {
+    /// The limits of a storage target by id; unknown ids have none.
+    pub fn limits(&self, target: &str) -> Limits {
+        let i = &self.integrations;
+        let (h, k) = match target {
+            "nextcloud" => (i.nextcloud.max_height, i.nextcloud.max_kbps),
+            "onedrive" => (i.onedrive.max_height, i.onedrive.max_kbps),
+            "s3" => (i.s3.max_height, i.s3.max_kbps),
+            "webdav" => (i.webdav.max_height, i.webdav.max_kbps),
+            "youtube" => (i.youtube.max_height, i.youtube.max_kbps),
+            "x" => (i.x.max_height, i.x.max_kbps),
+            _ => (0, 0),
+        };
+        Limits {
+            max_height: h,
+            max_kbps: k,
+        }
+    }
+
+    fn validate_limits(&self) -> Result<()> {
+        for id in STORAGE_GROUPS {
+            let l = self.limits(id);
+            anyhow::ensure!(
+                l.max_height == 0 || (240..=4320).contains(&l.max_height),
+                "integrations.{id}.maxHeight must be 0 (none) or between 240 and 4320"
+            );
+            anyhow::ensure!(
+                l.max_kbps == 0 || (500..=200_000).contains(&l.max_kbps),
+                "integrations.{id}.maxKbps must be 0 (none) or between 500 and 200000"
+            );
+        }
+        Ok(())
+    }
+}
 const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
 
 impl Settings {
@@ -468,8 +542,11 @@ impl Settings {
                     let Some(fields) = fields.as_object() else {
                         return Err(format!("integrations.{group} must be an object"));
                     };
+                    let storage = STORAGE_GROUPS.contains(&group.as_str());
                     for (field, v) in fields {
-                        if !allowed.contains(&field.as_str()) {
+                        if !allowed.contains(&field.as_str())
+                            && !(storage && LIMIT_KEYS.contains(&field.as_str()))
+                        {
                             return Err(format!("unknown field: integrations.{group}.{field}"));
                         }
                         if field == "quickShare" && v == &serde_json::Value::Bool(true) {
@@ -588,10 +665,7 @@ impl Settings {
             !self.clip_dir.as_os_str().is_empty(),
             "clipDir must not be empty"
         );
-        anyhow::ensure!(
-            (500..=100_000).contains(&self.share_kbps),
-            "shareKbps must be between 500 and 100000"
-        );
+        self.validate_limits()?;
         anyhow::ensure!(
             !self.encoder.trim().is_empty(),
             "encoder must be 'auto' or an encoder name"
@@ -654,7 +728,7 @@ mod tests {
     fn partial_file_uses_defaults() {
         let s: Settings = serde_json::from_str(r#"{"port": 9000}"#).unwrap();
         assert_eq!(s.port, 9000);
-        assert_eq!(s.share_kbps, 6000);
+        assert_eq!(s.limits("nextcloud"), Limits::default());
         assert!(!s.integrations.nextcloud.enabled);
     }
 
@@ -674,11 +748,11 @@ mod tests {
         let s = Settings::default();
         let next = s
             .with_patch(&serde_json::json!({
-                "shareKbps": 8000,
+                "previewH264": "always",
                 "integrations": { "nextcloud": { "enabled": true, "url": "https://cloud.example.com" } }
             }))
             .unwrap();
-        assert_eq!(next.share_kbps, 8000);
+        assert_eq!(next.preview_h264, "always");
         assert!(next.integrations.nextcloud.enabled);
         assert_eq!(next.integrations.nextcloud.folder, "Clips");
         assert_eq!(next.port, 8420);
@@ -737,7 +811,7 @@ mod tests {
     fn restart_fields() {
         let s = Settings::default();
         let next = s
-            .with_patch(&serde_json::json!({ "port": 9000, "shareKbps": 700 }))
+            .with_patch(&serde_json::json!({ "port": 9000, "displayName": "x" }))
             .unwrap();
         assert_eq!(s.restart_needed(&next), vec!["port"]);
         assert!(s.restart_needed(&s).is_empty());
@@ -777,5 +851,48 @@ mod tests {
             ..Settings::default()
         };
         assert!(s.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::*;
+
+    #[test]
+    fn limits_are_per_storage_and_validated() {
+        let s = Settings::default();
+        let next = s
+            .with_patch(&serde_json::json!({
+                "integrations": { "youtube": { "maxHeight": 1080, "maxKbps": 12000 }, "s3": { "maxKbps": 4000 } }
+            }))
+            .unwrap();
+        assert_eq!(
+            next.limits("youtube"),
+            Limits {
+                max_height: 1080,
+                max_kbps: 12000
+            }
+        );
+        assert_eq!(next.limits("s3").max_kbps, 4000);
+        assert_eq!(next.limits("nextcloud"), Limits::default());
+        assert_eq!(next.limits("file"), Limits::default());
+        let err = s
+            .with_patch(
+                &serde_json::json!({ "integrations": { "onedrive": { "maxHeight": 100 } } }),
+            )
+            .unwrap_err();
+        assert!(err.contains("maxHeight"), "{err}");
+        let err = s
+            .with_patch(&serde_json::json!({ "integrations": { "discord": { "maxKbps": 4000 } } }))
+            .unwrap_err();
+        assert!(err.contains("unknown field"), "{err}");
+        // the global bitrate of 2.6 is gone
+        let err = s
+            .with_patch(&serde_json::json!({ "shareKbps": 6000 }))
+            .unwrap_err();
+        assert!(err.contains("unknown field: shareKbps"), "{err}");
+        // an old settings.json with the field still loads
+        let old: Settings = serde_json::from_str(r#"{"shareKbps": 6000, "port": 8420}"#).unwrap();
+        assert_eq!(old.port, 8420);
     }
 }

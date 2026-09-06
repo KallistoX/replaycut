@@ -23,6 +23,9 @@ const CHUNK: u64 = 4 * 1024 * 1024;
 const TEXT_MAX: usize = 280;
 /// How long to wait for X to process the video.
 const PROCESSING_TIMEOUT: Duration = Duration::from_secs(300);
+/// X's limits for a video post.
+pub const MAX_BYTES: u64 = 512 * 1024 * 1024;
+pub const MAX_SECONDS: f64 = 140.0;
 
 pub struct X {
     api: String,
@@ -148,6 +151,20 @@ impl X {
     }
 
     pub async fn publish(&self, file: &Path, meta: &PublishMeta) -> Result<Published> {
+        // X's own limits for video posts, stated here rather than as a setting
+        let size = std::fs::metadata(file)?.len();
+        if size > MAX_BYTES {
+            bail!(
+                "X takes videos up to 512 MB; this one is {:.0} MB - set a bitrate limit on the X card",
+                size as f64 / 1_048_576.0
+            );
+        }
+        if meta.seconds > MAX_SECONDS {
+            bail!(
+                "X takes videos up to 140 s; this one is {:.0} s",
+                meta.seconds
+            );
+        }
         let text = post_text(
             &self.text,
             &meta.title,
@@ -540,6 +557,7 @@ pub(crate) mod tests {
             display_name: "replaycut".into(),
             vertical: false,
             at: "2026-09-05T10:00:00".into(),
+            seconds: 8.0,
         };
         let p = x.publish(&file, &meta).await.unwrap();
         assert_eq!(p.page, "https://x.com/tester/status/1234567890");

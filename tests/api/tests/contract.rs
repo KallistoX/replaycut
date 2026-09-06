@@ -229,11 +229,8 @@ fn t05_share_dry_run_completes() {
     assert_eq!(job["end"].as_f64(), Some(8.0));
     assert_eq!(job["seconds"].as_f64(), Some(6.0));
     assert_eq!(job["audio"], "mix");
-    assert!(
-        job["kbps"].as_f64().unwrap_or(0.0) > 0.0,
-        "kbps: {}",
-        job["kbps"]
-    );
+    // the bitrate cap of the target; 0 since 2.7 means quality-driven
+    assert!(job["kbps"].is_number(), "kbps: {}", job["kbps"]);
     assert_eq!(job["title"], "Dry run test");
     assert_eq!(job["file"], share_file_name(&f.base, 2, 8, "Dry-run-test"));
     assert!(
@@ -539,7 +536,9 @@ fn t13_settings_document_hides_secrets() {
     }
     let (status, doc) = get_json("/api/settings");
     assert_eq!(status, 200);
-    assert!(doc["shareKbps"].is_number(), "shareKbps: {doc}");
+    if !since_27() {
+        assert!(doc["shareKbps"].is_number(), "shareKbps: {doc}");
+    }
     assert!(
         doc.get("passwordHash").is_none(),
         "passwordHash must never be sent"
@@ -594,6 +593,10 @@ fn t14_settings_put_validates() {
 fn t15_settings_put_applies_bitrate() {
     let _g = serial();
     if !since_21() {
+        return;
+    }
+    if since_27() {
+        eprintln!("skipped: the global bitrate is gone since 2.7 (t42 covers the limits)");
         return;
     }
     let before = state()["config"]["shareKbps"].as_u64().unwrap_or(6000);
@@ -1914,4 +1917,135 @@ fn t41_playable_preview_on_demand() {
     assert_eq!(status, 200);
     wait_for_clip_gone(&base, Duration::from_secs(10));
     assert!(!path.is_file(), "the copy goes with the clip");
+}
+
+// ---------------------------------------------------------------- since 2.7
+
+fn since_27() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (2, 7)
+}
+
+#[test]
+fn t42_quality_by_default_limits_per_target_and_posting_on_request() {
+    let _g = serial();
+    if !since_27() {
+        eprintln!("skipped: needs replaycut 2.7");
+        return;
+    }
+    // the global bitrate is gone
+    assert_eq!(state()["config"]["shareKbps"], 0);
+    let (status, v) = put_json("/api/settings", &json!({ "shareKbps": 6000 }));
+    assert_eq!(status, 400, "{v}");
+    let (_, s) = get_json("/api/settings");
+    assert!(s.get("shareKbps").is_none(), "{s}");
+    for id in ["nextcloud", "onedrive", "s3", "webdav", "youtube", "x"] {
+        assert!(s["integrations"][id]["maxHeight"].is_number(), "{id}: {s}");
+        assert!(s["integrations"][id]["maxKbps"].is_number(), "{id}: {s}");
+    }
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "nextcloud": { "maxHeight": 100 } } }),
+    );
+    assert_eq!(status, 400, "{v}");
+
+    let base = format!("{} quality", fixture().base);
+    make_clip(&base);
+    let clip = wait_for_clip(&base, Duration::from_secs(20));
+    let height = clip["height"].as_u64().unwrap_or(720);
+
+    // a share without limits keeps the recording's resolution and reports no bitrate cap
+    let (status, v) = post_json(
+        "/api/share",
+        &json!({ "base": base, "start": 0, "end": 2, "audio": "mix", "target": "file" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let (_, job) = wait_job(v["job"].as_str().unwrap_or(""), JOB_TIMEOUT);
+    assert_eq!(job["stage"], "done", "{}", job["error"]);
+    assert_eq!(job["kbps"], 0, "{job}");
+    assert!(job.get("maxHeight").is_none(), "{job}");
+    let file = env()
+        .clip_dir
+        .join("shared")
+        .join(job["file"].as_str().unwrap_or(""));
+    if let Some(size) = video_size(&file) {
+        assert_eq!(u64::from(size.1), height, "recording resolution kept");
+    }
+
+    // limits on the default storage: the share is capped and scaled
+    let (status, r) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "nextcloud": { "maxHeight": 360, "maxKbps": 1500 } } }),
+    );
+    assert_eq!(status, 200, "{r}");
+    let id = share(&base, 2.0, 4.0, "mix");
+    let (stages, capped) = wait_job(&id, JOB_TIMEOUT);
+    assert_eq!(capped["stage"], "done", "{}", capped["error"]);
+    assert_eq!(capped["kbps"], 1500, "{capped}");
+    assert_eq!(capped["maxHeight"], 360, "{capped}");
+    let file = env()
+        .clip_dir
+        .join("shared")
+        .join(capped["file"].as_str().unwrap_or(""));
+    if let Some(size) = video_size(&file) {
+        assert_eq!(size.1, 360, "scaled to the cap");
+    }
+    // the quick share posts automatically (the dry run stands in for Discord)
+    assert!(
+        stages.iter().any(|s| s == "notify") || capped["discord"].is_string(),
+        "quick share posts: {stages:?} {capped}"
+    );
+    let (status, r) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "nextcloud": { "maxHeight": 0, "maxKbps": 0 } } }),
+    );
+    assert_eq!(status, 200, "{r}");
+
+    // a publish does not post on its own; "post" does it on request
+    let (status, v) = post_json(
+        &format!("/api/jobs/{id}/publish"),
+        &json!({ "target": "nextcloud" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let pid = v["job"].as_str().unwrap_or("").to_string();
+    let (stages, again) = wait_job(&pid, JOB_TIMEOUT);
+    assert_eq!(again["stage"], "done", "{}", again["error"]);
+    assert!(
+        !stages.iter().any(|s| s == "notify") && again.get("discord").is_none(),
+        "a publish stays quiet: {stages:?} {again}"
+    );
+    let (status, v) = post_json(
+        &format!("/api/jobs/{pid}/post"),
+        &json!({ "target": "discord" }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["ok"], true);
+    assert!(v["status"].is_string(), "{v}");
+    let (_, posted) = get_json(&format!("/api/jobs/{pid}"));
+    assert!(
+        posted["discord"].as_str().unwrap_or("").contains("Discord"),
+        "{posted}"
+    );
+    // a job without a link, an unknown notify, an unknown job
+    let (status, v) = post_json(
+        &format!("/api/jobs/{}/post", job["id"].as_str().unwrap_or("")),
+        &json!({ "target": "discord" }),
+    );
+    assert_eq!(status, 400, "{v}");
+    let (status, v) = post_json(
+        &format!("/api/jobs/{pid}/post"),
+        &json!({ "target": "nope" }),
+    );
+    assert_eq!(status, 400, "{v}");
+    let (status, _) = post_json("/api/jobs/nope/post", &json!({ "target": "discord" }));
+    assert_eq!(status, 404);
+
+    let (status, _) = delete(&format!("/api/clips/{}", encode(&base)));
+    assert_eq!(status, 200);
+    wait_for_clip_gone(&base, Duration::from_secs(10));
 }

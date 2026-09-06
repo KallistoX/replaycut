@@ -894,6 +894,44 @@ and the history entry carry `vertical: true` and `verticalPos`; the file
 name gets `_9x16` before `.mp4`, so the same range with and without the crop
 are two shares, not a duplicate. A publish job inherits both fields.
 
+## Since 2.7
+
+### Quality by default, limits per target
+
+Shares keep the recording's resolution and frame rate and are encoded with
+the encoder's quality mode (a fixed step per encoder, no bitrate): the
+size follows the picture. The global `shareKbps` is gone: `PUT
+/api/settings` with it is a 400, `config.shareKbps` is `0`, and the job's
+`kbps` is `0` for a quality-driven encode.
+
+Every storage block gains `maxHeight` and `maxKbps` (0 = none, the
+default). A share to a target with limits is scaled to at most `maxHeight`
+(the profile's scale filter) and capped at `maxKbps` (constant bitrate as
+before 2.7); the job carries `kbps` and `maxHeight` as used. `maxHeight`
+must be 0 or 240..4320, `maxKbps` 0 or 500..200000 (400 otherwise). A
+`publish` to a target whose limits the finished file exceeds (a
+quality-driven or copy-mode file against a bitrate cap, a file without a
+height cap against a height cap) cuts the clip again within them instead:
+the answer is a plain share job for that target, 404 when the clip is
+gone. Limits that a service imposes itself (X: 512 MB, 140 s) are checked
+by that integration and reported as the share's error.
+
+The share mode `copy` is unchanged and is labelled "As recorded (no
+re-encode)" in the UI.
+
+### Posting on request
+
+Notify integrations with `autoPost` post only the quick share: a share
+whose `target` is the default storage and that is not a `publish`. Shares
+to other targets and publishes skip the `notify` stage.
+
+`POST /api/jobs/<id>/post { "target": "<notify id>" }` posts the link of
+a finished job (from the jobs or the history) to that notify integration
+now and answers `200 { ok, status }` with the integration's status text,
+which is also appended to the job's `discord` field. 400 for a job without
+a link or an unknown or unconfigured notify target, 404 for an unknown
+job. The result card and the history offer it as "Post to ...".
+
 ## Behaviour
 
 ### Folder scan

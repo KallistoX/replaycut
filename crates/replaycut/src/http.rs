@@ -47,6 +47,8 @@ pub fn router(state: App) -> Router {
         .route("/api/jobs/{id}/publish", post(job_publish))
         // since 2.6
         .route("/api/jobs/{id}/file", get(job_file))
+        // since 2.7
+        .route("/api/jobs/{id}/post", post(job_post))
         .route("/api/clips/{base}/preview", post(clip_preview))
         .route("/api/share", post(share))
         .route("/api/save", post(save))
@@ -497,6 +499,24 @@ async fn job_file(State(app): State<App>, Path(id): Path<String>, req: Request) 
             res
         }
         Err(e) => ApiError::internal(e).into_response(),
+    }
+}
+
+/// `POST /api/jobs/<id>/post { target }` (since 2.7): post the link of a
+/// finished job to one notify integration now; the automatic post only
+/// happens for the quick share.
+async fn job_post(State(app): State<App>, Path(id): Path<String>, body: Bytes) -> Response {
+    let v = parse_body(&body);
+    let target = v["target"].as_str().unwrap_or("");
+    match share::post_now(&app, &id, target).await {
+        Ok(status) => Json(json!({ "ok": true, "status": status })).into_response(),
+        Err(ShareError::UnknownJob(id)) => {
+            ApiError::new(StatusCode::NOT_FOUND, format!("unknown job: {id}")).into_response()
+        }
+        Err(ShareError::Invalid(msg)) => {
+            ApiError::new(StatusCode::BAD_REQUEST, msg).into_response()
+        }
+        Err(e) => ApiError::new(StatusCode::BAD_REQUEST, format!("{e:?}")).into_response(),
     }
 }
 

@@ -10,6 +10,21 @@ contract.
 
 ## [Unreleased]
 
+### Changed
+
+- Shares keep the recording's resolution and frame rate and are encoded in
+  the encoder's quality mode: no more 1080p and 6000 kbit/s by default,
+  the size follows the picture. The global "Video bitrate" setting
+  (`shareKbps`) is gone; every storage card has an optional "Limits"
+  section (max height, max bitrate) for the places where space matters.
+  A "Publish to" onto a target with limits cuts the clip again within
+  them.
+- Only the quick share (the Share button's target) posts to Discord,
+  Telegram and webhooks automatically; shares from the menu and "Publish
+  to" stay quiet, and the result card and the history offer "Post to ..."
+  instead (`POST /api/jobs/<id>/post`).
+- The share mode "Fast copy" is now called "As recorded (no re-encode)".
+
 ## [2.6.1] - 2026-09-06
 
 ### Fixed

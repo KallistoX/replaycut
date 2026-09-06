@@ -31,7 +31,6 @@ fine.
   "bind": "0.0.0.0",
   "uiFile": "ui/index.html",
   "displayName": "replaycut",
-  "shareKbps": 6000,
   "encoder": "auto",
   "hwaccel": "",
   "ffmpegPriority": "belowNormal",
@@ -86,7 +85,6 @@ fine.
 | `bind` | Address to listen on. `0.0.0.0` makes the UI reachable from other devices in the network, `127.0.0.1` restricts it to this PC. |
 | `uiFile` | The UI file. A relative path is looked up next to the executable first, then in the working directory. |
 | `displayName` | Prefix of the Discord post (`**<displayName>** ...`) and the webhook user name. Clip names that start with this word are shortened in the post. |
-| `shareKbps` | Video bitrate of the shared H.264 file in kbit/s, constant bit rate. |
 | `encoder` | `auto` tries `h264_amf`, `h264_nvenc`, `h264_qsv`, `libx264` in that order with a real test encode and uses the first that works. An encoder name forces that encoder. |
 | `hwaccel` | `auto` (or empty, the default since 2.4): the encoder profile decides, GPU decoding where the test encode proves it works; `none`: software decoding; `cuda`, `d3d11va` or `qsv`: passed to ffmpeg as `-hwaccel` with CPU scaling. |
 | `ffmpegPriority` | Windows priority class of every ffmpeg process: `normal`, `belowNormal` (default) or `idle`. Keeps the game responsive while a clip is encoded. |
@@ -104,7 +102,8 @@ runtime; everything but `port`, `bind` and `uiFile` takes effect without a
 restart. Command-line overrides win over the file for as long as the
 process runs but are never written back.
 | `integrations.nextcloud` | `enabled` switches the upload on. `url` is the server, `folder` the target folder (clips land in `<folder>/<YYYY-MM>/`), `expireDays` sets an expiry on the public link (`0` = never; an expired link also kills the Discord post). `quickShare` (default true, since 2.5) makes it the target of the Share button; off keeps the button local and leaves Nextcloud in the button's menu. |
-| `integrations.discord` | `enabled` switches the webhook post on. The webhook URL itself is a credential. `autoPost` (default true, since 2.5) posts every share that produced a link. |
+| `integrations.discord` | `enabled` switches the webhook post on. The webhook URL itself is a credential. `autoPost` (default true, since 2.5) posts every share that produced a link; since 2.7 only the quick share, the others on request ("Post to ..."). |
+| `integrations.<storage>.maxHeight`, `maxKbps` | Since 2.7, on every storage block (`nextcloud`, `onedrive`, `s3`, `webdav`, `youtube`, `x`): `0` (default) keeps the recording's resolution and encodes in the encoder's quality mode; a height (240-4320) scales the share down to it, a bitrate (500-200000 kbit/s) caps it at constant bitrate. Limits belong to the target, so only shares to that target shrink. The global `shareKbps` of 2.0-2.6 is gone. |
 | `integrations.onedrive` | `enabled` switches the OneDrive upload on (since 2.5); `quickShare` makes it the Share button's target. The account is connected under Settings › Integrations with a code at Microsoft; the refresh token is the credential `replaycut/onedrive`. Uploads land in `Apps/replaycut/<YYYY-MM>/`. |
 | `integrations.s3` | S3-compatible storage (since 2.5): `endpoint` (`https://<account>.r2.cloudflarestorage.com`, `https://s3.<region>.amazonaws.com`, `http://minio:9000`), `region` (`auto` for R2), `bucket`, `prefix` (folder inside the bucket), `publicBase` (public URL serving the keys; empty = presigned links), `presignDays` (1-7). Keys are the credential `replaycut/s3`. |
 | `integrations.webdav` | Generic WebDAV (since 2.5): `url` (the DAV root), `folder` below it, `publicBase` (public URL that serves the folder; required, the link is `<publicBase>/<month>/<file>`). Login is the credential `replaycut/webdav`. |

@@ -597,6 +597,7 @@ pub(crate) mod tests {
             display_name: "replaycut".into(),
             vertical: true,
             at: "2026-09-05T10:00:00".into(),
+            seconds: 8.0,
         };
         let p = yt.publish(&file, &meta).await.unwrap();
         assert_eq!(p.page, "https://youtu.be/vid123xyz00");

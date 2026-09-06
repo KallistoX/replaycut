@@ -242,6 +242,8 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
     while inner.jobs.contains_key(&id) {
         id = random_token(8);
     }
+    // since 2.7: best quality unless the target has limits
+    let limits = state.settings().limits(&target);
     let job = Job {
         id: id.clone(),
         base: clip.base.clone(),
@@ -251,7 +253,8 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
         seconds,
         audio,
         mode: share_mode,
-        kbps: state.settings().share_kbps,
+        kbps: limits.max_kbps,
+        max_height: limits.max_height,
         vertical: req.vertical,
         vertical_pos,
         stage: "queued".into(),
@@ -306,6 +309,24 @@ pub fn publish(
                 "publish needs a configured storage target, not '{target}'"
             ))
         })?;
+    // since 2.7: a file above the new target's limits is cut again within them
+    let limits = state.settings().limits(&target);
+    if needs_reencode(&src, limits) {
+        drop(inner);
+        return start(
+            state,
+            ShareRequest {
+                base: src.base,
+                start: src.start,
+                end: src.end,
+                audio: src.audio,
+                mode: "h264".into(),
+                target,
+                vertical: src.vertical,
+                vertical_pos: src.vertical_pos.unwrap_or(0.5),
+            },
+        );
+    }
     let duplicate = inner
         .current_job
         .iter()
@@ -347,6 +368,17 @@ pub fn publish(
     };
     let position = state.register_job(&mut inner, job);
     Ok((id, position))
+}
+
+/// Does the finished file of `src` exceed `limits`? A copy-mode file and
+/// a quality-driven encode (`kbps` 0) exceed any bitrate cap; a file made
+/// without a height cap exceeds any height cap.
+pub fn needs_reencode(src: &Job, limits: crate::settings::Limits) -> bool {
+    if limits.max_kbps > 0 && (src.mode == "copy" || src.kbps == 0 || src.kbps > limits.max_kbps) {
+        return true;
+    }
+    limits.max_height > 0
+        && (src.mode == "copy" || src.max_height == 0 || src.max_height > limits.max_height)
 }
 
 /// Run the running job to completion, then the next one from the queue.
@@ -506,6 +538,59 @@ async fn preview_pipeline(state: &AppState, id: &str, token: &CancellationToken)
 /// Bitrate of the playable preview in kbit/s.
 pub const PREVIEW_KBPS: u32 = 2000;
 
+/// `POST /api/jobs/<id>/post { target }` (since 2.7): post the link of a
+/// finished job to one notify integration now. Returns the status text.
+pub async fn post_now(state: &AppState, id: &str, target: &str) -> Result<String, ShareError> {
+    let job = state
+        .job(id)
+        .or_else(|| state.history_job(id))
+        .ok_or_else(|| ShareError::UnknownJob(id.to_string()))?;
+    let Some(direct) = job.direct.clone() else {
+        return Err(ShareError::Invalid(
+            "this job produced no link to post".to_string(),
+        ));
+    };
+    let runtime = state.runtime();
+    let entry = runtime
+        .integrations
+        .notifies
+        .iter()
+        .find(|n| n.id == target)
+        .ok_or_else(|| {
+            ShareError::Invalid(format!("unknown or unconfigured notify target: {target}"))
+        })?;
+    let settings = state.settings();
+    let prefix = settings.display_name.clone();
+    let title = job.title.clone().unwrap_or_default();
+    let label = post_label(&prefix, &job.base, &title);
+    let text = format!(
+        "**{prefix}** {label} ({} s) - {direct}",
+        job.seconds.round() as i64
+    );
+    let n = crate::notify::Notification {
+        text,
+        prefix,
+        label,
+        title,
+        base: job.base.clone(),
+        seconds: job.seconds,
+        target: job.target.clone(),
+        link: job.link.clone().unwrap_or_else(|| direct.clone()),
+        direct,
+        at: job.at.clone(),
+        job: id.to_string(),
+    };
+    let status = entry
+        .notify
+        .post(&n)
+        .await
+        .map_err(|e| ShareError::Invalid(format!("{}: {e:#}", entry.label)))?;
+    tracing::info!("post [{id}]: {}: {status}", entry.label);
+    let note = format!("{}: {status}", entry.label);
+    state.note_post(id, &note);
+    Ok(status)
+}
+
 async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Result<()> {
     let job = state.job(id).ok_or_else(|| anyhow!("job vanished"))?;
     // The runtime of the moment the job started; a settings change while
@@ -591,7 +676,7 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         // decoding and CPU scaling before giving up (since 2.4).
         // A vertical cut crops on the CPU, so frames that a GPU filter would
         // keep on the card (cuda, qsv) are decoded in software instead.
-        let profile = if job.vertical && runtime.encoder.filter != crate::media::SW_SCALE {
+        let profile = if job.vertical && runtime.encoder.gpu_frames() {
             runtime.encoder.software_fallback()
         } else {
             runtime.encoder.clone()
@@ -659,6 +744,7 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
             display_name: settings.display_name.clone(),
             vertical: job.vertical,
             at: job.at.clone(),
+            seconds: job.seconds,
         };
         let published = tokio::select! {
             r = storage.publish(&out, &meta) => r.context("upload")?,
@@ -689,8 +775,16 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         state.quota_wake.notify_one();
     }
 
-    // notify: every integration that posts automatically (stage `notify` since 2.5)
-    if let Some(direct) = direct {
+    // notify (stage `notify` since 2.5): every integration that posts
+    // automatically - since 2.7 only for the quick share, that is a share
+    // to the default storage; menu shares and publishes stay quiet and the
+    // page offers "Post to ..." instead
+    let quick = job.source.is_none()
+        && runtime
+            .integrations
+            .default_storage()
+            .is_some_and(|s| s.id == job.target);
+    if let (Some(direct), true) = (direct, quick) {
         let notifies: Vec<_> = runtime.integrations.auto_notifies().collect();
         if !notifies.is_empty() {
             state.with_job(id, |j| j.stage = "notify".into());
@@ -760,13 +854,16 @@ async fn encode(
     let (start, seconds) = (job.start.to_string(), job.seconds.to_string());
     let input_s = input.to_string_lossy().into_owned();
     let out_s = out.to_string_lossy().into_owned();
-    let vf = if job.vertical {
-        vertical_filter(job.vertical_pos.unwrap_or(0.5))
+    // since 2.7 the recording's resolution stays unless the target caps it;
+    // the preview copy is 720p, a vertical cut its own crop
+    let vf: Option<String> = if job.vertical {
+        Some(vertical_filter(job.vertical_pos.unwrap_or(0.5)))
     } else if job.is_preview() {
-        // the same scale filter of the profile, at 720p
-        enc.filter.replace("1080", "720")
+        Some(enc.filter_for(720))
+    } else if job.max_height > 0 {
+        Some(enc.filter_for(job.max_height))
     } else {
-        enc.filter.to_string()
+        None
     };
     let mut args: Vec<&str> = vec!["-nostats", "-progress", "pipe:1", "-y", "-v", "error"];
     let runtime = state.runtime();
@@ -794,12 +891,21 @@ async fn encode(
             args.extend(["-c:a", "aac", "-b:a", "128k"]);
         }
     } else {
-        args.extend(["-vf", &vf, "-c:v", &enc.name]);
+        if let Some(vf) = &vf {
+            args.extend(["-vf", vf]);
+        }
+        args.extend(["-c:v", &enc.name]);
         if runtime.media.threads > 0 {
             args.extend(["-threads", &threads]); // encoder and filters
         }
-        args.extend(enc.opts.iter().copied());
-        args.extend(["-b:v", &b, "-maxrate", &maxrate, "-bufsize", &bufsize]);
+        if kbps > 0 {
+            // a bitrate cap: constant bitrate as before 2.7
+            args.extend(enc.opts.iter().copied());
+            args.extend(["-b:v", &b, "-maxrate", &maxrate, "-bufsize", &bufsize]);
+        } else {
+            // best quality: the encoder's quality mode, no bitrate
+            args.extend(enc.quality.iter().copied());
+        }
         if enc.pix_fmt {
             args.extend(["-pix_fmt", "yuv420p"]);
         }

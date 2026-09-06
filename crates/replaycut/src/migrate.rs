@@ -165,9 +165,11 @@ pub fn apply_arguments(args: &HashMap<String, String>, settings: &mut Settings) 
         settings.integrations.nextcloud.expire_days = d;
         taken.push(format!("link expiry {d} days"));
     }
-    if let Some(k) = args.get("sharekbps").and_then(|v| v.parse().ok()) {
-        settings.share_kbps = k;
-        taken.push(format!("share bitrate {k} kbps"));
+    if args.contains_key("sharekbps") {
+        // since 2.7 shares keep the recording's quality; a limit belongs to a target
+        taken.push(
+            "share bitrate (ignored since 2.7, shares keep the recording's quality)".to_string(),
+        );
     }
     settings.display_name = OLD_DISPLAY_NAME.to_string();
     taken.push(format!("display name {OLD_DISPLAY_NAME}"));
@@ -299,13 +301,16 @@ mod tests {
     fn mapping_to_settings() {
         let args = parse_arguments(&arguments_from_xml(XML).unwrap());
         let mut s = Settings::default();
-        apply_arguments(&args, &mut s);
+        let taken = apply_arguments(&args, &mut s);
         assert_eq!(s.clip_dir, PathBuf::from(r"C:\Users\me\Videos\WARDOGS"));
         assert_eq!(s.port, 8420);
         assert_eq!(s.integrations.nextcloud.url, "https://cloud.example.com");
         assert_eq!(s.integrations.nextcloud.folder, "WARDOGS-Clips");
         assert_eq!(s.integrations.nextcloud.expire_days, 0);
-        assert_eq!(s.share_kbps, 6000);
+        assert!(
+            taken.iter().any(|t| t.contains("ignored since 2.7")),
+            "{taken:?}"
+        );
         assert_eq!(s.display_name, "WARDOGS");
     }
 }

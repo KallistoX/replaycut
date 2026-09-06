@@ -41,6 +41,8 @@ pub struct PublishMeta {
     pub vertical: bool,
     /// The job's timestamp.
     pub at: String,
+    /// Length of the cut in seconds (since 2.7, for targets with a limit).
+    pub seconds: f64,
 }
 
 pub enum Storage {
