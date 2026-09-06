@@ -10,6 +10,13 @@ contract.
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-09-06
+
+Beyond the cloud folder: a share can become a YouTube video (a vertical cut
+a Short) or a post on X, the link can go to Telegram or any webhook next
+to Discord, the finished file downloads straight to the phone, and a
+browser that cannot play the recording gets a playable copy on demand.
+
 ### Added
 
 - YouTube as a share target: every share is uploaded as its own video
@@ -43,6 +50,15 @@ contract.
   window (position by slider, shown over the player) and scales it to
   1080x1920 - a Short on YouTube, or a file for TikTok, Reels and WhatsApp
   (`vertical` and `verticalPos` in `POST /api/share` and the job).
+
+### Changed
+
+- The Integrations tab lists YouTube and X under Storage, Telegram and
+  Webhook under Notify; the OneDrive and YouTube cards share one connect
+  flow. The delete dialog's "also remove" now names every storage, not
+  only Nextcloud.
+- Notify integrations receive the share as structured data (title, clip,
+  target, link, time); the Discord post itself is unchanged.
 
 ## [2.5.0] - 2026-09-05
 
