@@ -10,6 +10,13 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- A restart (update, settings, `replaycut stop`) no longer waits up to 5 s
+  while a browser has the player open on a long clip: the shutdown now
+  gives open connections one second, which is all the restarting request
+  needs.
+
 ## [2.7.0] - 2026-09-06
 
 Quality first: a share now looks like the recording, on every target,

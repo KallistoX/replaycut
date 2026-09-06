@@ -472,6 +472,9 @@ struct Startup {
 }
 
 /// Serve until a shutdown is requested, then give open connections a moment.
+/// One second is enough for the response that asked for the restart; a
+/// `<video>` element reading a 2 GB preview at its own pace would hold a
+/// longer grace period for all of it.
 async fn serve(
     state: Arc<AppState>,
     listener: tokio::net::TcpListener,
@@ -513,11 +516,11 @@ async fn serve(
     let server = axum::serve(listener, app).with_graceful_shutdown(graceful);
     let deadline = async {
         shutdown.wait().await;
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
     };
     tokio::select! {
         r = server => r.context("http server")?,
-        _ = deadline => tracing::warn!("connections still open 5 s after the shutdown request - stopping anyway"),
+        _ = deadline => tracing::info!("connections still open 1 s after the shutdown request (a player reading a preview, usually) - closing them"),
     }
     Ok(())
 }
