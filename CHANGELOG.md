@@ -10,6 +10,12 @@ contract.
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-09-06
+
+Quality first: a share now looks like the recording, on every target,
+and space limits belong to the target that needs them. Posting to Discord
+and friends happens for the quick share only; everything else asks.
+
 ### Changed
 
 - Shares keep the recording's resolution and frame rate and are encoded in
