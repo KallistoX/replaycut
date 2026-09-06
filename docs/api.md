@@ -928,7 +928,8 @@ to other targets and publishes skip the `notify` stage.
 `POST /api/jobs/<id>/post { "target": "<notify id>" }` posts the link of
 a finished job (from the jobs or the history) to that notify integration
 now and answers `200 { ok, status }` with the integration's status text,
-which is also appended to the job's `discord` field. 400 for a job without
+which is also appended to the job's `discord` field (in the jobs, the
+history and `config.last`). 400 for a job without
 a link or an unknown or unconfigured notify target, 404 for an unknown
 job. The result card and the history offer it as "Post to ...".
 

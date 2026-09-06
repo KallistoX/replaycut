@@ -2031,6 +2031,18 @@ fn t42_quality_by_default_limits_per_target_and_posting_on_request() {
         posted["discord"].as_str().unwrap_or("").contains("Discord"),
         "{posted}"
     );
+    // `last` (the result card after a reload) carries the note as well
+    let (_, doc) = get_json("/api/clips");
+    if doc["last"]["id"] == json!(pid) {
+        assert!(
+            doc["last"]["discord"]
+                .as_str()
+                .unwrap_or("")
+                .contains("Discord"),
+            "last: {}",
+            doc["last"]
+        );
+    }
     // a job without a link, an unknown notify, an unknown job
     let (status, v) = post_json(
         &format!("/api/jobs/{}/post", job["id"].as_str().unwrap_or("")),

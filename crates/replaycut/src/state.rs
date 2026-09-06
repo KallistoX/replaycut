@@ -818,6 +818,11 @@ impl AppState {
         if let Some(j) = inner.jobs.get_mut(id) {
             j.discord = Some(join(j.discord.as_deref()));
         }
+        // `last` is a copy of the finished job and what the result card shows
+        // after a reload; without the note it would offer "Post to" again
+        if let Some(l) = inner.last.as_mut().filter(|l| l.id == id) {
+            l.discord = Some(join(l.discord.as_deref()));
+        }
         let mut changed = false;
         for e in inner.history.iter_mut() {
             if e["id"] == id {

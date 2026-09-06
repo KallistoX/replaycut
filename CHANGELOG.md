@@ -16,6 +16,10 @@ contract.
   while a browser has the player open on a long clip: the shutdown now
   gives open connections one second, which is all the restarting request
   needs.
+- "Post to ..." shows its result on the result card as well: the status
+  reaches `last` (what the card shows after a reload), the card re-renders
+  after the click, and a status such as "Discord: Link posted" or "Posted
+  (HTTP 200)" is no longer drawn as a failure.
 
 ## [2.7.0] - 2026-09-06
 

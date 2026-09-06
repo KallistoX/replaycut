@@ -1767,7 +1767,7 @@ function showResult(r) {
     wirePublish(box, r.id);
     return;
   }
-  const postFailed = r.discord && !/^link posted/i.test(r.discord);
+  const postFailed = r.discord && /post failed/i.test(r.discord);
   box.className = 'result' + (postFailed ? ' partial' : '');
   const to = r.target && r.target !== 'file' ? ' to ' + esc(targetLabel(r.target)) : '';
   box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-${postFailed ? 'warning' : 'check'}"/></svg> ${postFailed ? `Uploaded${to}, but not posted` : `Shared${to}`} - ${meta}, link copied</div>
@@ -1791,7 +1791,7 @@ function postButtons(j) {
 function wirePost(root, id) {
   root.querySelectorAll('button[data-post]').forEach(b => b.onclick = async () => {
     b.disabled = true;
-    try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/post', jsonOpts('POST', { target: b.dataset.post }), { retries: 0, timeout: 30000 }); r.ok ? toast(`${targetLabel(b.dataset.post)}: ${r.status}`, 'ok') : toast(r.error, 'err'); }
+    try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/post', jsonOpts('POST', { target: b.dataset.post }), { retries: 0, timeout: 30000 }); if (r.ok) { toast(`${targetLabel(b.dataset.post)}: ${r.status}`, 'ok'); shownLast = null; poll.now(); } else toast(r.error, 'err'); }
     catch (e) { toast(e.message, 'err'); }
     b.disabled = false;
   });
