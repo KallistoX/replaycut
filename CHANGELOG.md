@@ -10,6 +10,19 @@ contract.
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-09-06
+
+### Fixed
+
+- "Publish to ..." on a history entry from before the last restart answered
+  "unknown job"; the source is now read from the history as well.
+
+### Changed
+
+- `docs/privacy.md` states what replaycut stores and sends, and
+  `docs/youtube.md` names the home page and privacy URLs Google wants
+  before an app can be published.
+
 ## [2.6.0] - 2026-09-06
 
 Beyond the cloud folder: a share can become a YouTube video (a vertical cut
@@ -59,11 +72,6 @@ browser that cannot play the recording gets a playable copy on demand.
   only Nextcloud.
 - Notify integrations receive the share as structured data (title, clip,
   target, link, time); the Discord post itself is unchanged.
-
-### Fixed
-
-- "Publish to ..." on a history entry from before the last restart answered
-  "unknown job"; the source is now read from the history as well.
 
 ## [2.5.0] - 2026-09-05
 
