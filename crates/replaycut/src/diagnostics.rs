@@ -341,6 +341,48 @@ pub async fn run(state: &AppState) -> Report {
         }
     };
 
+    // youtube (since 2.6): the user's client plus the connected channel
+    let youtube_check = {
+        let enabled = settings.integrations.youtube.enabled;
+        let runtime = runtime.clone();
+        let dry_run = state.dry_run;
+        async move {
+            if !enabled {
+                return Check::new("youtube", "YouTube", "skip", "integration is off");
+            }
+            if dry_run {
+                return Check::new("youtube", "YouTube", "ok", "dry run");
+            }
+            let Some(entry) = runtime.integrations.storage("youtube") else {
+                let has_client = credentials::read(credentials::YOUTUBE_CLIENT)
+                    .ok()
+                    .flatten()
+                    .is_some();
+                return if has_client {
+                    Check::new(
+                        "youtube",
+                        "YouTube",
+                        "fail",
+                        "enabled, but no channel connected",
+                    )
+                    .with_fix("Settings › Integrations › YouTube: Connect YouTube.")
+                } else {
+                    Check::new("youtube", "YouTube", "fail", "enabled, but no Google client stored")
+                        .with_fix("Settings › Integrations › YouTube: enter the client id and secret of your Google project (see docs/youtube.md), then connect the channel.")
+                };
+            };
+            match &entry.storage {
+                integrations::Storage::YouTube(yt) => match tokio::time::timeout(TIMEOUT, yt.account()).await {
+                    Ok(Ok(channel)) => Check::new("youtube", "YouTube", "ok", format!("connected as {channel}")),
+                    Ok(Err(e)) => Check::new("youtube", "YouTube", "fail", format!("{e:#}"))
+                        .with_fix("Disconnect and connect YouTube again under Settings › Integrations. A Google project in \"Testing\" state expires its tokens after 7 days - publish the consent screen."),
+                    Err(_) => Check::new("youtube", "YouTube", "fail", "no answer from Google within 5 s"),
+                },
+                _ => Check::new("youtube", "YouTube", "ok", "dry run"),
+            }
+        }
+    };
+
     // s3 and webdav (since 2.5): configured and reachable, no probe writes here
     let s3_check = {
         let enabled = settings.integrations.s3.enabled;
@@ -607,6 +649,7 @@ pub async fn run(state: &AppState) -> Report {
     checks.push(onedrive_check.await);
     checks.push(s3_check.await);
     checks.push(webdav_check.await);
+    checks.push(youtube_check.await);
     checks.push(webhook);
     checks.push({
         let obs = state.obs.status();

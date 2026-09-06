@@ -84,7 +84,7 @@ impl Encoder {
     }
 }
 
-const SW_SCALE: &str = "scale=-2:1080";
+pub const SW_SCALE: &str = "scale=-2:1080";
 
 /// One candidate of the detection, in preference order per vendor: the
 /// full GPU path first, then the same encoder with software decoding.

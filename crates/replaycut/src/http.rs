@@ -408,6 +408,8 @@ async fn share(State(app): State<App>, body: Bytes) -> Response {
         audio: v["audio"].as_str().unwrap_or("").to_string(),
         mode: v["mode"].as_str().unwrap_or("").to_string(),
         target: v["target"].as_str().unwrap_or("").to_string(),
+        vertical: v["vertical"].as_bool().unwrap_or(false),
+        vertical_pos: v["verticalPos"].as_f64().unwrap_or(0.5),
     };
     match share::start(&app, req) {
         Ok((id, position)) => {

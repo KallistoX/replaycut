@@ -10,6 +10,18 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- YouTube as a share target: every share is uploaded as its own video
+  (unlisted by default, private or public by choice), title from the clip,
+  description from a template, link `youtu.be/<id>`. Uses your own Google
+  client because of YouTube's upload quota; connected with a code at Google
+  like OneDrive. `docs/youtube.md` walks through the five-minute setup.
+- Vertical cut: "Vertical 9:16 (Short)" in the share row crops a full-height
+  window (position by slider, shown over the player) and scales it to
+  1080x1920 - a Short on YouTube, or a file for TikTok, Reels and WhatsApp
+  (`vertical` and `verticalPos` in `POST /api/share` and the job).
+
 ## [2.5.0] - 2026-09-05
 
 Share where you like: every configured storage is a target with its own

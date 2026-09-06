@@ -121,6 +121,11 @@ pub struct Job {
     // since 2.5: a publish job re-uses the file of this finished job
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    // since 2.6: a 9:16 cut (`crop` at `verticalPos`, 0 = left edge, 1 = right edge)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub vertical: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vertical_pos: Option<f64>,
     // since 2.4, copy mode: where the file really starts (the keyframe before `start`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actual_start: Option<f64>,

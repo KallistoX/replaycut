@@ -319,12 +319,8 @@ mod tests {
         let (login, _l) = crate::oauth::tests::fake_login().await;
         let (graph, _g) = fake_graph().await;
         let provider = DeviceProvider {
-            id: "onedrive",
-            label: "OneDrive",
-            login_base: login,
-            client_id: "test-client".into(),
-            scope: "Files.ReadWrite.AppFolder offline_access",
             credential: "replaycut/test-onedrive",
+            ..crate::oauth::tests::test_provider(&login)
         };
         let tokens = Arc::new(TokenSource::new(provider, "Tester".into(), "RT1".into()));
         let od = OneDrive {

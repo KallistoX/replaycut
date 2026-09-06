@@ -82,6 +82,35 @@ pub struct Integrations {
     pub s3: S3,
     /// since 2.5
     pub webdav: WebDav,
+    /// since 2.6
+    pub youtube: YouTube,
+}
+
+/// YouTube (since 2.6): every share is its own video. The user's own Google
+/// OAuth client is the credential `replaycut/youtube-client`, the connected
+/// channel the credential `replaycut/youtube` (refresh token).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct YouTube {
+    pub enabled: bool,
+    pub quick_share: bool,
+    /// `unlisted` (default), `private` or `public`.
+    pub privacy: String,
+    /// Description template; `{title}`, `{clip}` and `{date}` are replaced.
+    pub description: String,
+}
+
+pub const YOUTUBE_PRIVACY: [&str; 3] = ["unlisted", "private", "public"];
+
+impl Default for YouTube {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            quick_share: false,
+            privacy: "unlisted".into(),
+            description: "{title}\n\nClip from {date}, shared with replaycut.".into(),
+        }
+    }
 }
 
 /// S3-compatible object storage (since 2.5): AWS, R2, B2, MinIO, Wasabi. Keys
@@ -295,8 +324,9 @@ const S3_KEYS: [&str; 8] = [
     "presignDays",
 ];
 const WEBDAV_KEYS: [&str; 5] = ["enabled", "quickShare", "url", "folder", "publicBase"];
+const YOUTUBE_KEYS: [&str; 4] = ["enabled", "quickShare", "privacy", "description"];
 /// Storage integrations, for the "one quick-share target" rule.
-const STORAGE_GROUPS: [&str; 4] = ["nextcloud", "onedrive", "s3", "webdav"];
+const STORAGE_GROUPS: [&str; 5] = ["nextcloud", "onedrive", "s3", "webdav", "youtube"];
 const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
 
 impl Settings {
@@ -335,6 +365,7 @@ impl Settings {
                         "onedrive" => &ONEDRIVE_KEYS,
                         "s3" => &S3_KEYS,
                         "webdav" => &WEBDAV_KEYS,
+                        "youtube" => &YOUTUBE_KEYS,
                         _ => return Err(format!("unknown integration: {group}")),
                     };
                     let Some(fields) = fields.as_object() else {
@@ -468,6 +499,14 @@ impl Settings {
             !self.encoder.trim().is_empty(),
             "encoder must be 'auto' or an encoder name"
         );
+        anyhow::ensure!(
+            YOUTUBE_PRIVACY.contains(&self.integrations.youtube.privacy.as_str()),
+            "integrations.youtube.privacy must be unlisted, private or public"
+        );
+        anyhow::ensure!(
+            self.integrations.youtube.description.chars().count() <= 4000,
+            "integrations.youtube.description must be at most 4000 characters"
+        );
         Ok(())
     }
 
@@ -547,6 +586,30 @@ mod tests {
         assert!(s
             .with_patch(&serde_json::json!({ "theme": "Bad Name" }))
             .is_err());
+    }
+
+    #[test]
+    fn youtube_block_validates_and_takes_quick_share() {
+        let s = Settings::default();
+        assert_eq!(s.integrations.youtube.privacy, "unlisted");
+        let next = s
+            .with_patch(&serde_json::json!({
+                "integrations": { "youtube": { "enabled": true, "quickShare": true, "privacy": "public" } }
+            }))
+            .unwrap();
+        assert!(next.integrations.youtube.quick_share);
+        assert!(!next.integrations.nextcloud.quick_share);
+        assert_eq!(next.integrations.youtube.privacy, "public");
+        let err = s
+            .with_patch(
+                &serde_json::json!({ "integrations": { "youtube": { "privacy": "secret" } } }),
+            )
+            .unwrap_err();
+        assert!(err.contains("privacy"), "{err}");
+        let err = s
+            .with_patch(&serde_json::json!({ "integrations": { "youtube": { "channel": "x" } } }))
+            .unwrap_err();
+        assert!(err.contains("unknown field"), "{err}");
     }
 
     #[test]

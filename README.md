@@ -6,8 +6,10 @@ OBS keeps a replay buffer while you play. You press a hotkey, OBS writes the
 last few minutes to disk, replaycut notices the file, and you trim the good
 part in your browser: set in and out points, pick an audio mix, give it a
 title, hit Share. The clip is encoded on the gaming PC. Optional integrations
-upload the result and post a link into a Discord channel; without them,
-replaycut is a local clip manager and the finished file lands in a folder.
+upload the result (Nextcloud, OneDrive, any S3 bucket or WebDAV server, or
+as a video on YouTube, a vertical cut as a Short) and post a link into a
+Discord channel; without them, replaycut is a local clip manager and the
+finished file lands in a folder.
 
 Everything runs on the PC that runs the game. The browser, on the same PC, a
 laptop or a phone in the same network, is only the remote control.

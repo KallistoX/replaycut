@@ -23,6 +23,11 @@ use crate::state::AppState;
 pub const ONEDRIVE_CLIENT_ID: &str = "985879f2-d85e-4032-bdfa-665b08b8734a";
 // `common`: the app is registered for personal and work accounts alike.
 const MS_LOGIN_BASE: &str = "https://login.microsoftonline.com/common/oauth2/v2.0";
+/// Google's device flow: `<base>/device/code` and `<base>/token`. It needs a
+/// client of the type "TVs and Limited Input devices" and sends the client
+/// secret along; the allowed scopes include `youtube` but not
+/// `youtube.upload`.
+const GOOGLE_LOGIN_BASE: &str = "https://oauth2.googleapis.com";
 const TIMEOUT: Duration = Duration::from_secs(20);
 
 /// An OAuth provider with a device-code flow.
@@ -30,15 +35,24 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 pub struct DeviceProvider {
     pub id: &'static str,
     pub label: &'static str,
-    /// `<base>/devicecode` and `<base>/token`.
+    /// `<base>/<device_path>` and `<base>/token`.
     pub login_base: String,
+    /// `devicecode` (Microsoft) or `device/code` (Google).
+    pub device_path: &'static str,
     pub client_id: String,
+    /// Sent with the token requests when the provider wants it (Google).
+    pub client_secret: Option<String>,
     pub scope: &'static str,
     /// Credential Manager target for the refresh token (user = account name).
     pub credential: &'static str,
+    /// What the card says when `client_id` is empty.
+    pub missing_client: &'static str,
 }
 
-/// The provider behind a target id, if it has one.
+/// The provider behind a target id, if it has one. OneDrive uses the
+/// replaycut app registration; YouTube the user's own Google client from
+/// the Credential Manager (since 2.6), so `client_id` is empty until one is
+/// stored.
 pub fn provider(id: &str) -> Option<DeviceProvider> {
     match id {
         "onedrive" => Some(DeviceProvider {
@@ -46,14 +60,49 @@ pub fn provider(id: &str) -> Option<DeviceProvider> {
             label: "OneDrive",
             login_base: std::env::var("REPLAYCUT_MS_LOGIN_BASE")
                 .unwrap_or_else(|_| MS_LOGIN_BASE.to_string()),
+            device_path: "devicecode",
             client_id: std::env::var("REPLAYCUT_ONEDRIVE_CLIENT_ID")
                 .ok()
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| ONEDRIVE_CLIENT_ID.to_string()),
+            client_secret: None,
             scope: "Files.ReadWrite.AppFolder User.Read offline_access",
             credential: credentials::ONEDRIVE,
+            missing_client: "this build has no OneDrive client id",
         }),
+        "youtube" => {
+            let client = credentials::read(credentials::YOUTUBE_CLIENT)
+                .ok()
+                .flatten()
+                .filter(|c| !c.user.trim().is_empty() && !c.secret.trim().is_empty());
+            Some(DeviceProvider {
+                id: "youtube",
+                label: "YouTube",
+                login_base: std::env::var("REPLAYCUT_GOOGLE_LOGIN_BASE")
+                    .unwrap_or_else(|_| GOOGLE_LOGIN_BASE.to_string()),
+                device_path: "device/code",
+                client_id: client
+                    .as_ref()
+                    .map(|c| c.user.trim().to_string())
+                    .unwrap_or_default(),
+                client_secret: client.map(|c| c.secret.trim().to_string()),
+                scope: "https://www.googleapis.com/auth/youtube",
+                credential: credentials::YOUTUBE,
+                missing_client: "no Google client stored - enter client id and client secret under Settings > Integrations > YouTube",
+            })
+        }
         _ => None,
+    }
+}
+
+impl DeviceProvider {
+    /// The form fields every token request starts with.
+    fn client_form(&self) -> Vec<(&'static str, String)> {
+        let mut f = vec![("client_id", self.client_id.clone())];
+        if let Some(s) = &self.client_secret {
+            f.push(("client_secret", s.clone()));
+        }
+        f
     }
 }
 
@@ -89,10 +138,10 @@ pub enum Poll {
 
 pub async fn device_start(p: &DeviceProvider) -> Result<DeviceStart> {
     if p.client_id.is_empty() {
-        bail!("this build has no {} client id", p.label);
+        bail!("{}", p.missing_client);
     }
     let v: Value = client()?
-        .post(format!("{}/devicecode", p.login_base))
+        .post(format!("{}/{}", p.login_base, p.device_path))
         .form(&[("client_id", p.client_id.as_str()), ("scope", p.scope)])
         .send()
         .await?
@@ -124,13 +173,16 @@ fn parse_tokens(v: &Value) -> Result<Tokens> {
 }
 
 pub async fn device_poll(p: &DeviceProvider, device_code: &str) -> Result<Poll> {
+    let mut form = p.client_form();
+    form.push((
+        "grant_type",
+        "urn:ietf:params:oauth:grant-type:device_code".to_string(),
+    ));
+    form.push(("device_code", device_code.to_string()));
+    // Google answers pending polls with HTTP 428 and a JSON body; the body decides
     let res = client()?
         .post(format!("{}/token", p.login_base))
-        .form(&[
-            ("client_id", p.client_id.as_str()),
-            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-            ("device_code", device_code),
-        ])
+        .form(&form)
         .send()
         .await?;
     let v: Value = res.json().await.unwrap_or(Value::Null);
@@ -151,14 +203,13 @@ pub async fn device_poll(p: &DeviceProvider, device_code: &str) -> Result<Poll> 
 }
 
 pub async fn refresh(p: &DeviceProvider, refresh_token: &str) -> Result<Tokens> {
+    let mut form = p.client_form();
+    form.push(("grant_type", "refresh_token".to_string()));
+    form.push(("refresh_token", refresh_token.to_string()));
+    form.push(("scope", p.scope.to_string()));
     let v: Value = client()?
         .post(format!("{}/token", p.login_base))
-        .form(&[
-            ("client_id", p.client_id.as_str()),
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token),
-            ("scope", p.scope),
-        ])
+        .form(&form)
         .send()
         .await?
         .json()
@@ -392,14 +443,17 @@ pub(crate) mod tests {
         (base, task)
     }
 
-    fn test_provider(base: &str) -> DeviceProvider {
+    pub(crate) fn test_provider(base: &str) -> DeviceProvider {
         DeviceProvider {
             id: "onedrive",
             label: "OneDrive",
             login_base: base.to_string(),
+            device_path: "devicecode",
             client_id: "test-client".into(),
+            client_secret: None,
             scope: "Files.ReadWrite.AppFolder offline_access",
             credential: "replaycut/test-oauth",
+            missing_client: "no client",
         }
     }
 
@@ -434,6 +488,6 @@ pub(crate) mod tests {
         let mut p = test_provider("http://127.0.0.1:1");
         p.client_id = String::new();
         let err = device_start(&p).await.unwrap_err();
-        assert!(err.to_string().contains("client id"), "{err}");
+        assert!(err.to_string().contains("no client"), "{err}");
     }
 }

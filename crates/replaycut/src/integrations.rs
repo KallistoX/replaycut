@@ -26,12 +26,30 @@ pub struct Published {
     pub path: String,
 }
 
+/// What a storage may want to know about the share besides the file (since
+/// 2.6: YouTube builds title and description from it).
+#[derive(Debug, Clone, Default)]
+pub struct PublishMeta {
+    /// `YYYY-MM` of the clip, the remote folder.
+    pub month: String,
+    /// The clip's title, may be empty.
+    pub title: String,
+    /// The clip's base name.
+    pub base: String,
+    pub display_name: String,
+    /// A 9:16 cut.
+    pub vertical: bool,
+    /// The job's timestamp.
+    pub at: String,
+}
+
 pub enum Storage {
     DryRun { folder: String },
     Nextcloud(Nextcloud),
     OneDrive(crate::onedrive::OneDrive),
     S3(crate::s3::S3),
     WebDav(crate::dav::WebDav),
+    YouTube(crate::youtube::YouTube),
 }
 
 pub enum Notify {
@@ -65,11 +83,12 @@ pub const TARGET_FILE: &str = "file";
 /// them; adding an integration means one line here plus a settings block,
 /// a credential constant, a `Storage`/`Notify` variant, a card and a
 /// diagnostics row.
-pub const KNOWN_TARGETS: [(&str, &str, &str); 5] = [
+pub const KNOWN_TARGETS: [(&str, &str, &str); 6] = [
     ("nextcloud", "Nextcloud", "storage"),
     ("onedrive", "OneDrive", "storage"),
     ("s3", "S3", "storage"),
     ("webdav", "WebDAV", "storage"),
+    ("youtube", "YouTube", "storage"),
     ("discord", "Discord", "notify"),
 ];
 
@@ -122,6 +141,16 @@ impl Integrations {
                         folder: settings.integrations.webdav.folder.clone(),
                     },
                     quick_share: settings.integrations.webdav.quick_share,
+                });
+            }
+            if settings.integrations.youtube.enabled {
+                storages.push(StorageEntry {
+                    id: "youtube",
+                    label: "YouTube",
+                    storage: Storage::DryRun {
+                        folder: "youtube".into(),
+                    },
+                    quick_share: settings.integrations.youtube.quick_share,
                 });
             }
             return Ok(Self {
@@ -209,6 +238,34 @@ impl Integrations {
                 ),
             }
         }
+        let yt = &settings.integrations.youtube;
+        if yt.enabled {
+            let provider =
+                crate::oauth::provider("youtube").ok_or_else(|| anyhow!("no YouTube provider"))?;
+            match credentials::read(credentials::YOUTUBE)? {
+                _ if provider.client_id.is_empty() => tracing::warn!(
+                    "YouTube is enabled but has no Google client - enter client id and secret under Settings > Integrations"
+                ),
+                Some(cred) => {
+                    let tokens = std::sync::Arc::new(crate::oauth::TokenSource::new(
+                        provider, cred.user, cred.secret,
+                    ));
+                    storages.push(StorageEntry {
+                        id: "youtube",
+                        label: "YouTube",
+                        storage: Storage::YouTube(crate::youtube::YouTube::new(
+                            tokens,
+                            &yt.privacy,
+                            &yt.description,
+                        )?),
+                        quick_share: yt.quick_share,
+                    });
+                }
+                None => tracing::warn!(
+                    "YouTube is enabled but not connected - connect the channel under Settings > Integrations"
+                ),
+            }
+        }
         let mut notifies = Vec::new();
         if dc.enabled {
             match credentials::read(credentials::DISCORD_WEBHOOK)? {
@@ -266,6 +323,7 @@ impl Integrations {
             "onedrive" => settings.integrations.onedrive.enabled,
             "s3" => settings.integrations.s3.enabled,
             "webdav" => settings.integrations.webdav.enabled,
+            "youtube" => settings.integrations.youtube.enabled,
             "discord" => settings.integrations.discord.enabled,
             _ => false,
         };
@@ -338,6 +396,8 @@ impl Integrations {
 }
 
 impl Storage {
+    /// Where the file will live, before the upload. Empty for YouTube: the
+    /// video id only exists once the upload is through.
     pub fn remote_path(&self, month: &str, file_name: &str) -> String {
         match self {
             Storage::DryRun { folder } => format!("/{folder}/{month}/{file_name}"),
@@ -345,15 +405,17 @@ impl Storage {
             Storage::OneDrive(_) => crate::onedrive::OneDrive::remote_path(month, file_name),
             Storage::S3(s3) => s3.key(month, file_name),
             Storage::WebDav(d) => d.remote_path(month, file_name),
+            Storage::YouTube(_) => String::new(),
         }
     }
 
-    pub async fn publish(&self, file: &Path, month: &str) -> Result<Published> {
+    pub async fn publish(&self, file: &Path, meta: &PublishMeta) -> Result<Published> {
         let name = file
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
+        let month = meta.month.as_str();
         let path = self.remote_path(month, &name);
         match self {
             Storage::DryRun { .. } => {
@@ -369,6 +431,7 @@ impl Storage {
             Storage::OneDrive(od) => od.publish(file, month).await,
             Storage::S3(s3) => s3.publish(file, month).await,
             Storage::WebDav(d) => d.publish(file, month).await,
+            Storage::YouTube(yt) => yt.publish(file, meta).await,
         }
     }
 
@@ -383,6 +446,7 @@ impl Storage {
             Storage::OneDrive(od) => od.delete(paths).await,
             Storage::S3(s3) => s3.delete(paths).await,
             Storage::WebDav(d) => d.delete(paths).await,
+            Storage::YouTube(yt) => yt.delete(paths).await,
         }
     }
 }

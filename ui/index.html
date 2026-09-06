@@ -349,6 +349,14 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 }
 video, .video { width: 100%; max-height: 58vh; background: var(--surface-2); border-radius: var(--radius-lg); outline: none; border: 1px solid var(--line); }
 .video { aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; color: var(--fg-faint); }
+/* vertical cut (since 2.6): the 9:16 window drawn over the player */
+.player-wrap { position: relative; } .player-wrap video { display: block; }
+.crop-ov { position: absolute; inset: 0; pointer-events: none; }
+.crop-ov i { position: absolute; top: 0; bottom: 0; background: rgba(0,0,0,0.6); }
+.crop-ov b { position: absolute; top: 0; bottom: 0; border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); box-sizing: border-box; }
+.crop-ov span { position: absolute; top: var(--space-2); left: 50%; transform: translateX(-50%); font-size: var(--text-xs); color: var(--fg); background: rgba(0,0,0,0.55); padding: 1px var(--space-2); border-radius: var(--radius-pill); }
+.vpos-row { display: flex; gap: var(--space-3); align-items: center; font-size: var(--text-sm); color: var(--fg-muted); }
+.vpos-row input[type=range] { flex: 1; min-width: 120px; max-width: 420px; accent-color: var(--accent); }
 .video .icon { width: 48px; height: 48px; stroke-width: 1.25; }
 
 .clip { display: grid; grid-template-columns: 64px 1fr; column-gap: var(--space-2); row-gap: 2px; align-items: center; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid transparent; cursor: pointer; }
@@ -526,7 +534,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <input class="input" id="title" maxlength="80" placeholder="Title (optional) - shown in the list, the file name and the post" disabled>
         <button class="btn btn-danger" id="bDel" disabled><svg class="icon"><use href="#i-trash"/></svg> Delete</button>
       </div>
-      <video id="v" controls preload="auto" playsinline></video>
+      <div class="player-wrap"><video id="v" controls preload="auto" playsinline></video><div class="crop-ov" id="cropOv" hidden><i id="cropL"></i><b id="cropW"></b><i id="cropR"></i><span>9:16 window - drag the slider below</span></div></div>
       <div class="video-err" id="vidErr" hidden></div>
       <div class="timeline" id="tl">
         <div class="ticks" id="ticks"></div>
@@ -546,8 +554,10 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="split"><button class="btn btn-primary" id="bShare"><svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd></button><button class="btn btn-primary btn-icon" id="bShareMenu" title="Share to another target">▾</button><div class="menu" id="shareMenu" hidden></div></div>
         <select class="select" id="audio" title="Which audio tracks go into the shared clip"></select>
         <select class="select" id="mode" title="H.264: re-encoded at 1080p, plays everywhere. Fast copy: the OBS stream as it is, keyframe-accurate, no re-encode"><option value="h264">H.264 1080p</option><option value="copy">Fast copy</option></select>
+        <select class="select" id="frame" title="Landscape: the frame as recorded. Vertical: a 9:16 window of full height, scaled to 1080x1920 for YouTube Shorts, TikTok or Reels"><option value="wide">Landscape 16:9</option><option value="vertical">Vertical 9:16 (Short)</option></select>
         <span class="plan" id="planInfo"></span>
       </div>
+      <div class="vpos-row" id="vposRow" hidden><span>Window position</span><input type="range" id="vpos" min="0" max="100" value="50" title="Where the 9:16 window sits: left edge, centre, right edge"><span id="vposText">centre</span></div>
       <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>I</kbd><kbd>O</kbd> marks</span><span><kbd>Enter</kbd> share</span></div>
       <div class="progress" id="prog" hidden><div class="row nowrap"><span class="grow" id="progText"></span><span class="muted sm" id="progPct"></span><button class="btn btn-sm btn-ghost" id="progCancel" title="Stop this share" hidden><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div><div class="bar"><i id="progBar"></i></div><div class="stages" id="stages"></div></div>
       <div class="result" id="result" hidden></div>
@@ -781,7 +791,24 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="row"><button class="btn" id="sDavTest">Test connection</button><span class="test-msg" id="sDavMsg"></span></div>
       </div>
     </div>
-    <div class="card add-card"><span class="sm">YouTube and X arrive with 2.6.0.</span></div>
+    <div class="card" id="sYtCard">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-play"/></svg><h2>YouTube</h2><span class="badge">storage</span><span class="badge" id="sYtBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.youtube.enabled"><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">Every share becomes its own video on your channel, unlisted unless you choose otherwise; the link is <code>youtu.be/…</code>. A vertical cut (9:16 in the share row) is uploaded as a Short. YouTube's quota allows about six uploads a day per Google project, so replaycut uses <b>your own</b> Google client: <a href="https://github.com/KallistoX/replaycut/blob/main/docs/youtube.md" target="_blank" rel="noopener">how to create it in five minutes</a>.</p>
+        <div class="fields-2">
+          <div class="field"><label>Client ID</label><input class="input mono" id="sYtId" autocomplete="off" placeholder="1234-abcd.apps.googleusercontent.com"><span class="hint" id="sYtIdHint"></span></div>
+          <div class="field"><label>Client secret</label><div class="input-group"><input class="input mono" id="sYtSecret" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sYtSecret" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the Credential Manager as <code>replaycut/youtube-client</code>. Save, then connect.</span></div>
+        </div>
+        <div class="row" id="sYtRow"><button class="btn btn-primary" id="sYtConnect">Connect YouTube</button><button class="btn" id="sYtDisconnect" hidden>Disconnect</button><span class="muted sm" id="sYtStatus"></span></div>
+        <div class="check-row" id="sYtCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label">Enter this code at Google</div><div class="detail">Open <a id="sYtUri" href="#" target="_blank" rel="noopener"></a> and type <b class="mono" id="sYtUserCode" style="font-size:1.2em;letter-spacing:0.08em"></b>, then pick the channel. The card updates when you are done.</div></div></div>
+        <div class="fields-2">
+          <div class="field"><label>Privacy</label><select class="select" data-f="integrations.youtube.privacy"><option value="unlisted">unlisted - anyone with the link</option><option value="private">private - only you</option><option value="public">public</option></select></div>
+          <div class="field"><label>Description</label><textarea class="input" data-f="integrations.youtube.description" rows="3"></textarea><span class="hint"><code>{title}</code>, <code>{clip}</code> and <code>{date}</code> are filled in. The video title is the clip's title (or its name), plus <code>#Shorts</code> for a vertical cut.</span></div>
+        </div>
+        <label class="switch"><input type="checkbox" data-f="integrations.youtube.quickShare"><span class="track"></span> Quick share target</label>
+      </div>
+    </div>
+    <div class="card add-card"><span class="sm">X arrives with 2.6.0.</span></div>
     <h2 class="group-title">Notify</h2>
     <div class="card" id="sDcCard">
       <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge">notify</span><span class="badge" id="sDcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.discord.enabled"><span class="track"></span></label></div>
@@ -906,7 +933,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
     <h2>Delete clip?</h2>
     <div class="muted" id="delName"></div>
     <div class="muted sm">The MKV and the files shared from it go to the recycle bin on the PC.</div>
-    <label class="check" id="delNcRow"><input type="checkbox" id="delNc" checked> <span>Also remove from Nextcloud - <b>shared links (e.g. in Discord) will stop working</b>. Unchecked keeps copies and links in Nextcloud.</span></label>
+    <label class="check" id="delNcRow"><input type="checkbox" id="delNc" checked> <span>Also remove the uploaded copies (Nextcloud, OneDrive, YouTube videos, …) - <b>shared links (e.g. in Discord) will stop working</b>. Unchecked keeps them where they are.</span></label>
     <div class="actions"><button class="btn" id="delCancel">Cancel <kbd>Esc</kbd></button><button class="btn btn-danger" id="delOk">Move to recycle bin</button></div>
   </div>
 </div>
@@ -1171,6 +1198,7 @@ const setPath = (o, p, v) => { const ks = p.split('.'); let a = o; ks.slice(0, -
 async function initSettings() {
   showPage('settings');
   let orig = null, restartPending = [];
+  const oauthCards = {};
   const fields = [...document.querySelectorAll('#page-settings [data-f]')];
   const tabs = () => { const t = location.hash === '#integrations' ? 'integrations' : 'general'; $('tabGeneral').hidden = t !== 'general'; $('tabIntegrations').hidden = t !== 'integrations'; document.querySelectorAll('#page-settings .tabs a').forEach(a => { if (a.dataset.tab === t) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }); if (location.hash === '#qr') setTimeout(() => $('sAddr').click(), 0); };
   window.addEventListener('hashchange', tabs); tabs();
@@ -1186,6 +1214,9 @@ async function initSettings() {
     $('sPwOn').checked = !!s.passwordSet; $('sPwFields').hidden = !$('sPwOn').checked; $('sPw1').value = ''; $('sPw2').value = ''; $('sPw1').placeholder = s.passwordSet ? 'leave empty to keep' : 'at least 6 characters';
     $('sNcUser').value = ''; $('sNcPw').value = ''; $('sDcHook').value = '';
     $('sS3Key').value = ''; $('sS3Secret').value = ''; $('sDavUser').value = ''; $('sDavPw').value = '';
+    $('sYtId').value = ''; $('sYtSecret').value = '';
+    $('sYtIdHint').textContent = s.secrets && s.secrets.youtubeClient ? 'A client is stored; fill both fields to replace it (that disconnects the channel).' : 'No client stored yet - paste the client id and secret of your Google project.';
+    Object.values(oauthCards).forEach(c => c.poll());
     $('sS3KeyHint').textContent = s.secrets && s.secrets.s3 ? 'Keys are stored; fill both fields to replace them.' : 'No keys stored yet.';
     $('sDavUserHint').textContent = s.secrets && s.secrets.webdav ? 'A login is stored; fill both fields to replace it.' : 'No login stored yet.';
     $('sS3Badge').textContent = s.integrations.s3.enabled ? (s.secrets.s3 ? 'on' : 'on, no keys') : 'off'; $('sS3Badge').className = 'badge' + (s.integrations.s3.enabled && !s.secrets.s3 ? ' warn' : '');
@@ -1205,10 +1236,11 @@ async function initSettings() {
     if ($('sNcUser').value.trim() || $('sNcPw').value) { c.nextcloudUser = $('sNcUser').value.trim(); c.nextcloudPassword = $('sNcPw').value; }
     if ($('sS3Key').value.trim() || $('sS3Secret').value) { c.s3AccessKey = $('sS3Key').value.trim(); c.s3SecretKey = $('sS3Secret').value; }
     if ($('sDavUser').value.trim() || $('sDavPw').value) { c.webdavUser = $('sDavUser').value.trim(); c.webdavPassword = $('sDavPw').value; }
+    if ($('sYtId').value.trim() || $('sYtSecret').value) { c.youtubeClientId = $('sYtId').value.trim(); c.youtubeClientSecret = $('sYtSecret').value.trim(); }
     if ($('sDcHook').value.trim()) c.discordWebhook = $('sDcHook').value.trim();
     return c;
   }
-  function labels(c) { const names = { clipDir: 'Recording folder', displayName: 'Display name', theme: 'Theme', shareKbps: 'Video bitrate', encoder: 'Encoder', hwaccel: 'Hardware decoding', ffmpegPriority: 'ffmpeg priority', ffmpegThreads: 'ffmpeg threads', port: 'Port', bind: 'Listen on', logLevel: 'Log level', checkUpdates: 'Update check', integrations: 'Integrations', password: 'Password', nextcloudUser: 'Nextcloud credentials', nextcloudPassword: '', discordWebhook: 'Discord webhook', s3AccessKey: 'S3 keys', s3SecretKey: '', webdavUser: 'WebDAV login', webdavPassword: '' }; return Object.keys(c).map(k => names[k]).filter(Boolean).join(', '); }
+  function labels(c) { const names = { clipDir: 'Recording folder', displayName: 'Display name', theme: 'Theme', shareKbps: 'Video bitrate', encoder: 'Encoder', hwaccel: 'Hardware decoding', ffmpegPriority: 'ffmpeg priority', ffmpegThreads: 'ffmpeg threads', port: 'Port', bind: 'Listen on', logLevel: 'Log level', checkUpdates: 'Update check', integrations: 'Integrations', password: 'Password', nextcloudUser: 'Nextcloud credentials', nextcloudPassword: '', discordWebhook: 'Discord webhook', s3AccessKey: 'S3 keys', s3SecretKey: '', webdavUser: 'WebDAV login', webdavPassword: '', youtubeClientId: 'YouTube client', youtubeClientSecret: '' }; return Object.keys(c).map(k => names[k]).filter(Boolean).join(', '); }
   function dirty() {
     const c = changes(), n = Object.keys(c).length;
     $('saveBar').classList.toggle('dirty', n > 0); $('sSave').disabled = !n; $('sDiscard').hidden = !n;
@@ -1219,7 +1251,7 @@ async function initSettings() {
     b.hidden = !restartPending.length; $('b-restart-text').textContent = restartPending.length ? `Changed: ${restartPending.join(', ')}. They take effect after a restart.` : '';
   }
   fields.forEach(el => { el.addEventListener('input', () => { if (el.dataset.f === 'displayName') fields.filter(o => o !== el && o.dataset.f === 'displayName').forEach(o => o.value = el.value); dirty(); }); el.addEventListener('change', dirty); });
-  ['sPw1', 'sPw2', 'sNcUser', 'sNcPw', 'sDcHook', 'sS3Key', 'sS3Secret', 'sDavUser', 'sDavPw'].forEach(id => $(id).addEventListener('input', dirty));
+  ['sPw1', 'sPw2', 'sNcUser', 'sNcPw', 'sDcHook', 'sS3Key', 'sS3Secret', 'sDavUser', 'sDavPw', 'sYtId', 'sYtSecret'].forEach(id => $(id).addEventListener('input', dirty));
   $('sPwOn').onchange = () => { $('sPwFields').hidden = !$('sPwOn').checked; dirty(); };
   $('sAutostart').onchange = async () => { try { const r = await api('/api/settings', jsonOpts('PUT', { autostart: $('sAutostart').checked }), { retries: 0 }); r.ok ? toast('Autostart ' + ($('sAutostart').checked ? 'on' : 'off'), 'ok') : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } };
   $('sDiscard').onclick = () => fill(orig);
@@ -1227,6 +1259,7 @@ async function initSettings() {
     const c = changes(); $('sPwErr').hidden = true;
     if ('password' in c && c.password) { if (c.password.length < 6) { $('sPwErr').textContent = 'Use at least 6 characters.'; $('sPwErr').hidden = false; return; } if (c.password !== $('sPw2').value) { $('sPwErr').textContent = 'The two entries differ.'; $('sPwErr').hidden = false; return; } }
     if ('nextcloudUser' in c && (!c.nextcloudUser || !c.nextcloudPassword)) { toast('Nextcloud: fill user and app password together', 'err'); return; }
+    if ('youtubeClientId' in c && (!c.youtubeClientId || !c.youtubeClientSecret)) { toast('YouTube: fill client id and client secret together', 'err'); return; }
     $('sSave').disabled = true; $('sSave').innerHTML = '<span class="spinner"></span> Saving';
     try {
       const r = await api('/api/settings', jsonOpts('PUT', c), { retries: 0, timeout: 30000 });
@@ -1251,26 +1284,30 @@ async function initSettings() {
     for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 1000)); try { const s = await fetch(target.replace('/settings', '/api/session'), { cache: 'no-store' }); if (s.ok) { location.href = target; return; } } catch (e) {} }
     toast('The service did not come back - start it from the Start menu.', 'err');
   };
-  // OneDrive: connect through the device-code flow (since 2.5)
-  let odTimer = null;
-  function showOd(d) {
-    const s = $('sOdStatus'), code = $('sOdCode');
-    $('sOdBadge').textContent = d.connected ? 'connected' : (d.configured ? 'not connected' : 'unavailable'); $('sOdBadge').className = 'badge' + (d.connected ? ' ok' : '');
-    $('sOdConnect').hidden = d.connected; $('sOdDisconnect').hidden = !d.connected;
-    $('sOdConnect').disabled = !d.configured;
-    const f = d.flow;
-    if (d.connected) { s.textContent = `Connected as ${d.account || 'OneDrive'}.`; code.hidden = true; }
-    else if (!d.configured) { s.textContent = 'This build has no OneDrive client id yet.'; code.hidden = true; }
-    else if (f && f.status === 'pending') { s.textContent = ''; code.hidden = false; $('sOdUri').textContent = f.verificationUri; $('sOdUri').href = f.verificationUri; $('sOdUserCode').textContent = f.userCode; }
-    else if (f && f.status === 'failed') { s.textContent = 'Connecting failed: ' + f.error; code.hidden = true; }
-    else { s.textContent = 'Not connected.'; code.hidden = true; }
-    clearTimeout(odTimer);
-    if (f && f.status === 'pending') odTimer = setTimeout(pollOd, 2000);
+  // account integrations connect through the device-code flow: OneDrive (since 2.5), YouTube (since 2.6)
+  function oauthCard(provider, label, p, noClient) {
+    let timer = null, announced = false;
+    function show(d) {
+      const s = $(p + 'Status'), code = $(p + 'Code');
+      $(p + 'Badge').textContent = d.connected ? 'connected' : (d.configured ? 'not connected' : 'no client'); $(p + 'Badge').className = 'badge' + (d.connected ? ' ok' : '');
+      $(p + 'Connect').hidden = d.connected; $(p + 'Disconnect').hidden = !d.connected;
+      $(p + 'Connect').disabled = !d.configured;
+      const f = d.flow;
+      if (d.connected) { s.textContent = `Connected as ${d.account || label}.`; code.hidden = true; }
+      else if (!d.configured) { s.textContent = noClient; code.hidden = true; }
+      else if (f && f.status === 'pending') { s.textContent = ''; code.hidden = false; $(p + 'Uri').textContent = f.verificationUri; $(p + 'Uri').href = f.verificationUri; $(p + 'UserCode').textContent = f.userCode; }
+      else if (f && f.status === 'failed') { s.textContent = 'Connecting failed: ' + f.error; code.hidden = true; }
+      else { s.textContent = 'Not connected.'; code.hidden = true; }
+      clearTimeout(timer);
+      if (f && f.status === 'pending') { announced = false; timer = setTimeout(poll, 2000); }
+    }
+    async function poll() { try { const d = await api('/api/oauth/' + provider, {}, { retries: 0 }); show(d); if (d.connected && d.flow && d.flow.status === 'done' && !announced) { announced = true; toast(`${label} connected as ${d.account}`, 'ok'); } } catch (e) {} }
+    $(p + 'Connect').onclick = async () => { $(p + 'Connect').disabled = true; try { const d = await api('/api/oauth/' + provider + '/start', { method: 'POST', body: '' }, { retries: 0, timeout: 25000 }); if (!d.ok) toast(d.error, 'err'); else show(d); } catch (e) { toast(e.message, 'err'); } $(p + 'Connect').disabled = false; };
+    $(p + 'Disconnect').onclick = async () => { try { const r = await api('/api/oauth/' + provider + '/disconnect', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(`${label} disconnected`) : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } poll(); };
+    return { poll };
   }
-  async function pollOd() { try { const d = await api('/api/oauth/onedrive', {}, { retries: 0 }); showOd(d); if (d.connected && d.flow && d.flow.status === 'done') { toast(`OneDrive connected as ${d.account}`, 'ok'); fill(await api('/api/settings', {}, { retries: 0 })); } } catch (e) {} }
-  $('sOdConnect').onclick = async () => { $('sOdConnect').disabled = true; try { const d = await api('/api/oauth/onedrive/start', { method: 'POST', body: '' }, { retries: 0, timeout: 25000 }); if (!d.ok) toast(d.error, 'err'); else showOd(d); } catch (e) { toast(e.message, 'err'); } $('sOdConnect').disabled = false; };
-  $('sOdDisconnect').onclick = async () => { try { const r = await api('/api/oauth/onedrive/disconnect', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast('OneDrive disconnected') : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } pollOd(); };
-  pollOd();
+  oauthCards.onedrive = oauthCard('onedrive', 'OneDrive', 'sOd', 'This build has no OneDrive client id yet.');
+  oauthCards.youtube = oauthCard('youtube', 'YouTube', 'sYt', 'Enter and save the client id and secret of your Google project first.');
   // update check on demand (since 2.3)
   function updText(u) {
     if (!u) return '';
@@ -1453,6 +1490,10 @@ function initClips() {
   // share mode: remembered per browser (since 2.4)
   try { const m = localStorage.getItem('rc-mode'); if (m === 'copy' || m === 'h264') $('mode').value = m; } catch (e) {}
   $('mode').onchange = () => { try { localStorage.setItem('rc-mode', $('mode').value); } catch (e) {} render(); };
+  // vertical cut (since 2.6): needs a re-encode, so copy mode steps aside while it is chosen
+  $('frame').onchange = () => { const vert = $('frame').value === 'vertical'; const copyOpt = $('mode').querySelector('option[value=copy]'); copyOpt.disabled = vert; if (vert && $('mode').value === 'copy') $('mode').value = 'h264'; $('vposRow').hidden = !vert; $('cropOv').hidden = !vert; render(); cropOverlay(); };
+  $('vpos').oninput = () => { const p = Number($('vpos').value); $('vposText').textContent = p === 50 ? 'centre' : p < 50 ? `${50 - p} % left` : `${p - 50} % right`; cropOverlay(); };
+  v.addEventListener('loadedmetadata', cropOverlay); window.addEventListener('resize', cropOverlay);
   $('progCancel').onclick = async () => {
     const id = $('progCancel').dataset.job; if (!id) return; $('progCancel').disabled = true;
     try { const r = await api('/api/jobs/' + id + '/cancel', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(r.stopped ? 'Share removed from the queue' : 'Stopping the share …') : toast(r.error, 'err'); }
@@ -1504,8 +1545,18 @@ function render() {
   const size = copy ? `about <b>${(cur.size * Math.max(1, len) / (d || 1) / 1048576).toFixed(0)} MB</b> as recorded (${esc((cur.codec || 'copy').toUpperCase())}, keyframe-accurate)` : `about <b>${p.mb.toFixed(0)} MB</b> at ${p.kbps.toFixed(0)} kbit/s`;
   const warn = copy && cur.codec && cur.codec !== 'h264' && !cfg.localMode ? ' · <span class="badge warn">Discord embeds and iPhones need H.264</span>' : '';
   const def = defaultTarget();
-  $('planInfo').innerHTML = size + warn +
+  const vert = $('frame').value === 'vertical' ? ' · <span class="badge accent">9:16</span> 1080x1920, <code>#Shorts</code> on YouTube' : '';
+  $('planInfo').innerHTML = size + warn + vert +
     (def === 'file' ? ` · <span class="badge accent">file only</span> no quick-share storage - the file stays in <code>shared\\</code>${storageTargets().length ? ', the menu offers ' + esc(storageTargets().map(t => t.label).join(', ')) : ''}` : ` · to <b>${esc(targetLabel(def))}</b>, ${esc(expiry())}${cfg.webhook ? ' + post' : ''}`);
+}
+// the 9:16 window over the player: the video sits letterboxed inside its element, so find the rendered picture first
+function cropOverlay() {
+  const ov = $('cropOv'); if (ov.hidden || !v.videoWidth || !v.videoHeight) return;
+  const cw = v.clientWidth, ch = v.clientHeight, s = Math.min(cw / v.videoWidth, ch / v.videoHeight);
+  const pw = v.videoWidth * s, phh = v.videoHeight * s, ox = (cw - pw) / 2, oy = (ch - phh) / 2;
+  const ww = Math.min(pw, phh * 9 / 16), x = ox + (pw - ww) * (Number($('vpos').value) / 100);
+  const side = (el, l, w) => { el.style.left = l + 'px'; el.style.width = Math.max(0, w) + 'px'; el.style.top = oy + 'px'; el.style.bottom = oy + 'px'; };
+  side($('cropL'), ox, x - ox); side($('cropW'), x, ww); side($('cropR'), x + ww, ox + pw - x - ww);
 }
 function buildAudio() {
   const key = JSON.stringify(cfg.audio) + '|' + (cur ? cur.tracks : 0); if (key === audioBuilt) return; audioBuilt = key;
@@ -1522,7 +1573,7 @@ function suggestTitle(c) {
 function load(c, keepSel) {
   cur = c; $('vidErr').hidden = true; $('editorBody').hidden = false; $('emptyEditor').hidden = true;
   v.src = c.preview; v.poster = c.thumb || ''; v.load();
-  if (!keepSel) { tIn = 0; tOut = c.duration; edited = false; }
+  if (!keepSel) { tIn = 0; tOut = c.duration; edited = false; if ($('frame').value !== 'wide') { $('frame').value = 'wide'; $('frame').onchange(); } }
   document.querySelectorAll('.clip').forEach(e => e.classList.toggle('active', e.dataset.base === c.base));
   $('title').value = c.title || ''; $('title').placeholder = suggestTitle(c); $('title').disabled = false; $('bDel').disabled = false;
   ticks(c.duration); buildAudio(); render();
@@ -1562,7 +1613,7 @@ async function deleteClip() {
   $('delOk').disabled = true;
   try {
     const r = await api('/api/clips/' + encodeURIComponent(c.base) + (nc ? '?nextcloud=1' : ''), { method: 'DELETE' }, { retries: 0, timeout: 30000 });
-    if (r.ok) { toast(`Deleted: ${r.recycled} file(s) in the recycle bin` + (nc ? `, ${r.nextcloud} removed from Nextcloud` : ''), 'ok'); lastSeen = null; showResult(null); shownLast = null; }
+    if (r.ok) { toast(`Deleted: ${r.recycled} file(s) in the recycle bin` + (nc ? `, ${r.nextcloud} uploaded cop${r.nextcloud === 1 ? 'y' : 'ies'} removed` : ''), 'ok'); lastSeen = null; showResult(null); shownLast = null; }
     else toast('Delete failed: ' + r.error, 'err');
   } catch (e) { toast('Delete failed: ' + e.message, 'err'); }
   $('delOk').disabled = false; poll.now();
@@ -1577,7 +1628,7 @@ function showProgress(j) {
   p.hidden = false;
   const pct = j.stage === 'encode' ? (j.percent || 0) : (j.stage === 'queued' ? 0 : 100);
   const queued = j.stage === 'queued' ? (j.position ? `Queued - ${j.position} share${j.position === 1 ? '' : 's'} ahead` : 'Queued …') : null;
-  $('progText').textContent = (queued || (j.stage === 'encode' && j.mode === 'copy' ? 'Copying' : STAGE_TEXT[j.stage]) || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)}${j.mode === 'copy' ? ' as recorded' : ` at ${j.kbps} kbit/s`}, ${audioLabel(j.audio)}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
+  $('progText').textContent = (queued || (j.stage === 'encode' && j.mode === 'copy' ? 'Copying' : STAGE_TEXT[j.stage]) || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)}${j.mode === 'copy' ? ' as recorded' : ` at ${j.kbps} kbit/s`}${j.vertical ? ', vertical 9:16' : ''}, ${audioLabel(j.audio)}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
   const canCancel = ['queued', 'encode', 'upload'].includes(j.stage);
   $('progCancel').hidden = !canCancel; $('progCancel').dataset.job = j.id;
   $('progPct').textContent = pct + ' %';
@@ -1602,7 +1653,7 @@ function showResult(r) {
     return;
   }
   const earlier = r.mode === 'copy' && r.actualStart != null && r.actualStart < r.start - 0.05 ? `, starts ${(r.start - r.actualStart).toFixed(1)} s earlier (keyframe)` : '';
-  const meta = `${Number(r.seconds).toFixed(1)} s, ${r.sizeMB} MB, ${esc(audioLabel(r.audio))}${r.mode === 'copy' ? ' <span class="badge">copy</span>' : ''}${earlier}`;
+  const meta = `${Number(r.seconds).toFixed(1)} s, ${r.sizeMB} MB, ${esc(audioLabel(r.audio))}${r.mode === 'copy' ? ' <span class="badge">copy</span>' : ''}${r.vertical ? ' <span class="badge accent">9:16</span>' : ''}${earlier}`;
   if (!r.direct) {
     // file only: the file is the result
     box.className = 'result';
@@ -1654,7 +1705,7 @@ function renderHistory(h) {
     }
     const local = !e.direct;
     const target = e.target && e.target !== 'file' ? `<span class="badge">${esc(targetLabel(e.target))}</span>` : (local ? '<span class="badge accent">file only</span>' : '');
-    d.innerHTML = `<b class="truncate"></b><div class="meta">${fmt(e.seconds)} · ${e.sizeMB} MB · ${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · ${esc(audioLabel(e.audio))} ${target}${e.source ? ' <span class="badge">republished</span>' : ''}</div>
+    d.innerHTML = `<b class="truncate"></b><div class="meta">${fmt(e.seconds)} · ${e.sizeMB} MB · ${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · ${esc(audioLabel(e.audio))} ${target}${e.vertical ? ' <span class="badge accent">9:16</span>' : ''}${e.source ? ' <span class="badge">republished</span>' : ''}</div>
       <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(e.link)}" target="_blank" rel="noopener">Open</a>`}${publishButtons(Object.assign({ ok: true }, e))}</div>`;
     d.querySelector('b').textContent = e.title || short(e.base);
     d.querySelectorAll('button[data-c]').forEach(b => b.onclick = () => copyText(e[b.dataset.c]).then(() => toast(b.dataset.c === 'direct' ? 'Direct link copied' : 'Page link copied', 'ok')));
@@ -1683,6 +1734,7 @@ async function share(target) {
   await saveTitle();
   try {
     const body = { base: cur.base, start: tIn, end: tOut, audio: $('audio').value, mode: $('mode').value }; if (target) body.target = target;
+    if ($('frame').value === 'vertical') { body.vertical = true; body.verticalPos = Number($('vpos').value) / 100; }
     const r = await api('/api/share', jsonOpts('POST', body), { retries: 0, timeout: 10000 });
     if (!r.ok) { if (r.job) { watchJob(r.job, true); toast(r.error, 'err'); } else { showResult(r); setBusy(false); } return; }
     if (r.position > 0) toast(`Queued - ${r.position} share${r.position === 1 ? '' : 's'} ahead`);

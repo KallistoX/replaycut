@@ -82,6 +82,8 @@ fn settings_document(app: &AppState) -> Value {
         "onedrive": credentials::read(credentials::ONEDRIVE).ok().flatten().is_some(),
         "s3": credentials::read(credentials::S3).ok().flatten().is_some(),
         "webdav": credentials::read(credentials::WEBDAV).ok().flatten().is_some(),
+        "youtube": credentials::read(credentials::YOUTUBE).ok().flatten().is_some(),
+        "youtubeClient": credentials::read(credentials::YOUTUBE_CLIENT).ok().flatten().is_some(),
     });
     doc["passwordSet"] = json!(settings.password_hash.is_some());
     doc["autostart"] = json!(autostart_enabled());
@@ -125,6 +127,8 @@ pub async fn put_settings(
     let s3_secret_key = obj.remove("s3SecretKey");
     let webdav_user = obj.remove("webdavUser");
     let webdav_password = obj.remove("webdavPassword");
+    let youtube_client_id = obj.remove("youtubeClientId");
+    let youtube_client_secret = obj.remove("youtubeClientSecret");
 
     // Fields a running job depends on.
     if app.inner.lock().current_job.is_some() {
@@ -187,7 +191,9 @@ pub async fn put_settings(
             "send nextcloudUser and nextcloudPassword together",
         ));
     }
-    // S3 keys and WebDAV login (since 2.5): both halves together, empty removes
+    // S3 keys, WebDAV login (since 2.5) and the Google client for YouTube
+    // (since 2.6): both halves together, empty removes
+    let mut youtube_client_changed = false;
     for (a, b, target, name) in [
         (
             &s3_access_key,
@@ -201,7 +207,16 @@ pub async fn put_settings(
             credentials::WEBDAV,
             "webdavUser and webdavPassword",
         ),
+        (
+            &youtube_client_id,
+            &youtube_client_secret,
+            credentials::YOUTUBE_CLIENT,
+            "youtubeClientId and youtubeClientSecret",
+        ),
     ] {
+        if target == credentials::YOUTUBE_CLIENT && (a.is_some() || b.is_some()) {
+            youtube_client_changed = true;
+        }
         match (
             a.as_ref().and_then(Value::as_str),
             b.as_ref().and_then(Value::as_str),
@@ -222,6 +237,13 @@ pub async fn put_settings(
                 ))
             }
         }
+    }
+    // a new Google client invalidates the channel connected with the old one
+    if youtube_client_changed {
+        if credentials::delete(credentials::YOUTUBE).map_err(ApiError::internal)? {
+            tracing::info!("YouTube: the channel was disconnected because the client changed");
+        }
+        app.oauth.lock().remove("youtube");
     }
     if let Some(webhook) = discord_webhook.as_ref().and_then(Value::as_str) {
         if !crate::integrations::is_webhook_url(webhook) {
@@ -813,10 +835,7 @@ pub async fn oauth_start(
 ) -> Result<Json<Value>, ApiError> {
     let p = oauth_provider(&id)?;
     if p.client_id.is_empty() {
-        return Err(ApiError::new(
-            StatusCode::CONFLICT,
-            format!("this build has no {} client id", p.label),
-        ));
+        return Err(ApiError::new(StatusCode::CONFLICT, p.missing_client));
     }
     let running = app.oauth.lock().get(p.id).is_some_and(|f| {
         matches!(f.status, crate::oauth::FlowStatus::Pending)
@@ -829,11 +848,23 @@ pub async fn oauth_start(
             .map_err(|e| ApiError::new(StatusCode::BAD_GATEWAY, format!("{e:#}")))?;
         let state = app.clone();
         let provider = p.clone();
-        let graph = crate::onedrive::graph_base();
+        // who the account is, once the tokens are there: per provider
+        let api = if p.id == "youtube" {
+            crate::youtube::api_base()
+        } else {
+            crate::onedrive::graph_base()
+        };
+        let youtube = p.id == "youtube";
         tokio::spawn(async move {
             let _ = crate::oauth::run_started_flow(state, provider, start, move |token| {
-                let graph = graph.clone();
-                Box::pin(async move { crate::onedrive::OneDrive::me(&graph, &token).await })
+                let api = api.clone();
+                Box::pin(async move {
+                    if youtube {
+                        crate::youtube::YouTube::channel_title(&api, &token).await
+                    } else {
+                        crate::onedrive::OneDrive::me(&api, &token).await
+                    }
+                })
             })
             .await;
         });

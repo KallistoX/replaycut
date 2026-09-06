@@ -16,7 +16,7 @@ plain text.
 | Logs | `<data-dir>\logs\replaycut.<date>.log`, daily rotation, 7 files kept |
 | Previews | `<clipDir>\.preview\` |
 | Shared clips | `<clipDir>\shared\` |
-| Credentials | Credential Manager, generic credentials `replaycut/nextcloud`, `replaycut/discord-webhook`, `replaycut/obs-websocket`, `replaycut/onedrive`, `replaycut/s3`, `replaycut/webdav` |
+| Credentials | Credential Manager, generic credentials `replaycut/nextcloud`, `replaycut/discord-webhook`, `replaycut/obs-websocket`, `replaycut/onedrive`, `replaycut/s3`, `replaycut/webdav`, `replaycut/youtube`, `replaycut/youtube-client` |
 
 The settings file is created with defaults on the first start. Unknown
 fields are ignored, missing fields take their defaults, so a partial file is
@@ -52,6 +52,12 @@ fine.
     "onedrive": {
       "enabled": false,
       "quickShare": false
+    },
+    "youtube": {
+      "enabled": false,
+      "quickShare": false,
+      "privacy": "unlisted",
+      "description": "{title}\n\nClip from {date}, shared with replaycut."
     }
   }
 }
@@ -85,6 +91,7 @@ process runs but are never written back.
 | `integrations.onedrive` | `enabled` switches the OneDrive upload on (since 2.5); `quickShare` makes it the Share button's target. The account is connected under Settings › Integrations with a code at Microsoft; the refresh token is the credential `replaycut/onedrive`. Uploads land in `Apps/replaycut/<YYYY-MM>/`. |
 | `integrations.s3` | S3-compatible storage (since 2.5): `endpoint` (`https://<account>.r2.cloudflarestorage.com`, `https://s3.<region>.amazonaws.com`, `http://minio:9000`), `region` (`auto` for R2), `bucket`, `prefix` (folder inside the bucket), `publicBase` (public URL serving the keys; empty = presigned links), `presignDays` (1-7). Keys are the credential `replaycut/s3`. |
 | `integrations.webdav` | Generic WebDAV (since 2.5): `url` (the DAV root), `folder` below it, `publicBase` (public URL that serves the folder; required, the link is `<publicBase>/<month>/<file>`). Login is the credential `replaycut/webdav`. |
+| `integrations.youtube` | YouTube (since 2.6): every share is uploaded as its own video. `privacy` is `unlisted` (default), `private` or `public`; `description` is a template with `{title}`, `{clip}` and `{date}`. The video title is the clip's title (or its name), plus `#Shorts` for a vertical cut. Needs your own Google client (credential `replaycut/youtube-client`, see [`docs/youtube.md`](youtube.md)) and a connected channel (credential `replaycut/youtube`, connected with a code at Google under Settings › Integrations). |
 
 An enabled integration without stored credentials is skipped with a warning
 in the log; the service still starts.
@@ -96,6 +103,11 @@ in the log; the service still starts.
 | `replaycut/nextcloud` | Nextcloud user | App password (Nextcloud: Settings, Security, Devices & sessions) |
 | `replaycut/discord-webhook` | `webhook` | The webhook URL |
 | `replaycut/obs-websocket` | `obs-websocket` | The obs-websocket server password (OBS: Tools › WebSocket Server Settings › Show Connect Info); since 2.2, written by the OBS page or `PUT /api/settings` with `obsPassword` |
+| `replaycut/onedrive` | Account name | The OAuth refresh token (since 2.5); written by the Connect flow, removed by Disconnect |
+| `replaycut/s3` | Access key ID | Secret access key (since 2.5) |
+| `replaycut/webdav` | DAV user | DAV password (since 2.5) |
+| `replaycut/youtube-client` | Google client ID | Client secret of your own Google project (since 2.6, see [`docs/youtube.md`](youtube.md)) |
+| `replaycut/youtube` | Channel title | The OAuth refresh token of the connected channel (since 2.6) |
 
 `replaycut setup` writes them; `cmdkey /list` shows them; `cmdkey /delete:replaycut/nextcloud` removes one by hand.
 

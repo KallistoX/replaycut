@@ -39,6 +39,7 @@ mod update;
 mod util;
 #[cfg(windows)]
 mod winshell;
+mod youtube;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

@@ -13,6 +13,11 @@ pub const ONEDRIVE: &str = "replaycut/onedrive";
 pub const S3: &str = "replaycut/s3";
 /// WebDAV: user and password of the DAV login (since 2.5).
 pub const WEBDAV: &str = "replaycut/webdav";
+/// YouTube: user = channel title, secret = the OAuth refresh token (since 2.6).
+pub const YOUTUBE: &str = "replaycut/youtube";
+/// The user's own Google OAuth client for YouTube: user = client id,
+/// secret = client secret (since 2.6).
+pub const YOUTUBE_CLIENT: &str = "replaycut/youtube-client";
 
 #[derive(Debug, Clone)]
 pub struct Credential {

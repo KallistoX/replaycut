@@ -663,8 +663,8 @@ down, so a restart does not wait for open connections.
 ### Share targets
 
 Every configured storage integration is a target; `POST /api/share` takes
-`target`: a storage id (`nextcloud`; more with 2.5.0) or `file` for no
-upload. Missing or empty means the default: the storage marked
+`target`: a storage id (`nextcloud`, `onedrive`, `s3`, `webdav`; `youtube`
+since 2.6) or `file` for no upload. Missing or empty means the default: the storage marked
 `quickShare` in the settings, or `file` when none is. An unknown or
 unconfigured id is a 400. The job carries `target`. Notify integrations with
 `autoPost` post every share that produced a link; their stage is `notify`
@@ -742,6 +742,48 @@ Two more storages, both server-style like Nextcloud:
 - `DELETE /api/clips/<base>?nextcloud=1` removes the remote copies from every
   configured storage a job of the clip went to (paths from the history);
   `nextcloud` in the answer counts them all.
+
+## Since 2.6
+
+### YouTube
+
+YouTube is a storage target (`youtube` in `config.targets`) whose "file" is
+a video of its own: `videos.insert` through a resumable upload, title from
+the clip's title (or its name without the display-name prefix), description
+from a template, `privacyStatus` from the settings (`unlisted` by default),
+not made for kids, category Gaming. `page` and `direct` are both
+`https://youtu.be/<id>`, `ncPath` is the video id; deleting a clip with
+`?nextcloud=1` deletes the videos its jobs uploaded.
+
+- Settings: `integrations.youtube { enabled, quickShare, privacy: "unlisted"
+  | "private" | "public", description }`. `description` may use `{title}`,
+  `{clip}` (the base name) and `{date}` (`YYYY-MM-DD` from the clip name,
+  else from the job). `privacy` outside the three values is a 400.
+- The Google client is the user's own (quota: 1600 units per upload out of
+  10 000 a day per project): the write-only pair `youtubeClientId` /
+  `youtubeClientSecret` in `PUT /api/settings` (credential
+  `replaycut/youtube-client`; both empty removes it, half a pair is a 400).
+  Storing a client disconnects the channel connected with the previous one.
+  `secrets.youtubeClient` says whether one is stored, `secrets.youtube`
+  whether a channel is connected.
+- `GET /api/oauth/youtube` works like OneDrive's document; `configured` is
+  false until a client is stored, and `POST /api/oauth/youtube/start`
+  answers 409 then. The device flow runs against Google's limited-input
+  endpoint (`https://www.google.com/device`), which wants a client of the
+  type "TVs and Limited Input devices" and the scope
+  `https://www.googleapis.com/auth/youtube`; `account` is the channel title.
+- A vertical share (below) gets ` #Shorts` appended to its title; YouTube
+  lists it as a Short by its format and length.
+
+### Vertical cut
+
+`POST /api/share` takes `vertical: true` and `verticalPos` (0..1, default
+0.5): the video is cropped to a 9:16 window of full height whose left edge
+sits at `(iw - ih*9/16) * verticalPos`, scaled to 1080x1920, at the usual
+bitrate. It needs the `h264` mode (`copy` with `vertical` is a 400). The job
+and the history entry carry `vertical: true` and `verticalPos`; the file
+name gets `_9x16` before `.mp4`, so the same range with and without the crop
+are two shares, not a duplicate. A publish job inherits both fields.
 
 ## Behaviour
 

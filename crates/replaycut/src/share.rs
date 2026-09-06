@@ -29,9 +29,20 @@ pub struct ShareRequest {
     pub mode: String,
     /// A storage id, `file`, or empty for the default (since 2.5).
     pub target: String,
+    /// A 9:16 cut for Shorts (since 2.6); `vertical_pos` 0..1 is where the
+    /// window sits, 0.5 = centre.
+    pub vertical: bool,
+    pub vertical_pos: f64,
 }
 
 pub const SHARE_MODES: [&str; 2] = ["h264", "copy"];
+
+/// The `-vf` chain of a vertical cut: a 9:16 window of full height at
+/// `pos` (0 = left edge, 1 = right edge), scaled to 1080x1920.
+pub fn vertical_filter(pos: f64) -> String {
+    let pos = pos.clamp(0.0, 1.0);
+    format!("crop=ih*9/16:ih:(iw-ih*9/16)*{pos:.3}:0,scale=1080:1920")
+}
 
 #[derive(Debug)]
 pub enum ShareError {
@@ -114,6 +125,14 @@ pub fn share_file_name(base: &str, start: f64, end: f64, slug: &str) -> String {
     name
 }
 
+/// A vertical cut of the same range gets its own file (since 2.6).
+pub fn vertical_file_name(name: &str) -> String {
+    match name.strip_suffix(".mp4") {
+        Some(stem) => format!("{stem}_9x16.mp4"),
+        None => format!("{name}_9x16"),
+    }
+}
+
 /// Text of the post: `[<title> - ]<base without the "<prefix> " part>`.
 /// The prefix is only removed when it is a whole word at the start.
 pub fn post_label(prefix: &str, base: &str, title: &str) -> String {
@@ -173,6 +192,19 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
             req.mode
         )));
     };
+    if req.vertical && share_mode == "copy" {
+        return Err(ShareError::Invalid(
+            "a vertical cut needs the h264 mode (copy keeps the frame as recorded)".to_string(),
+        ));
+    }
+    if req.vertical && !req.vertical_pos.is_finite() {
+        return Err(ShareError::Invalid(
+            "verticalPos must be a number between 0 and 1".to_string(),
+        ));
+    }
+    let vertical_pos = req
+        .vertical
+        .then(|| (req.vertical_pos.clamp(0.0, 1.0) * 1000.0).round() / 1000.0);
     // the same cut twice (a double click) attaches to the first one
     let duplicate = inner
         .current_job
@@ -185,6 +217,7 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
                 && (j.end - end).abs() < 0.005
                 && j.audio == audio
                 && j.mode == share_mode
+                && j.vertical == req.vertical
                 && j.source.is_none()
         })
         .map(|j| j.id.clone());
@@ -218,6 +251,8 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
         audio,
         mode: share_mode,
         kbps: state.settings().share_kbps,
+        vertical: req.vertical,
+        vertical_pos,
         stage: "queued".into(),
         percent: 0,
         at: util::now_local(),
@@ -286,6 +321,8 @@ pub fn publish(
         audio: src.audio.clone(),
         mode: src.mode.clone(),
         kbps: src.kbps,
+        vertical: src.vertical,
+        vertical_pos: src.vertical_pos,
         title: src.title.clone(),
         file: Some(file),
         size_mb: src.size_mb,
@@ -354,7 +391,14 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
     };
     let file_name = match &job.file {
         Some(f) if republish => f.clone(),
-        _ => share_file_name(&job.base, job.start, job.end, &slug(&title)),
+        _ => {
+            let name = share_file_name(&job.base, job.start, job.end, &slug(&title));
+            if job.vertical {
+                vertical_file_name(&name)
+            } else {
+                name
+            }
+        }
     };
     let out = state.paths().shared_dir.join(&file_name);
     // the storage this job goes to, or none for `file`
@@ -381,7 +425,7 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         .map(|m| m.label)
         .unwrap_or("?");
     tracing::info!(
-        "share [{id}]: {} {}-{} s ({} s) {}, audio '{mode_label}' -> {file_name}",
+        "share [{id}]: {} {}-{} s ({} s) {}{}, audio '{mode_label}' -> {file_name}",
         job.base,
         job.start,
         job.end,
@@ -390,6 +434,11 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
             "copy (no re-encode)".to_string()
         } else {
             format!("@ {} kbps", job.kbps)
+        },
+        if job.vertical {
+            format!(" vertical 9:16 at {:.2}", job.vertical_pos.unwrap_or(0.5))
+        } else {
+            String::new()
         }
     );
 
@@ -402,7 +451,13 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         let started = Instant::now();
         // The GPU path may fail on a driver quirk: try once more with software
         // decoding and CPU scaling before giving up (since 2.4).
-        let profile = runtime.encoder.clone();
+        // A vertical cut crops on the CPU, so frames that a GPU filter would
+        // keep on the card (cuda, qsv) are decoded in software instead.
+        let profile = if job.vertical && runtime.encoder.filter != crate::media::SW_SCALE {
+            runtime.encoder.software_fallback()
+        } else {
+            runtime.encoder.clone()
+        };
         if let Err(e) = encode(state, id, &job, &clip_path, &out, token, &profile).await {
             if token.is_cancelled() || job.mode == "copy" || !profile.is_gpu_path() {
                 return Err(e);
@@ -459,12 +514,22 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         let storage = &entry.storage;
         state.with_job(id, |j| j.stage = "upload".into());
         let month = month_of(&job.base);
+        let meta = crate::integrations::PublishMeta {
+            month: month.clone(),
+            title: title.clone(),
+            base: job.base.clone(),
+            display_name: settings.display_name.clone(),
+            vertical: job.vertical,
+            at: job.at.clone(),
+        };
         let published = tokio::select! {
-            r = storage.publish(&out, &month) => r.context("upload")?,
+            r = storage.publish(&out, &meta) => r.context("upload")?,
             _ = token.cancelled() => {
                 // the upload may have finished on the server before the request was dropped
                 let path = storage.remote_path(&month, &file_name);
-                if let Err(e) = storage.delete(std::slice::from_ref(&path)).await {
+                if path.is_empty() {
+                    tracing::debug!("share [{id}]: no remote cleanup possible for {}", entry.label);
+                } else if let Err(e) = storage.delete(std::slice::from_ref(&path)).await {
                     tracing::debug!("share [{id}]: remote cleanup of {path}: {e:#}");
                 }
                 bail!("cancelled during upload");
@@ -541,6 +606,11 @@ async fn encode(
     let (start, seconds) = (job.start.to_string(), job.seconds.to_string());
     let input_s = input.to_string_lossy().into_owned();
     let out_s = out.to_string_lossy().into_owned();
+    let vf = if job.vertical {
+        vertical_filter(job.vertical_pos.unwrap_or(0.5))
+    } else {
+        enc.filter.to_string()
+    };
     let mut args: Vec<&str> = vec!["-nostats", "-progress", "pipe:1", "-y", "-v", "error"];
     let runtime = state.runtime();
     let threads = runtime.media.threads.to_string();
@@ -567,7 +637,7 @@ async fn encode(
             args.extend(["-c:a", "aac", "-b:a", "128k"]);
         }
     } else {
-        args.extend(["-vf", enc.filter, "-c:v", &enc.name]);
+        args.extend(["-vf", &vf, "-c:v", &enc.name]);
         if runtime.media.threads > 0 {
             args.extend(["-threads", &threads]); // encoder and filters
         }
@@ -675,6 +745,20 @@ mod tests {
             share_file_name("a  b", 219.0, 232.92, ""),
             "a_b_219-233.mp4"
         );
+        assert_eq!(
+            vertical_file_name("a_b_219-233.mp4"),
+            "a_b_219-233_9x16.mp4"
+        );
+    }
+
+    #[test]
+    fn vertical_filter_crops_a_9_16_window() {
+        assert_eq!(
+            vertical_filter(0.5),
+            "crop=ih*9/16:ih:(iw-ih*9/16)*0.500:0,scale=1080:1920"
+        );
+        assert!(vertical_filter(7.0).contains("*1.000:0"));
+        assert!(vertical_filter(-1.0).contains("*0.000:0"));
     }
 
     #[test]
