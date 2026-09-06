@@ -95,6 +95,7 @@ fine.
 | `checkUpdates` | `true` asks GitHub once a day (a minute after start, then every 24 h) whether a newer release exists and shows a banner in the UI; nothing is downloaded. Set to `false` if the service must not contact GitHub. |
 | `setupDone` | `false` until the browser setup (`/setup`) finished. A file without the field counts as set up, so an installation from 2.0 is not asked again. |
 | `theme` | Name of the UI theme: `wardogs` (built in) or a file `themes\<name>.css` in the data directory. See `docs/themes.md`. |
+| `previewH264` | Since 2.6: `onDemand` (default) shows "Make a playable preview" in the player when the browser cannot decode the recording (AV1 on an iPhone, say) and makes a 720p H.264 copy on click; `always` makes the copy right after every recording, behind the running jobs, with ffmpeg at idle priority (about a minute of GPU per 5-minute buffer). The copy lives next to the preview as `<base>.h264.mp4`. Recording in H.264 in OBS avoids the need. |
 | `passwordHash` | Set through the settings page or `PUT /api/settings` with `password`; an argon2id hash, never the password. Absent means no password: every device in the network may use the UI. This PC (loopback) never needs the password. |
 | `obs` | Since 2.2: `{ "enabled": true, "host": "localhost", "port": 4455 }` - where obs-websocket listens (OBS: Tools › WebSocket Server Settings). With `enabled` the service connects on its own and retries quietly while OBS is closed. The password is a credential, see below. |
 

@@ -93,7 +93,7 @@ fn thumb_failed() -> &'static parking_lot::Mutex<std::collections::HashSet<Strin
 
 /// One scan. Returns how soon a re-scan is worthwhile when a file was
 /// skipped for being too young or still open.
-async fn scan(state: &AppState) -> Result<Option<Duration>> {
+async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
     let paths = state.paths();
     let runtime = state.runtime();
     let mut files: Vec<(PathBuf, SystemTime, u64)> = Vec::new();
@@ -179,6 +179,10 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
                 thumb: thumb
                     .is_file()
                     .then(|| format!("/media/{}.jpg", util::encode_path_segment(&base))),
+                preview_h264: paths
+                    .preview_h264_of(&base)
+                    .is_file()
+                    .then(|| crate::state::preview_h264_url(&base)),
                 status: "ready",
                 codec: video.codec,
                 width: video.width,
@@ -190,12 +194,26 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
                 clip.name,
                 *size as f64 / 1_048_576.0
             );
+            let wants_h264 = clip.preview_h264.is_none()
+                && state.settings().preview_h264 == "always"
+                && !state.dry_run;
             let (new_to_seen, ready) = {
                 let mut inner = state.inner.lock();
                 inner.clips.insert(base.clone(), clip.clone());
                 changed = true;
                 (inner.seen.insert(base.clone()), inner.seen_ready)
             };
+            // `previewH264: always` (since 2.6): the playable copy right away,
+            // behind the running jobs, with idle priority
+            if wants_h264 {
+                match crate::share::start_preview(state, &base, true) {
+                    Ok((id, 0)) => {
+                        tokio::spawn(crate::share::run(state.clone(), id));
+                    }
+                    Ok(_) => {}
+                    Err(e) => tracing::debug!("preview for {base} not queued: {e:?}"),
+                }
+            }
             if new_to_seen {
                 seen_dirty = true;
                 // Announced exactly once per clip; the first scan after a
@@ -279,9 +297,15 @@ async fn scan(state: &AppState) -> Result<Option<Duration>> {
                 .extension()
                 .and_then(|e| e.to_str())
                 .is_some_and(|e| e.eq_ignore_ascii_case("mp4") || e.eq_ignore_ascii_case("jpg"));
+            // `<base>.h264.mp4` (since 2.6) belongs to `<base>` as well
             let orphan = path
                 .file_stem()
                 .and_then(|s| s.to_str())
+                .map(|s| {
+                    s.strip_suffix(".h264.part")
+                        .or_else(|| s.strip_suffix(".h264"))
+                        .unwrap_or(s)
+                })
                 .is_none_or(|b| !existing.iter().any(|e| e == b));
             if is_mp4 && orphan {
                 let _ = std::fs::remove_file(&path);

@@ -1795,3 +1795,123 @@ fn t39_telegram_and_webhook_are_notify_targets_with_tests() {
         "{ids:?}"
     );
 }
+
+#[test]
+fn t40_finished_file_downloads_as_attachment() {
+    let _g = serial();
+    if !since_26() {
+        return;
+    }
+    let base = format!("{} download", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let (status, v) = post_json(
+        "/api/share",
+        &json!({ "base": base, "start": 0, "end": 2, "audio": "mix", "target": "file" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let id = v["job"].as_str().unwrap_or("").to_string();
+    let (_, job) = wait_job(&id, JOB_TIMEOUT);
+    assert_eq!(job["stage"], "done", "{}", job["error"]);
+    let file = job["file"].as_str().unwrap_or("").to_string();
+
+    let res = get(&format!("/api/jobs/{id}/file"));
+    assert_eq!(res.status().as_u16(), 200);
+    let ct = res
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    assert!(ct.starts_with("video/mp4"), "{ct}");
+    let cd = res
+        .headers()
+        .get("content-disposition")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    assert!(cd.starts_with("attachment"), "{cd}");
+    assert!(cd.contains(&file), "{cd} should name {file}");
+    let bytes = res.bytes().expect("body");
+    assert!(bytes.len() > 10_000, "{} bytes", bytes.len());
+    assert_eq!(&bytes[4..8], b"ftyp", "an MP4 starts with the ftyp box");
+
+    let (status, _) = get_json("/api/jobs/nope/file");
+    assert_eq!(status, 404);
+
+    let (status, _) = delete(&format!("/api/clips/{}", encode(&base)));
+    assert_eq!(status, 200);
+    wait_for_clip_gone(&base, Duration::from_secs(10));
+}
+
+#[test]
+fn t41_playable_preview_on_demand() {
+    let _g = serial();
+    if !since_26() {
+        return;
+    }
+    // the setting is validated
+    let (status, v) = put_json("/api/settings", &json!({ "previewH264": "sometimes" }));
+    assert_eq!(status, 400, "{v}");
+    let (_, s) = get_json("/api/settings");
+    assert!(
+        s["previewH264"] == "onDemand" || s["previewH264"] == "always",
+        "{s}"
+    );
+
+    let base = format!("{} h264", fixture().base);
+    make_clip(&base);
+    let clip = wait_for_clip(&base, Duration::from_secs(20));
+    assert!(clip["previewH264"].is_null(), "{clip}");
+
+    let (status, v) = post_json(&format!("/api/clips/{}/preview", encode(&base)), &json!({}));
+    assert_eq!(status, 202, "{v}");
+    let id = v["job"].as_str().unwrap_or("").to_string();
+    assert!(v["position"].is_number(), "{v}");
+    let (stages, job) = wait_job(&id, JOB_TIMEOUT);
+    assert_eq!(job["stage"], "done", "{}", job["error"]);
+    assert_eq!(job["kind"], "preview", "{job}");
+    assert_eq!(job["base"], base.as_str());
+    assert!(
+        !stages.iter().any(|s| s == "upload" || s == "notify"),
+        "a preview only encodes: {stages:?}"
+    );
+    // the clip now carries the copy, served like the preview
+    let clip = find_clip(&base).expect("clip");
+    let url = clip["previewH264"].as_str().unwrap_or("").to_string();
+    assert!(url.ends_with(".h264.mp4"), "{clip}");
+    let res = get(&url);
+    assert_eq!(res.status().as_u16(), 200);
+    assert!(res
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .starts_with("video/mp4"));
+    let path = env()
+        .clip_dir
+        .join(".preview")
+        .join(format!("{base}.h264.mp4"));
+    if let Some(size) = video_size(&path) {
+        assert_eq!(size.1, 720, "the copy is 720p: {size:?}");
+    }
+    // it is not a share: not in the history, and a second request is a 409
+    let (_, h) = get_json("/api/history");
+    assert!(
+        !h["history"]
+            .as_array()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .any(|e| e["id"] == id),
+        "preview jobs stay out of the history"
+    );
+    let (status, v) = post_json(&format!("/api/clips/{}/preview", encode(&base)), &json!({}));
+    assert_eq!(status, 409, "{v}");
+    let (status, _) = post_json("/api/clips/nope/preview", &json!({}));
+    assert_eq!(status, 404);
+
+    let (status, _) = delete(&format!("/api/clips/{}", encode(&base)));
+    assert_eq!(status, 200);
+    wait_for_clip_gone(&base, Duration::from_secs(10));
+    assert!(!path.is_file(), "the copy goes with the clip");
+}

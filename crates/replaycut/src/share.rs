@@ -219,6 +219,7 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
                 && j.mode == share_mode
                 && j.vertical == req.vertical
                 && j.source.is_none()
+                && !j.is_preview()
         })
         .map(|j| j.id.clone());
     if let Some(id) = duplicate {
@@ -347,17 +348,23 @@ pub fn run(
 
 async fn run_inner(state: Arc<AppState>, id: String) {
     let token = state.cancel_token(&id);
-    let result = pipeline(&state, &id, &token).await;
+    let preview = state.job(&id).is_some_and(|j| j.is_preview());
+    let result = if preview {
+        preview_pipeline(&state, &id, &token).await
+    } else {
+        pipeline(&state, &id, &token).await
+    };
+    let what = if preview { "preview" } else { "share" };
     if let Err(e) = &result {
         if token.is_cancelled() {
-            tracing::info!("share [{id}] cancelled");
+            tracing::info!("{what} [{id}] cancelled");
         } else {
-            tracing::error!("share [{id}] failed: {e:#}");
+            tracing::error!("{what} [{id}] failed: {e:#}");
         }
     }
     let next = state.complete_job(&id, result.map_err(|e| format!("{e:#}")));
     if let Some(job) = state.job(&id) {
-        if !job.cancelled {
+        if !job.cancelled && !preview {
             let uploaded = job.direct.is_some();
             toast::show(&state, Toast::share_result(&job, uploaded, &state.ui_url()));
         }
@@ -367,6 +374,125 @@ async fn run_inner(state: Arc<AppState>, id: String) {
         tokio::spawn(run(state, next));
     }
 }
+
+/// `POST /api/clips/<base>/preview` (since 2.6): queue the playable H.264
+/// copy of a clip. `idle` marks the scan-time variant (idle priority).
+/// Returns the job id and its place in the queue.
+pub fn start_preview(
+    state: &AppState,
+    base: &str,
+    idle: bool,
+) -> Result<(String, usize), ShareError> {
+    let mut inner = state.inner.lock();
+    let clip = inner
+        .clips
+        .get(base)
+        .ok_or_else(|| ShareError::UnknownClip(base.to_string()))?;
+    if clip.preview_h264.is_some() || state.paths().preview_h264_of(base).is_file() {
+        return Err(ShareError::Invalid(
+            "the playable preview exists already".to_string(),
+        ));
+    }
+    let duplicate = inner
+        .current_job
+        .iter()
+        .chain(inner.queue.iter())
+        .filter_map(|id| inner.jobs.get(id))
+        .find(|j| j.is_preview() && j.base == base)
+        .map(|j| j.id.clone());
+    if let Some(id) = duplicate {
+        return Err(ShareError::Busy(id));
+    }
+    if inner.queue.len() >= MAX_QUEUE {
+        return Err(ShareError::QueueFull);
+    }
+    let mut id = random_token(8);
+    while inner.jobs.contains_key(&id) {
+        id = random_token(8);
+    }
+    let job = Job {
+        id: id.clone(),
+        kind: crate::state::KIND_PREVIEW.to_string(),
+        idle,
+        base: clip.base.clone(),
+        target: crate::integrations::TARGET_FILE.to_string(),
+        start: 0.0,
+        end: clip.duration,
+        seconds: clip.duration,
+        audio: "mix".into(),
+        mode: "h264".into(),
+        kbps: PREVIEW_KBPS,
+        stage: "queued".into(),
+        percent: 0,
+        at: util::now_local(),
+        ..Job::default()
+    };
+    let position = state.register_job(&mut inner, job);
+    Ok((id, position))
+}
+
+/// The playable copy: 720p H.264 at `PREVIEW_KBPS` with audio track 1,
+/// into `.preview/<base>.h264.mp4`; the clip learns the URL when it is done.
+async fn preview_pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Result<()> {
+    let job = state.job(id).ok_or_else(|| anyhow!("job vanished"))?;
+    let runtime = state.runtime();
+    let clip_path = {
+        let inner = state.inner.lock();
+        let clip = inner
+            .clips
+            .get(&job.base)
+            .ok_or_else(|| anyhow!("unknown clip: {}", job.base))?;
+        PathBuf::from(&clip.path)
+    };
+    let out = state.paths().preview_h264_of(&job.base);
+    let tmp = out.with_extension("part.mp4");
+    tracing::info!(
+        "preview [{id}]: {} ({} s) -> {}{}",
+        job.base,
+        job.seconds,
+        out.display(),
+        if job.idle { " (idle priority)" } else { "" }
+    );
+    state.with_job(id, |j| j.stage = "encode".into());
+    let started = Instant::now();
+    let profile = runtime.encoder.clone();
+    if let Err(e) = encode(state, id, &job, &clip_path, &tmp, token, &profile).await {
+        if token.is_cancelled() || !profile.is_gpu_path() {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
+        tracing::warn!(
+            "preview [{id}]: {} failed ({e:#}) - retrying with software decoding",
+            profile.label
+        );
+        let _ = std::fs::remove_file(&tmp);
+        encode(
+            state,
+            id,
+            &job,
+            &clip_path,
+            &tmp,
+            token,
+            &profile.software_fallback(),
+        )
+        .await?;
+    }
+    std::fs::rename(&tmp, &out).context("move the preview into place")?;
+    let size_mb = (std::fs::metadata(&out)?.len() as f64 / 1_048_576.0 * 100.0).round() / 100.0;
+    state.with_job(id, |j| {
+        j.percent = 100;
+        j.size_mb = Some(size_mb);
+    });
+    state.set_preview_h264(&job.base, Some(crate::state::preview_h264_url(&job.base)));
+    tracing::info!(
+        "preview [{id}]: ready in {} s, {size_mb} MB",
+        started.elapsed().as_secs()
+    );
+    Ok(())
+}
+
+/// Bitrate of the playable preview in kbit/s.
+pub const PREVIEW_KBPS: u32 = 2000;
 
 async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Result<()> {
     let job = state.job(id).ok_or_else(|| anyhow!("job vanished"))?;
@@ -624,6 +750,9 @@ async fn encode(
     let out_s = out.to_string_lossy().into_owned();
     let vf = if job.vertical {
         vertical_filter(job.vertical_pos.unwrap_or(0.5))
+    } else if job.is_preview() {
+        // the same scale filter of the profile, at 720p
+        enc.filter.replace("1080", "720")
     } else {
         enc.filter.to_string()
     };
@@ -666,7 +795,17 @@ async fn encode(
     }
     args.extend(["-movflags", "+faststart", &out_s]);
 
-    let mut cmd = runtime.media.ffmpeg_command();
+    // a scan-time preview must not compete with the game: idle priority
+    let idle_media = job.idle.then(|| {
+        runtime
+            .media
+            .clone()
+            .with_resource_limits(crate::settings::FfmpegPriority::Idle, runtime.media.threads)
+    });
+    let mut cmd = idle_media
+        .as_ref()
+        .unwrap_or(&runtime.media)
+        .ffmpeg_command();
     cmd.args(&args);
     let mut child = cmd.spawn().context("cannot start ffmpeg")?;
     let stdout = child

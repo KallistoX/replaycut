@@ -79,6 +79,10 @@ pub struct Clip {
     pub fps: f64,
     // since 2.4: `/media/<base>.jpg`, null until the thumbnail exists
     pub thumb: Option<String>,
+    // since 2.6: `/media/<base>.h264.mp4`, the playable copy for browsers
+    // that cannot decode the recording's codec; null until it was made
+    #[serde(rename = "previewH264")]
+    pub preview_h264: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -121,6 +125,13 @@ pub struct Job {
     // since 2.5: a publish job re-uses the file of this finished job
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    // since 2.6: `share` (the default) or `preview` (the playable H.264 copy
+    // of a clip, stages `queued -> encode -> done`, never in the history)
+    #[serde(default = "default_kind", skip_serializing_if = "is_share")]
+    pub kind: String,
+    // since 2.6: a preview made at scan time runs ffmpeg with idle priority
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub idle: bool,
     // since 2.6: a 9:16 cut (`crop` at `verticalPos`, 0 = left edge, 1 = right edge)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub vertical: bool,
@@ -139,6 +150,22 @@ pub struct Job {
 
 fn default_mode() -> String {
     "h264".to_string()
+}
+
+fn default_kind() -> String {
+    "share".to_string()
+}
+
+fn is_share(kind: &str) -> bool {
+    kind == "share"
+}
+
+pub const KIND_PREVIEW: &str = "preview";
+
+impl Job {
+    pub fn is_preview(&self) -> bool {
+        self.kind == KIND_PREVIEW
+    }
 }
 
 /// Nextcloud quota of the storage account, refreshed in the background (since 2.4).
@@ -196,6 +223,16 @@ impl Paths {
     pub fn thumb_of(&self, base: &str) -> PathBuf {
         self.preview_dir.join(format!("{base}.jpg"))
     }
+
+    /// The playable H.264 copy (since 2.6); served as `/media/<base>.h264.mp4`.
+    pub fn preview_h264_of(&self, base: &str) -> PathBuf {
+        self.preview_dir.join(format!("{base}.h264.mp4"))
+    }
+}
+
+/// The `/media/...` URL of the H.264 preview.
+pub fn preview_h264_url(base: &str) -> String {
+    format!("/media/{}.h264.mp4", util::encode_path_segment(base))
 }
 
 #[derive(Default)]
@@ -734,6 +771,29 @@ impl AppState {
         self.inner.lock().jobs.get(id).cloned()
     }
 
+    /// The finished file of a job, from the jobs or the history (since 2.6).
+    pub fn job_file(&self, id: &str) -> Option<String> {
+        let inner = self.inner.lock();
+        if let Some(j) = inner.jobs.get(id) {
+            return j.file.clone().filter(|_| j.ok == Some(true));
+        }
+        inner
+            .history
+            .iter()
+            .find(|e| e["id"] == id)
+            .and_then(|e| e["file"].as_str().map(str::to_string))
+    }
+
+    /// Record that a clip's H.264 preview exists (or is gone).
+    pub fn set_preview_h264(&self, base: &str, url: Option<String>) {
+        let mut inner = self.inner.lock();
+        if let Some(c) = inner.clips.get_mut(base) {
+            c.preview_h264 = url;
+        }
+        drop(inner);
+        self.tray_changed();
+    }
+
     pub fn set_title(&self, base: &str, name: &str) -> Result<String, StateError> {
         let mut inner = self.inner.lock();
         if !inner.clips.contains_key(base) {
@@ -880,12 +940,15 @@ impl AppState {
         job.finished = Some(util::now_local());
         job.position = None;
         let job = job.clone();
-        if job.ok == Some(true) || job.cancelled {
-            inner.history.insert(0, job.history_entry());
-            inner.history.truncate(MAX_HISTORY);
-            self.save_history(&inner);
+        // a preview job is housekeeping: no history entry, not the "last share"
+        if !job.is_preview() {
+            if job.ok == Some(true) || job.cancelled {
+                inner.history.insert(0, job.history_entry());
+                inner.history.truncate(MAX_HISTORY);
+                self.save_history(&inner);
+            }
+            inner.last = Some(job);
         }
-        inner.last = Some(job);
         let mut next = None;
         if inner.current_job.as_deref() == Some(id) {
             inner.current_job = inner.queue.pop_front();

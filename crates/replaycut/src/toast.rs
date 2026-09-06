@@ -245,6 +245,7 @@ mod tests {
             height: 1080,
             fps: 60.0,
             thumb: None,
+            preview_h264: None,
         };
         let t = Toast::clip_saved(&clip, "http://localhost:8420/");
         assert_eq!(t.title, "Clip saved");

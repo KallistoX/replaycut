@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, Request, State};
-use axum::http::header::{ACCEPT_RANGES, CACHE_CONTROL, CONTENT_TYPE};
+use axum::http::header::{ACCEPT_RANGES, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -45,6 +45,9 @@ pub fn router(state: App) -> Router {
         .route("/api/jobs/{id}/copy-file", post(job_copy_file))
         .route("/api/jobs/{id}/cancel", post(job_cancel))
         .route("/api/jobs/{id}/publish", post(job_publish))
+        // since 2.6
+        .route("/api/jobs/{id}/file", get(job_file))
+        .route("/api/clips/{base}/preview", post(clip_preview))
         .route("/api/share", post(share))
         .route("/api/save", post(save))
         .route("/media/{file}", get(media))
@@ -393,6 +396,7 @@ async fn delete_clip(
     .map_err(ApiError::internal)?
     .map_err(ApiError::internal)?;
     let _ = std::fs::remove_file(paths.preview_of(&base));
+    let _ = std::fs::remove_file(paths.preview_h264_of(&base));
     app.forget_clip(&base);
     app.scan_wake.notify_one();
     tracing::info!("deleted {base}: {recycled} file(s) to the recycle bin");
@@ -449,6 +453,84 @@ async fn share(State(app): State<App>, body: Bytes) -> Response {
         }
         Err(ShareError::Invalid(msg)) => {
             ApiError::new(StatusCode::BAD_REQUEST, msg).into_response()
+        }
+    }
+}
+
+/// `GET /api/jobs/<id>/file` (since 2.6): the finished MP4 as a download,
+/// so the phone puts it in its gallery and the PC in its downloads folder.
+async fn job_file(State(app): State<App>, Path(id): Path<String>, req: Request) -> Response {
+    let Some(file) = app.job_file(&id) else {
+        return ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("no finished file for job {id}"),
+        )
+        .into_response();
+    };
+    let path = app.paths().shared_dir.join(&file);
+    if !path.is_file() {
+        return ApiError::new(StatusCode::NOT_FOUND, "the shared file is gone").into_response();
+    }
+    match ServeFile::new(&path).oneshot(req).await {
+        Ok(res) => {
+            let mut res = res.map(Body::new);
+            res.headers_mut()
+                .insert(CONTENT_TYPE, HeaderValue::from_static("video/mp4"));
+            let safe: String = file
+                .chars()
+                .map(|c| {
+                    if c == '"' || c == '\\' || c.is_control() {
+                        '_'
+                    } else {
+                        c
+                    }
+                })
+                .collect();
+            if let Ok(v) = HeaderValue::from_str(&format!(
+                "attachment; filename=\"{safe}\"; filename*=UTF-8''{}",
+                crate::util::encode_path_segment(&file)
+            )) {
+                res.headers_mut().insert(CONTENT_DISPOSITION, v);
+            }
+            res.headers_mut()
+                .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            res
+        }
+        Err(e) => ApiError::internal(e).into_response(),
+    }
+}
+
+/// `POST /api/clips/<base>/preview` (since 2.6): queue the playable H.264
+/// copy for browsers that cannot decode the recording.
+async fn clip_preview(State(app): State<App>, Path(base): Path<String>) -> Response {
+    match share::start_preview(&app, &base, false) {
+        Ok((id, position)) => {
+            if position == 0 {
+                tokio::spawn(share::run(app.clone(), id.clone()));
+            }
+            (
+                StatusCode::ACCEPTED,
+                Json(json!({ "ok": true, "job": id, "position": position })),
+            )
+                .into_response()
+        }
+        Err(ShareError::Busy(job)) => (
+            StatusCode::CONFLICT,
+            Json(json!({ "ok": false, "error": "this preview is already being made", "job": job })),
+        )
+            .into_response(),
+        Err(ShareError::QueueFull) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            [("Retry-After", "30")],
+            Json(json!({ "ok": false, "error": "too many jobs are waiting - try again in a moment" })),
+        )
+            .into_response(),
+        Err(ShareError::UnknownClip(base)) => {
+            ApiError::new(StatusCode::NOT_FOUND, format!("unknown clip: {base}")).into_response()
+        }
+        Err(ShareError::Invalid(msg)) => ApiError::new(StatusCode::CONFLICT, msg).into_response(),
+        Err(ShareError::UnknownJob(id)) => {
+            ApiError::new(StatusCode::NOT_FOUND, format!("unknown job: {id}")).into_response()
         }
     }
 }

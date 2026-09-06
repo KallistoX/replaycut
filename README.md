@@ -69,7 +69,8 @@ Windows SmartScreen may warn about an unsigned download the first time: click
 - **Clips** (`/`): the list with thumbnails, the player with in/out marks,
   audio and mode choice, Share (the quick-share storage) with a menu for the
   other storages and "file only", live progress and a queue, the result with
-  links or "Open folder" and "Copy file", "Publish to ..." for another
+  links or "Open folder" and "Copy file", "Download" for the device the
+  page is open on, "Publish to ..." for another
   storage, and the share history.
 - **Settings** (`/settings`): everything in `settings.json`, integrations
   with their tests, theme, autostart and the password; changes apply at

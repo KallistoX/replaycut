@@ -802,6 +802,36 @@ status text joins the job's `discord` field.
 - Diagnostics rows `telegram` (`getMe`) and `generic-webhook` (configuration
   only; the receiver is not called).
 
+### `GET /api/jobs/<id>/file`
+
+The finished MP4 of a job as a download: `Content-Type: video/mp4`,
+`Content-Disposition: attachment; filename="<file>"` (plus the RFC 5987
+form), range requests as for `/media/`. The job may come from the jobs or
+the history. 404 for an unknown job, a job without a finished file or a
+file that is gone. The result card and the history offer it as "Download":
+on a phone the file lands in the gallery, on a PC in the downloads folder.
+
+### Playable preview
+
+Browsers that cannot decode the recording's codec (an iPhone with AV1, for
+example) get a 720p H.264 copy of the clip: `.preview/<base>.h264.mp4`,
+served as `GET /media/<base>.h264.mp4` and listed as `clip.previewH264`
+(`null` until it exists). Cutting stays on the original; the copy shares
+its time axis.
+
+- `POST /api/clips/<base>/preview` queues the copy as a job of `kind:
+  "preview"` (`202 { ok, job, position }`; stages `queued -> encode ->
+  done`, `percent` from ffmpeg, cancel as for a share). Its bitrate is
+  2000 kbit/s at the profile's encoder and priority. A preview job never
+  enters the history and is not the `last` job. 404 for an unknown clip,
+  409 when the copy exists or is being made (`job` names it), 429 when the
+  queue is full.
+- Settings: `previewH264` is `onDemand` (default: the page shows "Make a
+  playable preview" when `browserPlays()` says no) or `always` (the copy is
+  made right after the scan, behind the running jobs, with ffmpeg at idle
+  priority). Other values are a 400.
+- The copy is removed with the clip and by the orphan cleanup.
+
 ### Loopback login
 
 A second way to connect an account, for providers or client types without

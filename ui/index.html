@@ -460,6 +460,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <symbol id="i-cut-out" viewBox="0 0 20 20"><path d="M16 3v14M16 10H7M10 6l-4 4 4 4"/></symbol>
   <symbol id="i-share" viewBox="0 0 20 20"><path d="M10 12V3M6.5 6.5 10 3l3.5 3.5M4 11v5h12v-5"/></symbol>
   <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2.5 5.5h5l2 2h8v8h-15z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 20 20"><path d="M10 3v10M6 9l4 4 4-4M3.5 16.5h13"/></symbol>
   <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7"/></symbol>
   <symbol id="i-check" viewBox="0 0 20 20"><path d="m4 10.5 4 4 8-9"/></symbol>
   <symbol id="i-warning" viewBox="0 0 20 20"><path d="M10 3 2.5 16.5h15z"/><path d="M10 8v4M10 14.2v.3"/></symbol>
@@ -536,6 +537,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       </div>
       <div class="player-wrap"><video id="v" controls preload="auto" playsinline></video><div class="crop-ov" id="cropOv" hidden><i id="cropL"></i><b id="cropW"></b><i id="cropR"></i><span>9:16 window - drag the slider below</span></div></div>
       <div class="video-err" id="vidErr" hidden></div>
+      <div class="row" id="h264Row" hidden><span class="muted sm" id="h264Text"></span><button class="btn btn-sm" id="bH264"><svg class="icon icon-sm"><use href="#i-play"/></svg> Make a playable preview</button></div>
       <div class="timeline" id="tl">
         <div class="ticks" id="ticks"></div>
         <div class="range" id="sel"></div>
@@ -696,6 +698,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <div class="fields-2">
         <div class="field"><label>Display name</label><input class="input" data-f="displayName"><span class="hint">Prefix of the Discord post; clip names starting with it are shortened in the list.</span></div>
         <div class="field"><label>Theme</label><select class="select" data-f="theme"></select><span class="hint">Drop a <code>.css</code> file into the <code>themes</code> folder of the data directory to add one.</span></div>
+        <div class="field"><label>Playable preview (H.264)</label><select class="select" data-f="previewH264"><option value="onDemand">on demand - a button in the player when the browser cannot play the recording</option><option value="always">always - made right after every recording, with idle priority</option></select><span class="hint">For phones and browsers that cannot decode AV1 or HEVC: a 720p H.264 copy of the clip next to the preview. "Always" costs about a minute of GPU per 5-minute buffer right after each F9; the OBS-side fix is recording in H.264.</span></div>
       </div>
     </div>
     <div class="group">
@@ -1514,7 +1517,9 @@ function initClips() {
   v.addEventListener('loadedmetadata', () => { if (cur && (!cur.duration || cur.duration < 1)) { cur.duration = v.duration; tOut = v.duration; } render(); });
   v.addEventListener('error', () => { const e = v.error; if (!cur || !e) return;
     const why = { 1: 'aborted', 2: 'network error while loading', 3: 'decode error', 4: 'this browser does not play the codec of the preview (AV1 needs Chrome or Firefox)' }[e.code] || ('code ' + e.code);
-    $('vidErr').textContent = 'Preview cannot be played: ' + why; $('vidErr').hidden = false; });
+    $('vidErr').textContent = 'Preview cannot be played: ' + why; $('vidErr').hidden = false;
+    // a decode error on the remux: offer the H.264 copy even when the codec check was undecided
+    if ((e.code === 4 || e.code === 3) && !cur.previewH264 && v.getAttribute('src') === cur.preview) { $('h264Row').hidden = false; $('h264Text').textContent = 'A 720p H.264 copy plays here; it takes a moment on the PC and is kept for this clip.'; } });
 
   // Timeline: click = seek, drag handles = in/out
   let drag = null;
@@ -1546,6 +1551,13 @@ function initClips() {
   $('bIn').onclick = setIn; $('bOut').onclick = setOut; $('bPrev').onclick = playSel;
   $('bAll').onclick = () => { if (!cur) return; tIn = 0; tOut = cur.duration; edited = false; render(); };
   $('bShare').onclick = () => share('');
+  // playable preview on demand (since 2.6): a job in the queue, the poll picks up the result
+  $('bH264').onclick = async () => {
+    if (!cur) return; $('bH264').disabled = true;
+    try { const r = await api('/api/clips/' + encodeURIComponent(cur.base) + '/preview', { method: 'POST', body: '' }, { retries: 0 }); if (r.ok) { toast(r.position > 0 ? `Queued - ${r.position} job${r.position === 1 ? '' : 's'} ahead` : 'Making the playable preview …'); watchJob(r.job, true); } else if (r.job) { watchJob(r.job, true); } else toast(r.error, 'err'); }
+    catch (e) { toast(e.message, 'err'); }
+    $('bH264').disabled = false;
+  };
   $('bShareMenu').onclick = e => { e.stopPropagation(); buildShareMenu(); $('shareMenu').hidden = !$('shareMenu').hidden; };
   document.addEventListener('click', e => { if (!$('shareMenu').hidden && !e.target.closest('.split')) $('shareMenu').hidden = true; });
   // share mode: remembered per browser (since 2.4)
@@ -1631,9 +1643,19 @@ function suggestTitle(c) {
   const d = new Date(c.created); if (isNaN(d)) return '';
   try { return d.toLocaleDateString(undefined, { weekday: 'short' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; }
 }
+// the player source (since 2.6): the H.264 copy when the browser cannot decode the recording, else the remux
+function playerSource(c) { return c.previewH264 && browserPlays(c.codec) === false ? c.previewH264 : c.preview; }
+// the "Make a playable preview" row: shown when the browser cannot play the codec and no copy exists yet
+function h264Row(c) {
+  const row = $('h264Row'); if (!c) { row.hidden = true; return; }
+  const plays = browserPlays(c.codec);
+  if (c.previewH264 || plays !== false) { row.hidden = true; return; }
+  row.hidden = false;
+  $('h264Text').textContent = `This browser cannot play ${(c.codec || 'this codec').toUpperCase()} - a 720p H.264 copy takes a moment on the PC and is kept for this clip.`;
+}
 function load(c, keepSel) {
   cur = c; $('vidErr').hidden = true; $('editorBody').hidden = false; $('emptyEditor').hidden = true;
-  v.src = c.preview; v.poster = c.thumb || ''; v.load();
+  v.src = playerSource(c); v.poster = c.thumb || ''; v.load(); h264Row(c);
   if (!keepSel) { tIn = 0; tOut = c.duration; edited = false; if ($('frame').value !== 'wide') { $('frame').value = 'wide'; $('frame').onchange(); } }
   document.querySelectorAll('.clip').forEach(e => e.classList.toggle('active', e.dataset.base === c.base));
   $('title').value = c.title || ''; $('title').placeholder = suggestTitle(c); $('title').disabled = false; $('bDel').disabled = false;
@@ -1689,12 +1711,13 @@ function showProgress(j) {
   p.hidden = false;
   const pct = j.stage === 'encode' ? (j.percent || 0) : (j.stage === 'queued' ? 0 : 100);
   const queued = j.stage === 'queued' ? (j.position ? `Queued - ${j.position} share${j.position === 1 ? '' : 's'} ahead` : 'Queued …') : null;
-  $('progText').textContent = (queued || (j.stage === 'encode' && j.mode === 'copy' ? 'Copying' : STAGE_TEXT[j.stage]) || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)}${j.mode === 'copy' ? ' as recorded' : ` at ${j.kbps} kbit/s`}${j.vertical ? ', vertical 9:16' : ''}, ${audioLabel(j.audio)}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
+  if (j.kind === 'preview') $('progText').textContent = (queued || `Making the playable preview (720p H.264) of ${short(j.base)}`);
+  else $('progText').textContent = (queued || (j.stage === 'encode' && j.mode === 'copy' ? 'Copying' : STAGE_TEXT[j.stage]) || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)}${j.mode === 'copy' ? ' as recorded' : ` at ${j.kbps} kbit/s`}${j.vertical ? ', vertical 9:16' : ''}, ${audioLabel(j.audio)}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '');
   const canCancel = ['queued', 'encode', 'upload'].includes(j.stage);
   $('progCancel').hidden = !canCancel; $('progCancel').dataset.job = j.id;
   $('progPct').textContent = pct + ' %';
   $('progBar').style.width = pct + '%';
-  const list = stageList(), idx = list.findIndex(([id]) => id === j.stage || (id === 'notify' && j.stage === 'discord'));
+  const list = j.kind === 'preview' ? [['encode', 'Encode 720p']] : stageList(), idx = list.findIndex(([id]) => id === j.stage || (id === 'notify' && j.stage === 'discord'));
   $('stages').innerHTML = list.map(([id, label], i) => `<span class="${i < idx ? 'done' : (i === idx ? 'on' : '')}">${i + 1} ${label}</span>`).join('');
 }
 function showResult(r) {
@@ -1703,7 +1726,14 @@ function showResult(r) {
   const when = (r.finished || r.at) ? ` <span class="muted sm">${esc((r.finished || r.at).replace('T', ' ').slice(0, 16))} · ${esc(r.title ? r.title + ' - ' : '')}${esc(short(r.base))}</span>` : '';
   if (r.cancelled) {
     box.className = 'result';
-    box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-close"/></svg> Share cancelled</div>${when ? '<div>' + when + '</div>' : ''}`;
+    box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-close"/></svg> ${r.kind === 'preview' ? 'Preview' : 'Share'} cancelled</div>${when ? '<div>' + when + '</div>' : ''}`;
+    return;
+  }
+  if (r.kind === 'preview') {
+    // the playable copy (since 2.6): the poll switches the player; here only the outcome
+    box.className = 'result' + (r.ok ? '' : ' err');
+    box.innerHTML = r.ok ? `<div class="head"><svg class="icon"><use href="#i-check"/></svg> Playable preview ready - ${r.sizeMB} MB, 720p H.264</div><div class="muted sm">The player uses it for this clip; cutting stays on the original.</div>`
+      : `<div class="head"><svg class="icon"><use href="#i-error"/></svg> Playable preview failed</div><div class="sm">${esc(r.error || 'unknown error')}</div>`;
     return;
   }
   if (!r.ok) {
@@ -1720,7 +1750,7 @@ function showResult(r) {
     box.className = 'result';
     box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-check"/></svg> Ready - ${meta} <span class="badge accent">file only</span></div>
       <div class="muted sm break">shared\\${esc(r.file || '')}</div>
-      <div class="row"><button class="btn" id="rOpen"><svg class="icon"><use href="#i-folder"/></svg> Open folder</button><button class="btn" id="rCopy"><svg class="icon"><use href="#i-copy"/></svg> Copy file</button>${publishButtons(r)}<span class="muted sm">Then Ctrl+V in Discord attaches it.</span></div>${when ? '<div>' + when + '</div>' : ''}`;
+      <div class="row"><button class="btn" id="rOpen"><svg class="icon"><use href="#i-folder"/></svg> Open folder</button><button class="btn" id="rCopy"><svg class="icon"><use href="#i-copy"/></svg> Copy file</button>${downloadButton(r)}${publishButtons(r)}<span class="muted sm">Then Ctrl+V in Discord attaches it.</span></div>${when ? '<div>' + when + '</div>' : ''}`;
     $('rOpen').onclick = () => jobAction(r.id, 'open-folder', 'Folder opened on the PC');
     $('rCopy').onclick = () => jobAction(r.id, 'copy-file', 'File copied - paste it with Ctrl+V');
     wirePublish(box, r.id);
@@ -1732,10 +1762,15 @@ function showResult(r) {
   box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-${postFailed ? 'warning' : 'check'}"/></svg> ${postFailed ? `Uploaded${to}, but not posted` : `Shared${to}`} - ${meta}, link copied</div>
     <div class="input-group"><input class="input mono" readonly value="${esc(r.direct)}" onclick="this.select()"><button class="btn" id="cp"><svg class="icon"><use href="#i-copy"/></svg> Direct</button><button class="btn" id="cp2" title="Copy the share page link"><svg class="icon"><use href="#i-external"/></svg> Page</button></div>
     ${r.discord ? `<div class="line ${postFailed ? 'err' : 'ok'}"><svg class="icon icon-sm"><use href="#i-${postFailed ? 'error' : 'check'}"/></svg> ${esc(r.discord)}</div>` : ''}
-    <div class="line"><span class="muted sm">${esc(expiry())}</span>${when}</div>${publishButtons(r) ? `<div class="row">${publishButtons(r)}</div>` : ''}`;
+    <div class="line"><span class="muted sm">${esc(expiry())}</span>${when}</div><div class="row">${downloadButton(r)}${publishButtons(r)}</div>`;
   $('cp').onclick = () => copyText(r.direct).then(() => toast('Direct link copied', 'ok'));
   $('cp2').onclick = () => copyText(r.link).then(() => toast('Page link copied', 'ok'));
   wirePublish(box, r.id);
+}
+// "Download" (since 2.6): the MP4 lands on the device the page is open on - the phone's gallery, the PC's downloads
+function downloadButton(j) {
+  if (!j.file || j.ok !== true) return '';
+  return `<a class="btn btn-sm" href="/api/jobs/${encodeURIComponent(j.id)}/file" download="${esc(j.file)}" title="Save the MP4 on this device"><svg class="icon icon-sm"><use href="#i-download"/></svg> Download</a>`;
 }
 // "Publish to X" for every connected storage the job did not go to (since 2.5)
 function publishButtons(j) {
@@ -1767,7 +1802,7 @@ function renderHistory(h) {
     const local = !e.direct;
     const target = e.target && e.target !== 'file' ? `<span class="badge">${esc(targetLabel(e.target))}</span>` : (local ? '<span class="badge accent">file only</span>' : '');
     d.innerHTML = `<b class="truncate"></b><div class="meta">${fmt(e.seconds)} · ${e.sizeMB} MB · ${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · ${esc(audioLabel(e.audio))} ${target}${e.vertical ? ' <span class="badge accent">9:16</span>' : ''}${e.source ? ' <span class="badge">republished</span>' : ''}</div>
-      <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(e.link)}" target="_blank" rel="noopener">Open</a>`}${publishButtons(Object.assign({ ok: true }, e))}</div>`;
+      <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(e.link)}" target="_blank" rel="noopener">Open</a>`}${downloadButton(Object.assign({ ok: true }, e))}${publishButtons(Object.assign({ ok: true }, e))}</div>`;
     d.querySelector('b').textContent = e.title || short(e.base);
     d.querySelectorAll('button[data-c]').forEach(b => b.onclick = () => copyText(e[b.dataset.c]).then(() => toast(b.dataset.c === 'direct' ? 'Direct link copied' : 'Page link copied', 'ok')));
     d.querySelectorAll('button[data-a]').forEach(b => b.onclick = () => jobAction(e.id, b.dataset.a, b.dataset.a === 'copy-file' ? 'File copied - paste it with Ctrl+V' : 'Folder opened on the PC'));
@@ -1987,7 +2022,9 @@ function applyState(d, polled) {
     banner('b-replaystop', !!ob.connected && !ob.replayActive);
     banner('b-paused', !!(cfg.scanning && cfg.scanning.paused));
     if (page !== 'clips') return;
-    clips.forEach(c => { if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; if (document.activeElement !== $('title')) $('title').value = c.title || ''; } });
+    clips.forEach(c => { if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; if (document.activeElement !== $('title')) $('title').value = c.title || '';
+      // the playable copy arrived: switch the player to it, keeping the position (since 2.6)
+      if (c.previewH264 && !cur.previewH264) { cur.previewH264 = c.previewH264; const t = v.currentTime, src = playerSource(cur); if (v.getAttribute('src') !== src) { v.src = src; v.load(); v.addEventListener('loadedmetadata', () => { v.currentTime = t; }, { once: true }); $('vidErr').hidden = true; toast('Playable preview ready', 'ok'); } h264Row(cur); } } });
     renderList();
     if (clips.length) {
       const newest = clips[0];

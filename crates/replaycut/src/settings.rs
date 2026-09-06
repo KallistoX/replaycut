@@ -37,6 +37,10 @@ pub struct Settings {
     /// Theme name: `wardogs` is built in, anything else is
     /// `<data-dir>/themes/<name>.css`.
     pub theme: String,
+    /// When the playable H.264 copy of a clip is made (since 2.6):
+    /// `onDemand` (the button in the player) or `always` (right after the
+    /// scan, with idle priority).
+    pub preview_h264: String,
     /// argon2id PHC string of the optional password; never sent to the UI.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password_hash: Option<String>,
@@ -327,6 +331,7 @@ impl Default for Settings {
             check_updates: true,
             setup_done: true,
             theme: "wardogs".into(),
+            preview_h264: "onDemand".into(),
             password_hash: None,
             integrations: Integrations::default(),
             obs: Obs::default(),
@@ -358,6 +363,7 @@ pub fn default_data_dir() -> PathBuf {
 }
 
 pub const LOG_LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
+pub const PREVIEW_H264_MODES: [&str; 2] = ["onDemand", "always"];
 
 /// Theme names are file names: lower-case letters, digits and dashes only.
 pub fn is_theme_name(name: &str) -> bool {
@@ -370,8 +376,9 @@ pub fn is_theme_name(name: &str) -> bool {
 
 /// Top-level keys `PUT /api/settings` accepts, and the nested ones below
 /// `integrations`. Anything else is a 400 with the offending name.
-const PATCH_KEYS: [&str; 16] = [
+const PATCH_KEYS: [&str; 17] = [
     "obs",
+    "previewH264",
     "clipDir",
     "port",
     "bind",
@@ -592,6 +599,10 @@ impl Settings {
         anyhow::ensure!(
             YOUTUBE_PRIVACY.contains(&self.integrations.youtube.privacy.as_str()),
             "integrations.youtube.privacy must be unlisted, private or public"
+        );
+        anyhow::ensure!(
+            PREVIEW_H264_MODES.contains(&self.preview_h264.as_str()),
+            "previewH264 must be onDemand or always"
         );
         anyhow::ensure!(
             self.integrations.webhook.url.trim().is_empty()

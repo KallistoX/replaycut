@@ -31,6 +31,14 @@ contract.
   URL, signed with `X-Replaycut-Signature` when a secret is stored, for
   n8n, Home Assistant, Zapier or a Matrix bridge (`integrations.webhook`,
   `POST /api/test/webhook`).
+- Download: the result card and the history offer the finished MP4 as a
+  download (`GET /api/jobs/<id>/file`); on a phone it lands in the gallery,
+  ready for TikTok, Instagram or WhatsApp.
+- Playable preview: when the browser cannot decode the recording (AV1 on
+  an iPhone), the player offers "Make a playable preview", a 720p H.264
+  copy made on the PC and kept next to the preview (`clip.previewH264`,
+  `POST /api/clips/<base>/preview`). `previewH264: always` in the settings
+  makes it right after every recording with idle priority.
 - Vertical cut: "Vertical 9:16 (Short)" in the share row crops a full-height
   window (position by slider, shown over the player) and scales it to
   1080x1920 - a Short on YouTube, or a file for TikTok, Reels and WhatsApp
