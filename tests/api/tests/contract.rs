@@ -1682,3 +1682,44 @@ fn t37_loopback_login_is_a_second_way_in() {
     );
     assert_eq!(status, 200, "{r}");
 }
+
+#[test]
+fn t38_x_is_a_loopback_target() {
+    let _g = serial();
+    if !since_26() {
+        return;
+    }
+    let list = state()["config"]["targets"].clone();
+    assert!(
+        list.as_array()
+            .expect("targets")
+            .iter()
+            .any(|t| t["id"] == "x" && t["kind"] == "storage"),
+        "{list}"
+    );
+    let (_, s) = get_json("/api/settings");
+    assert!(s["integrations"]["x"]["enabled"].is_boolean(), "{s}");
+    assert!(s["integrations"]["x"]["quickShare"].is_boolean(), "{s}");
+    assert!(s["integrations"]["x"]["text"].is_string(), "{s}");
+    assert!(s["secrets"]["x"].is_boolean(), "{s}");
+    // the post text is limited
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "x": { "text": "a".repeat(281) } } }),
+    );
+    assert_eq!(status, 400, "{v}");
+    // X always connects through the browser on this PC
+    let (status, d) = get_json("/api/oauth/x");
+    assert_eq!(status, 200, "{d}");
+    assert_eq!(d["provider"], "x");
+    assert_eq!(d["loopback"], true, "{d}");
+    let (status, v) = post_json("/api/oauth/x/start", &json!({}));
+    assert!(status == 400 || status == 409, "{status} {v}");
+    if d["configured"] == false {
+        let (status, v) = post_json("/api/oauth/x/loopback", &json!({}));
+        assert_eq!(status, 409, "{v}");
+        assert!(v["error"].as_str().unwrap_or("").contains("client"), "{v}");
+    }
+    let res = get("/oauth/x/callback?code=x&state=nope");
+    assert_eq!(res.status().as_u16(), 400);
+}

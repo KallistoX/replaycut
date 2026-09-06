@@ -84,6 +84,30 @@ pub struct Integrations {
     pub webdav: WebDav,
     /// since 2.6
     pub youtube: YouTube,
+    /// since 2.6
+    pub x: X,
+}
+
+/// X (since 2.6): every share is a post with the video attached. The
+/// account is the credential `replaycut/x` (refresh token), connected in
+/// the browser on this PC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct X {
+    pub enabled: bool,
+    pub quick_share: bool,
+    /// Text template of the post; `{title}`, `{clip}` and `{date}` are replaced.
+    pub text: String,
+}
+
+impl Default for X {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            quick_share: false,
+            text: "{title}".into(),
+        }
+    }
 }
 
 /// YouTube (since 2.6): every share is its own video. The user's own Google
@@ -338,7 +362,8 @@ const YOUTUBE_KEYS: [&str; 5] = [
     "description",
 ];
 /// Storage integrations, for the "one quick-share target" rule.
-const STORAGE_GROUPS: [&str; 5] = ["nextcloud", "onedrive", "s3", "webdav", "youtube"];
+const X_KEYS: [&str; 3] = ["enabled", "quickShare", "text"];
+const STORAGE_GROUPS: [&str; 6] = ["nextcloud", "onedrive", "s3", "webdav", "youtube", "x"];
 const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
 
 impl Settings {
@@ -378,6 +403,7 @@ impl Settings {
                         "s3" => &S3_KEYS,
                         "webdav" => &WEBDAV_KEYS,
                         "youtube" => &YOUTUBE_KEYS,
+                        "x" => &X_KEYS,
                         _ => return Err(format!("unknown integration: {group}")),
                     };
                     let Some(fields) = fields.as_object() else {
@@ -514,6 +540,10 @@ impl Settings {
         anyhow::ensure!(
             YOUTUBE_PRIVACY.contains(&self.integrations.youtube.privacy.as_str()),
             "integrations.youtube.privacy must be unlisted, private or public"
+        );
+        anyhow::ensure!(
+            self.integrations.x.text.chars().count() <= 280,
+            "integrations.x.text must be at most 280 characters"
         );
         anyhow::ensure!(
             YOUTUBE_CLIENT_TYPES.contains(&self.integrations.youtube.client_type.as_str()),

@@ -84,6 +84,7 @@ fn settings_document(app: &AppState) -> Value {
         "webdav": credentials::read(credentials::WEBDAV).ok().flatten().is_some(),
         "youtube": credentials::read(credentials::YOUTUBE).ok().flatten().is_some(),
         "youtubeClient": credentials::read(credentials::YOUTUBE_CLIENT).ok().flatten().is_some(),
+        "x": credentials::read(credentials::X).ok().flatten().is_some(),
     });
     doc["passwordSet"] = json!(settings.password_hash.is_some());
     doc["autostart"] = json!(autostart_enabled());
@@ -822,19 +823,19 @@ fn oauth_provider(app: &AppState, id: &str) -> Result<crate::oauth::Provider, Ap
 
 /// Who the account is, once the tokens are there: per provider.
 fn account_lookup(p: &crate::oauth::Provider) -> crate::oauth::AccountLookup {
-    let youtube = p.id == "youtube";
-    let api = if youtube {
-        crate::youtube::api_base()
-    } else {
-        crate::onedrive::graph_base()
+    let id = p.id;
+    let api = match id {
+        "youtube" => crate::youtube::api_base(),
+        "x" => crate::x::api_base(),
+        _ => crate::onedrive::graph_base(),
     };
     Box::new(move |token| {
         let api = api.clone();
         Box::pin(async move {
-            if youtube {
-                crate::youtube::YouTube::channel_title(&api, &token).await
-            } else {
-                crate::onedrive::OneDrive::me(&api, &token).await
+            match id {
+                "youtube" => crate::youtube::YouTube::channel_title(&api, &token).await,
+                "x" => crate::x::X::username(&api, &token).await,
+                _ => crate::onedrive::OneDrive::me(&api, &token).await,
             }
         })
     })

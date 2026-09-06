@@ -800,6 +800,31 @@ provider document carries `loopback: true` then, and:
   sees `done` or `failed` like with the device flow. The route sits outside
   `/api/` and needs no session: the state token is the proof.
 
+### X
+
+X is a storage target (`x` in `config.targets`) whose "file" is a post
+with the video attached: the chunked media upload of the v2 API
+(`initialize`, `append` in 4 MiB segments, `finalize`, then `STATUS` polls
+until X has processed the video, at most five minutes), then `POST
+/2/tweets` with the text from the template and the media id. `page` and
+`direct` are `https://x.com/<user>/status/<id>`, `ncPath` is the post id;
+deleting a clip with `?nextcloud=1` deletes the posts its jobs made.
+
+- Settings: `integrations.x { enabled, quickShare, text }`. `text` may use
+  `{title}`, `{clip}` and `{date}`; an empty title falls back to the clip's
+  name without the display-name prefix, an empty result to the title, and
+  the post is cut to 280 characters. A template over 280 characters is a
+  400.
+- The client is the replaycut app's (a public client with PKCE; `X_CLIENT_ID`
+  in the build, `REPLAYCUT_X_CLIENT_ID` overrides it), the account the
+  credential `replaycut/x` (`@username`, refresh token; X rotates it on
+  every refresh). `secrets.x` says whether one is connected.
+- `GET /api/oauth/x` always says `loopback: true`: X has no device flow, so
+  the account connects through the browser on this PC (see "Loopback
+  login"), scopes `tweet.read tweet.write users.read media.write
+  offline.access`. `/start` answers 400, `/loopback` 409 while the build
+  has no client id.
+
 ### Vertical cut
 
 `POST /api/share` takes `vertical: true` and `verticalPos` (0..1, default

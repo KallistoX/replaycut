@@ -18,6 +18,8 @@ pub const YOUTUBE: &str = "replaycut/youtube";
 /// The user's own Google OAuth client for YouTube: user = client id,
 /// secret = client secret (since 2.6).
 pub const YOUTUBE_CLIENT: &str = "replaycut/youtube-client";
+/// X: user = @username, secret = the OAuth refresh token (since 2.6).
+pub const X: &str = "replaycut/x";
 
 #[derive(Debug, Clone)]
 pub struct Credential {

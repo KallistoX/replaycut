@@ -31,6 +31,12 @@ const GOOGLE_LOGIN_BASE: &str = "https://oauth2.googleapis.com";
 /// Google's authorization endpoint for the loopback flow (a "Desktop app"
 /// client); `REPLAYCUT_GOOGLE_AUTH_URL` points it at a fake.
 const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+/// The replaycut app in the maintainer's X developer account: a public
+/// client (PKCE, no secret) with the loopback callback registered. Empty
+/// until the app exists; `REPLAYCUT_X_CLIENT_ID` overrides it for tests.
+pub const X_CLIENT_ID: &str = "";
+const X_LOGIN_BASE: &str = "https://api.x.com/2/oauth2";
+const X_AUTH_URL: &str = "https://x.com/i/oauth2/authorize";
 const TIMEOUT: Duration = Duration::from_secs(20);
 
 /// An OAuth provider: the device-code flow (the default) or, since 2.6, the
@@ -105,6 +111,25 @@ pub fn provider(id: &str, settings: &crate::settings::Settings) -> Option<Provid
                 missing_client: "no Google client stored - enter client id and client secret under Settings > Integrations > YouTube",
             })
         }
+        "x" => Some(Provider {
+            id: "x",
+            label: "X",
+            login_base: std::env::var("REPLAYCUT_X_LOGIN_BASE")
+                .unwrap_or_else(|_| X_LOGIN_BASE.to_string()),
+            // X has no device flow
+            device_path: "",
+            auth_url: std::env::var("REPLAYCUT_X_AUTH_URL")
+                .unwrap_or_else(|_| X_AUTH_URL.to_string()),
+            loopback: true,
+            client_id: std::env::var("REPLAYCUT_X_CLIENT_ID")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| X_CLIENT_ID.to_string()),
+            client_secret: None,
+            scope: "tweet.read tweet.write users.read media.write offline.access",
+            credential: credentials::X,
+            missing_client: "this build has no X client id",
+        }),
         _ => None,
     }
 }

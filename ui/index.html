@@ -809,7 +809,16 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <label class="switch"><input type="checkbox" data-f="integrations.youtube.quickShare"><span class="track"></span> Quick share target</label>
       </div>
     </div>
-    <div class="card add-card"><span class="sm">X arrives with 2.6.0.</span></div>
+    <div class="card" id="sXCard">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>X</h2><span class="badge">storage</span><span class="badge" id="sXBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.x.enabled"><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">Every share becomes a post on your X account with the video attached; the link is the post. Connecting opens X's login in the browser on this PC. Limits are those of X's API for the replaycut app; when a post is refused, the share shows X's reason.</p>
+        <div class="row" id="sXRow"><button class="btn btn-primary" id="sXConnect">Connect X</button><button class="btn" id="sXDisconnect" hidden>Disconnect</button><span class="muted sm" id="sXStatus"></span></div>
+        <div class="check-row" id="sXCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label" id="sXCodeLabel"></div><div class="detail" id="sXCodeDetail"></div></div></div>
+        <div class="field"><label>Post text</label><input class="input" data-f="integrations.x.text" maxlength="280"><span class="hint"><code>{title}</code>, <code>{clip}</code> and <code>{date}</code> are filled in; an empty title falls back to the clip's name. At most 280 characters.</span></div>
+        <label class="switch"><input type="checkbox" data-f="integrations.x.quickShare"><span class="track"></span> Quick share target</label>
+      </div>
+    </div>
     <h2 class="group-title">Notify</h2>
     <div class="card" id="sDcCard">
       <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge">notify</span><span class="badge" id="sDcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.discord.enabled"><span class="track"></span></label></div>
@@ -1326,6 +1335,7 @@ async function initSettings() {
   }
   oauthCards.onedrive = oauthCard('onedrive', 'OneDrive', 'sOd', 'This build has no OneDrive client id yet.');
   oauthCards.youtube = oauthCard('youtube', 'YouTube', 'sYt', 'Enter and save the client id and secret of your Google project first.');
+  oauthCards.x = oauthCard('x', 'X', 'sX', 'This build has no X client id yet.');
   // update check on demand (since 2.3)
   function updText(u) {
     if (!u) return '';
