@@ -16,6 +16,13 @@ takes about five minutes and costs nothing.
 2. **APIs & Services › Library**: search for *YouTube Data API v3* and click
    **Enable**.
 
+Newer consoles then offer a guided **Create credentials** wizard on the
+API's page. It asks the same things as sections 2 and 3 in one go: choose
+**User data** (that creates an OAuth client), fill in the consent screen,
+leave the scopes empty or add `.../auth/youtube`, and pick the client type
+in the last step. Publishing the app (section 2, step 3) is still a separate
+click afterwards.
+
 ## 2. Set up the consent screen
 
 1. **APIs & Services › OAuth consent screen** (Google calls it "Google Auth
