@@ -1723,3 +1723,75 @@ fn t38_x_is_a_loopback_target() {
     let res = get("/oauth/x/callback?code=x&state=nope");
     assert_eq!(res.status().as_u16(), 400);
 }
+
+#[test]
+fn t39_telegram_and_webhook_are_notify_targets_with_tests() {
+    let _g = serial();
+    if !since_26() {
+        return;
+    }
+    let list = state()["config"]["targets"].clone();
+    let list = list.as_array().expect("targets");
+    for id in ["telegram", "webhook"] {
+        assert!(
+            list.iter().any(|t| t["id"] == id && t["kind"] == "notify"),
+            "{id} missing: {list:?}"
+        );
+    }
+    let (_, s) = get_json("/api/settings");
+    assert!(s["integrations"]["telegram"]["chatId"].is_string(), "{s}");
+    assert!(
+        s["integrations"]["telegram"]["autoPost"].is_boolean(),
+        "{s}"
+    );
+    assert!(s["integrations"]["webhook"]["url"].is_string(), "{s}");
+    assert!(s["integrations"]["webhook"]["autoPost"].is_boolean(), "{s}");
+    assert!(
+        s["secrets"]["telegram"].is_boolean() && s["secrets"]["webhookSecret"].is_boolean(),
+        "{s}"
+    );
+    // a webhook URL must be http(s), a token must look like one
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "webhook": { "url": "ftp://nope" } } }),
+    );
+    assert_eq!(status, 400, "{v}");
+    let (status, v) = put_json("/api/settings", &json!({ "telegramToken": "nope" }));
+    assert_eq!(status, 400, "{v}");
+    // the tests validate before they talk to anyone
+    let (status, v) = post_json(
+        "/api/test/webhook",
+        &json!({ "url": "ftp://nope", "secret": "" }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["ok"], false);
+    assert!(v["error"].as_str().unwrap_or("").contains("http"), "{v}");
+    let (status, v) = post_json(
+        "/api/test/telegram",
+        &json!({ "token": "nope", "chatId": "-1001" }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["ok"], false);
+    assert!(v["error"].as_str().unwrap_or("").contains("token"), "{v}");
+    // without a stored token the test says so instead of failing on the network
+    let (status, v) = post_json("/api/test/telegram", &json!({}));
+    assert_eq!(status, 200, "{v}");
+    if s["secrets"]["telegram"] == false {
+        assert!(
+            v["error"].as_str().unwrap_or("").contains("no bot token"),
+            "{v}"
+        );
+    }
+    // the diagnostics carry both rows
+    let (_, d) = get_json("/api/diagnostics");
+    let ids: Vec<&str> = d["checks"]
+        .as_array()
+        .expect("checks")
+        .iter()
+        .filter_map(|c| c["id"].as_str())
+        .collect();
+    assert!(
+        ids.contains(&"telegram") && ids.contains(&"generic-webhook"),
+        "{ids:?}"
+    );
+}

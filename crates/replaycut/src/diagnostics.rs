@@ -413,6 +413,81 @@ pub async fn run(state: &AppState) -> Report {
         }
     };
 
+    // telegram and the generic webhook (since 2.6): the bot answers getMe;
+    // the webhook is only checked for its configuration, a real POST would
+    // reach the receiver on every diagnostics run
+    let telegram_check = {
+        let enabled = settings.integrations.telegram.enabled;
+        let runtime = runtime.clone();
+        let dry_run = state.dry_run;
+        async move {
+            if !enabled {
+                return Check::new("telegram", "Telegram", "skip", "integration is off");
+            }
+            if dry_run {
+                return Check::new("telegram", "Telegram", "ok", "dry run");
+            }
+            let entry = runtime
+                .integrations
+                .notifies
+                .iter()
+                .find(|n| n.id == "telegram");
+            match entry.map(|e| &e.notify) {
+                Some(integrations::Notify::Telegram(t)) => match tokio::time::timeout(TIMEOUT, t.me()).await {
+                    Ok(Ok(bot)) => Check::new("telegram", "Telegram", "ok", format!("bot {bot} answers")),
+                    Ok(Err(e)) => Check::new("telegram", "Telegram", "fail", format!("{e:#}"))
+                        .with_fix("Check the bot token under Settings › Integrations › Telegram (Send test message)."),
+                    Err(_) => Check::new("telegram", "Telegram", "fail", "no answer from Telegram within 5 s"),
+                },
+                _ => Check::new("telegram", "Telegram", "fail", "enabled, but no bot token or chat id")
+                    .with_fix("Settings › Integrations › Telegram: paste the token from @BotFather and the chat id."),
+            }
+        }
+    };
+    let generic_webhook_check = {
+        let wh = settings.integrations.webhook.clone();
+        let runtime = runtime.clone();
+        let secret = credentials::read(credentials::WEBHOOK_SECRET)
+            .ok()
+            .flatten()
+            .is_some();
+        async move {
+            if !wh.enabled {
+                return Check::new("generic-webhook", "Webhook", "skip", "integration is off");
+            }
+            let configured = runtime
+                .integrations
+                .notifies
+                .iter()
+                .any(|n| n.id == "webhook");
+            if !configured {
+                return Check::new(
+                    "generic-webhook",
+                    "Webhook",
+                    "fail",
+                    "enabled, but the URL is not usable",
+                )
+                .with_fix(
+                    "Settings › Integrations › Webhook: enter an http(s) URL (Send test event).",
+                );
+            }
+            Check::new(
+                "generic-webhook",
+                "Webhook",
+                "ok",
+                format!(
+                    "{} · {}",
+                    wh.url,
+                    if secret {
+                        "signed with the stored secret"
+                    } else {
+                        "unsigned (no secret stored)"
+                    }
+                ),
+            )
+        }
+    };
+
     // s3 and webdav (since 2.5): configured and reachable, no probe writes here
     let s3_check = {
         let enabled = settings.integrations.s3.enabled;
@@ -682,6 +757,8 @@ pub async fn run(state: &AppState) -> Report {
     checks.push(youtube_check.await);
     checks.push(x_check.await);
     checks.push(webhook);
+    checks.push(telegram_check.await);
+    checks.push(generic_webhook_check.await);
     checks.push({
         let obs = state.obs.status();
         if !obs.enabled {

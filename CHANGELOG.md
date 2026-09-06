@@ -24,6 +24,13 @@ contract.
   (chunked media upload, text from a template), link `x.com/<user>/status/
   <id>`; connected in the browser on this PC. Needs a build with the
   replaycut app's client id.
+- Telegram as a notify integration: a bot posts the link into a chat,
+  group or channel (`integrations.telegram`, token as `telegramToken`,
+  `POST /api/test/telegram`).
+- Generic webhook as a notify integration: a JSON `POST` per share to any
+  URL, signed with `X-Replaycut-Signature` when a secret is stored, for
+  n8n, Home Assistant, Zapier or a Matrix bridge (`integrations.webhook`,
+  `POST /api/test/webhook`).
 - Vertical cut: "Vertical 9:16 (Short)" in the share row crops a full-height
   window (position by slider, shown over the player) and scales it to
   1080x1920 - a Short on YouTube, or a file for TikTok, Reels and WhatsApp

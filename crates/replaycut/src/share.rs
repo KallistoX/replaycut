@@ -562,9 +562,25 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
                 "**{prefix}** {label} ({} s) - {direct}",
                 job.seconds.round() as i64
             );
+            let notification = crate::notify::Notification {
+                text,
+                prefix: prefix.clone(),
+                label,
+                title: title.clone(),
+                base: job.base.clone(),
+                seconds: job.seconds,
+                target: job.target.clone(),
+                link: state
+                    .job(id)
+                    .and_then(|j| j.link)
+                    .unwrap_or_else(|| direct.clone()),
+                direct: direct.clone(),
+                at: job.at.clone(),
+                job: id.to_string(),
+            };
             let mut statuses = Vec::new();
             for entry in notifies {
-                let status = match entry.notify.post(&text).await {
+                let status = match entry.notify.post(&notification).await {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!("share [{id}]: {} post failed: {e:#}", entry.label);

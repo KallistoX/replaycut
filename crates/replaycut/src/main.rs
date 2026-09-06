@@ -20,6 +20,7 @@ mod lifecycle;
 mod media;
 #[cfg(windows)]
 mod migrate;
+mod notify;
 mod oauth;
 mod obs;
 mod obs_link;

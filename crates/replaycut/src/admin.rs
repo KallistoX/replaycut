@@ -85,6 +85,8 @@ fn settings_document(app: &AppState) -> Value {
         "youtube": credentials::read(credentials::YOUTUBE).ok().flatten().is_some(),
         "youtubeClient": credentials::read(credentials::YOUTUBE_CLIENT).ok().flatten().is_some(),
         "x": credentials::read(credentials::X).ok().flatten().is_some(),
+        "telegram": credentials::read(credentials::TELEGRAM).ok().flatten().is_some(),
+        "webhookSecret": credentials::read(credentials::WEBHOOK_SECRET).ok().flatten().is_some(),
     });
     doc["passwordSet"] = json!(settings.password_hash.is_some());
     doc["autostart"] = json!(autostart_enabled());
@@ -130,6 +132,8 @@ pub async fn put_settings(
     let webdav_password = obj.remove("webdavPassword");
     let youtube_client_id = obj.remove("youtubeClientId");
     let youtube_client_secret = obj.remove("youtubeClientSecret");
+    let telegram_token = obj.remove("telegramToken");
+    let webhook_secret = obj.remove("webhookSecret");
 
     // Fields a running job depends on.
     if app.inner.lock().current_job.is_some() {
@@ -237,6 +241,38 @@ pub async fn put_settings(
                     format!("send {name} together (both empty removes them)"),
                 ))
             }
+        }
+    }
+    // single write-only secrets of 2.6: empty removes
+    for (value, target, user, what) in [
+        (
+            &telegram_token,
+            credentials::TELEGRAM,
+            "bot",
+            "Telegram bot token",
+        ),
+        (
+            &webhook_secret,
+            credentials::WEBHOOK_SECRET,
+            "secret",
+            "webhook secret",
+        ),
+    ] {
+        if let Some(v) = value.as_ref().and_then(Value::as_str) {
+            if v.trim().is_empty() {
+                credentials::delete(target).map_err(ApiError::internal)?;
+                tracing::info!("{what} removed");
+            } else {
+                if target == credentials::TELEGRAM && !v.contains(':') {
+                    return Err(ApiError::new(
+                        StatusCode::BAD_REQUEST,
+                        "telegramToken: this does not look like a bot token (123456:ABC...)",
+                    ));
+                }
+                credentials::write(target, user, v.trim()).map_err(ApiError::internal)?;
+                tracing::info!("{what} stored");
+            }
+            credentials_changed = true;
         }
     }
     // a new Google client invalidates the channel connected with the old one
@@ -1012,6 +1048,87 @@ pub async fn oauth_disconnect(
     }
     app.tray_changed();
     Ok(Json(json!({ "ok": true })))
+}
+
+// ------------------------------------------------------------ Telegram and webhook tests (since 2.6)
+
+/// `POST /api/test/telegram`: `getMe` plus a test message. `token` and
+/// `chatId` from the body override the stored ones.
+pub async fn test_telegram(
+    State(app): State<App>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    let v = parse_json(&headers, &body)?;
+    let s = app.settings().integrations.telegram.clone();
+    let chat_id = v["chatId"]
+        .as_str()
+        .filter(|c| !c.trim().is_empty())
+        .unwrap_or(&s.chat_id)
+        .to_string();
+    let token = match v["token"].as_str().filter(|t| !t.trim().is_empty()) {
+        Some(t) => t.to_string(),
+        None => match credentials::read(credentials::TELEGRAM) {
+            Ok(Some(c)) => c.secret,
+            _ => {
+                return Ok(Json(
+                    json!({ "ok": false, "error": "no bot token stored - paste the token from @BotFather" }),
+                ))
+            }
+        },
+    };
+    let started = std::time::Instant::now();
+    let result = async {
+        let t = crate::notify::Telegram::new(&token, &chat_id)?;
+        let bot = t.me().await?;
+        let posted = t
+            .send("<b>replaycut</b> test message - if you can read this, the bot and the chat id work")
+            .await?;
+        Ok::<(String, String), anyhow::Error>((bot, posted))
+    }
+    .await;
+    Ok(Json(match result {
+        Ok((bot, posted)) => {
+            json!({ "ok": true, "bot": bot, "posted": posted, "ms": started.elapsed().as_millis() as u64 })
+        }
+        Err(e) => json!({ "ok": false, "error": format!("{e:#}") }),
+    }))
+}
+
+/// `POST /api/test/webhook`: a signed `test` event. `url` and `secret`
+/// from the body override the stored ones.
+pub async fn test_webhook(
+    State(app): State<App>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    let v = parse_json(&headers, &body)?;
+    let s = app.settings().integrations.webhook.clone();
+    let url = v["url"]
+        .as_str()
+        .filter(|u| !u.trim().is_empty())
+        .unwrap_or(&s.url)
+        .to_string();
+    let secret = match v["secret"].as_str() {
+        Some(sec) if !sec.is_empty() => Some(sec.to_string()),
+        _ => credentials::read(credentials::WEBHOOK_SECRET)
+            .ok()
+            .flatten()
+            .map(|c| c.secret),
+    };
+    let signed = secret.as_ref().is_some_and(|s| !s.is_empty());
+    let started = std::time::Instant::now();
+    let result = async {
+        let w = crate::notify::Webhook::new(&url, secret)?;
+        w.test().await
+    }
+    .await;
+    Ok(Json(match result {
+        Ok(status) => {
+            json!({ "ok": true, "status": status, "signed": signed, "ms": started.elapsed().as_millis() as u64 })
+        }
+        Err(e) => json!({ "ok": false, "error": format!("{e:#}") }),
+    }))
 }
 
 // ------------------------------------------------------------ S3 and WebDAV tests (since 2.5)

@@ -64,6 +64,16 @@ fine.
       "enabled": false,
       "quickShare": false,
       "text": "{title}"
+    },
+    "telegram": {
+      "enabled": false,
+      "autoPost": true,
+      "chatId": ""
+    },
+    "webhook": {
+      "enabled": false,
+      "autoPost": true,
+      "url": ""
     }
   }
 }
@@ -98,6 +108,8 @@ process runs but are never written back.
 | `integrations.s3` | S3-compatible storage (since 2.5): `endpoint` (`https://<account>.r2.cloudflarestorage.com`, `https://s3.<region>.amazonaws.com`, `http://minio:9000`), `region` (`auto` for R2), `bucket`, `prefix` (folder inside the bucket), `publicBase` (public URL serving the keys; empty = presigned links), `presignDays` (1-7). Keys are the credential `replaycut/s3`. |
 | `integrations.webdav` | Generic WebDAV (since 2.5): `url` (the DAV root), `folder` below it, `publicBase` (public URL that serves the folder; required, the link is `<publicBase>/<month>/<file>`). Login is the credential `replaycut/webdav`. |
 | `integrations.youtube` | YouTube (since 2.6): every share is uploaded as its own video. `privacy` is `unlisted` (default), `private` or `public`; `description` is a template with `{title}`, `{clip}` and `{date}`. The video title is the clip's title (or its name), plus `#Shorts` for a vertical cut. Needs your own Google client (credential `replaycut/youtube-client`, see [`docs/youtube.md`](youtube.md)) and a connected channel (credential `replaycut/youtube`). `clientType` is `tv` (a "TVs and Limited Input devices" client, connected with a code from any device, the default) or `desktop` (a "Desktop app" client, connected in the browser on this PC). |
+| `integrations.telegram` | Telegram bot (since 2.6): `chatId` is the chat, group or channel (`-1001234567890` or `@channelname`), the bot token the credential `replaycut/telegram`. `autoPost` (default true) posts every share that produced a link. |
+| `integrations.webhook` | Generic webhook (since 2.6): `url` receives a JSON `POST` per share (`{ event: "shared", title, clip, seconds, target, link, direct, at, job, displayName }`); with a secret (credential `replaycut/webhook-secret`) the header `X-Replaycut-Signature: sha256=<HMAC>` is added. `autoPost` (default true). |
 | `integrations.x` | X (since 2.6): every share becomes a post with the video attached. `text` is the post template with `{title}`, `{clip}` and `{date}` (at most 280 characters). The account (credential `replaycut/x`) is connected in the browser on this PC under Settings › Integrations; the app client is built in. |
 
 An enabled integration without stored credentials is skipped with a warning
@@ -116,6 +128,8 @@ in the log; the service still starts.
 | `replaycut/youtube-client` | Google client ID | Client secret of your own Google project (since 2.6, see [`docs/youtube.md`](youtube.md)) |
 | `replaycut/youtube` | Channel title | The OAuth refresh token of the connected channel (since 2.6) |
 | `replaycut/x` | `@username` | The OAuth refresh token of the connected X account (since 2.6) |
+| `replaycut/telegram` | `bot` | The bot token from @BotFather (since 2.6) |
+| `replaycut/webhook-secret` | `secret` | The HMAC secret of the generic webhook (since 2.6, optional) |
 
 `replaycut setup` writes them; `cmdkey /list` shows them; `cmdkey /delete:replaycut/nextcloud` removes one by hand.
 

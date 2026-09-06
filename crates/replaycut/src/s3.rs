@@ -35,7 +35,7 @@ struct Canonical<'a> {
     content_type: Option<&'a str>,
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -43,7 +43,7 @@ fn sha256_hex(data: &[u8]) -> String {
     hex(&Sha256::digest(data))
 }
 
-fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
+pub(crate) fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
     let mut k = [0u8; 64];
     if key.len() > 64 {
         k[..32].copy_from_slice(&Sha256::digest(key));

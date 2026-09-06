@@ -56,6 +56,8 @@ pub enum Storage {
 pub enum Notify {
     DryRun,
     Discord(Discord),
+    Telegram(crate::notify::Telegram),
+    Webhook(crate::notify::Webhook),
 }
 
 /// A configured storage as a share target (since 2.5). `id` is what
@@ -84,7 +86,7 @@ pub const TARGET_FILE: &str = "file";
 /// them; adding an integration means one line here plus a settings block,
 /// a credential constant, a `Storage`/`Notify` variant, a card and a
 /// diagnostics row.
-pub const KNOWN_TARGETS: [(&str, &str, &str); 7] = [
+pub const KNOWN_TARGETS: [(&str, &str, &str); 9] = [
     ("nextcloud", "Nextcloud", "storage"),
     ("onedrive", "OneDrive", "storage"),
     ("s3", "S3", "storage"),
@@ -92,6 +94,8 @@ pub const KNOWN_TARGETS: [(&str, &str, &str); 7] = [
     ("youtube", "YouTube", "storage"),
     ("x", "X", "storage"),
     ("discord", "Discord", "notify"),
+    ("telegram", "Telegram", "notify"),
+    ("webhook", "Webhook", "notify"),
 ];
 
 pub struct Integrations {
@@ -163,15 +167,29 @@ impl Integrations {
                     quick_share: settings.integrations.x.quick_share,
                 });
             }
-            return Ok(Self {
-                storages,
-                notifies: vec![NotifyEntry {
-                    id: "discord",
-                    label: "Discord",
+            let mut notifies = vec![NotifyEntry {
+                id: "discord",
+                label: "Discord",
+                notify: Notify::DryRun,
+                auto_post: dc.auto_post,
+            }];
+            if settings.integrations.telegram.enabled {
+                notifies.push(NotifyEntry {
+                    id: "telegram",
+                    label: "Telegram",
                     notify: Notify::DryRun,
-                    auto_post: dc.auto_post,
-                }],
-            });
+                    auto_post: settings.integrations.telegram.auto_post,
+                });
+            }
+            if settings.integrations.webhook.enabled {
+                notifies.push(NotifyEntry {
+                    id: "webhook",
+                    label: "Webhook",
+                    notify: Notify::DryRun,
+                    auto_post: settings.integrations.webhook.auto_post,
+                });
+            }
+            return Ok(Self { storages, notifies });
         }
         let mut storages = Vec::new();
         if nc.enabled {
@@ -317,6 +335,36 @@ impl Integrations {
                 }
             }
         }
+        let tg = &settings.integrations.telegram;
+        if tg.enabled {
+            match credentials::read(credentials::TELEGRAM)? {
+                Some(cred) => match crate::notify::Telegram::new(&cred.secret, &tg.chat_id) {
+                    Ok(t) => notifies.push(NotifyEntry {
+                        id: "telegram",
+                        label: "Telegram",
+                        notify: Notify::Telegram(t),
+                        auto_post: tg.auto_post,
+                    }),
+                    Err(e) => tracing::warn!("Telegram is enabled but not usable: {e}"),
+                },
+                None => tracing::warn!(
+                    "Telegram is enabled but has no bot token - enter it under Settings > Integrations"
+                ),
+            }
+        }
+        let wh = &settings.integrations.webhook;
+        if wh.enabled {
+            let secret = credentials::read(credentials::WEBHOOK_SECRET)?.map(|c| c.secret);
+            match crate::notify::Webhook::new(&wh.url, secret) {
+                Ok(w) => notifies.push(NotifyEntry {
+                    id: "webhook",
+                    label: "Webhook",
+                    notify: Notify::Webhook(w),
+                    auto_post: wh.auto_post,
+                }),
+                Err(e) => tracing::warn!("the webhook is enabled but not usable: {e}"),
+            }
+        }
         Ok(Self { storages, notifies })
     }
 
@@ -360,6 +408,8 @@ impl Integrations {
             "youtube" => settings.integrations.youtube.enabled,
             "x" => settings.integrations.x.enabled,
             "discord" => settings.integrations.discord.enabled,
+            "telegram" => settings.integrations.telegram.enabled,
+            "webhook" => settings.integrations.webhook.enabled,
             _ => false,
         };
         Value::Array(
@@ -489,14 +539,16 @@ impl Storage {
 }
 
 impl Notify {
-    /// Post a message; returns a human-readable status for the job's `discord` field.
-    pub async fn post(&self, text: &str) -> Result<String> {
+    /// Post the share; returns a human-readable status for the job's `discord` field.
+    pub async fn post(&self, n: &crate::notify::Notification) -> Result<String> {
         match self {
             Notify::DryRun => {
-                tracing::info!("dry run: post skipped: {text}");
+                tracing::info!("dry run: post skipped: {}", n.text);
                 Ok("dry run: not posted".to_string())
             }
-            Notify::Discord(d) => d.post(text).await,
+            Notify::Discord(d) => d.post(&n.text).await,
+            Notify::Telegram(t) => t.post(n).await,
+            Notify::Webhook(w) => w.post(n).await,
         }
     }
 }

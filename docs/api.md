@@ -775,6 +775,33 @@ not made for kids, category Gaming. `page` and `direct` are both
 - A vertical share (below) gets ` #Shorts` appended to its title; YouTube
   lists it as a Short by its format and length.
 
+### Telegram and the generic webhook
+
+Two more notify integrations next to Discord (`telegram` and `webhook` in
+`config.targets`, kind `notify`). Like Discord they post every share that
+produced a link when `autoPost` is on, in the `notify` stage, and their
+status text joins the job's `discord` field.
+
+- `integrations.telegram { enabled, autoPost, chatId }` with the bot token
+  as the write-only `telegramToken` in `PUT /api/settings` (credential
+  `replaycut/telegram`; empty removes it, a value without `:` is a 400).
+  The post is `sendMessage` with HTML: `<b><displayName></b> <label> (<n>
+  s)` and the direct link on the next line. `POST /api/test/telegram {
+  token?, chatId? }` runs `getMe` and sends a test message: `{ ok, bot,
+  posted, ms }` or `{ ok: false, error }`.
+- `integrations.webhook { enabled, autoPost, url }` with the optional
+  secret as the write-only `webhookSecret` (credential
+  `replaycut/webhook-secret`). `url` must be http(s) (400 otherwise). Every
+  share is a `POST` with `Content-Type: application/json`, header
+  `X-Replaycut-Event: shared` and the body `{ event: "shared", title, clip,
+  seconds, target, link, direct, at, job, displayName }`; with a secret the
+  header `X-Replaycut-Signature: sha256=<hex HMAC-SHA256 of the exact
+  body>` is added. Any 2xx counts as posted. `POST /api/test/webhook { url?,
+  secret? }` sends `{ event: "test", at, version }` the same way and
+  answers `{ ok, status, signed, ms }`.
+- Diagnostics rows `telegram` (`getMe`) and `generic-webhook` (configuration
+  only; the receiver is not called).
+
 ### Loopback login
 
 A second way to connect an account, for providers or client types without

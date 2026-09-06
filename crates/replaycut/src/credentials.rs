@@ -20,6 +20,10 @@ pub const YOUTUBE: &str = "replaycut/youtube";
 pub const YOUTUBE_CLIENT: &str = "replaycut/youtube-client";
 /// X: user = @username, secret = the OAuth refresh token (since 2.6).
 pub const X: &str = "replaycut/x";
+/// Telegram: user = `bot`, secret = the bot token (since 2.6).
+pub const TELEGRAM: &str = "replaycut/telegram";
+/// Generic webhook: user = `secret`, secret = the HMAC secret (since 2.6).
+pub const WEBHOOK_SECRET: &str = "replaycut/webhook-secret";
 
 #[derive(Debug, Clone)]
 pub struct Credential {

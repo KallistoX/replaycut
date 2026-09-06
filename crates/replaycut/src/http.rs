@@ -57,6 +57,8 @@ pub fn router(state: App) -> Router {
         .route("/api/test/discord", post(admin::test_discord))
         .route("/api/test/s3", post(admin::test_s3))
         .route("/api/test/webdav", post(admin::test_webdav))
+        .route("/api/test/telegram", post(admin::test_telegram))
+        .route("/api/test/webhook", post(admin::test_webhook))
         .route("/api/addresses", get(admin::addresses))
         .route("/api/setup/obs", get(admin::setup_obs))
         .route("/api/diagnostics", get(admin::diagnostics))

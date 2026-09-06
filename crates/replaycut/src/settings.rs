@@ -86,6 +86,54 @@ pub struct Integrations {
     pub youtube: YouTube,
     /// since 2.6
     pub x: X,
+    /// since 2.6
+    pub telegram: Telegram,
+    /// since 2.6
+    pub webhook: Webhook,
+}
+
+/// Telegram bot (since 2.6): posts the link into a chat or channel. The bot
+/// token is the credential `replaycut/telegram`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Telegram {
+    pub enabled: bool,
+    /// Posts every share without being asked.
+    #[serde(default = "default_true")]
+    pub auto_post: bool,
+    /// A chat or channel id (`-1001234567890`) or `@channelname`.
+    pub chat_id: String,
+}
+
+impl Default for Telegram {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            auto_post: true,
+            chat_id: String::new(),
+        }
+    }
+}
+
+/// Generic webhook (since 2.6): a JSON POST per share, signed with the
+/// optional secret (credential `replaycut/webhook-secret`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Webhook {
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub auto_post: bool,
+    pub url: String,
+}
+
+impl Default for Webhook {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            auto_post: true,
+            url: String::new(),
+        }
+    }
 }
 
 /// X (since 2.6): every share is a post with the video attached. The
@@ -342,6 +390,8 @@ const PATCH_KEYS: [&str; 16] = [
 ];
 const NEXTCLOUD_KEYS: [&str; 5] = ["enabled", "url", "folder", "expireDays", "quickShare"];
 const DISCORD_KEYS: [&str; 2] = ["enabled", "autoPost"];
+const TELEGRAM_KEYS: [&str; 3] = ["enabled", "autoPost", "chatId"];
+const WEBHOOK_KEYS: [&str; 3] = ["enabled", "autoPost", "url"];
 const ONEDRIVE_KEYS: [&str; 2] = ["enabled", "quickShare"];
 const S3_KEYS: [&str; 8] = [
     "enabled",
@@ -404,6 +454,8 @@ impl Settings {
                         "webdav" => &WEBDAV_KEYS,
                         "youtube" => &YOUTUBE_KEYS,
                         "x" => &X_KEYS,
+                        "telegram" => &TELEGRAM_KEYS,
+                        "webhook" => &WEBHOOK_KEYS,
                         _ => return Err(format!("unknown integration: {group}")),
                     };
                     let Some(fields) = fields.as_object() else {
@@ -540,6 +592,11 @@ impl Settings {
         anyhow::ensure!(
             YOUTUBE_PRIVACY.contains(&self.integrations.youtube.privacy.as_str()),
             "integrations.youtube.privacy must be unlisted, private or public"
+        );
+        anyhow::ensure!(
+            self.integrations.webhook.url.trim().is_empty()
+                || crate::notify::is_http_url(self.integrations.webhook.url.trim()),
+            "integrations.webhook.url must start with http:// or https://"
         );
         anyhow::ensure!(
             self.integrations.x.text.chars().count() <= 280,

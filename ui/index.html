@@ -829,7 +829,30 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="row"><button class="btn" id="sDcTest">Send test message</button><span class="test-msg" id="sDcMsg"></span></div>
       </div>
     </div>
-    <div class="card add-card"><span class="sm">Telegram and a generic webhook arrive with 2.6.0.</span></div>
+    <div class="card" id="sTgCard">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Telegram</h2><span class="badge">notify</span><span class="badge" id="sTgBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.telegram.enabled"><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">A bot posts the link into a chat, group or channel. Create the bot with <b>@BotFather</b> (<code>/newbot</code>), add it to the chat or as a channel admin, and find the chat id with <b>@userinfobot</b> or from the channel's <code>@name</code>.</p>
+        <div class="fields-2">
+          <div class="field"><label>Bot token</label><div class="input-group"><input class="input mono" id="sTgToken" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sTgToken" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint" id="sTgTokenHint"></span></div>
+          <div class="field"><label>Chat id</label><input class="input mono" data-f="integrations.telegram.chatId" placeholder="-1001234567890 or @channelname"></div>
+        </div>
+        <label class="switch"><input type="checkbox" data-f="integrations.telegram.autoPost"><span class="track"></span> Post automatically <span class="muted sm">(every share that produced a link)</span></label>
+        <div class="row"><button class="btn" id="sTgTest">Send test message</button><span class="test-msg" id="sTgMsg"></span></div>
+      </div>
+    </div>
+    <div class="card" id="sWhCard">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Webhook</h2><span class="badge">notify</span><span class="badge" id="sWhBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.webhook.enabled"><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">A JSON <code>POST</code> per share to any URL - n8n, Home Assistant, Zapier, a Matrix bridge: <code>{ event: "shared", title, clip, seconds, target, link, direct, at, job, displayName }</code>. With a secret, the header <code>X-Replaycut-Signature: sha256=&lt;HMAC of the body&gt;</code> lets the receiver check it.</p>
+        <div class="fields-2">
+          <div class="field"><label>URL</label><input class="input mono" data-f="integrations.webhook.url" placeholder="https://n8n.example.com/webhook/replaycut"></div>
+          <div class="field"><label>Secret <span class="muted sm">(optional)</span></label><div class="input-group"><input class="input mono" id="sWhSecret" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sWhSecret" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint" id="sWhSecretHint"></span></div>
+        </div>
+        <label class="switch"><input type="checkbox" data-f="integrations.webhook.autoPost"><span class="track"></span> Post automatically <span class="muted sm">(every share that produced a link)</span></label>
+        <div class="row"><button class="btn" id="sWhTest">Send test event</button><span class="test-msg" id="sWhMsg"></span></div>
+      </div>
+    </div>
   </div>
 
   <div class="save-bar" id="saveBar">
@@ -1074,6 +1097,8 @@ async function runTest(kind, body, btn, msg) {
       if (kind === 'nextcloud') { const free = r.freeBytes != null ? ` · ${(r.freeBytes / 1073741824).toFixed(1)} GB free` : ''; msg.textContent = `Logged in as ${r.displayName || r.user}${free} (${r.ms} ms)`; }
       else if (kind === 's3') msg.textContent = `Bucket reachable, probe written and removed · ${r.links} (${r.ms} ms)`;
       else if (kind === 'webdav') msg.textContent = `Server reachable as ${r.user}, probe written and removed (${r.ms} ms)`;
+      else if (kind === 'telegram') msg.textContent = `Bot ${r.bot} answers · ${r.posted} (${r.ms} ms)`;
+      else if (kind === 'webhook') msg.textContent = `${r.status}, ${r.signed ? 'signed' : 'unsigned'} (${r.ms} ms)`;
       else msg.textContent = r.dryRun ? 'Dry run: nothing sent, the URL looks right.' : 'Test message posted - check the channel.';
     } else { msg.className = 'test-msg err'; msg.textContent = r.error || 'failed'; }
     return r.ok;
@@ -1224,7 +1249,11 @@ async function initSettings() {
     $('sPwOn').checked = !!s.passwordSet; $('sPwFields').hidden = !$('sPwOn').checked; $('sPw1').value = ''; $('sPw2').value = ''; $('sPw1').placeholder = s.passwordSet ? 'leave empty to keep' : 'at least 6 characters';
     $('sNcUser').value = ''; $('sNcPw').value = ''; $('sDcHook').value = '';
     $('sS3Key').value = ''; $('sS3Secret').value = ''; $('sDavUser').value = ''; $('sDavPw').value = '';
-    $('sYtId').value = ''; $('sYtSecret').value = '';
+    $('sYtId').value = ''; $('sYtSecret').value = ''; $('sTgToken').value = ''; $('sWhSecret').value = '';
+    $('sTgTokenHint').textContent = s.secrets && s.secrets.telegram ? 'A token is stored; paste a new one to replace it.' : 'No token stored yet - paste the one @BotFather gave you.';
+    $('sWhSecretHint').textContent = s.secrets && s.secrets.webhookSecret ? 'A secret is stored; paste a new one to replace it.' : 'No secret stored - events go out unsigned.';
+    $('sTgBadge').textContent = s.integrations.telegram.enabled ? (s.secrets.telegram ? 'on' : 'on, no token') : 'off'; $('sTgBadge').className = 'badge' + (s.integrations.telegram.enabled && !s.secrets.telegram ? ' warn' : '');
+    $('sWhBadge').textContent = s.integrations.webhook.enabled ? (s.integrations.webhook.url ? 'on' : 'on, no URL') : 'off'; $('sWhBadge').className = 'badge' + (s.integrations.webhook.enabled && !s.integrations.webhook.url ? ' warn' : '');
     $('sYtIdHint').textContent = s.secrets && s.secrets.youtubeClient ? 'A client is stored; fill both fields to replace it (that disconnects the channel).' : 'No client stored yet - paste the client id and secret of your Google project.';
     Object.values(oauthCards).forEach(c => c.poll());
     $('sS3KeyHint').textContent = s.secrets && s.secrets.s3 ? 'Keys are stored; fill both fields to replace them.' : 'No keys stored yet.';
@@ -1247,10 +1276,12 @@ async function initSettings() {
     if ($('sS3Key').value.trim() || $('sS3Secret').value) { c.s3AccessKey = $('sS3Key').value.trim(); c.s3SecretKey = $('sS3Secret').value; }
     if ($('sDavUser').value.trim() || $('sDavPw').value) { c.webdavUser = $('sDavUser').value.trim(); c.webdavPassword = $('sDavPw').value; }
     if ($('sYtId').value.trim() || $('sYtSecret').value) { c.youtubeClientId = $('sYtId').value.trim(); c.youtubeClientSecret = $('sYtSecret').value.trim(); }
+    if ($('sTgToken').value.trim()) c.telegramToken = $('sTgToken').value.trim();
+    if ($('sWhSecret').value) c.webhookSecret = $('sWhSecret').value;
     if ($('sDcHook').value.trim()) c.discordWebhook = $('sDcHook').value.trim();
     return c;
   }
-  function labels(c) { const names = { clipDir: 'Recording folder', displayName: 'Display name', theme: 'Theme', shareKbps: 'Video bitrate', encoder: 'Encoder', hwaccel: 'Hardware decoding', ffmpegPriority: 'ffmpeg priority', ffmpegThreads: 'ffmpeg threads', port: 'Port', bind: 'Listen on', logLevel: 'Log level', checkUpdates: 'Update check', integrations: 'Integrations', password: 'Password', nextcloudUser: 'Nextcloud credentials', nextcloudPassword: '', discordWebhook: 'Discord webhook', s3AccessKey: 'S3 keys', s3SecretKey: '', webdavUser: 'WebDAV login', webdavPassword: '', youtubeClientId: 'YouTube client', youtubeClientSecret: '' }; return Object.keys(c).map(k => names[k]).filter(Boolean).join(', '); }
+  function labels(c) { const names = { clipDir: 'Recording folder', displayName: 'Display name', theme: 'Theme', shareKbps: 'Video bitrate', encoder: 'Encoder', hwaccel: 'Hardware decoding', ffmpegPriority: 'ffmpeg priority', ffmpegThreads: 'ffmpeg threads', port: 'Port', bind: 'Listen on', logLevel: 'Log level', checkUpdates: 'Update check', integrations: 'Integrations', password: 'Password', nextcloudUser: 'Nextcloud credentials', nextcloudPassword: '', discordWebhook: 'Discord webhook', s3AccessKey: 'S3 keys', s3SecretKey: '', webdavUser: 'WebDAV login', webdavPassword: '', youtubeClientId: 'YouTube client', youtubeClientSecret: '', telegramToken: 'Telegram token', webhookSecret: 'Webhook secret' }; return Object.keys(c).map(k => names[k]).filter(Boolean).join(', '); }
   function dirty() {
     const c = changes(), n = Object.keys(c).length;
     $('saveBar').classList.toggle('dirty', n > 0); $('sSave').disabled = !n; $('sDiscard').hidden = !n;
@@ -1261,7 +1292,7 @@ async function initSettings() {
     b.hidden = !restartPending.length; $('b-restart-text').textContent = restartPending.length ? `Changed: ${restartPending.join(', ')}. They take effect after a restart.` : '';
   }
   fields.forEach(el => { el.addEventListener('input', () => { if (el.dataset.f === 'displayName') fields.filter(o => o !== el && o.dataset.f === 'displayName').forEach(o => o.value = el.value); dirty(); }); el.addEventListener('change', dirty); });
-  ['sPw1', 'sPw2', 'sNcUser', 'sNcPw', 'sDcHook', 'sS3Key', 'sS3Secret', 'sDavUser', 'sDavPw', 'sYtId', 'sYtSecret'].forEach(id => $(id).addEventListener('input', dirty));
+  ['sPw1', 'sPw2', 'sNcUser', 'sNcPw', 'sDcHook', 'sS3Key', 'sS3Secret', 'sDavUser', 'sDavPw', 'sYtId', 'sYtSecret', 'sTgToken', 'sWhSecret'].forEach(id => $(id).addEventListener('input', dirty));
   $('sPwOn').onchange = () => { $('sPwFields').hidden = !$('sPwOn').checked; dirty(); };
   $('sAutostart').onchange = async () => { try { const r = await api('/api/settings', jsonOpts('PUT', { autostart: $('sAutostart').checked }), { retries: 0 }); r.ok ? toast('Autostart ' + ($('sAutostart').checked ? 'on' : 'off'), 'ok') : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } };
   $('sDiscard').onclick = () => fill(orig);
@@ -1282,6 +1313,8 @@ async function initSettings() {
   $('sS3Test').onclick = () => runTest('s3', { endpoint: fv('integrations.s3.endpoint'), region: fv('integrations.s3.region'), bucket: fv('integrations.s3.bucket'), prefix: fv('integrations.s3.prefix'), publicBase: fv('integrations.s3.publicBase'), presignDays: Number(fv('integrations.s3.presignDays')), accessKey: $('sS3Key').value.trim(), secretKey: $('sS3Secret').value }, $('sS3Test'), $('sS3Msg'));
   $('sDavTest').onclick = () => runTest('webdav', { url: fv('integrations.webdav.url'), folder: fv('integrations.webdav.folder'), publicBase: fv('integrations.webdav.publicBase'), user: $('sDavUser').value.trim(), password: $('sDavPw').value }, $('sDavTest'), $('sDavMsg'));
   $('sNcTest').onclick = () => runTest('nextcloud', { url: document.querySelector('[data-f="integrations.nextcloud.url"]').value.trim(), folder: document.querySelector('[data-f="integrations.nextcloud.folder"]').value.trim(), user: $('sNcUser').value.trim(), password: $('sNcPw').value }, $('sNcTest'), $('sNcMsg'));
+  $('sTgTest').onclick = () => runTest('telegram', { token: $('sTgToken').value.trim(), chatId: fv('integrations.telegram.chatId') }, $('sTgTest'), $('sTgMsg'));
+  $('sWhTest').onclick = () => runTest('webhook', { url: fv('integrations.webhook.url'), secret: $('sWhSecret').value }, $('sWhTest'), $('sWhMsg'));
   $('sDcTest').onclick = () => runTest('discord', { webhook: $('sDcHook').value.trim(), displayName: document.querySelector('[data-f="displayName"]').value.trim() }, $('sDcTest'), $('sDcMsg'));
   $('sAddr').onclick = async () => { $('addrModal').hidden = false; await loadAddresses($('mQrCode'), $('mAddr')); };
   $('addrClose').onclick = () => { $('addrModal').hidden = true; };
