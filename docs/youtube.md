@@ -31,12 +31,21 @@ click afterwards.
    required.
 2. Scopes: none need to be added here; replaycut asks for
    `https://www.googleapis.com/auth/youtube` when you connect.
-3. **Publishing status**: click **Publish app** so the app is *In
-   production*. Google then shows an "unverified app" warning once when you
-   connect (click *Advanced › Go to replaycut*); that is expected and fine
-   for your own use. Do not leave the app in *Testing*: in that state Google
-   expires the connection after seven days and replaycut would ask you to
-   connect again every week.
+3. **Publishing status**: click **Publish app** (Google Auth Platform ›
+   Audience) so the app is *In production*. Google then shows an
+   "unverified app" warning once when you connect (click *Advanced › Go to
+   replaycut*); that is expected and fine for your own use. Do not leave
+   the app in *Testing*: in that state Google expires the connection after
+   seven days and replaycut would ask you to connect again every week.
+   Publishing an external app needs, under **Branding**, an application
+   home page and a privacy policy URL (`localhost` is refused). You may
+   point both at this repository:
+   - Application home page: `https://github.com/KallistoX/replaycut`
+   - Privacy policy: `https://github.com/KallistoX/replaycut/blob/main/docs/privacy.md`
+   - Authorized domains: `github.com`
+
+   Leave the logo empty: an app with a logo must pass Google's review
+   before it can be published.
 
 ## 3. Create the client
 
