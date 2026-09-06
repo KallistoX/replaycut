@@ -246,8 +246,9 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 .progress .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width var(--duration-slow); }
 .progress.err .bar i { background: var(--err); }
 .progress .stages { display: flex; gap: var(--space-4); font-size: var(--text-sm); color: var(--fg-muted); flex-wrap: wrap; }
-.progress .stages .on { color: var(--accent); font-weight: var(--weight-strong); }
-.progress .stages .done { color: var(--ok); }
+.progress .stages .st-on { color: var(--accent); font-weight: var(--weight-strong); }
+.progress .stages .st-done { color: var(--ok); }
+.progress .stages .st-skip { color: var(--fg-faint); font-style: italic; }
 .progress .stages .failed { color: var(--err); }
 
 /* ---------- result box ---------- */

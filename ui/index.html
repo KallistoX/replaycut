@@ -318,8 +318,9 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 .progress .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width var(--duration-slow); }
 .progress.err .bar i { background: var(--err); }
 .progress .stages { display: flex; gap: var(--space-4); font-size: var(--text-sm); color: var(--fg-muted); flex-wrap: wrap; }
-.progress .stages .on { color: var(--accent); font-weight: var(--weight-strong); }
-.progress .stages .done { color: var(--ok); }
+.progress .stages .st-on { color: var(--accent); font-weight: var(--weight-strong); }
+.progress .stages .st-done { color: var(--ok); }
+.progress .stages .st-skip { color: var(--fg-faint); font-style: italic; }
 .progress .stages .failed { color: var(--err); }
 
 .result { background: var(--surface); border: 1px solid var(--ok); border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
@@ -1512,7 +1513,9 @@ const short = b => { const p = (cfg.displayName || '').trim(); return p && b && 
 const audioLabel = id => (cfg.audio.find(a => a.id === id) || {}).label || id || 'Mix';
 function expiry() { return cfg.expireDays > 0 ? 'link expires in ' + cfg.expireDays + ' days' : 'link never expires'; }
 // size estimate (since 2.7): the share keeps the recording's quality, so the recording's own rate is the guide
-function plan(d) { const a = 128000; if (cfg.shareKbps > 0) { const vb = cfg.shareKbps * 1000; return { mb: (vb + a) * d / 8 / 1048576, kbps: vb / 1000 }; } const bps = cur && cur.size && cur.duration ? cur.size * 8 / cur.duration : 12e6; return { mb: (bps + a) * d / 8 / 1048576, kbps: 0 }; }
+function plan(d) { const a = 128000; if (cfg.shareKbps > 0) { const vb = cfg.shareKbps * 1000; return { mb: (vb + a) * d / 8 / 1048576, kbps: vb / 1000 }; } // H.264 needs more bits than the recording's codec for the same picture
+  const factor = { av1: 2.5, hevc: 2, h264: 1.3 }[(cur && cur.codec || '').toLowerCase()] || 2;
+  const bps = cur && cur.size && cur.duration ? cur.size * 8 / cur.duration * factor : 20e6; return { mb: (bps + a) * d / 8 / 1048576, kbps: 0 }; }
 
 function initClips() {
   v = $('v'); tl = $('tl'); sel = $('sel'); hin = $('hin'); hout = $('hout'); ph = $('ph');
@@ -1712,7 +1715,7 @@ async function deleteClip() {
 // the stages of a share: only the integrations that are on (API contract)
 // since 2.5 the post stage is called `notify` (2.4 and earlier said `discord`); both render the same
 // since 2.7 only the quick share (a share to the default storage) posts automatically
-function stageList(j) { const s = []; if (!j || !j.source) s.push(['encode', 'Cut + encode']); const target = j ? j.target : defaultTarget(); if (target && target !== 'file') s.push(['upload', 'Upload']); if (cfg.webhook && (!j || (!j.source && j.target === defaultTarget()))) s.push(['notify', 'Post']); return s; }
+function stageList(j) { const s = []; if (!j || !j.source) s.push(['encode', 'Cut + encode']); const target = j ? j.target : defaultTarget(); if (target && target !== 'file') s.push(['upload', 'Upload']); if (cfg.webhook) { if (!j || (!j.source && j.target === defaultTarget())) s.push(['notify', 'Post']); else if (target && target !== 'file') s.push(['nopost', 'no auto-post (use "Post to" afterwards)']); } return s; }
 const STAGE_TEXT = { queued: 'Queued …', encode: 'Encoding', upload: 'Uploading …', discord: 'Posting …', notify: 'Posting …' };
 function showProgress(j) {
   const p = $('prog'); if (!j || j.stage === 'done' || j.stage === 'error' || j.stage === 'cancelled') { p.hidden = true; return; }
@@ -1726,7 +1729,7 @@ function showProgress(j) {
   $('progPct').textContent = pct + ' %';
   $('progBar').style.width = pct + '%';
   const list = j.kind === 'preview' ? [['encode', 'Encode 720p']] : stageList(j), idx = list.findIndex(([id]) => id === j.stage || (id === 'notify' && j.stage === 'discord'));
-  $('stages').innerHTML = list.map(([id, label], i) => `<span class="${i < idx ? 'done' : (i === idx ? 'on' : '')}">${i + 1} ${label}</span>`).join('');
+  $('stages').innerHTML = list.map(([id, label], i) => `<span class="${id === 'nopost' ? 'st-skip' : (i < idx ? 'st-done' : (i === idx ? 'st-on' : ''))}">${id === 'nopost' ? '' : (i + 1) + ' '}${label}</span>`).join('');
 }
 function showResult(r) {
   const box = $('result'); if (!r) { box.hidden = true; return; }
@@ -1840,7 +1843,7 @@ function defaultTarget() { const q = storageTargets().find(t => t.quickShare); r
 function buildShareMenu() {
   const m = $('shareMenu'); m.innerHTML = '';
   const def = defaultTarget();
-  storageTargets().forEach(t => { const b = document.createElement('button'); b.innerHTML = `<svg class="icon icon-sm"><use href="#i-share"/></svg> Share to ${esc(t.label)}${t.id === def ? ' <span class="muted sm">default</span>' : ''}`; b.onclick = () => { m.hidden = true; share(t.id); }; m.appendChild(b); });
+  storageTargets().forEach(t => { const b = document.createElement('button'); b.innerHTML = `<svg class="icon icon-sm"><use href="#i-share"/></svg> Share to ${esc(t.label)}${t.id === def ? ' <span class="muted sm">default' + (cfg.webhook ? ', posts' : '') + '</span>' : (cfg.webhook ? ' <span class="muted sm">no auto-post</span>' : '')}`; b.onclick = () => { m.hidden = true; share(t.id); }; m.appendChild(b); });
   const f = document.createElement('button'); f.innerHTML = `<svg class="icon icon-sm"><use href="#i-folder"/></svg> File only${def === 'file' ? ' <span class="muted sm">default</span>' : ''}`; f.onclick = () => { m.hidden = true; share('file'); }; m.appendChild(f);
 }
 async function share(target) {

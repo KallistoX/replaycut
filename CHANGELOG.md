@@ -24,6 +24,14 @@ contract.
   to" stay quiet, and the result card and the history offer "Post to ..."
   instead (`POST /api/jobs/<id>/post`).
 - The share mode "Fast copy" is now called "As recorded (no re-encode)".
+- The Share menu says which target posts automatically, the progress card
+  shows "no auto-post" for the others, and the size estimate accounts for
+  the recording's codec (an AV1 recording grows about 2.5x as H.264).
+
+### Fixed
+
+- The stage list under the progress bar broke its layout as soon as a
+  stage was done: the wizard's "done" page style leaked into it.
 
 ## [2.6.1] - 2026-09-06
 
