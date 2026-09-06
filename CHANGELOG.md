@@ -60,6 +60,11 @@ browser that cannot play the recording gets a playable copy on demand.
 - Notify integrations receive the share as structured data (title, clip,
   target, link, time); the Discord post itself is unchanged.
 
+### Fixed
+
+- "Publish to ..." on a history entry from before the last restart answered
+  "unknown job"; the source is now read from the history as well.
+
 ## [2.5.0] - 2026-09-05
 
 Share where you like: every configured storage is a target with its own

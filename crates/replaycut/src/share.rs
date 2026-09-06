@@ -271,10 +271,22 @@ pub fn publish(
     target: &str,
 ) -> Result<(String, usize), ShareError> {
     let mut inner = state.inner.lock();
+    // the source may be a job of this run or, after a restart, a history entry
     let src = inner
         .jobs
         .get(source)
         .cloned()
+        .or_else(|| {
+            inner
+                .history
+                .iter()
+                .find(|e| e["id"] == source)
+                .and_then(|e| serde_json::from_value::<Job>(e.clone()).ok())
+                .map(|mut j| {
+                    j.ok = Some(true);
+                    j
+                })
+        })
         .ok_or_else(|| ShareError::UnknownJob(source.to_string()))?;
     let Some(file) = src.file.clone().filter(|_| src.ok == Some(true)) else {
         return Err(ShareError::Invalid(

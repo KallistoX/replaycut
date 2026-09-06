@@ -86,7 +86,7 @@ pub struct Clip {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct Job {
     pub id: String,
     pub base: String,
@@ -157,7 +157,8 @@ fn default_kind() -> String {
 }
 
 fn is_share(kind: &str) -> bool {
-    kind == "share"
+    // `Job::default()` leaves the kind empty: that is a share too
+    kind.is_empty() || kind == "share"
 }
 
 pub const KIND_PREVIEW: &str = "preview";
@@ -1072,6 +1073,32 @@ pub async fn quota_loop(state: Arc<AppState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn history_entry_reads_back_as_a_job() {
+        let job = Job {
+            id: "abc".into(),
+            base: "Replay 1".into(),
+            target: "nextcloud".into(),
+            file: Some("Replay_1_0-5.mp4".into()),
+            stage: "done".into(),
+            ok: Some(true),
+            ..Job::default()
+        };
+        let back: Job = serde_json::from_value(job.history_entry()).unwrap();
+        assert_eq!(back.id, "abc");
+        assert_eq!(back.file.as_deref(), Some("Replay_1_0-5.mp4"));
+        assert_eq!(back.target, "nextcloud");
+        assert!(!back.is_preview());
+        assert!(back.stage.is_empty() && back.ok.is_none());
+        // an entry from 2.4 without the fields of later versions
+        let old: Job = serde_json::from_value(serde_json::json!({
+            "id": "old1", "base": "Replay 2", "file": "Replay_2_0-5.mp4", "seconds": 5.0
+        }))
+        .unwrap();
+        assert_eq!(old.mode, "h264");
+        assert_eq!(old.target, "");
+    }
 
     #[test]
     fn history_entry_drops_transient_fields() {

@@ -687,9 +687,11 @@ Settings: `integrations.nextcloud.quickShare` (default true) and
 that storage without cutting again: a new job with `source: "<id>"`, the
 same base, range, audio, mode, title and file, stages `queued -> upload ->
 notify -> done`, queued like any share (`202 { ok, job, position, source }`).
-400 for `file`, an unconfigured target or a source without a finished file;
-404 for an unknown job; 409 when the same publish is already running or
-waiting; 429 when the queue is full.
+The source may be a job of this run or a history entry (since 2.6.0; before
+that, entries from before the last restart answered 404). 400 for `file`,
+an unconfigured target or a source without a finished file; 404 for an
+unknown job; 409 when the same publish is already running or waiting; 429
+when the queue is full.
 
 ### OneDrive and `GET /api/oauth/<provider>`
 
