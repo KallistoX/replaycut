@@ -216,6 +216,12 @@ pub fn get_json(path: &str) -> (u16, Value) {
     to_json(get(path))
 }
 
+/// The body of a response that was read for its headers first.
+pub fn to_value(resp: Response) -> Value {
+    let text = resp.text().unwrap_or_default();
+    serde_json::from_str(&text).unwrap_or(Value::String(text))
+}
+
 /// A GET that names another host, for the Host check of 2.8.
 pub fn get_with_host(path: &str, host: &str) -> (u16, Value) {
     to_json(

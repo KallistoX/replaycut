@@ -361,6 +361,8 @@ pub struct AppState {
     pub started: std::time::Instant,
     pub started_at: String,
     pub sessions: Sessions,
+    /// The device login: devices waiting for this PC (since 2.8).
+    pub pairing: crate::pairing::Pairing,
     /// Set by main once the shutdown handle exists (for `POST /api/restart`).
     pub shutdown: std::sync::OnceLock<Shutdown>,
     /// The settings the process started with; restart-only fields are
@@ -514,6 +516,7 @@ impl AppState {
             started: std::time::Instant::now(),
             started_at: util::now_local(),
             sessions,
+            pairing: crate::pairing::Pairing::new(),
             shutdown: std::sync::OnceLock::new(),
             pending_restart: Mutex::new(Vec::new()),
             inner: Mutex::new(inner),
@@ -552,6 +555,11 @@ impl AppState {
     /// request (since 2.8): cheaper than cloning all settings.
     pub fn allowed_hosts(&self) -> Vec<String> {
         self.settings.read().allowed_hosts.clone()
+    }
+
+    /// Whether this PC has to sign in as well (since 2.8).
+    pub fn require_login_on_loopback(&self) -> bool {
+        self.settings.read().require_login_on_loopback
     }
 
     /// What `GET /api/session` reports as `network` (since 2.8): the bind

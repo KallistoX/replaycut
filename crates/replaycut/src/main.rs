@@ -27,6 +27,7 @@ mod obs_link;
 mod obs_status;
 mod obs_ws;
 mod onedrive;
+mod pairing;
 mod platform;
 mod s3;
 mod scanner;

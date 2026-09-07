@@ -46,6 +46,9 @@ pub struct Settings {
     /// name and any IP address (since 2.8): own DNS names and reverse
     /// proxies. Everything else gets a 421.
     pub allowed_hosts: Vec<String>,
+    /// Ask for the password on this PC as well (since 2.8), for a Windows
+    /// account other people use.
+    pub require_login_on_loopback: bool,
     pub integrations: Integrations,
     /// obs-websocket on this PC (the password lives in the Credential Manager).
     pub obs: Obs,
@@ -369,6 +372,7 @@ impl Default for Settings {
             preview_h264: "onDemand".into(),
             password_hash: None,
             allowed_hosts: Vec::new(),
+            require_login_on_loopback: false,
             integrations: Integrations::default(),
             obs: Obs::default(),
         }
@@ -412,9 +416,10 @@ pub fn is_theme_name(name: &str) -> bool {
 
 /// Top-level keys `PUT /api/settings` accepts, and the nested ones below
 /// `integrations`. Anything else is a 400 with the offending name.
-const PATCH_KEYS: [&str; 17] = [
+const PATCH_KEYS: [&str; 18] = [
     "obs",
     "allowedHosts",
+    "requireLoginOnLoopback",
     "previewH264",
     "clipDir",
     "port",

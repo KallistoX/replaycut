@@ -534,9 +534,22 @@ pub async fn origin_check(req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
+/// Whether the client is signed in, or is this PC and does not have to be.
+/// Since 2.8 `requireLoginOnLoopback` makes this PC sign in as well, for a
+/// Windows account other people use.
+pub fn is_authenticated(state: &AppState, addr: &SocketAddr, headers: &HeaderMap) -> bool {
+    if cookie_token(headers).is_some_and(|t| state.sessions.is_valid(&t)) {
+        return true;
+    }
+    if !state.password_set() {
+        return true;
+    }
+    is_loopback(addr) && !state.require_login_on_loopback()
+}
+
 /// With a password set, `/api/*` and `/media/*` need a session unless the
-/// client is this machine. Pages, themes, the session probe and the login
-/// itself stay open.
+/// client is this machine. Pages, themes, the session probe, the login and
+/// the device login (since 2.8) stay open.
 pub async fn guard(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -545,9 +558,12 @@ pub async fn guard(
 ) -> Response {
     let path = req.uri().path();
     let protected = path.starts_with("/api/") || path.starts_with("/media/");
-    let open = matches!(path, "/api/session" | "/api/login" | "/api/logout");
-    if protected && !open && !is_loopback(&addr) && state.password_set() {
-        let ok = cookie_token(req.headers()).is_some_and(|t| state.sessions.is_valid(&t));
+    // the device login is the way in for a device that has no session yet;
+    // its own handlers decide who may see and answer the requests
+    let open = matches!(path, "/api/session" | "/api/login" | "/api/logout")
+        || path.starts_with("/api/pair/");
+    if protected && !open {
+        let ok = is_authenticated(&state, &addr, req.headers());
         if !ok {
             return (
                 StatusCode::UNAUTHORIZED,

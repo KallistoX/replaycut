@@ -22,6 +22,8 @@ pub struct TrayInfo {
     pub paused: bool,
     /// A newer release is known.
     pub update: Option<String>,
+    /// Devices waiting for a sign-in (since 2.8).
+    pub pending: usize,
 }
 
 impl TrayInfo {
@@ -47,10 +49,24 @@ impl TrayInfo {
                 .latest
                 .as_ref()
                 .map(|l| l.version.clone()),
+            pending: state.pairing.pending_count(),
+        }
+    }
+
+    /// The menu entry that opens the approve page (since 2.8).
+    pub fn sign_in_label(&self) -> String {
+        match self.pending {
+            0 => "No sign-in requests".to_string(),
+            1 => "1 sign-in request".to_string(),
+            n => format!("{n} sign-in requests"),
         }
     }
 
     pub fn tooltip(&self) -> String {
+        // a request runs out in two minutes: it comes first
+        if self.pending > 0 {
+            return format!("replaycut - {}", self.sign_in_label().to_lowercase());
+        }
         if let Some(p) = self.sharing {
             return if self.queued > 0 {
                 format!("replaycut - sharing ... {p} % (+{} queued)", self.queued)
@@ -200,6 +216,14 @@ mod win {
         }
     }
 
+    /// "N sign-in requests": the approve page, over loopback (since 2.8).
+    fn show_requests(state: &AppState) {
+        let url = format!("{}approve", state.ui_url());
+        if let Err(e) = platform::open_url(&url) {
+            tracing::warn!("cannot open {url}: {e}");
+        }
+    }
+
     fn open_log_folder(state: &AppState) {
         let dir = state.data_dir.join("logs");
         let _ = std::fs::create_dir_all(&dir);
@@ -231,6 +255,8 @@ mod win {
         let open = MenuItem::with_id("open", "Open", true, None);
         let copy = MenuItem::with_id("copy", "Copy address", true, None);
         let qr = MenuItem::with_id("qr", "Show QR code", true, None);
+        let mut info = TrayInfo::of(&state);
+        let sign_in = MenuItem::with_id("signin", info.sign_in_label(), info.pending > 0, None);
         let pause = CheckMenuItem::with_id("pause", "Pause scanning", true, false, None);
         let check = MenuItem::with_id("check", "Check for updates", true, None);
         let logs = MenuItem::with_id("logs", "Open log folder", true, None);
@@ -239,6 +265,7 @@ mod win {
             &open,
             &copy,
             &qr,
+            &sign_in,
             &PredefinedMenuItem::separator(),
             &pause,
             &check,
@@ -256,6 +283,7 @@ mod win {
             "open" => open_ui(&st),
             "copy" => copy_address(&st),
             "qr" => show_qr(&st),
+            "signin" => show_requests(&st),
             "pause" => st.set_scanning_paused(!st.scanning_paused()),
             "check" => check_updates(st.clone(), &handle),
             "logs" => open_log_folder(&st),
@@ -275,7 +303,6 @@ mod win {
         }));
 
         let icons = Icons::load()?;
-        let mut info = TrayInfo::of(&state);
         let tray = TrayIconBuilder::new()
             .with_tooltip(info.tooltip())
             .with_icon(icons.get(info.icon()).clone())
@@ -307,6 +334,10 @@ mod win {
                         // paused through the API: keep the tick in step
                         if pause.is_checked() != now.paused {
                             pause.set_checked(now.paused);
+                        }
+                        if now.pending != info.pending {
+                            sign_in.set_text(now.sign_in_label());
+                            sign_in.set_enabled(now.pending > 0);
                         }
                         info = now;
                     }
@@ -355,9 +386,11 @@ mod tests {
             queued: 0,
             paused: false,
             update: None,
+            pending: 0,
         };
         assert_eq!(idle.tooltip(), "replaycut - 1 clip");
         assert_eq!(idle.icon(), IconState::Normal);
+        assert_eq!(idle.sign_in_label(), "No sign-in requests");
         let many = TrayInfo {
             clips: 12,
             ..idle.clone()
@@ -400,5 +433,17 @@ mod tests {
             with_queue.tooltip(),
             "replaycut - sharing ... 3 % (+2 queued)"
         );
+        // a device waiting for an answer runs out in two minutes: it wins
+        let asking = TrayInfo {
+            pending: 1,
+            ..with_queue.clone()
+        };
+        assert_eq!(asking.tooltip(), "replaycut - 1 sign-in request");
+        assert_eq!(asking.sign_in_label(), "1 sign-in request");
+        let two = TrayInfo {
+            pending: 2,
+            ..with_queue
+        };
+        assert_eq!(two.tooltip(), "replaycut - 2 sign-in requests");
     }
 }

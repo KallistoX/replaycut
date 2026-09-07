@@ -56,6 +56,16 @@ impl Toast {
         }
     }
 
+    /// A device in the network wants to sign in (since 2.8). "Review"
+    /// opens the approve page over loopback, which needs no login.
+    pub fn sign_in_request(name: &str, ip: &str, code: &str, approve_url: &str) -> Self {
+        Self {
+            title: "Sign-in request".into(),
+            text: format!("{name} ({ip}) wants to sign in - code {code}. Review it here"),
+            url: Some(approve_url.to_string()),
+        }
+    }
+
     /// The replay buffer stopped while OBS keeps running (obs-websocket).
     pub fn replay_buffer_stopped(ui_url: &str) -> Self {
         Self {
@@ -226,6 +236,22 @@ mod tests {
         let t = Toast::share_result(&failed, true, "http://localhost:8420/");
         assert_eq!(t.title, "Share failed");
         assert_eq!(t.text, "ffmpeg: boom");
+    }
+
+    #[test]
+    fn sign_in_request_toast_names_the_device_and_the_code() {
+        let t = Toast::sign_in_request(
+            "iPhone, Safari",
+            "192.168.1.23",
+            "4F7K",
+            "http://127.0.0.1:8420/approve/abc",
+        );
+        assert_eq!(t.title, "Sign-in request");
+        assert_eq!(
+            t.text,
+            "iPhone, Safari (192.168.1.23) wants to sign in - code 4F7K. Review it here"
+        );
+        assert_eq!(t.url.as_deref(), Some("http://127.0.0.1:8420/approve/abc"));
     }
 
     #[test]

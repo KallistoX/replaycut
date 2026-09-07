@@ -2162,3 +2162,149 @@ fn t44_password_rules_the_generator_and_the_network_switch() {
         assert_eq!(v["ok"], false, "{v}");
     }
 }
+
+/// The alphabet of the pairing code: no letters that can be misread.
+const CODE_ALPHABET: &str = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+fn ask_for_access(name: &str) -> (String, String) {
+    let (status, v) = post_json("/api/pair/request", &json!({ "name": name }));
+    assert_eq!(status, 202, "POST /api/pair/request: {v}");
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(v["expires"], 120, "{v}");
+    let id = v["id"].as_str().unwrap_or("").to_string();
+    let code = v["code"].as_str().unwrap_or("").to_string();
+    assert_eq!(id.len(), 32, "{v}");
+    assert_eq!(code.chars().count(), 4, "{v}");
+    assert!(
+        code.chars().all(|c| CODE_ALPHABET.contains(c)),
+        "code {code} has a character that can be misread"
+    );
+    (id, code)
+}
+
+#[test]
+fn t45_the_device_login_hands_the_cookie_over_once() {
+    let _g = serial();
+    if !since_28() {
+        eprintln!("skipped: needs replaycut 2.8");
+        return;
+    }
+    let (id, code) = ask_for_access("Contract test device");
+
+    // this PC sees the request, with the same code
+    let (status, p) = get_json("/api/pair/pending");
+    assert_eq!(status, 200, "{p}");
+    let mine = p["pending"]
+        .as_array()
+        .expect("pending")
+        .iter()
+        .find(|r| r["id"] == id.as_str())
+        .unwrap_or_else(|| panic!("the request is not listed: {p}"))
+        .clone();
+    assert_eq!(mine["name"], "Contract test device", "{mine}");
+    assert_eq!(mine["code"], code.as_str(), "{mine}");
+    assert!(!mine["ip"].as_str().unwrap_or("").is_empty(), "{mine}");
+    assert!(mine["expires"].as_u64().unwrap_or(0) > 60, "{mine}");
+    // and the open UI learns about it through the state document
+    let st = state();
+    assert!(
+        st["pending"]
+            .as_array()
+            .expect("pending in the state")
+            .iter()
+            .any(|r| r["id"] == id.as_str()),
+        "{st}"
+    );
+
+    // the device waits
+    let (status, s) = get_json(&format!("/api/pair/{id}"));
+    assert_eq!(status, 200, "{s}");
+    assert_eq!(s["status"], "pending", "{s}");
+
+    // this PC allows it
+    let (status, a) = post_json(&format!("/api/pair/{id}/approve"), &json!({}));
+    assert_eq!(status, 200, "{a}");
+    assert_eq!(a["ok"], true, "{a}");
+    let (_, p) = get_json("/api/pair/pending");
+    assert!(
+        !p["pending"]
+            .as_array()
+            .expect("pending")
+            .iter()
+            .any(|r| r["id"] == id.as_str()),
+        "an answered request is not waiting any more: {p}"
+    );
+
+    // the next poll of that device carries the cookie - once
+    let res = get(&format!("/api/pair/{id}"));
+    assert_eq!(res.status().as_u16(), 200);
+    let cookie = res
+        .headers()
+        .get("set-cookie")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    assert!(cookie.contains("rc_session="), "set-cookie: {cookie:?}");
+    assert!(cookie.contains("HttpOnly"), "set-cookie: {cookie:?}");
+    assert!(cookie.contains("SameSite=Strict"), "set-cookie: {cookie:?}");
+    let body: serde_json::Value = res.json().expect("poll body");
+    assert_eq!(body["status"], "approved", "{body}");
+    let again = get(&format!("/api/pair/{id}"));
+    assert!(
+        again.headers().get("set-cookie").is_none(),
+        "the token is handed over once"
+    );
+    assert_eq!(
+        to_value(again)["status"],
+        "approved",
+        "the device may still ask how it went"
+    );
+
+    // a decision that came too late, and one for a request nobody made
+    let (status, v) = post_json(&format!("/api/pair/{id}/approve"), &json!({}));
+    assert_eq!(status, 409, "{v}");
+    let (status, v) = post_json(
+        "/api/pair/0123456789abcdef0123456789abcdef/deny",
+        &json!({}),
+    );
+    assert_eq!(status, 404, "{v}");
+
+    // a QR code that was used up or is too old lands on the login page
+    let res = client()
+        .get(url("/?pair=nonsense"))
+        .send()
+        .expect("GET /?pair=");
+    assert!(
+        res.url().path() == "/login" || res.status().as_u16() == 303,
+        "a stale QR token goes to the login page, got {} {}",
+        res.status(),
+        res.url()
+    );
+}
+
+#[test]
+fn t46_a_denied_request_and_one_that_is_gone() {
+    let _g = serial();
+    if !since_28() {
+        eprintln!("skipped: needs replaycut 2.8");
+        return;
+    }
+    let (id, _) = ask_for_access("Contract test deny");
+    let (status, v) = post_json(&format!("/api/pair/{id}/deny"), &json!({}));
+    assert_eq!(status, 200, "{v}");
+    let (status, s) = get_json(&format!("/api/pair/{id}"));
+    assert_eq!(status, 200, "{s}");
+    assert_eq!(s["status"], "denied", "{s}");
+    let res = get(&format!("/api/pair/{id}"));
+    assert!(
+        res.headers().get("set-cookie").is_none(),
+        "a denied device gets no cookie"
+    );
+
+    // A request that ran out answers the same way as one that never existed:
+    // the device starts over and learns nothing about other requests. (The
+    // two minutes themselves are covered by the unit tests.)
+    let (status, s) = get_json("/api/pair/ffffffffffffffffffffffffffffffff");
+    assert_eq!(status, 200, "{s}");
+    assert_eq!(s["status"], "expired", "{s}");
+}

@@ -999,6 +999,61 @@ Besides `authenticated`, `loopback` and `passwordSet`:
 | `network` | `loopback` (bind `127.0.0.1` or `::1`), `lan` (`0.0.0.0` or `::`) or `custom` (any other bind address). |
 | `pairing` | Whether the device login accepts requests. |
 
+### The device login
+
+A device that has no session asks, and the PC answers. Everything about a
+request lives in memory: at most five open at a time, two minutes each.
+
+- `POST /api/pair/request { name }` -> `202 { ok: true, id, code, expires }`.
+  `id` is 16 random bytes as hex, `code` four characters out of
+  `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (shown on both sides, never typed),
+  `expires` the seconds the request lives. An empty or missing `name` is
+  filled in from the `User-Agent`. The service records name, agent, address
+  and time, shows a toast whose button opens `/approve/<id>` over loopback,
+  counts the request in the tray and puts it into `pending` (below).
+  `429 { ok: false, error }` when the device login is paused or when there
+  are too many requests: at most five open, five a minute; requests from
+  more than three addresses within a minute pause the device login for ten
+  minutes (the password login keeps working, and `GET /api/session` reports
+  `pairing: false`).
+- `GET /api/pair/<id>` -> `200 { ok: true, status }` with `status` one of
+  `pending`, `approved`, `denied`, `expired`. The device polls it every two
+  seconds. The first answer after an approval carries the `Set-Cookie` for
+  `rc_session`; every later one does not. A poll from another address than
+  the one that asked answers `denied`, and an unknown or forgotten `id`
+  answers `expired`.
+- `POST /api/pair/<id>/approve`, `POST /api/pair/<id>/deny` ->
+  `200 { ok: true, name }`, only for loopback and signed-in clients
+  (`401` otherwise). `404` for an unknown request, `409` for one that is
+  already answered or has run out. An approval creates the session with the
+  device's name and `via: approve`.
+- `GET /api/pair/pending` -> `200 { ok: true, pending: [...] }`, the same
+  list as below, for the approve page.
+- `GET /api/clips` and the `state` event of `GET /api/events` carry
+  `pending: [ { id, name, agent, ip, code, asked, expires } ]` **for
+  loopback and signed-in clients only** - the code belongs to the person
+  who decides. Other clients see no such field.
+
+### QR pairing
+
+`GET /api/addresses` answers loopback and signed-in clients with a QR code
+whose URL carries `?pair=<token>` (32 random bytes, base64url, good once
+and for two minutes) and sets `qrSignsIn: true`; every other client gets
+the plain address and `qrSignsIn: false`. The listed `urls` never carry a
+token. A page that shows the code asks for a new one every 90 s.
+
+`GET /?pair=<token>` redeems it: `303` to `/` with the `Set-Cookie` for a
+session (`via: qr`), or `303` to `/login?pair=expired` when the token is
+used up or too old. Tokens are stored as SHA-256 and never logged.
+
+### `requireLoginOnLoopback`
+
+Settings flag, default `false`. With it, this PC needs the login as well -
+for a Windows account other people use. It applies to `/api/*` and
+`/media/*` as for any other client, and therefore to answering sign-in
+requests: the approve page asks for the password first, and the waiting
+device keeps waiting.
+
 ### `POST /api/network/enable`, `POST /api/network/disable`
 
 Turn access from other devices on and off. `enable` answers

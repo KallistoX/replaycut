@@ -434,8 +434,14 @@ pub async fn test_discord(
 }
 
 /// `GET /api/addresses`: how other devices reach this service, with a QR
-/// code (SVG) for the first address.
-pub async fn addresses(State(app): State<App>) -> Json<Value> {
+/// code (SVG) for the first address. Since 2.8 that code signs the phone
+/// in: its URL carries a one-time token, which only this PC and signed-in
+/// devices get - whoever sees the code is at the PC or already in.
+pub async fn addresses(
+    State(app): State<App>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Json<Value> {
     let settings = app.settings();
     let port = settings.port;
     let mut urls = Vec::new();
@@ -447,11 +453,17 @@ pub async fn addresses(State(app): State<App>) -> Json<Value> {
         }
     }
     urls.push(format!("http://localhost:{port}/"));
+    let signs_in = !local && auth::is_authenticated(&app, &addr, &headers);
     // A QR code for localhost would only lead a phone to itself.
     let qr_svg = if local {
         String::new()
     } else {
-        qrcode::QrCode::new(urls[0].as_bytes())
+        let target = if signs_in {
+            format!("{}?pair={}", urls[0], app.pairing.qr_token())
+        } else {
+            urls[0].clone()
+        };
+        qrcode::QrCode::new(target.as_bytes())
             .map(|code| {
                 code.render::<qrcode::render::svg::Color>()
                     .min_dimensions(160, 160)
@@ -467,6 +479,8 @@ pub async fn addresses(State(app): State<App>) -> Json<Value> {
         "local": local,
         "urls": urls,
         "qrSvg": qr_svg,
+        // since 2.8: whether scanning the code signs the phone in
+        "qrSignsIn": signs_in,
     }))
 }
 
@@ -500,18 +514,156 @@ pub async fn session(
 ) -> Json<Value> {
     let loopback = auth::is_loopback(&addr);
     let password_set = app.password_set();
-    let has_session = auth::cookie_token(&headers).is_some_and(|t| app.sessions.is_valid(&t));
     Json(json!({
-        "authenticated": !password_set || loopback || has_session,
+        "authenticated": auth::is_authenticated(&app, &addr, &headers),
         "loopback": loopback,
         "passwordSet": password_set,
         // since 2.8: the pages say the name of this PC instead of "this PC",
         // which is wrong on a phone
         "host": platform::hostname(),
         "network": app.network_mode(),
-        // the device login arrives in 2.8 as well; until then nobody can ask
-        "pairing": false,
+        // false while the device login is paused after a flood
+        "pairing": app.pairing.paused().is_none(),
     }))
+}
+
+// ---------------------------------------------------------- device login
+
+fn user_agent(headers: &HeaderMap) -> &str {
+    headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+}
+
+/// Only this PC and signed-in devices see and answer sign-in requests.
+fn require_trust(app: &AppState, addr: &SocketAddr, headers: &HeaderMap) -> Result<(), ApiError> {
+    if auth::is_authenticated(app, addr, headers) {
+        Ok(())
+    } else {
+        Err(ApiError::new(StatusCode::UNAUTHORIZED, "login required"))
+    }
+}
+
+/// `POST /api/pair/request { name }` (since 2.8): a device asks for access.
+/// The PC learns about it through a toast, the open UI and the tray.
+pub async fn pair_request(
+    State(app): State<App>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let v = parse_json(&headers, &body)?;
+    let agent = user_agent(&headers);
+    let name = match v["name"].as_str().map(str::trim).unwrap_or("") {
+        "" => auth::device_name(agent),
+        n => n.to_string(),
+    };
+    match app.pairing.ask(&name, agent, addr.ip()) {
+        Ok((id, code, expires)) => {
+            crate::pairing::watch(&app);
+            let url = format!("http://127.0.0.1:{}/approve/{id}", app.settings().port);
+            crate::toast::show(
+                &app,
+                crate::toast::Toast::sign_in_request(&name, &addr.ip().to_string(), &code, &url),
+            );
+            app.tray_changed();
+            Ok((
+                StatusCode::ACCEPTED,
+                Json(json!({ "ok": true, "id": id, "code": code, "expires": expires })),
+            )
+                .into_response())
+        }
+        Err(crate::pairing::Refused::Paused(seconds)) => Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            format!(
+                "too many sign-in requests - the device login pauses for {seconds} s, the password still works"
+            ),
+        )),
+        Err(crate::pairing::Refused::TooMany) => Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many sign-in requests at once - try again in a minute",
+        )),
+    }
+}
+
+/// `GET /api/pair/<id>` (since 2.8): the device asks how it is going. The
+/// cookie comes with the first answer after an approval.
+pub async fn pair_poll(
+    State(app): State<App>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Path(id): Path<String>,
+) -> Response {
+    let (status, token) = app.pairing.poll(&id, addr.ip());
+    let mut res = Json(json!({ "ok": true, "status": status })).into_response();
+    if let Some(token) = token {
+        if let Ok(v) = auth::set_cookie_value(&token).parse() {
+            res.headers_mut().insert(SET_COOKIE, v);
+        }
+    }
+    res
+}
+
+/// `GET /api/pair/pending` (since 2.8): what the approve page shows.
+pub async fn pair_pending(
+    State(app): State<App>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    require_trust(&app, &addr, &headers)?;
+    Ok(Json(
+        json!({ "ok": true, "pending": app.pairing.pending() }),
+    ))
+}
+
+/// `POST /api/pair/<id>/approve` (since 2.8): the device gets a session
+/// with the name it asked under.
+pub async fn pair_approve(
+    State(app): State<App>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    require_trust(&app, &addr, &headers)?;
+    let sessions = &app.sessions;
+    let request = app
+        .pairing
+        .approve(&id, |r| {
+            sessions.create(auth::NewSession {
+                name: r.name.clone(),
+                agent: r.agent.clone(),
+                ip: r.ip.to_string(),
+                via: auth::Via::Approve,
+            })
+        })
+        .map_err(decided_error)?;
+    app.tray_changed();
+    Ok(Json(json!({ "ok": true, "name": request.name })))
+}
+
+/// `POST /api/pair/<id>/deny` (since 2.8).
+pub async fn pair_deny(
+    State(app): State<App>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    require_trust(&app, &addr, &headers)?;
+    let request = app.pairing.deny(&id).map_err(decided_error)?;
+    app.tray_changed();
+    Ok(Json(json!({ "ok": true, "name": request.name })))
+}
+
+fn decided_error(e: crate::pairing::NotDecided) -> ApiError {
+    match e {
+        crate::pairing::NotDecided::Unknown => {
+            ApiError::new(StatusCode::NOT_FOUND, "unknown sign-in request")
+        }
+        crate::pairing::NotDecided::Settled => ApiError::new(
+            StatusCode::CONFLICT,
+            "this sign-in request is already answered or has run out",
+        ),
+    }
 }
 
 /// `GET /api/password/suggest` (since 2.8): four words from the EFF short

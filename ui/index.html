@@ -448,6 +448,11 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 /* ---- page: login and placeholders ---- */
 .centered { min-height: calc(100vh - var(--topbar-h)); display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
 .centered .card { width: 100%; max-width: 380px; }
+/* the device login (since 2.8): the code both sides show, and the request card */
+.pair-code { font-family: var(--font-mono); font-size: 2rem; letter-spacing: 0.3em; text-indent: 0.3em; text-align: center; color: var(--accent); }
+.pair-rows { display: flex; flex-direction: column; gap: var(--space-1); }
+.pair-rows > div { display: flex; justify-content: space-between; gap: var(--space-3); }
+.pair-rows b { color: var(--fg); font-weight: var(--weight-strong); overflow-wrap: anywhere; }
 .brand { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-lg); font-weight: var(--weight-strong); }
 .brand .icon { color: var(--accent); width: 28px; height: 28px; }
 </style>
@@ -571,17 +576,48 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 
 <!-- ===================== Login ===================== -->
 <div class="centered" id="page-login" hidden>
-  <form class="card" id="loginForm">
-    <div class="brand"><svg class="icon"><use href="#i-logo"/></svg> replaycut</div>
-    <p class="muted sm">This replaycut asks other devices for a password. Signing in keeps this browser logged in for 30 days.</p>
-    <div class="field" id="pwField">
-      <label for="pw">Password</label>
-      <div class="input-group"><input class="input" id="pw" type="password" autocomplete="current-password" autofocus><button class="btn btn-icon" type="button" id="pwEye" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div>
-      <span class="error" id="pwError" hidden></span>
-    </div>
-    <button class="btn btn-primary" id="loginBtn" type="submit">Sign in</button>
-    <p class="muted xs">Forgot it? On the PC itself no password is needed: open the UI there and set a new one in Settings.</p>
-  </form>
+  <div class="card">
+    <div class="brand"><svg class="icon"><use href="#i-logo"/></svg> <span id="loginTitle">replaycut</span></div>
+    <p class="error" id="loginNote" hidden></p>
+
+    <section class="stack-3" id="loginAsk">
+      <p class="muted sm">Ask for access and let someone at the PC allow it. This browser then stays signed in for 30 days.</p>
+      <div class="field">
+        <label for="devName">This device</label>
+        <input class="input" id="devName" autocomplete="off" maxlength="60">
+        <span class="hint">The name the PC shows, and the one in the device list.</span>
+      </div>
+      <button class="btn btn-primary" id="askBtn" type="button">Ask</button>
+      <p class="muted xs"><a href="#password" id="showPw">Or sign in with the password</a></p>
+    </section>
+
+    <section class="stack-3" id="loginWait" hidden>
+      <div class="pair-code" id="waitCode"></div>
+      <p class="muted sm" id="waitText"></p>
+      <div class="row"><span class="spinner"></span><span class="muted xs" id="waitLeft"></span></div>
+      <button class="btn" id="waitCancel" type="button">Cancel</button>
+    </section>
+
+    <form class="stack-3" id="loginForm" hidden>
+      <div class="field" id="pwField">
+        <label for="pw">Password</label>
+        <div class="input-group"><input class="input" id="pw" type="password" autocomplete="current-password"><button class="btn btn-icon" type="button" id="pwEye" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div>
+        <span class="error" id="pwError" hidden></span>
+      </div>
+      <button class="btn btn-primary" id="loginBtn" type="submit">Sign in</button>
+      <p class="muted xs"><a href="#ask" id="showAsk">Ask instead</a> · Forgot it? On the PC itself no password is needed: open the UI there and set a new one in Settings.</p>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== Sign-in requests (since 2.8) ===================== -->
+<div class="centered" id="page-approve" hidden>
+  <div class="card">
+    <h2>Sign-in requests</h2>
+    <p class="muted sm">A device in your network wants to use this replaycut. Allow it only if you know what it is.</p>
+    <div class="stack-4" id="apList"></div>
+    <p class="muted sm" id="apEmpty" hidden>Nothing is waiting. You can close this tab.</p>
+  </div>
 </div>
 
 <!-- ===================== Setup wizard ===================== -->
@@ -874,6 +910,15 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   </div>
 </main>
 
+<!-- a device asks while the UI is open (since 2.8) -->
+<div class="modal" id="pairModal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true">
+    <h2>Sign-in request</h2>
+    <div class="stack-4" id="pairBody"></div>
+    <p class="muted xs" id="pairMore" hidden></p>
+  </div>
+</div>
+
 <div class="modal" id="addrModal" hidden>
   <div class="dialog" role="dialog" aria-modal="true">
     <h2>Open it on your phone</h2>
@@ -993,7 +1038,8 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const fmt = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
 const fmtShort = s => { s = Math.max(0, Math.round(s || 0)); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r; };
 const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup': 'setup', '/settings': 'settings', '/diagnostics': 'diagnostics', '/obs': 'obs' };
-const page = PAGES[location.pathname] || 'clips';
+// /approve and /approve/<id> are the same page (since 2.8)
+const page = PAGES[location.pathname] || (location.pathname.startsWith('/approve') ? 'approve' : 'clips');
 let cfg = { shareKbps: 0, expireDays: 0, audio: [{ id: 'mix', label: 'Mix (all)', need: 1 }], displayName: '' };
 
 // theme: remembered per browser so the page does not flash the default first
@@ -1041,19 +1087,77 @@ function banner(id, show, text) { const b = $(id); if (!b) return; b.hidden = !s
 document.querySelectorAll('[data-dismiss]').forEach(b => b.onclick = () => { $(b.dataset.dismiss).hidden = true; if (b.dataset.dismiss === 'b-update') updDismissed = upd && upd.latest ? upd.latest.version : (cfg.update && cfg.update.version); if (b.dataset.dismiss === 'b-failed') failedDismissed = cfg._lastFailedId; });
 function setDot(state, title) { $('dot').className = 'dot ' + (state || ''); $('dotWrap').title = title || ''; }
 function showPage(name) {
-  ['clips', 'login', 'soon', 'setup', 'settings', 'diagnostics', 'obs'].forEach(p => { $('page-' + p).hidden = p !== name; });
+  ['clips', 'login', 'approve', 'soon', 'setup', 'settings', 'diagnostics', 'obs'].forEach(p => { $('page-' + p).hidden = p !== name; });
   document.querySelectorAll('#nav a').forEach(a => { if (a.dataset.page === (name === 'clips' ? 'clips' : location.pathname.slice(1))) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
 }
 
 
 // ------------------------------------------------------------ login
-function initLogin() {
+// Two ways in (since 2.8): ask the PC and let someone there allow it, or
+// the password. The PC is always called by its name - "this PC" would be
+// this phone.
+function guessDeviceName() {
+  const a = navigator.userAgent || '';
+  const system = /iPhone/.test(a) ? 'iPhone' : /iPad/.test(a) ? 'iPad' : /Android/.test(a) ? 'Android'
+    : /Windows/.test(a) ? 'Windows PC' : /Macintosh|Mac OS/.test(a) ? 'Mac' : /Linux/.test(a) ? 'Linux' : 'Device';
+  const browser = /Edg\//.test(a) ? 'Edge' : /OPR\/|Opera/.test(a) ? 'Opera' : /Firefox\//.test(a) ? 'Firefox'
+    : /Chrome\/|CriOS\//.test(a) ? 'Chrome' : /Safari\//.test(a) ? 'Safari' : 'Browser';
+  return `${system}, ${browser}`;
+}
+
+async function initLogin() {
   showPage('login');
   $('nav').hidden = true;
   const next = new URLSearchParams(location.search).get('next') || '/';
-  api('/api/session', {}, { retries: 0 }).then(s => {
+  let host = 'the PC', pairing = true;
+  try {
+    const s = await api('/api/session', {}, { retries: 0 });
     if (s.authenticated) { location.replace(next); return; }
-  }).catch(() => {});
+    if (s.host) host = s.host;
+    pairing = s.pairing !== false;
+  } catch (e) {}
+  $('loginTitle').textContent = `replaycut on ${host}`;
+  $('askBtn').textContent = `Ask ${host}`;
+  $('devName').value = guessDeviceName();
+  if (new URLSearchParams(location.search).get('pair') === 'expired') note(`That QR code was already used or has run out. Ask ${host} instead, or use the password.`);
+  if (!pairing) { note(`${host} pauses sign-in requests after too many tries. Use the password, or try again in a few minutes.`); showPassword(); }
+
+  function note(text) { $('loginNote').textContent = text; $('loginNote').hidden = !text; }
+  function showPassword() { $('loginAsk').hidden = true; $('loginWait').hidden = true; $('loginForm').hidden = false; $('pw').focus(); }
+  function showAsk() { $('loginForm').hidden = true; $('loginWait').hidden = true; $('loginAsk').hidden = false; }
+  $('showPw').onclick = e => { e.preventDefault(); showPassword(); };
+  $('showAsk').onclick = e => { e.preventDefault(); note(''); showAsk(); };
+
+  // ask: the PC gets a toast, this page waits for the answer
+  let waiting = null;
+  $('askBtn').onclick = async () => {
+    note(''); $('askBtn').disabled = true;
+    try {
+      const r = await api('/api/pair/request', jsonOpts('POST', { name: $('devName').value.trim() }), { retries: 0, timeout: 10000 });
+      if (!r.ok) { note(r.error || 'The request was refused.'); return; }
+      $('loginAsk').hidden = true; $('loginWait').hidden = false;
+      $('waitCode').textContent = r.code;
+      $('waitText').textContent = `Waiting for ${host} - the same code is on its screen.`;
+      waitFor(r.id, Date.now() + (r.expires || 120) * 1000);
+    } catch (e) { note(e.message); }
+    finally { $('askBtn').disabled = false; }
+  };
+  $('waitCancel').onclick = () => { clearTimeout(waiting); waiting = null; note(''); showAsk(); };
+
+  function waitFor(id, until) {
+    const left = Math.max(0, Math.round((until - Date.now()) / 1000));
+    $('waitLeft').textContent = left ? `${left} s left` : '';
+    waiting = setTimeout(async () => {
+      try {
+        const r = await api('/api/pair/' + encodeURIComponent(id), {}, { retries: 0 });
+        if (r.status === 'approved') { location.replace(next); return; }
+        if (r.status === 'denied') { note(`${host} said no.`); showAsk(); return; }
+        if (r.status === 'expired' || left <= 0) { note(`No answer. Try again, or use the password.`); showAsk(); return; }
+      } catch (e) { /* the PC may be busy; keep waiting */ }
+      waitFor(id, until);
+    }, 2000);
+  }
+
   $('pwEye').onclick = () => { const p = $('pw'); p.type = p.type === 'password' ? 'text' : 'password'; };
   $('loginForm').onsubmit = async e => {
     e.preventDefault();
@@ -1066,6 +1170,87 @@ function initLogin() {
     } catch (err) { $('pwField').classList.add('is-invalid'); $('pwError').textContent = err.message; $('pwError').hidden = false; }
     btn.disabled = false; btn.textContent = 'Sign in';
   };
+}
+
+// ------------------------------------------------------------ sign-in requests (since 2.8)
+// The same card on the approve page (opened from the toast or the tray) and
+// in the modal over an open UI. It shows who asks before anybody clicks.
+function requestCard(r, onDone) {
+  const el = document.createElement('div');
+  el.className = 'stack-3'; el.dataset.id = r.id;
+  el.innerHTML = `<div class="pair-code"></div>
+    <div class="pair-rows sm"><div><span class="muted">Device</span><b data-name></b></div>
+      <div><span class="muted">Address</span><span class="mono" data-ip></span></div>
+      <div><span class="muted">Asked</span><span data-asked></span></div></div>
+    <p class="muted xs" data-agent></p>
+    <div class="actions"><button class="btn" data-act="deny">Deny</button><button class="btn btn-primary" data-act="allow">Allow</button></div>
+    <p class="muted sm" data-done hidden></p>`;
+  el.querySelector('.pair-code').textContent = r.code || '';
+  el.querySelector('[data-name]').textContent = r.name || 'Unknown device';
+  el.querySelector('[data-ip]').textContent = r.ip || '';
+  el.querySelector('[data-asked]').textContent = (r.asked || '').replace('T', ' ');
+  el.querySelector('[data-agent]').textContent = r.agent || '';
+  const decide = async act => {
+    const buttons = [...el.querySelectorAll('.actions button')];
+    buttons.forEach(b => b.disabled = true);
+    try {
+      const res = await api(`/api/pair/${encodeURIComponent(r.id)}/${act === 'allow' ? 'approve' : 'deny'}`, { method: 'POST', body: '' }, { retries: 0 });
+      if (!res.ok) { toast(res.error, 'err'); buttons.forEach(b => b.disabled = false); return; }
+      el.dataset.done = '1';
+      el.querySelector('.actions').hidden = true;
+      const done = el.querySelector('[data-done]');
+      done.textContent = act === 'allow' ? `${r.name} is signed in.` : `${r.name} was turned away.`;
+      done.hidden = false;
+      if (onDone) onDone(r, act);
+    } catch (e) { toast(e.message, 'err'); buttons.forEach(b => b.disabled = false); }
+  };
+  el.querySelectorAll('[data-act]').forEach(b => b.onclick = () => decide(b.dataset.act));
+  return el;
+}
+
+// Keep a list of cards in step with the service: new requests appear,
+// answered and expired ones go, decided cards stay until the page is left.
+function syncRequests(box, list, onDone) {
+  const ids = new Set(list.map(r => r.id));
+  [...box.children].forEach(c => { if (!ids.has(c.dataset.id) && !c.dataset.done) c.remove(); });
+  const shown = new Set([...box.children].map(c => c.dataset.id));
+  list.filter(r => !shown.has(r.id)).forEach(r => box.appendChild(requestCard(r, onDone)));
+  return box.children.length;
+}
+
+const pairDismissed = new Set();
+function updatePendingModal(list) {
+  if (page === 'login' || page === 'approve') return;
+  const open = list.filter(r => !pairDismissed.has(r.id));
+  // the modal steps aside once its request is answered; the approve page keeps its cards
+  const count = syncRequests($('pairBody'), open, r => setTimeout(() => {
+    pairDismissed.add(r.id);
+    [...$('pairBody').children].find(c => c.dataset.id === r.id)?.remove();
+    if (!$('pairBody').children.length) $('pairModal').hidden = true;
+  }, 1500));
+  $('pairMore').textContent = open.length > 1 ? `${open.length} devices are waiting.` : '';
+  $('pairMore').hidden = open.length <= 1;
+  $('pairModal').hidden = count === 0;
+}
+function dismissPending() {
+  [...$('pairBody').children].forEach(c => pairDismissed.add(c.dataset.id));
+  $('pairModal').hidden = true;
+}
+
+// set by the approve page so the live state can refresh its list
+let approveRender = null;
+async function initApprove() {
+  showPage('approve');
+  const first = decodeURIComponent(location.pathname.replace(/^\/approve\/?/, ''));
+  const render = list => {
+    const sorted = [...list].sort((a, b) => (b.id === first) - (a.id === first));
+    $('apEmpty').hidden = syncRequests($('apList'), sorted) > 0;
+  };
+  approveRender = render;
+  try {
+    const r = await api('/api/pair/pending', {}, { retries: 0 });
+    render(r.pending || []);
+  } catch (e) { $('apEmpty').textContent = e.message; $('apEmpty').hidden = false; }
 }
 
 // ------------------------------------------------------------ shared: passphrase
@@ -1100,7 +1285,9 @@ function setCheck(row, state, label, detail, fix) {
 function fillAddresses(a, codeEl, addrEl) {
   codeEl.innerHTML = a.qrSvg || ''; codeEl.hidden = !a.qrSvg;
   const svg = codeEl.querySelector('svg'); if (svg) { svg.removeAttribute('width'); svg.removeAttribute('height'); }
-  addrEl.querySelectorAll('.input-group, .local-note').forEach(e => e.remove());
+  addrEl.querySelectorAll('.input-group, .local-note, .qr-note').forEach(e => e.remove());
+  // since 2.8 the code carries a one-time token: scanning it signs the phone in
+  if (a.qrSignsIn) addrEl.insertAdjacentHTML('afterbegin', '<div class="qr-note muted sm">Scan it on your phone to sign in. The code is good for two minutes and for one phone; it is drawn again while this stays open.</div>');
   if (a.local) addrEl.insertAdjacentHTML('afterbegin', '<div class="local-note muted sm">Only this PC can reach replaycut, so there is no QR code. For a phone, set <b>Listen on</b> to all interfaces under Settings › Service.</div>');
   (a.urls || []).forEach(u => {
     const g = document.createElement('div'); g.className = 'input-group';
@@ -1109,8 +1296,18 @@ function fillAddresses(a, codeEl, addrEl) {
     addrEl.appendChild(g);
   });
 }
+// The QR token lives two minutes, so a code left on screen is redrawn
+// every 90 s - and only while it really is on screen.
+let qrTimer = null;
+function stopQrRefresh() { clearTimeout(qrTimer); qrTimer = null; }
 async function loadAddresses(codeEl, addrEl) {
-  try { const a = await api('/api/addresses', {}, { retries: 0 }); fillAddresses(a, codeEl, addrEl); return a; }
+  try {
+    const a = await api('/api/addresses', {}, { retries: 0 });
+    fillAddresses(a, codeEl, addrEl);
+    stopQrRefresh();
+    if (a.qrSignsIn) qrTimer = setTimeout(() => { if (codeEl.isConnected && codeEl.offsetParent) loadAddresses(codeEl, addrEl); }, 90000);
+    return a;
+  }
   catch (e) { addrEl.insertAdjacentHTML('beforeend', `<div class="error sm">${esc(e.message)}</div>`); return null; }
 }
 async function runTest(kind, body, btn, msg) {
@@ -1344,8 +1541,8 @@ async function initSettings() {
   $('sWhTest').onclick = () => runTest('webhook', { url: fv('integrations.webhook.url'), secret: $('sWhSecret').value }, $('sWhTest'), $('sWhMsg'));
   $('sDcTest').onclick = () => runTest('discord', { webhook: $('sDcHook').value.trim(), displayName: document.querySelector('[data-f="displayName"]').value.trim() }, $('sDcTest'), $('sDcMsg'));
   $('sAddr').onclick = async () => { $('addrModal').hidden = false; await loadAddresses($('mQrCode'), $('mAddr')); };
-  $('addrClose').onclick = () => { $('addrModal').hidden = true; };
-  $('addrModal').addEventListener('click', e => { if (e.target === $('addrModal')) $('addrModal').hidden = true; });
+  $('addrClose').onclick = () => { $('addrModal').hidden = true; stopQrRefresh(); };
+  $('addrModal').addEventListener('click', e => { if (e.target === $('addrModal')) { $('addrModal').hidden = true; stopQrRefresh(); } });
   $('b-restart-now').onclick = async () => {
     $('b-restart-now').disabled = true; $('b-restart-now').innerHTML = '<span class="spinner"></span> Restarting';
     try { const r = await api('/api/restart', { method: 'POST', body: '' }, { retries: 0 }); if (!r.ok) { toast(r.error, 'err'); $('b-restart-now').disabled = false; $('b-restart-now').textContent = 'Restart now'; return; } }
@@ -2025,6 +2222,9 @@ document.addEventListener('keydown', e => {
 });
 $('updModal').addEventListener('click', e => { if (e.target === $('updModal')) $('updModal').hidden = true; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('updModal').hidden) $('updModal').hidden = true; });
+// a sign-in request can be put aside; it runs out on its own after two minutes
+$('pairModal').addEventListener('click', e => { if (e.target === $('pairModal')) dismissPending(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('pairModal').hidden) dismissPending(); });
 
 // Live updates (since 2.4): the service pushes the /api/clips document over Server-Sent Events;
 // the 3-s poll stays as the fallback and as a slow safety net while the stream is up.
@@ -2055,6 +2255,8 @@ async function poll() {
 function applyState(d, polled) {
   {
     failures = 0; banner('b-unreachable', false);
+    // devices waiting to sign in; only this PC and signed-in clients see them
+    if (Array.isArray(d.pending)) { if (approveRender) approveRender(d.pending); else updatePendingModal(d.pending); }
     cfg = Object.assign(cfg, d.config); clips = d.clips || [];
     applyTheme(cfg.theme);
     $('ver').textContent = cfg.version ? cfg.version : '';
@@ -2100,6 +2302,7 @@ poll.now = () => { clearTimeout(pollT); pollT = setTimeout(poll, 50); };
 (async function init() {
   if (page === 'login') { initLogin(); return; }
   refreshUpdate(); startEvents();
+  if (page === 'approve') { initApprove(); poll(); return; }
   if (page === 'setup') { initSetup(); poll(); return; }
   if (page === 'settings') { initSettings(); poll(); return; }
   if (page === 'diagnostics') { initDiagnostics(); poll(); return; }

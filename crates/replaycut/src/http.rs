@@ -1,12 +1,13 @@
 //! The HTTP API as specified in `docs/api.md`.
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
-use axum::extract::{Path, Query, Request, State};
+use axum::extract::{ConnectInfo, Path, Query, Request, State};
 use axum::http::header::{ACCEPT_RANGES, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE};
-use axum::http::{HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -24,14 +25,17 @@ type App = Arc<AppState>;
 
 pub fn router(state: App) -> Router {
     Router::new()
-        .route("/", get(ui))
-        .route("/index.html", get(ui))
+        .route("/", get(entry))
+        .route("/index.html", get(entry))
         // pages since 2.1: the same file, the JS picks the page by path
         .route("/setup", get(ui))
         .route("/settings", get(ui))
         .route("/diagnostics", get(ui))
         .route("/login", get(ui))
         .route("/obs", get(ui))
+        // since 2.8: the device login
+        .route("/approve", get(ui))
+        .route("/approve/{id}", get(ui))
         .route("/api/clips", get(clips))
         .route("/api/events", get(events))
         .route("/api/clips/{base}", axum::routing::delete(delete_clip))
@@ -97,6 +101,11 @@ pub fn router(state: App) -> Router {
         .route("/api/login", post(admin::login))
         // since 2.8
         .route("/api/password/suggest", get(admin::password_suggest))
+        .route("/api/pair/request", post(admin::pair_request))
+        .route("/api/pair/pending", get(admin::pair_pending))
+        .route("/api/pair/{id}", get(admin::pair_poll))
+        .route("/api/pair/{id}/approve", post(admin::pair_approve))
+        .route("/api/pair/{id}/deny", post(admin::pair_deny))
         .route("/api/network/enable", post(admin::network_enable))
         .route("/api/network/disable", post(admin::network_disable))
         .route("/api/logout", post(admin::logout))
@@ -168,6 +177,41 @@ async fn not_found() -> Response {
         .into_response()
 }
 
+/// `GET /` and `/index.html`. Since 2.8 a `?pair=<token>` from a scanned
+/// QR code signs this device in and takes the token out of the address
+/// bar; a token that is used up or too old lands on the login page.
+async fn entry(
+    State(app): State<App>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Response, ApiError> {
+    let Some(token) = query.get("pair") else {
+        return ui(State(app)).await;
+    };
+    if !app.pairing.redeem_qr(token) {
+        tracing::warn!("a QR sign-in from {} was too old or used up", addr.ip());
+        return Ok(redirect("/login?pair=expired", None));
+    }
+    let agent = headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let session = auth::NewSession::from_agent(agent, addr.ip(), auth::Via::Qr);
+    tracing::info!("QR sign-in from {} ({})", addr.ip(), session.name);
+    let cookie = auth::set_cookie_value(&app.sessions.create(session));
+    Ok(redirect("/", Some(&cookie)))
+}
+
+fn redirect(location: &str, cookie: Option<&str>) -> Response {
+    let mut res = (StatusCode::SEE_OTHER, [("Location", location)]).into_response();
+    if let Some(cookie) = cookie.and_then(|c| HeaderValue::from_str(c).ok()) {
+        res.headers_mut()
+            .insert(axum::http::header::SET_COOKIE, cookie);
+    }
+    res
+}
+
 async fn ui(State(app): State<App>) -> Result<Response, ApiError> {
     let paths = app.paths();
     let bytes = tokio::fs::read(&paths.ui_file).await.map_err(|e| {
@@ -186,8 +230,23 @@ async fn ui(State(app): State<App>) -> Result<Response, ApiError> {
         .into_response())
 }
 
-async fn clips(State(app): State<App>) -> Json<Value> {
-    Json(app.status())
+/// The state document. Since 2.8 it carries `pending` - the devices
+/// waiting for an answer - but only for this PC and signed-in clients:
+/// the code in it is for the person who decides.
+fn state_document(app: &AppState, addr: &SocketAddr, headers: &HeaderMap) -> Value {
+    let mut doc = app.status();
+    if auth::is_authenticated(app, addr, headers) {
+        doc["pending"] = Value::Array(app.pairing.pending());
+    }
+    doc
+}
+
+async fn clips(
+    State(app): State<App>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Json<Value> {
+    Json(state_document(&app, &addr, &headers))
 }
 
 /// Counts an open event stream; the count drops with the stream.
@@ -206,7 +265,11 @@ const MAX_SSE_CLIENTS: usize = 8;
 /// `GET /api/events` (since 2.4): the `/api/clips` document as an
 /// `event: state` whenever something changed (bursts coalesced), a ping
 /// every 25 s, closed on shutdown so a restart does not wait for it.
-async fn events(State(app): State<App>) -> Response {
+async fn events(
+    State(app): State<App>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Response {
     use axum::response::sse::{Event, KeepAlive, Sse};
     use std::sync::atomic::Ordering;
     if app.sse_clients.fetch_add(1, Ordering::Relaxed) >= MAX_SSE_CLIENTS {
@@ -220,9 +283,11 @@ async fn events(State(app): State<App>) -> Response {
     let guard = SseGuard(app.clone());
     let rx = app.events.subscribe();
     let shutdown = app.shutdown.get().cloned();
+    // who may see the sign-in requests is decided once, for this stream
+    let trusted = auth::is_authenticated(&app, &addr, &headers);
     let stream = futures_util::stream::unfold(
         (rx, app, guard, shutdown, true),
-        |(mut rx, app, guard, shutdown, first)| async move {
+        move |(mut rx, app, guard, shutdown, first)| async move {
             if !first {
                 let changed = rx.changed();
                 let stop = async {
@@ -241,9 +306,12 @@ async fn events(State(app): State<App>) -> Response {
                 tokio::time::sleep(std::time::Duration::from_millis(150)).await;
                 rx.borrow_and_update();
             }
-            let data = app.status().to_string();
+            let mut doc = app.status();
+            if trusted {
+                doc["pending"] = Value::Array(app.pairing.pending());
+            }
             let event: Result<Event, std::convert::Infallible> =
-                Ok(Event::default().event("state").data(data));
+                Ok(Event::default().event("state").data(doc.to_string()));
             Some((event, (rx, app, guard, shutdown, false)))
         },
     );

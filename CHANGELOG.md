@@ -12,6 +12,16 @@ contract.
 
 ### Added
 
+- **Sign in on your phone without typing the password.** The login page
+  offers "Ask &lt;your PC&gt;": the PC shows a notification, the open UI a
+  card and the tray an entry, all with the same four-character code and
+  with the device's name and address. One click on Allow and the phone is
+  in. A request runs out after two minutes.
+- The QR code in the wizard and in the settings signs a phone in when it
+  is scanned: its address carries a token that is good once and for two
+  minutes. Only this PC and signed-in devices get such a code.
+- `requireLoginOnLoopback` in the settings: ask for the password on this PC
+  as well, for a Windows account other people use.
 - "Generate one for me" next to the password fields in the wizard and in
   the settings: four words from a built-in list, shown once in clear text.
 - `allowedHosts` in the settings: names this replaycut answers to besides
