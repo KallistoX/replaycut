@@ -12,6 +12,17 @@ contract.
 
 ### Added
 
+- **replaycut now listens on this PC only.** A new installation is not
+  reachable from the network until you turn it on - in the setup wizard or
+  under Settings › Access - and turning it on sets a password first and
+  then asks Windows for the firewall rule. The installer no longer creates
+  that rule on its own.
+- Settings › Signed-in devices: every browser that may use replaycut, with
+  its name, address and when it was last seen, one "Sign out" per device
+  and "Sign out everywhere".
+- Diagnostics: three new lines - where the service listens (a failure when
+  it is open to the network without a password), whether the firewall rule
+  exists, and how the device login is doing.
 - **Sign in on your phone without typing the password.** The login page
   offers "Ask &lt;your PC&gt;": the PC shows a notification, the open UI a
   card and the tray an entry, all with the same four-character code and
@@ -30,6 +41,9 @@ contract.
 
 ### Changed
 
+- An installation that is reachable from the network without a password
+  keeps working, but says so: a red banner with "Set a password" and "This
+  PC only", one notification per start, and a failure in the diagnostics.
 - A request that names a host this replaycut does not answer to is refused
   with 421. That closes DNS rebinding, where a page in your browser uses
   its own name to reach the service on your PC.

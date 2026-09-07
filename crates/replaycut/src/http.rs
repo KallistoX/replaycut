@@ -108,6 +108,12 @@ pub fn router(state: App) -> Router {
         .route("/api/pair/{id}/deny", post(admin::pair_deny))
         .route("/api/network/enable", post(admin::network_enable))
         .route("/api/network/disable", post(admin::network_disable))
+        .route("/api/sessions", get(admin::sessions))
+        .route("/api/sessions/clear", post(admin::sessions_clear))
+        .route(
+            "/api/sessions/{id}",
+            axum::routing::delete(admin::session_revoke),
+        )
         .route("/api/logout", post(admin::logout))
         .route("/api/restart", post(admin::restart))
         .route("/themes/{file}", get(admin::theme))

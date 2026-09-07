@@ -444,8 +444,9 @@ Runs every check (each with a 5 s timeout, in parallel) and answers
 `status` is `ok`, `warn`, `fail` or `skip`; `fix` accompanies warnings and
 failures with what to do. `text` is the same list as plain text plus a
 settings line and the last 20 log lines, without any secret - meant for
-"Copy diagnostics". The eleven ids are stable; `replaycut test` prints
-`text` when the service runs.
+"Copy diagnostics". The ids are stable and only grow (2.5 added the
+storage and notify integrations, 2.8 `firewall` and `pairing`);
+`replaycut test` prints `text` when the service runs.
 
 ### `POST /api/jobs/<id>/open-folder`, `POST /api/jobs/<id>/copy-file`
 
@@ -1054,11 +1055,50 @@ for a Windows account other people use. It applies to `/api/*` and
 requests: the approve page asks for the password first, and the waiting
 device keeps waiting.
 
-### `POST /api/network/enable`, `POST /api/network/disable`
+### Network access
 
-Turn access from other devices on and off. `enable` answers
-`409 { ok: false, error }` while no password is set: without one there is
-nothing to protect the service with.
+A new installation binds to `127.0.0.1`: only this PC. `bind` in the
+settings still takes any address (and `--bind` overrides it), but the
+switch in the wizard and in the settings knows two states and calls:
+
+- `POST /api/network/enable` -> `200 { ok, network: "lan", firewall, restartNeeded }`.
+  It sets `bind` to `0.0.0.0`, then adds the firewall rule for the port in
+  private networks through the Windows administrator prompt. `409` while
+  no password is set: without one there is nothing to protect the service
+  with. `firewall` is `added`, `declined` (the prompt was refused),
+  `failed`, `dryRun` or `unavailable` - the switch flips either way, and
+  the diagnostics report a missing rule.
+- `POST /api/network/disable` -> `200 { ok, network: "loopback", firewall, restartNeeded }`,
+  with the rule removed the same way.
+
+The listener follows `bind` only after a restart, so `restartNeeded` is
+true and the caller sends `POST /api/restart` and waits for the service to
+answer again.
+
+`GET /api/clips` carries `config.network` (`loopback`, `lan` or `custom`).
+`lan` without a password is what installations from before 2.8 look like:
+the page shows a red banner ("Reachable from the network without a
+password") with "Set a password" and "This PC only", the service logs a
+warning and shows one toast per start, and the diagnostics fail.
+
+### Signed-in devices
+
+- `GET /api/sessions` -> `200 { ok, sessions: [ { id, name, agent, ip, created, lastSeen, via, current } ] }`,
+  newest first; `current` marks the caller's own session.
+- `DELETE /api/sessions/<id>` -> `200 { ok, name }`, `404` for an unknown
+  id. That device needs to sign in again at once.
+- `POST /api/sessions/clear` -> `200 { ok, removed }`: every session but
+  the caller's own.
+
+### Diagnostics of 2.8
+
+Three lines beside the existing ones:
+
+| Check | What it says |
+| --- | --- |
+| `network` | Where the service listens. `fail` when it is on the network without a password. |
+| `firewall` | Whether the rule for the port exists; `skip` while network access is off. |
+| `pairing` | The device login: ready, how many devices wait, or paused after a flood. |
 
 ## Behaviour
 

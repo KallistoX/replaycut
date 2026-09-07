@@ -453,6 +453,10 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 .pair-rows { display: flex; flex-direction: column; gap: var(--space-1); }
 .pair-rows > div { display: flex; justify-content: space-between; gap: var(--space-3); }
 .pair-rows b { color: var(--fg); font-weight: var(--weight-strong); overflow-wrap: anywhere; }
+/* one signed-in device in the settings */
+.device { display: flex; align-items: center; gap: var(--space-3); justify-content: space-between; border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); }
+.device .who { min-width: 0; }
+.device .who b { overflow-wrap: anywhere; }
 .brand { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-lg); font-weight: var(--weight-strong); }
 .brand .icon { color: var(--accent); width: 28px; height: 28px; }
 </style>
@@ -509,6 +513,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <div class="banner warn" id="b-paused" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Scanning paused</b> - new replays wait in the folder until it resumes (Pause scanning in the tray).</div><button class="btn btn-sm" id="b-paused-resume">Resume</button></div>
   <div class="banner" id="b-update" hidden><svg class="icon"><use href="#i-info"/></svg><div class="grow"><b id="b-update-text"></b> <span id="b-update-hint" class="muted"></span><div class="row" id="b-update-row"><button class="btn btn-sm btn-primary" id="b-update-now">Update now</button><button class="btn btn-sm" id="b-update-notes">What's new</button><a class="btn btn-sm" id="b-update-link" href="#" target="_blank" rel="noopener" hidden>Download</a><div class="bar" id="b-update-bar" hidden><i></i></div><span class="muted sm" id="b-update-pct" hidden></span></div></div><button class="btn btn-ghost btn-icon" data-dismiss="b-update" title="Dismiss for this visit"><svg class="icon"><use href="#i-close"/></svg></button></div>
   <div class="banner ok" id="b-updated" hidden><svg class="icon"><use href="#i-check"/></svg><div class="grow"><b id="b-updated-text"></b> <button class="btn btn-sm" id="b-updated-notes">What's new</button></div><button class="btn btn-ghost btn-icon" id="b-updated-close" title="Dismiss"><svg class="icon"><use href="#i-close"/></svg></button></div>
+  <div class="banner err" id="b-open" hidden><svg class="icon"><use href="#i-error"/></svg><div class="grow"><b>Reachable from the network without a password</b> - every device in this network can use this replaycut, watch your clips and share them.</div><div class="row nowrap"><button class="btn btn-sm btn-primary" id="b-open-pw">Set a password</button><button class="btn btn-sm" id="b-open-local">This PC only</button></div></div>
   <div class="banner warn" id="b-restart" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Restart needed.</b> <span id="b-restart-text"></span></div><button class="btn btn-sm" id="b-restart-now">Restart now</button></div>
   <div class="banner warn" id="b-replaystop" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Replay buffer is not running</b> - F9 does nothing until it does. OBS is open and connected.</div><button class="btn btn-sm" id="b-replaystop-start">Start replay buffer</button></div>
   <div class="banner" id="b-newclip" hidden><svg class="icon"><use href="#i-film"/></svg><div class="grow"><b>New clip:</b> <span id="b-newclip-text"></span> You have marks on the current one.</div><div class="row nowrap"><button class="btn btn-sm" id="b-newclip-load">Load new clip</button><button class="btn btn-sm btn-ghost" id="b-newclip-keep">Keep editing</button></div></div>
@@ -695,19 +700,23 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <section class="stack-4" id="wiz3" hidden>
     <div class="page-head"><h1>Access</h1><span class="muted">Who can open replaycut, and from where.</span></div>
     <div class="card">
-      <div class="card-head"><h2>Password</h2><span class="badge">optional</span><label class="switch"><input type="checkbox" id="wPwOn"><span class="track"></span></label></div>
-      <div class="card-body stack-3" id="wPwBody">
-        <p class="muted sm">Recommended if others share your network. <b>This PC never needs it</b> - only phones and other computers get the login page. It is sent over your network once, unencrypted, like every login afterwards; HTTPS comes later.</p>
-        <div class="fields-2">
-          <div class="field"><label>Password</label><div class="input-group"><input class="input" id="wPw1" type="password" autocomplete="new-password" placeholder="at least 8 characters"><button class="btn btn-icon" type="button" data-eye="wPw1" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div></div>
-          <div class="field"><label>Repeat</label><input class="input" id="wPw2" type="password" autocomplete="new-password"><span class="error" id="wPwErr" hidden></span></div>
+      <div class="card-head"><h2>Access from other devices</h2><span class="badge" id="wNetBadge">off</span><label class="switch"><input type="checkbox" id="wNetOn"><span class="track"></span></label></div>
+      <div class="card-body stack-3">
+        <p class="muted sm" id="wNetIntro"></p>
+        <div class="stack-3" id="wNetBody" hidden>
+          <div class="fields-2">
+            <div class="field"><label>Password</label><div class="input-group"><input class="input" id="wPw1" type="password" autocomplete="new-password" placeholder="at least 8 characters"><button class="btn btn-icon" type="button" data-eye="wPw1" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div></div>
+            <div class="field"><label>Repeat</label><input class="input" id="wPw2" type="password" autocomplete="new-password"><span class="error" id="wPwErr" hidden></span></div>
+          </div>
+          <div class="row"><button class="btn" type="button" id="wPwGen">Generate one for me</button><span class="muted sm" id="wPwGenHint" hidden>Four words are easy to type on a phone. Write it down now - it is shown only here.</span></div>
+          <p class="muted xs">The password is the way back in. Day to day nobody types it: the phone asks and you allow it here, or it scans the code below.</p>
+          <div class="row"><button class="btn btn-primary" type="button" id="wNetGo">Turn on network access</button><span class="hint" id="wNetMsg"></span></div>
         </div>
-        <div class="row"><button class="btn" type="button" id="wPwGen">Generate one for me</button><span class="muted sm" id="wPwGenHint" hidden>Four words are easy to type on a phone. Write it down now - it is shown only here.</span></div>
+        <div class="stack-3" id="wNetDone" hidden>
+          <div class="qr" id="wQr"><div class="code" id="wQrCode"></div><div class="addr" id="wAddr"></div></div>
+          <div class="stack-2" id="wDevices"></div>
+        </div>
       </div>
-    </div>
-    <div class="card">
-      <h2>Open it on your phone</h2>
-      <div class="qr" id="wQr"><div class="code" id="wQrCode"></div><div class="addr" id="wAddr"><div class="muted sm">Same Wi-Fi as this PC. The installer created the firewall rule for the port.</div></div></div>
     </div>
     <div class="wizard-foot">
       <button class="btn btn-ghost left" id="wBack3">Back</button>
@@ -753,22 +762,30 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <h2>Service</h2>
       <div class="fields-2">
         <div class="field"><label>Port <span class="needs-restart">restart needed</span></label><input class="input" data-f="port" type="number" min="1" max="65535"></div>
-        <div class="field"><label>Listen on <span class="needs-restart">restart needed</span></label><select class="select" data-f="bind"><option value="0.0.0.0">all interfaces - phones and other PCs can connect</option><option value="127.0.0.1">this PC only (127.0.0.1)</option></select></div>
         <div class="field"><label>Log level</label><select class="select" data-f="logLevel"><option>error</option><option>warn</option><option>info</option><option>debug</option><option>trace</option></select></div>
       </div>
       <label class="switch"><input type="checkbox" data-f="checkUpdates"><span class="track"></span> Check GitHub once a day for a new release <span class="muted sm">(nothing is downloaded until you click)</span></label>
       <div class="row"><button class="btn" id="sUpdCheck"><svg class="icon"><use href="#i-refresh"/></svg> Check for updates now</button><span class="muted sm" id="sUpdText"></span></div>
       <label class="switch"><input type="checkbox" id="sAutostart"><span class="track"></span> Start replaycut when I sign in <span class="muted sm">(saved at once)</span></label>
     </div>
-    <div class="group">
+    <div class="group" id="sAccess">
       <h2>Access</h2>
+      <label class="switch"><input type="checkbox" id="sNetOn"><span class="track"></span> Reachable from other devices in this network <span class="muted sm">(off = this PC only; applied at once, with a restart)</span></label>
+      <span class="hint" id="sNetMsg"></span>
       <label class="switch"><input type="checkbox" id="sPwOn"><span class="track"></span> Password for other devices <span class="muted sm">(this PC never needs it)</span></label>
       <div class="fields-2" id="sPwFields">
         <div class="field"><label>New password</label><div class="input-group"><input class="input" id="sPw1" type="password" autocomplete="new-password" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sPw1" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div></div>
         <div class="field"><label>Repeat</label><input class="input" id="sPw2" type="password" autocomplete="new-password"><span class="error" id="sPwErr" hidden></span></div>
       </div>
       <div class="row" id="sPwGenRow"><button class="btn" type="button" id="sPwGen">Generate one for me</button><span class="muted sm" id="sPwGenHint" hidden>Write it down now - it is shown only here.</span></div>
+      <label class="switch"><input type="checkbox" data-f="requireLoginOnLoopback"><span class="track"></span> Ask for the password on this PC as well <span class="muted sm">(for a Windows account other people use)</span></label>
       <div class="row"><button class="btn" id="sAddr"><svg class="icon"><use href="#i-qr"/></svg> Show address and QR code</button><span class="muted sm" id="sAddrText"></span></div>
+    </div>
+    <div class="group">
+      <h2>Signed-in devices</h2>
+      <p class="muted sm">Browsers that may use this replaycut without asking again. Signing one out ends it at once.</p>
+      <div class="stack-2" id="sDevices"></div>
+      <div class="row"><button class="btn" id="sDevOut">Sign out everywhere</button><span class="muted sm" id="sDevNote"></span></div>
     </div>
   </div>
 
@@ -1253,6 +1270,77 @@ async function initApprove() {
   } catch (e) { $('apEmpty').textContent = e.message; $('apEmpty').hidden = false; }
 }
 
+// ------------------------------------------------------------ network access and devices (since 2.8)
+// The listener follows `bind` only after a restart, so the switch restarts
+// the service and waits for it to answer again.
+async function restartService() {
+  try {
+    const r = await api('/api/restart', { method: 'POST', body: '' }, { retries: 0 });
+    if (!r.ok) return r.error || 'The service refused to restart.';
+  } catch (e) { /* it may be gone before it answers */ }
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    try { const s = await fetch('/api/session', { cache: 'no-store' }); if (s.ok) return ''; } catch (e) {}
+  }
+  return 'The service did not come back - start it from the Start menu.';
+}
+
+// Turn network access on or off: the password first (it is what protects
+// it), then the switch, the firewall rule through the UAC prompt, and the
+// restart. Returns '' or a message.
+async function setNetworkAccess(on, say) {
+  say(on ? 'Windows asks for permission to open the port …' : 'Closing the port …');
+  let r;
+  try {
+    r = await api('/api/network/' + (on ? 'enable' : 'disable'), { method: 'POST', body: '' }, { retries: 0, timeout: 180000 });
+  } catch (e) { return e.message; }
+  if (!r.ok) return r.error || 'The switch did not work.';
+  if (r.firewall === 'declined') toast('The firewall rule was declined - other devices may not get through.', 'err');
+  else if (r.firewall === 'failed') toast('The firewall step failed - see the diagnostics.', 'err');
+  say('Restarting replaycut …');
+  const err = await restartService();
+  if (err) return err;
+  say(on ? 'On. Scan the code on your phone to sign in.' : 'Off - only this PC can reach replaycut now.');
+  return '';
+}
+
+function deviceRow(d, onGone) {
+  const el = document.createElement('div');
+  el.className = 'device';
+  const via = { password: 'password', approve: 'allowed here', qr: 'QR code' }[d.via] || d.via || '';
+  el.innerHTML = `<div class="who"><b></b> <span class="badge" data-via></span> <span class="badge accent" data-me hidden>this browser</span>
+      <div class="muted xs"><span data-ip class="mono"></span> · last seen <span data-seen></span> · signed in <span data-created></span></div></div>
+    <button class="btn btn-sm" data-out>Sign out</button>`;
+  el.querySelector('b').textContent = d.name || 'Unknown device';
+  el.querySelector('[data-via]').textContent = via;
+  el.querySelector('[data-ip]').textContent = d.ip || '';
+  el.querySelector('[data-seen]').textContent = (d.lastSeen || '').replace('T', ' ');
+  el.querySelector('[data-created]').textContent = (d.created || '').replace('T', ' ');
+  el.querySelector('[data-me]').hidden = !d.current;
+  el.querySelector('[data-out]').onclick = async () => {
+    const b = el.querySelector('[data-out]'); b.disabled = true;
+    try {
+      const r = await api('/api/sessions/' + encodeURIComponent(d.id), { method: 'DELETE' }, { retries: 0 });
+      if (!r.ok) { toast(r.error, 'err'); b.disabled = false; return; }
+      toast(`${d.name} signed out`, 'ok');
+      if (d.current) { location.href = '/login'; return; }
+      onGone();
+    } catch (e) { toast(e.message, 'err'); b.disabled = false; }
+  };
+  return el;
+}
+
+async function loadDevices(box, note) {
+  try {
+    const r = await api('/api/sessions', {}, { retries: 0 });
+    const list = r.sessions || [];
+    box.innerHTML = '';
+    list.forEach(d => box.appendChild(deviceRow(d, () => loadDevices(box, note))));
+    if (note) note.textContent = list.length ? '' : 'No device is signed in.';
+    return list.length;
+  } catch (e) { if (note) note.textContent = e.message; return 0; }
+}
+
 // ------------------------------------------------------------ shared: passphrase
 // "Generate one for me": four words from the service (since 2.8). They go into
 // both fields in clear text - the password is never shown again afterwards.
@@ -1337,7 +1425,7 @@ async function initSetup() {
     step = n; Object.entries(wiz).forEach(([k, el]) => el.hidden = Number(k) !== n); $('wizDone').hidden = true;
     document.querySelectorAll('#stepper .step').forEach(s => { const k = Number(s.dataset.step); s.className = 'step' + (k < n ? ' done' : k === n ? ' current' : ''); if (k < n) s.querySelector('.num').innerHTML = '<svg class="icon icon-sm"><use href="#i-check"/></svg>'; else s.querySelector('.num').textContent = k; });
     if (n !== 1) clearInterval(obsTimer); else pollObs();
-    if (n === 3) loadAddresses($('wQrCode'), $('wAddr'));
+    if (n === 3) netState();
     window.scrollTo(0, 0);
   }
   try { settings = await api('/api/settings', {}, { retries: 0 }); } catch (e) { toast('Cannot load the settings: ' + e.message, 'err'); settings = {}; }
@@ -1351,8 +1439,51 @@ async function initSetup() {
   if (settings.secrets && settings.secrets.discord) $('wDcHook').placeholder = 'stored - leave empty to keep';
   const cardState = () => { $('wNcCard').classList.toggle('is-disabled', !$('wNcOn').checked); $('wNcBadge').textContent = $('wNcOn').checked ? 'on' : 'off'; $('wDcCard').classList.toggle('is-disabled', !$('wDcOn').checked); $('wDcBadge').textContent = $('wDcOn').checked ? 'on' : 'off'; $('wLocalNote').hidden = $('wNcOn').checked || $('wDcOn').checked; $('wSkip2').hidden = $('wNcOn').checked || $('wDcOn').checked; };
   $('wNcOn').onchange = $('wDcOn').onchange = cardState; cardState();
-  $('wPwOn').onchange = () => { $('wPwBody').hidden = !$('wPwOn').checked; }; $('wPwOn').checked = !!settings.passwordSet; $('wPwBody').hidden = !$('wPwOn').checked;
+  // step 3: the network switch. Off is the default of 2.8 - the password
+  // and the firewall rule come with it, not before and not after.
   $('wPwGen').onclick = () => suggestPassword('wPw1', 'wPw2', 'wPwGenHint');
+  const netSay = t => { $('wNetMsg').textContent = t; };
+  const onLan = () => settings.bind === '0.0.0.0' || settings.bind === '::';
+  function netState() {
+    const on = onLan();
+    $('wNetOn').checked = on; $('wNetBadge').textContent = on ? 'on' : 'off';
+    $('wNetIntro').textContent = on
+      ? 'Other devices in this network reach replaycut, and they need the password or your yes. Scan the code on a phone to sign it in.'
+      : 'replaycut listens on this PC only. Turn this on to trim clips from your phone or laptop in the same network: it needs a password first, and Windows asks once for permission to open the port in your private network.';
+    $('wNetBody').hidden = true; $('wNetDone').hidden = !on;
+    if (on) { loadAddresses($('wQrCode'), $('wAddr')); loadDevices($('wDevices'), null); }
+  }
+  netState();
+  $('wNetOn').onchange = async () => {
+    if ($('wNetOn').checked) { $('wNetBody').hidden = false; netSay(''); return; }
+    if (!onLan()) { netState(); return; }
+    $('wNetOn').disabled = true;
+    const err = await setNetworkAccess(false, netSay);
+    $('wNetOn').disabled = false;
+    if (err) { netSay(err); $('wNetOn').checked = true; return; }
+    settings = await api('/api/settings', {}, { retries: 0 }).catch(() => settings);
+    netState();
+  };
+  $('wNetGo').onclick = async () => {
+    $('wPwErr').hidden = true;
+    const p1 = $('wPw1').value, p2 = $('wPw2').value;
+    if (!settings.passwordSet || p1) {
+      if (p1.length < 8) { $('wPwErr').textContent = 'Use at least 8 characters.'; $('wPwErr').hidden = false; return; }
+      if (p1 !== p2) { $('wPwErr').textContent = 'The two entries differ.'; $('wPwErr').hidden = false; return; }
+    }
+    $('wNetGo').disabled = true;
+    try {
+      if (p1) {
+        const r = await api('/api/settings', jsonOpts('PUT', { password: p1 }), { retries: 0, timeout: 20000 });
+        if (!r.ok) { netSay(r.error); return; }
+        settings = r.settings || settings;
+      }
+      const err = await setNetworkAccess(true, netSay);
+      if (err) { netSay(err); return; }
+      settings = await api('/api/settings', {}, { retries: 0 }).catch(() => settings);
+      netState();
+    } finally { $('wNetGo').disabled = false; }
+  };
 
   async function saveFolder() {
     const f = $('wFolder').value.trim(); if (!f || f === folderSaved) return true;
@@ -1428,20 +1559,13 @@ async function initSetup() {
   // step 3
   $('wBack3').onclick = () => go(2);
   $('wFinish').onclick = async () => {
-    const body = { setupDone: true }; $('wPwErr').hidden = true;
-    if ($('wPwOn').checked) {
-      const p1 = $('wPw1').value, p2 = $('wPw2').value;
-      if (p1 || !settings.passwordSet) {
-        if (p1.length < 8) { $('wPwErr').textContent = 'Use at least 8 characters.'; $('wPwErr').hidden = false; return; }
-        if (p1 !== p2) { $('wPwErr').textContent = 'The two entries differ.'; $('wPwErr').hidden = false; return; }
-        body.password = p1;
-      }
-    } else if (settings.passwordSet) body.password = '';
+    // the password and the network switch are saved by their own step above
+    const body = { setupDone: true };
     $('wFinish').disabled = true;
     try {
       const r = await api('/api/settings', jsonOpts('PUT', body), { retries: 0, timeout: 20000 });
       if (!r.ok) { toast(r.error, 'err'); $('wFinish').disabled = false; return; }
-      const s = r.settings, parts = [`folder ${s.clipDir}`, s.integrations.nextcloud.enabled ? 'Nextcloud on' : 'Nextcloud off', s.integrations.discord.enabled ? 'Discord on' : 'Discord off', s.passwordSet ? 'password set' : 'no password'];
+      const s = r.settings, parts = [`folder ${s.clipDir}`, s.integrations.nextcloud.enabled ? 'Nextcloud on' : 'Nextcloud off', s.integrations.discord.enabled ? 'Discord on' : 'Discord off', s.bind === '127.0.0.1' || s.bind === '::1' ? 'this PC only' : 'reachable in your network'];
       $('wDoneText').textContent = parts.join(', ') + '. Everything here can be changed in Settings.';
       Object.values(wiz).forEach(el => el.hidden = true); $('wizDone').hidden = false; $('stepper').hidden = true; window.scrollTo(0, 0);
     } catch (e) { toast(e.message, 'err'); $('wFinish').disabled = false; }
@@ -1458,7 +1582,7 @@ async function initSettings() {
   let orig = null, restartPending = [];
   const oauthCards = {};
   const fields = [...document.querySelectorAll('#page-settings [data-f]')];
-  const tabs = () => { const t = location.hash === '#integrations' ? 'integrations' : 'general'; $('tabGeneral').hidden = t !== 'general'; $('tabIntegrations').hidden = t !== 'integrations'; document.querySelectorAll('#page-settings .tabs a').forEach(a => { if (a.dataset.tab === t) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }); if (location.hash === '#qr') setTimeout(() => $('sAddr').click(), 0); };
+  const tabs = () => { const t = location.hash === '#integrations' ? 'integrations' : 'general'; $('tabGeneral').hidden = t !== 'general'; $('tabIntegrations').hidden = t !== 'integrations'; document.querySelectorAll('#page-settings .tabs a').forEach(a => { if (a.dataset.tab === t) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }); if (location.hash === '#qr') setTimeout(() => $('sAddr').click(), 0); if (location.hash === '#access') setTimeout(() => $('sAccess').scrollIntoView({ block: 'start' }), 0); };
   window.addEventListener('hashchange', tabs); tabs();
   function readField(el) { if (el.type === 'checkbox') return el.checked; if (el.type === 'number' || /Kbps|Threads|port|expireDays|Height/.test(el.dataset.f)) return Number(el.value); return el.value; }
   function fill(s) {
@@ -1469,6 +1593,9 @@ async function initSettings() {
     $('encHint').textContent = cfg.encoder ? `In use: ${cfg.encoder}. Changing it runs a test encode.` : '';
     $('ovClipDir').hidden = !(s.overrides && s.overrides.clipDir);
     $('sAutostart').checked = !!s.autostart;
+    const lan = s.bind === '0.0.0.0' || s.bind === '::', local = s.bind === '127.0.0.1' || s.bind === '::1';
+    $('sNetOn').checked = lan; $('sNetOn').disabled = !lan && !local;
+    $('sNetMsg').textContent = lan || local ? '' : `Listening on ${s.bind} - set on the command line or by hand, so the switch stays out of it.`;
     $('sPwOn').checked = !!s.passwordSet; $('sPwFields').hidden = !$('sPwOn').checked; $('sPwGenRow').hidden = !$('sPwOn').checked; $('sPwGenHint').hidden = true; $('sPw1').type = 'password'; $('sPw2').type = 'password'; $('sPw1').value = ''; $('sPw2').value = ''; $('sPw1').placeholder = s.passwordSet ? 'leave empty to keep' : 'at least 8 characters';
     $('sNcUser').value = ''; $('sNcPw').value = ''; $('sDcHook').value = '';
     $('sS3Key').value = ''; $('sS3Secret').value = ''; $('sDavUser').value = ''; $('sDavPw').value = '';
@@ -1518,6 +1645,43 @@ async function initSettings() {
   ['sPw1', 'sPw2', 'sNcUser', 'sNcPw', 'sDcHook', 'sS3Key', 'sS3Secret', 'sDavUser', 'sDavPw', 'sYtId', 'sYtSecret', 'sTgToken', 'sWhSecret'].forEach(id => $(id).addEventListener('input', dirty));
   $('sPwOn').onchange = () => { $('sPwFields').hidden = !$('sPwOn').checked; $('sPwGenRow').hidden = !$('sPwOn').checked; dirty(); };
   $('sPwGen').onclick = async () => { if (await suggestPassword('sPw1', 'sPw2', 'sPwGenHint')) dirty(); };
+  // network access: acts at once (password, UAC, restart), not through Save
+  const netSay = t => { $('sNetMsg').textContent = t; };
+  $('sNetOn').onchange = async () => {
+    const on = $('sNetOn').checked;
+    if (on && !orig.passwordSet && !$('sPw1').value) {
+      $('sNetOn').checked = false;
+      netSay('Set a password first - without one every device in this network could use replaycut.');
+      $('sPwOn').checked = true; $('sPwFields').hidden = false; $('sPwGenRow').hidden = false; $('sPw1').focus();
+      return;
+    }
+    $('sNetOn').disabled = true;
+    if (on && $('sPw1').value) {
+      if ($('sPw1').value.length < 8 || $('sPw1').value !== $('sPw2').value) {
+        netSay('The password needs at least 8 characters, twice the same.');
+        $('sNetOn').checked = false; $('sNetOn').disabled = false; return;
+      }
+      const r = await api('/api/settings', jsonOpts('PUT', { password: $('sPw1').value }), { retries: 0, timeout: 20000 }).catch(e => ({ ok: false, error: e.message }));
+      if (!r.ok) { netSay(r.error); $('sNetOn').checked = false; $('sNetOn').disabled = false; return; }
+    }
+    if (!on && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') netSay('This browser is not on the PC, so it loses access in a moment.');
+    const err = await setNetworkAccess(on, netSay);
+    $('sNetOn').disabled = false;
+    if (err) { netSay(err); $('sNetOn').checked = !on; return; }
+    try { fill(await api('/api/settings', {}, { retries: 0 })); dirty(); } catch (e) {}
+    netSay(on ? 'On. Show the QR code below to sign a phone in.' : 'Off - only this PC can reach replaycut now.');
+    loadDevices($('sDevices'), $('sDevNote'));
+  };
+  $('sDevOut').onclick = async () => {
+    $('sDevOut').disabled = true;
+    try {
+      const r = await api('/api/sessions/clear', { method: 'POST', body: '' }, { retries: 0 });
+      if (!r.ok) toast(r.error, 'err'); else toast(r.removed ? `${r.removed} device(s) signed out` : 'Nothing to sign out', 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+    $('sDevOut').disabled = false;
+    loadDevices($('sDevices'), $('sDevNote'));
+  };
+  loadDevices($('sDevices'), $('sDevNote'));
   $('sAutostart').onchange = async () => { try { const r = await api('/api/settings', jsonOpts('PUT', { autostart: $('sAutostart').checked }), { retries: 0 }); r.ok ? toast('Autostart ' + ($('sAutostart').checked ? 'on' : 'off'), 'ok') : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } };
   $('sDiscard').onclick = () => fill(orig);
   $('sSave').onclick = async () => {
@@ -2207,6 +2371,14 @@ async function updateNow() {
   finally { updBusy = false; updateBanner(); }
 }
 $('b-update-now').onclick = updateNow;
+// the two ways out of "open to the network without a password" (since 2.8)
+$('b-open-pw').onclick = () => { location.href = '/settings#access'; };
+$('b-open-local').onclick = async () => {
+  const btn = $('b-open-local'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Closing';
+  const err = await setNetworkAccess(false, t => toast(t));
+  if (err) { toast(err, 'err'); btn.disabled = false; btn.textContent = 'This PC only'; return; }
+  location.reload();
+};
 $('b-paused-resume').onclick = async () => { try { const r = await api('/api/scanning', jsonOpts('POST', { paused: false }), { retries: 0 }); if (r.ok) { banner('b-paused', false); if (cfg.scanning) cfg.scanning.paused = false; toast('Scanning resumed', 'ok'); poll.now && poll.now(); } else toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } };
 $('updNow').onclick = () => { $('updModal').hidden = true; updateNow(); };
 $('b-update-notes').onclick = () => { const l = upd && upd.latest; if (l) showNotes(`What's new in ${l.version}`, l.notes, l.url, upd.installed && !updBusy && upd.phase !== 'installing'); };
@@ -2265,6 +2437,8 @@ function applyState(d, polled) {
     if (q) { const gb = b => (b / 1073741824).toFixed(1) + ' GB'; $('quota').textContent = `Nextcloud ${Math.round(q.usedPercent)} %`; $('quota').className = 'badge' + (q.usedPercent >= 95 ? ' err' : q.usedPercent >= 80 ? ' warn' : ''); $('quota').title = `${gb(q.free)} free of ${gb(q.total)}` + (q.usedPercent >= 80 ? ' - delete old uploads or raise the quota' : ''); }
     if ((cfg.update || (upd && upd.latest)) && !updBusy) refreshUpdate();
     const ob = cfg.obs || {};
+    // since 2.8: an installation from before that is open to the network
+    banner('b-open', cfg.network === 'lan' && !cfg.passwordSet && page !== 'setup');
     banner('b-replaystop', !!ob.connected && !ob.replayActive);
     banner('b-paused', !!(cfg.scanning && cfg.scanning.paused));
     if (page !== 'clips') return;

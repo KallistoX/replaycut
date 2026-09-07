@@ -109,6 +109,19 @@ pub fn firewall_script(port: u16, exe: &Path, old: (u16, &str)) -> String {
     s
 }
 
+/// Add or remove the rule from the running service (since 2.8): the
+/// network switch in the wizard and in the settings. Blocking - Windows
+/// shows the administrator prompt and waits for it.
+pub fn firewall_rule(port: u16, add: bool) -> Result<Elevated> {
+    let script = if add {
+        let exe = std::env::current_exe().context("current executable")?;
+        firewall_script(port, &exe, (port, migrate::OLD_FIREWALL_RULE))
+    } else {
+        firewall_removal_script()
+    };
+    winshell::run_elevated_powershell(&script)
+}
+
 fn firewall_removal_script() -> String {
     format!(
         "Remove-NetFirewallRule -DisplayName '{FIREWALL_RULE}' -ErrorAction SilentlyContinue\nexit 0\n"
@@ -220,11 +233,13 @@ pub fn install(
         println!("  off - double-click replaycut to start it (`replaycut autostart on` to change)");
     }
 
+    // Since 2.8 an installation is reachable on this PC only. Access from
+    // other devices is turned on in the browser, where the password comes
+    // first - and only then the firewall rule.
     step("Firewall");
-    if ask_yes_no(
-        "  Allow access from other devices in your private network (phone, laptop)?",
-        true,
-    )? {
+    if migration.as_ref().is_some_and(|r| r.had_task) {
+        // A 1.x service was reachable in the network; keep that and take
+        // its rule over, the wizard's switch turns it off again.
         let old_port = migration.as_ref().map_or(settings.port, |r| r.old_port);
         let old = (old_port, migrate::OLD_FIREWALL_RULE);
         println!("  Windows will ask for administrator permission once.");
@@ -233,7 +248,8 @@ pub fn install(
             "firewall rule",
         );
     } else {
-        println!("  skipped - the page is reachable on this PC only");
+        println!("  not needed - replaycut listens on this PC only.");
+        println!("  Open it to your phone in the browser: Settings > Access.");
     }
 
     step("Starting replaycut");

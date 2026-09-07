@@ -686,7 +686,9 @@ pub async fn run(state: &AppState) -> Report {
         }
     };
 
-    // network
+    // network: since 2.8 the question is not only "who can reach it" but
+    // "who may use it" - a service on the LAN without a password is a
+    // failure, not a note
     let network_check = {
         let settings = settings.clone();
         async move {
@@ -704,22 +706,58 @@ pub async fn run(state: &AppState) -> Report {
             if let Some(ip) = platform::primary_ipv4() {
                 detail.push_str(&format!(" · http://{ip}:{}/", settings.port));
             }
+            if settings.password_hash.is_none() {
+                return Check::new(
+                    "network",
+                    "Network",
+                    "fail",
+                    detail + " · no password: every device in this network may use it",
+                )
+                .with_fix("Settings › Access: set a password, or turn network access off so that only this PC can reach replaycut.");
+            }
+            Check::new("network", "Network", "ok", detail + " · password set")
+        }
+    };
+
+    // firewall (since 2.8): only interesting while the service is on the LAN
+    let firewall_check = {
+        let settings = settings.clone();
+        async move {
+            if settings.bind == "127.0.0.1" || settings.bind == "::1" {
+                return Check::new(
+                    "firewall",
+                    "Firewall",
+                    "skip",
+                    "network access is off - no rule needed",
+                );
+            }
             match platform::firewall_rule_present() {
-                Some(true) => Check::new("network", "Network", "ok", detail + " · firewall rule \"replaycut\" present"),
-                Some(false) => Check::new("network", "Network", "warn", detail + " · no firewall rule \"replaycut\"")
-                    .with_fix("Other devices may not reach this PC. Run install.cmd again and accept the firewall step."),
-                None => Check::new("network", "Network", "ok", detail),
+                Some(true) => Check::new(
+                    "firewall",
+                    "Firewall",
+                    "ok",
+                    "rule \"replaycut\" allows the port in private networks",
+                ),
+                Some(false) => Check::new("firewall", "Firewall", "warn", "no rule \"replaycut\"")
+                    .with_fix("Other devices may not get through. Settings › Access: turn network access off and on again, and accept the administrator prompt."),
+                None => Check::new(
+                    "firewall",
+                    "Firewall",
+                    "skip",
+                    "the firewall cannot be asked on this system",
+                ),
             }
         }
     };
 
-    let (ffmpeg, folder, scan, (nextcloud, quota), webhook, network) = tokio::join!(
+    let (ffmpeg, folder, scan, (nextcloud, quota), webhook, network, firewall) = tokio::join!(
         ffmpeg_check,
         folder_check,
         scan_check,
         nc_check,
         webhook_check,
-        network_check
+        network_check,
+        firewall_check
     );
     checks.push(ffmpeg);
     let fallbacks = state
@@ -804,6 +842,25 @@ pub async fn run(state: &AppState) -> Report {
         }
     });
     checks.push(network);
+    checks.push(firewall);
+    // pairing (since 2.8): the device login, and whether it is paused
+    let waiting = state.pairing.pending_count();
+    checks.push(match state.pairing.paused() {
+        Some(seconds) => Check::new(
+            "pairing",
+            "Device login",
+            "warn",
+            format!("paused for {seconds} s after too many requests · the password login still works"),
+        )
+        .with_fix("Someone in the network asked for access from several devices. Wait, or use the password on the device that wants in."),
+        None if waiting > 0 => Check::new(
+            "pairing",
+            "Device login",
+            "ok",
+            format!("ready · {waiting} device(s) waiting for an answer"),
+        ),
+        None => Check::new("pairing", "Device login", "ok", "ready"),
+    });
 
     // the copy for a support message: no secrets, settings line, log tail
     let mut text = format!("replaycut {VERSION} - {}\n", crate::util::now_local());

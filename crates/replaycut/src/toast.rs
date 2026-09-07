@@ -66,6 +66,17 @@ impl Toast {
         }
     }
 
+    /// An installation from before 2.8 that listens on the network without
+    /// a password, once per start.
+    pub fn open_to_the_network(settings_url: &str) -> Self {
+        Self {
+            title: "replaycut is open to your network".into(),
+            text: "Every device in this network can use it. Set a password, or allow this PC only"
+                .into(),
+            url: Some(settings_url.to_string()),
+        }
+    }
+
     /// The replay buffer stopped while OBS keeps running (obs-websocket).
     pub fn replay_buffer_stopped(ui_url: &str) -> Self {
         Self {

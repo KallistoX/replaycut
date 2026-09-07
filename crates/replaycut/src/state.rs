@@ -799,6 +799,13 @@ impl AppState {
                 "quota": *self.quota.lock(),
                 // since 2.5
                 "targets": targets,
+                // since 2.8: with `lan` and no password every device in the
+                // network may use this replaycut - the page says so
+                "network": match settings.bind.as_str() {
+                    "127.0.0.1" | "::1" => "loopback",
+                    "0.0.0.0" | "::" => "lan",
+                    _ => "custom",
+                },
             }
         })
     }

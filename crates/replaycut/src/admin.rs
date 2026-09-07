@@ -673,6 +673,75 @@ pub async fn password_suggest() -> Json<Value> {
     Json(json!({ "password": crate::wordlist::passphrase(4) }))
 }
 
+/// Write one field of the settings to disk and make it effective; returns
+/// the restart-only fields that changed.
+async fn patch_settings(app: &AppState, patch: Value) -> Result<Vec<&'static str>, ApiError> {
+    let next = app
+        .settings()
+        .with_patch(&patch)
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))?;
+    let disk_next = Settings::load_or_create(&app.settings_path)
+        .map_err(ApiError::internal)?
+        .with_patch(&patch)
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))?;
+    disk_next
+        .save(&app.settings_path)
+        .map_err(ApiError::internal)?;
+    app.apply_settings(next)
+        .await
+        .map_err(|e| ApiError::internal(format!("{e:#}")))
+}
+
+/// The elevated step for the firewall rule. It is the one thing here that
+/// needs administrator rights, and it may be declined - then the switch
+/// still flips and the diagnostics say the rule is missing.
+async fn firewall(app: &AppState, add: bool) -> &'static str {
+    if app.dry_run {
+        tracing::info!(
+            "dry run: would {} the firewall rule",
+            if add { "add" } else { "remove" }
+        );
+        return "dryRun";
+    }
+    #[cfg(windows)]
+    {
+        let port = app.settings().port;
+        let result =
+            tokio::task::spawn_blocking(move || crate::install::firewall_rule(port, add)).await;
+        match result {
+            Ok(Ok(crate::winshell::Elevated::Exit(0))) => {
+                tracing::info!("firewall rule {}", if add { "added" } else { "removed" });
+                if add {
+                    "added"
+                } else {
+                    "removed"
+                }
+            }
+            Ok(Ok(crate::winshell::Elevated::Cancelled)) => {
+                tracing::warn!("the firewall step was declined");
+                "declined"
+            }
+            Ok(Ok(crate::winshell::Elevated::Exit(code))) => {
+                tracing::warn!("the firewall step exited with {code}");
+                "failed"
+            }
+            Ok(Err(e)) => {
+                tracing::warn!("firewall step: {e:#}");
+                "failed"
+            }
+            Err(e) => {
+                tracing::warn!("firewall step: {e}");
+                "failed"
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = add;
+        "unavailable"
+    }
+}
+
 /// `POST /api/network/enable` (since 2.8): make the service reachable from
 /// the network. Without a password there is nothing to protect it, so the
 /// answer is a 409 and the caller sets one first.
@@ -683,18 +752,57 @@ pub async fn network_enable(State(app): State<App>) -> Result<Json<Value>, ApiEr
             "set a password first - without one anybody in the network could use this replaycut",
         ));
     }
-    Err(ApiError::new(
-        StatusCode::NOT_IMPLEMENTED,
-        "the network switch arrives with the rest of 2.8",
-    ))
+    let restart = patch_settings(&app, json!({ "bind": "0.0.0.0" })).await?;
+    let firewall = firewall(&app, true).await;
+    tracing::info!("network access on (firewall: {firewall})");
+    Ok(Json(json!({
+        "ok": true,
+        "network": "lan",
+        "firewall": firewall,
+        "restartNeeded": !restart.is_empty(),
+    })))
 }
 
 /// `POST /api/network/disable` (since 2.8): back to this PC only.
-pub async fn network_disable() -> Result<Json<Value>, ApiError> {
-    Err(ApiError::new(
-        StatusCode::NOT_IMPLEMENTED,
-        "the network switch arrives with the rest of 2.8",
-    ))
+pub async fn network_disable(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    let restart = patch_settings(&app, json!({ "bind": "127.0.0.1" })).await?;
+    let firewall = firewall(&app, false).await;
+    tracing::info!("network access off (firewall: {firewall})");
+    Ok(Json(json!({
+        "ok": true,
+        "network": "loopback",
+        "firewall": firewall,
+        "restartNeeded": !restart.is_empty(),
+    })))
+}
+
+/// `GET /api/sessions` (since 2.8): the devices that are signed in.
+pub async fn sessions(State(app): State<App>, headers: HeaderMap) -> Json<Value> {
+    let current = auth::cookie_token(&headers);
+    Json(json!({ "ok": true, "sessions": app.sessions.list(current.as_deref()) }))
+}
+
+/// `DELETE /api/sessions/<id>` (since 2.8): that device has to sign in again.
+pub async fn session_revoke(
+    State(app): State<App>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    match app.sessions.revoke(&id) {
+        Some(name) => {
+            tracing::info!("session of {name} revoked");
+            Ok(Json(json!({ "ok": true, "name": name })))
+        }
+        None => Err(ApiError::new(StatusCode::NOT_FOUND, "unknown session")),
+    }
+}
+
+/// `POST /api/sessions/clear` (since 2.8): everyone but the caller.
+pub async fn sessions_clear(State(app): State<App>, headers: HeaderMap) -> Json<Value> {
+    let removed = app
+        .sessions
+        .clear_except(auth::cookie_token(&headers).as_deref());
+    tracing::info!("{removed} session(s) signed out");
+    Json(json!({ "ok": true, "removed": removed }))
 }
 
 /// `POST /api/login`

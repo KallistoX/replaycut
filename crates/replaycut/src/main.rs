@@ -502,6 +502,9 @@ async fn serve(
     if state.settings().check_updates {
         tokio::spawn(update::run(state.clone()));
     }
+    // since 2.8: an installation from before that listens on the network
+    // without a password is told so - once per start, and on every page
+    warn_if_open(&state);
     if open_browser {
         let url = state.ui_url();
         if let Err(e) = platform::open_url(&url) {
@@ -525,6 +528,22 @@ async fn serve(
         _ = deadline => tracing::info!("connections still open 1 s after the shutdown request (a player reading a preview, usually) - closing them"),
     }
     Ok(())
+}
+
+/// The 2.7 default was "listen on every interface", and a password was
+/// optional. Such an installation keeps running in 2.8, but says once per
+/// start what that means (see docs/api.md "Since 2.8").
+fn warn_if_open(state: &Arc<AppState>) {
+    if state.network_mode() != "lan" || state.password_set() {
+        return;
+    }
+    tracing::warn!(
+        "reachable from the network without a password: every device in this network may use this replaycut. Settings > Access: set a password, or turn network access off"
+    );
+    toast::show(
+        state,
+        toast::Toast::open_to_the_network(&format!("{}settings#access", state.ui_url())),
+    );
 }
 
 fn resolve_ui_file(configured: &Path) -> PathBuf {

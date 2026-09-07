@@ -358,7 +358,9 @@ impl Default for Settings {
         Self {
             clip_dir: default_clip_dir(),
             port: 8420,
-            bind: "0.0.0.0".into(),
+            // since 2.8 a new installation listens on this PC only; the
+            // network step of the wizard opens it up once a password is set
+            bind: "127.0.0.1".into(),
             ui_file: PathBuf::from("ui/index.html"),
             display_name: "replaycut".into(),
             encoder: "auto".into(),

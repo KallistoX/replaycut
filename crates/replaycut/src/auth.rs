@@ -320,6 +320,59 @@ impl Sessions {
         self.save(&list);
     }
 
+    /// The device list of `GET /api/sessions` (since 2.8), newest first.
+    /// `current` is the caller's token, so its own row can say so.
+    pub fn list(&self, current: Option<&str>) -> Vec<serde_json::Value> {
+        let now = now_unix();
+        let mine = current.map(token_hash);
+        let mut list: Vec<Session> = self
+            .list
+            .lock()
+            .iter()
+            .filter(|s| s.expires > now)
+            .cloned()
+            .collect();
+        list.sort_by(|a, b| b.created.cmp(&a.created));
+        list.iter()
+            .map(|s| {
+                json!({
+                    "id": s.id,
+                    "name": s.name,
+                    "agent": s.agent,
+                    "ip": s.ip,
+                    "created": s.created,
+                    "lastSeen": s.last_seen,
+                    "via": s.via,
+                    "current": mine.as_deref() == Some(s.hash.as_str()),
+                })
+            })
+            .collect()
+    }
+
+    /// Revoke one session by its id (since 2.8); the name for the log.
+    pub fn revoke(&self, id: &str) -> Option<String> {
+        let mut list = self.list.lock();
+        let i = list.iter().position(|s| s.id == id)?;
+        let gone = list.remove(i);
+        self.save(&list);
+        self.touched.lock().remove(&gone.hash);
+        Some(gone.name)
+    }
+
+    /// "Sign out everywhere" (since 2.8): everyone but the caller.
+    pub fn clear_except(&self, current: Option<&str>) -> usize {
+        let keep = current.map(token_hash);
+        let mut list = self.list.lock();
+        let before = list.len();
+        list.retain(|s| keep.as_deref() == Some(s.hash.as_str()));
+        let removed = before - list.len();
+        if removed > 0 {
+            self.save(&list);
+            self.touched.lock().clear();
+        }
+        removed
+    }
+
     pub fn remove(&self, token: &str) {
         let hash = token_hash(token);
         let mut list = self.list.lock();

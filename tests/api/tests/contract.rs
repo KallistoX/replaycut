@@ -2308,3 +2308,71 @@ fn t46_a_denied_request_and_one_that_is_gone() {
     assert_eq!(status, 200, "{s}");
     assert_eq!(s["status"], "expired", "{s}");
 }
+
+#[test]
+fn t47_signed_in_devices_are_listed_and_can_be_revoked() {
+    let _g = serial();
+    if !since_28() {
+        eprintln!("skipped: needs replaycut 2.8");
+        return;
+    }
+    // the diagnostics of 2.8 answer for the network, the firewall and the
+    // device login
+    let (_, d) = get_json("/api/diagnostics");
+    let ids: Vec<&str> = d["checks"]
+        .as_array()
+        .expect("checks")
+        .iter()
+        .filter_map(|c| c["id"].as_str())
+        .collect();
+    for id in ["network", "firewall", "pairing"] {
+        assert!(ids.contains(&id), "missing check {id}: {ids:?}");
+    }
+
+    // a device that was let in shows up with what is known about it
+    let (id, _) = ask_for_access("Contract test session");
+    let (status, v) = post_json(&format!("/api/pair/{id}/approve"), &json!({}));
+    assert_eq!(status, 200, "{v}");
+    let _ = get(&format!("/api/pair/{id}")); // the device picks up its cookie
+    let (status, s) = get_json("/api/sessions");
+    assert_eq!(status, 200, "{s}");
+    let device = s["sessions"]
+        .as_array()
+        .expect("sessions")
+        .iter()
+        .find(|d| d["name"] == "Contract test session")
+        .unwrap_or_else(|| panic!("the new session is not listed: {s}"))
+        .clone();
+    for field in ["id", "name", "agent", "ip", "created", "lastSeen", "via"] {
+        assert!(device[field].is_string(), "{field}: {device}");
+    }
+    assert_eq!(device["via"], "approve", "{device}");
+    assert!(device["current"].is_boolean(), "{device}");
+
+    // revoking it takes it off the list
+    let sid = device["id"].as_str().unwrap_or("").to_string();
+    let (status, v) = delete(&format!("/api/sessions/{sid}"));
+    assert_eq!(status, 200, "{v}");
+    let (_, s) = get_json("/api/sessions");
+    assert!(
+        !s["sessions"]
+            .as_array()
+            .expect("sessions")
+            .iter()
+            .any(|d| d["id"] == sid.as_str()),
+        "the revoked session is gone: {s}"
+    );
+    let (status, v) = delete("/api/sessions/0123456789abcdef");
+    assert_eq!(status, 404, "{v}");
+
+    // and "sign out everywhere" clears the rest
+    let (status, v) = post_json("/api/sessions/clear", &json!({}));
+    assert_eq!(status, 200, "{v}");
+    assert!(v["removed"].is_number(), "{v}");
+    let (_, s) = get_json("/api/sessions");
+    assert_eq!(
+        s["sessions"].as_array().map(Vec::len),
+        Some(0),
+        "the suite holds no cookie, so nothing is left: {s}"
+    );
+}
