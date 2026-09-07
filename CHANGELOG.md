@@ -10,6 +10,8 @@ contract.
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-09-07
+
 Secure by default. replaycut now listens on your PC only until you open it
 up, and opening it up is one switch that asks for a password first. The
 everyday way onto a phone is no longer typing that password: the phone
