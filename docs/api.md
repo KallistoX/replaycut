@@ -946,6 +946,65 @@ bitrate over the last plain H.264 shares of the same codec (no copy mode,
 no vertical cut, no limits) replaces the fixed per-codec factor once one
 such share exists.
 
+### Host check
+
+Every request is checked against its `Host` header (the name, without the
+port). Allowed are `localhost` (and `*.localhost`), any IP address, this
+machine's name (also with `.local`) and every name in `allowedHosts`.
+Anything else is refused with `421 { ok: false, error: "unknown host" }`,
+before any handler runs - that is the answer for pages, `/api/*`,
+`/media/*` and `/themes/*` alike. A request without a `Host` header
+passes: the check is against DNS rebinding, which needs a name; an IP
+address in the header cannot be rebound.
+
+`allowedHosts` (settings, default `[]`) takes up to 20 host names without
+scheme or port, for an own DNS name or a reverse proxy; letters, digits,
+`-`, `.` and `_`, at most 253 characters each (400 otherwise).
+
+### Password rules and the passphrase generator
+
+A password is 8 to 128 characters; `PUT /api/settings` with a shorter or
+longer one answers `400 { ok: false, error }` and changes nothing (the
+empty string still removes the password). No rules about character
+classes.
+
+`GET /api/password/suggest` -> `200 { password: "orbit-velvet-cactus-lantern" }`:
+four words from a built-in list (EFF Short Wordlist #1, 1296 words),
+joined with `-`, drawn fresh for every call. Nothing is stored - the
+password exists once the caller sends it back with `PUT /api/settings`.
+
+### The login throttle over all addresses
+
+Beside the ten failures per address (60 s, since 2.1), more than 30 failed
+logins from all addresses together within five minutes pause the password
+login for ten minutes: `POST /api/login` answers `429 { ok: false, error }`
+until then, for every address.
+
+### Sessions know their device
+
+A session in `sessions.json` carries `id` (a random handle, not a secret),
+`name` ("iPhone, Safari", guessed from the `User-Agent`), `agent`, `ip`,
+`created`, `lastSeen` (written at most once a minute) and `via`
+(`password`, `approve` or `qr`). Sessions written before 2.8 keep working
+and are filled in on the first start: an id, `Unknown device`, `lastSeen`
+= `created`, `via: password`.
+
+### Additions to `GET /api/session`
+
+Besides `authenticated`, `loopback` and `passwordSet`:
+
+| Field | Meaning |
+| --- | --- |
+| `host` | The name of the PC this service runs on. Pages use it instead of "this PC", which is wrong on a phone. |
+| `network` | `loopback` (bind `127.0.0.1` or `::1`), `lan` (`0.0.0.0` or `::`) or `custom` (any other bind address). |
+| `pairing` | Whether the device login accepts requests. |
+
+### `POST /api/network/enable`, `POST /api/network/disable`
+
+Turn access from other devices on and off. `enable` answers
+`409 { ok: false, error }` while no password is set: without one there is
+nothing to protect the service with.
+
 ## Behaviour
 
 ### Folder scan

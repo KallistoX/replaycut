@@ -95,6 +95,10 @@ pub fn router(state: App) -> Router {
         .route("/api/obs/adopt-folder", post(admin::obs_adopt_folder))
         .route("/api/session", get(admin::session))
         .route("/api/login", post(admin::login))
+        // since 2.8
+        .route("/api/password/suggest", get(admin::password_suggest))
+        .route("/api/network/enable", post(admin::network_enable))
+        .route("/api/network/disable", post(admin::network_disable))
         .route("/api/logout", post(admin::logout))
         .route("/api/restart", post(admin::restart))
         .route("/themes/{file}", get(admin::theme))
@@ -104,6 +108,11 @@ pub fn router(state: App) -> Router {
             auth::guard,
         ))
         .layer(axum::middleware::from_fn(auth::origin_check))
+        // outermost since 2.8: a request for another host never reaches a handler
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::host_check,
+        ))
         .with_state(state)
 }
 

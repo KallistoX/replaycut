@@ -2077,3 +2077,88 @@ fn t42_quality_by_default_limits_per_target_and_posting_on_request() {
     assert_eq!(status, 200);
     wait_for_clip_gone(&base, Duration::from_secs(10));
 }
+
+#[test]
+fn t43_a_host_this_service_does_not_answer_to_is_refused() {
+    let _g = serial();
+    if !since_28() {
+        eprintln!("skipped: needs replaycut 2.8");
+        return;
+    }
+    // the name the suite uses keeps working
+    let (status, _) = get_json("/api/clips");
+    assert_eq!(status, 200);
+    // a name that is not this machine's is a 421, on the API and on the pages
+    for host in ["evil.example", "evil.example:8420"] {
+        let (status, v) = get_with_host("/api/clips", host);
+        assert_eq!(status, 421, "{host}: {v}");
+        assert_eq!(v["ok"], false, "{v}");
+        assert!(
+            v["error"].as_str().unwrap_or("").contains("host"),
+            "{host}: {v}"
+        );
+    }
+    let (status, _) = get_with_host("/", "evil.example");
+    assert_eq!(status, 421);
+    // an address cannot be rebound, so it stays allowed
+    let (status, _) = get_with_host("/api/clips", "127.0.0.1");
+    assert_eq!(status, 200);
+    let (status, _) = get_with_host("/api/clips", "[::1]");
+    assert_eq!(status, 200);
+}
+
+#[test]
+fn t44_password_rules_the_generator_and_the_network_switch() {
+    let _g = serial();
+    if !since_28() {
+        eprintln!("skipped: needs replaycut 2.8");
+        return;
+    }
+    let (_, before) = get_json("/api/settings");
+    assert!(before["allowedHosts"].is_array(), "{before}");
+
+    // 8 to 128 characters, and a rejected password changes nothing
+    for pw in ["short12".to_string(), "x".repeat(129)] {
+        let (status, v) = put_json("/api/settings", &json!({ "password": pw }));
+        assert_eq!(status, 400, "{pw}: {v}");
+        assert!(v["error"].as_str().unwrap_or("").contains("128"), "{v}");
+    }
+    let (_, after) = get_json("/api/settings");
+    assert_eq!(after["passwordSet"], before["passwordSet"], "{after}");
+
+    // "Generate one for me": four words, a new one every time
+    let (status, v) = get_json("/api/password/suggest");
+    assert_eq!(status, 200, "{v}");
+    let suggestion = v["password"].as_str().unwrap_or("").to_string();
+    let words: Vec<&str> = suggestion.split('-').collect();
+    assert_eq!(words.len(), 4, "{suggestion}");
+    assert!(
+        words
+            .iter()
+            .all(|w| w.len() >= 3 && w.chars().all(|c| c.is_ascii_lowercase())),
+        "{suggestion}"
+    );
+    assert!(suggestion.chars().count() >= 8, "{suggestion}");
+    let (_, again) = get_json("/api/password/suggest");
+    assert_ne!(again["password"], v["password"], "always the same words");
+
+    // the session document says which PC this is and how it listens
+    let (status, session) = get_json("/api/session");
+    assert_eq!(status, 200, "{session}");
+    assert!(
+        !session["host"].as_str().unwrap_or("").is_empty(),
+        "{session}"
+    );
+    assert!(
+        ["loopback", "lan", "custom"].contains(&session["network"].as_str().unwrap_or("")),
+        "{session}"
+    );
+    assert!(session["pairing"].is_boolean(), "{session}");
+
+    // without a password there is nothing to protect the network access with
+    if before["passwordSet"] == json!(false) {
+        let (status, v) = post_json("/api/network/enable", &json!({}));
+        assert_eq!(status, 409, "{v}");
+        assert_eq!(v["ok"], false, "{v}");
+    }
+}

@@ -42,6 +42,10 @@ pub struct Settings {
     /// argon2id PHC string of the optional password; never sent to the UI.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password_hash: Option<String>,
+    /// Host names this service answers to besides `localhost`, its own
+    /// name and any IP address (since 2.8): own DNS names and reverse
+    /// proxies. Everything else gets a 421.
+    pub allowed_hosts: Vec<String>,
     pub integrations: Integrations,
     /// obs-websocket on this PC (the password lives in the Credential Manager).
     pub obs: Obs,
@@ -364,6 +368,7 @@ impl Default for Settings {
             theme: "wardogs".into(),
             preview_h264: "onDemand".into(),
             password_hash: None,
+            allowed_hosts: Vec::new(),
             integrations: Integrations::default(),
             obs: Obs::default(),
         }
@@ -407,8 +412,9 @@ pub fn is_theme_name(name: &str) -> bool {
 
 /// Top-level keys `PUT /api/settings` accepts, and the nested ones below
 /// `integrations`. Anything else is a 400 with the offending name.
-const PATCH_KEYS: [&str; 16] = [
+const PATCH_KEYS: [&str; 17] = [
     "obs",
+    "allowedHosts",
     "previewH264",
     "clipDir",
     "port",
@@ -640,6 +646,21 @@ impl Settings {
             self.bind.parse::<std::net::IpAddr>().is_ok(),
             "bind must be an IP address such as 0.0.0.0 or 127.0.0.1"
         );
+        anyhow::ensure!(
+            self.allowed_hosts.len() <= 20,
+            "allowedHosts takes at most 20 names"
+        );
+        for host in &self.allowed_hosts {
+            let name = host.trim();
+            anyhow::ensure!(
+                !name.is_empty()
+                    && name.len() <= 253
+                    && name
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"-._".contains(&b)),
+                "allowedHosts must be host names such as replay.example, without scheme or port"
+            );
+        }
         anyhow::ensure!(
             LOG_LEVELS.contains(&self.log_level.as_str()),
             "logLevel must be one of error, warn, info, debug, trace"

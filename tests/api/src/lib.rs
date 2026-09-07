@@ -216,6 +216,17 @@ pub fn get_json(path: &str) -> (u16, Value) {
     to_json(get(path))
 }
 
+/// A GET that names another host, for the Host check of 2.8.
+pub fn get_with_host(path: &str, host: &str) -> (u16, Value) {
+    to_json(
+        client()
+            .get(url(path))
+            .header("host", host)
+            .send()
+            .unwrap_or_else(|e| panic!("GET {path} as {host}: {e}")),
+    )
+}
+
 pub fn post_json(path: &str, body: &Value) -> (u16, Value) {
     to_json(
         client()

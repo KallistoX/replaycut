@@ -10,8 +10,26 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- "Generate one for me" next to the password fields in the wizard and in
+  the settings: four words from a built-in list, shown once in clear text.
+- `allowedHosts` in the settings: names this replaycut answers to besides
+  `localhost`, its own name and any address - for an own DNS name or a
+  reverse proxy.
+
 ### Changed
 
+- A request that names a host this replaycut does not answer to is refused
+  with 421. That closes DNS rebinding, where a page in your browser uses
+  its own name to reach the service on your PC.
+- A password is 8 to 128 characters now, and there are no rules about
+  digits or symbols: length is what counts.
+- Signed-in devices are recorded with a name ("iPhone, Safari"), their
+  browser, their address and when they were last seen. Sessions from
+  earlier versions keep working.
+- More than 30 failed logins from all addresses together within five
+  minutes pause the password login for ten minutes.
 - The size estimate in the share row learns from your own shares: the job
   records the recording's codec and bitrate (`codec`, `sourceKbps`), and
   the row uses the median ratio of the last plain H.264 shares of that

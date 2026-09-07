@@ -164,10 +164,15 @@ pub async fn put_settings(
             app.sessions.clear();
             tracing::info!("password removed");
         } else {
-            if pw.chars().count() < 6 {
+            let len = pw.chars().count();
+            if !(auth::PASSWORD_MIN..=auth::PASSWORD_MAX).contains(&len) {
                 return Err(ApiError::new(
                     StatusCode::BAD_REQUEST,
-                    "password: use at least 6 characters",
+                    format!(
+                        "password: use between {} and {} characters",
+                        auth::PASSWORD_MIN,
+                        auth::PASSWORD_MAX
+                    ),
                 ));
             }
             let hash = auth::hash_password(pw).map_err(ApiError::internal)?;
@@ -500,7 +505,44 @@ pub async fn session(
         "authenticated": !password_set || loopback || has_session,
         "loopback": loopback,
         "passwordSet": password_set,
+        // since 2.8: the pages say the name of this PC instead of "this PC",
+        // which is wrong on a phone
+        "host": platform::hostname(),
+        "network": app.network_mode(),
+        // the device login arrives in 2.8 as well; until then nobody can ask
+        "pairing": false,
     }))
+}
+
+/// `GET /api/password/suggest` (since 2.8): four words from the EFF short
+/// word list, for "Generate one for me". Nothing is stored; the password
+/// only exists once the caller sends it back with `PUT /api/settings`.
+pub async fn password_suggest() -> Json<Value> {
+    Json(json!({ "password": crate::wordlist::passphrase(4) }))
+}
+
+/// `POST /api/network/enable` (since 2.8): make the service reachable from
+/// the network. Without a password there is nothing to protect it, so the
+/// answer is a 409 and the caller sets one first.
+pub async fn network_enable(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    if !app.password_set() {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "set a password first - without one anybody in the network could use this replaycut",
+        ));
+    }
+    Err(ApiError::new(
+        StatusCode::NOT_IMPLEMENTED,
+        "the network switch arrives with the rest of 2.8",
+    ))
+}
+
+/// `POST /api/network/disable` (since 2.8): back to this PC only.
+pub async fn network_disable() -> Result<Json<Value>, ApiError> {
+    Err(ApiError::new(
+        StatusCode::NOT_IMPLEMENTED,
+        "the network switch arrives with the rest of 2.8",
+    ))
 }
 
 /// `POST /api/login`
@@ -521,6 +563,13 @@ pub async fn login(
             format!("too many attempts - wait {seconds} s"),
         ));
     }
+    // since 2.8: the same for all addresses together
+    if let Err(seconds) = app.sessions.check_global() {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            format!("too many failed logins - the password login pauses for {seconds} s"),
+        ));
+    }
     let password = v["password"].as_str().unwrap_or("").to_string();
     let ok = {
         let hash = hash.to_string();
@@ -535,8 +584,13 @@ pub async fn login(
         return Err(ApiError::new(StatusCode::UNAUTHORIZED, "wrong password"));
     }
     app.sessions.record_success(addr.ip());
-    let token = app.sessions.create();
-    tracing::info!("login from {}", addr.ip());
+    let agent = headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let new = auth::NewSession::from_agent(agent, addr.ip(), auth::Via::Password);
+    tracing::info!("login from {} ({})", addr.ip(), new.name);
+    let token = app.sessions.create(new);
     let mut res = Json(json!({ "ok": true })).into_response();
     if let Ok(v) = auth::set_cookie_value(&token).parse() {
         res.headers_mut().insert(SET_COOKIE, v);

@@ -663,9 +663,10 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <div class="card-body stack-3" id="wPwBody">
         <p class="muted sm">Recommended if others share your network. <b>This PC never needs it</b> - only phones and other computers get the login page. It is sent over your network once, unencrypted, like every login afterwards; HTTPS comes later.</p>
         <div class="fields-2">
-          <div class="field"><label>Password</label><div class="input-group"><input class="input" id="wPw1" type="password" autocomplete="new-password"><button class="btn btn-icon" type="button" data-eye="wPw1" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div></div>
+          <div class="field"><label>Password</label><div class="input-group"><input class="input" id="wPw1" type="password" autocomplete="new-password" placeholder="at least 8 characters"><button class="btn btn-icon" type="button" data-eye="wPw1" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div></div>
           <div class="field"><label>Repeat</label><input class="input" id="wPw2" type="password" autocomplete="new-password"><span class="error" id="wPwErr" hidden></span></div>
         </div>
+        <div class="row"><button class="btn" type="button" id="wPwGen">Generate one for me</button><span class="muted sm" id="wPwGenHint" hidden>Four words are easy to type on a phone. Write it down now - it is shown only here.</span></div>
       </div>
     </div>
     <div class="card">
@@ -730,6 +731,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="field"><label>New password</label><div class="input-group"><input class="input" id="sPw1" type="password" autocomplete="new-password" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sPw1" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div></div>
         <div class="field"><label>Repeat</label><input class="input" id="sPw2" type="password" autocomplete="new-password"><span class="error" id="sPwErr" hidden></span></div>
       </div>
+      <div class="row" id="sPwGenRow"><button class="btn" type="button" id="sPwGen">Generate one for me</button><span class="muted sm" id="sPwGenHint" hidden>Write it down now - it is shown only here.</span></div>
       <div class="row"><button class="btn" id="sAddr"><svg class="icon"><use href="#i-qr"/></svg> Show address and QR code</button><span class="muted sm" id="sAddrText"></span></div>
     </div>
   </div>
@@ -1066,6 +1068,19 @@ function initLogin() {
   };
 }
 
+// ------------------------------------------------------------ shared: passphrase
+// "Generate one for me": four words from the service (since 2.8). They go into
+// both fields in clear text - the password is never shown again afterwards.
+async function suggestPassword(first, second, hint) {
+  try {
+    const r = await api('/api/password/suggest', {}, { retries: 0 });
+    if (!r.password) { toast(r.error || 'No suggestion', 'err'); return false; }
+    [first, second].forEach(id => { $(id).value = r.password; $(id).type = 'text'; });
+    $(hint).hidden = false;
+    return true;
+  } catch (e) { toast(e.message, 'err'); return false; }
+}
+
 // ------------------------------------------------------------ shared: fields, eyes, addresses
 document.querySelectorAll('[data-eye]').forEach(b => b.onclick = () => { const i = $(b.dataset.eye); i.type = i.type === 'password' ? 'text' : 'password'; });
 const CODEC_MIME = { h264: 'video/mp4; codecs="avc1.640028"', hevc: 'video/mp4; codecs="hvc1.1.6.L120.90"', av1: 'video/mp4; codecs="av01.0.08M.08"', vp9: 'video/mp4; codecs="vp09.00.10.08"' };
@@ -1140,6 +1155,7 @@ async function initSetup() {
   const cardState = () => { $('wNcCard').classList.toggle('is-disabled', !$('wNcOn').checked); $('wNcBadge').textContent = $('wNcOn').checked ? 'on' : 'off'; $('wDcCard').classList.toggle('is-disabled', !$('wDcOn').checked); $('wDcBadge').textContent = $('wDcOn').checked ? 'on' : 'off'; $('wLocalNote').hidden = $('wNcOn').checked || $('wDcOn').checked; $('wSkip2').hidden = $('wNcOn').checked || $('wDcOn').checked; };
   $('wNcOn').onchange = $('wDcOn').onchange = cardState; cardState();
   $('wPwOn').onchange = () => { $('wPwBody').hidden = !$('wPwOn').checked; }; $('wPwOn').checked = !!settings.passwordSet; $('wPwBody').hidden = !$('wPwOn').checked;
+  $('wPwGen').onclick = () => suggestPassword('wPw1', 'wPw2', 'wPwGenHint');
 
   async function saveFolder() {
     const f = $('wFolder').value.trim(); if (!f || f === folderSaved) return true;
@@ -1219,7 +1235,7 @@ async function initSetup() {
     if ($('wPwOn').checked) {
       const p1 = $('wPw1').value, p2 = $('wPw2').value;
       if (p1 || !settings.passwordSet) {
-        if (p1.length < 6) { $('wPwErr').textContent = 'Use at least 6 characters.'; $('wPwErr').hidden = false; return; }
+        if (p1.length < 8) { $('wPwErr').textContent = 'Use at least 8 characters.'; $('wPwErr').hidden = false; return; }
         if (p1 !== p2) { $('wPwErr').textContent = 'The two entries differ.'; $('wPwErr').hidden = false; return; }
         body.password = p1;
       }
@@ -1256,7 +1272,7 @@ async function initSettings() {
     $('encHint').textContent = cfg.encoder ? `In use: ${cfg.encoder}. Changing it runs a test encode.` : '';
     $('ovClipDir').hidden = !(s.overrides && s.overrides.clipDir);
     $('sAutostart').checked = !!s.autostart;
-    $('sPwOn').checked = !!s.passwordSet; $('sPwFields').hidden = !$('sPwOn').checked; $('sPw1').value = ''; $('sPw2').value = ''; $('sPw1').placeholder = s.passwordSet ? 'leave empty to keep' : 'at least 6 characters';
+    $('sPwOn').checked = !!s.passwordSet; $('sPwFields').hidden = !$('sPwOn').checked; $('sPwGenRow').hidden = !$('sPwOn').checked; $('sPwGenHint').hidden = true; $('sPw1').type = 'password'; $('sPw2').type = 'password'; $('sPw1').value = ''; $('sPw2').value = ''; $('sPw1').placeholder = s.passwordSet ? 'leave empty to keep' : 'at least 8 characters';
     $('sNcUser').value = ''; $('sNcPw').value = ''; $('sDcHook').value = '';
     $('sS3Key').value = ''; $('sS3Secret').value = ''; $('sDavUser').value = ''; $('sDavPw').value = '';
     $('sYtId').value = ''; $('sYtSecret').value = ''; $('sTgToken').value = ''; $('sWhSecret').value = '';
@@ -1303,12 +1319,13 @@ async function initSettings() {
   }
   fields.forEach(el => { el.addEventListener('input', () => { if (el.dataset.f === 'displayName') fields.filter(o => o !== el && o.dataset.f === 'displayName').forEach(o => o.value = el.value); dirty(); }); el.addEventListener('change', dirty); });
   ['sPw1', 'sPw2', 'sNcUser', 'sNcPw', 'sDcHook', 'sS3Key', 'sS3Secret', 'sDavUser', 'sDavPw', 'sYtId', 'sYtSecret', 'sTgToken', 'sWhSecret'].forEach(id => $(id).addEventListener('input', dirty));
-  $('sPwOn').onchange = () => { $('sPwFields').hidden = !$('sPwOn').checked; dirty(); };
+  $('sPwOn').onchange = () => { $('sPwFields').hidden = !$('sPwOn').checked; $('sPwGenRow').hidden = !$('sPwOn').checked; dirty(); };
+  $('sPwGen').onclick = async () => { if (await suggestPassword('sPw1', 'sPw2', 'sPwGenHint')) dirty(); };
   $('sAutostart').onchange = async () => { try { const r = await api('/api/settings', jsonOpts('PUT', { autostart: $('sAutostart').checked }), { retries: 0 }); r.ok ? toast('Autostart ' + ($('sAutostart').checked ? 'on' : 'off'), 'ok') : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } };
   $('sDiscard').onclick = () => fill(orig);
   $('sSave').onclick = async () => {
     const c = changes(); $('sPwErr').hidden = true;
-    if ('password' in c && c.password) { if (c.password.length < 6) { $('sPwErr').textContent = 'Use at least 6 characters.'; $('sPwErr').hidden = false; return; } if (c.password !== $('sPw2').value) { $('sPwErr').textContent = 'The two entries differ.'; $('sPwErr').hidden = false; return; } }
+    if ('password' in c && c.password) { if (c.password.length < 8) { $('sPwErr').textContent = 'Use at least 8 characters.'; $('sPwErr').hidden = false; return; } if (c.password !== $('sPw2').value) { $('sPwErr').textContent = 'The two entries differ.'; $('sPwErr').hidden = false; return; } }
     if ('nextcloudUser' in c && (!c.nextcloudUser || !c.nextcloudPassword)) { toast('Nextcloud: fill user and app password together', 'err'); return; }
     if ('youtubeClientId' in c && (!c.youtubeClientId || !c.youtubeClientSecret)) { toast('YouTube: fill client id and client secret together', 'err'); return; }
     $('sSave').disabled = true; $('sSave').innerHTML = '<span class="spinner"></span> Saving';

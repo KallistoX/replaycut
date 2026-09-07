@@ -548,6 +548,22 @@ impl AppState {
         self.settings.read().password_hash.is_some()
     }
 
+    /// The extra host names of the settings, for the Host check on every
+    /// request (since 2.8): cheaper than cloning all settings.
+    pub fn allowed_hosts(&self) -> Vec<String> {
+        self.settings.read().allowed_hosts.clone()
+    }
+
+    /// What `GET /api/session` reports as `network` (since 2.8): the bind
+    /// address as the network card of the settings sees it.
+    pub fn network_mode(&self) -> &'static str {
+        match self.settings.read().bind.as_str() {
+            "127.0.0.1" | "::1" => "loopback",
+            "0.0.0.0" | "::" => "lan",
+            _ => "custom",
+        }
+    }
+
     /// Make new settings effective: rebuild what depends on them, note the
     /// fields that need a restart, wake the scanner. The caller has already
     /// validated and saved them.

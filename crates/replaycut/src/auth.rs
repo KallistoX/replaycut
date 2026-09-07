@@ -1,10 +1,12 @@
 //! Access control: the optional password (argon2id hash in settings.json),
 //! browser sessions (`rc_session` cookie, token hashes in sessions.json),
-//! the login throttle and the Origin check.
+//! the login throttle, the Origin check and the Host check.
 //!
 //! Rules from docs/api.md: loopback never needs a login; with a password
 //! set, other clients need a valid session for `/api/*` and `/media/*`;
-//! every non-GET request whose `Origin` does not match `Host` is refused.
+//! every non-GET request whose `Origin` does not match `Host` is refused;
+//! since 2.8 a request whose `Host` names neither this machine nor an
+//! allowed name is refused with 421.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -36,6 +38,17 @@ pub const SESSION_DAYS: u64 = 30;
 const MAX_FAILURES: u32 = 10;
 const LOCKOUT: Duration = Duration::from_secs(60);
 const FAILURE_DELAY: Duration = Duration::from_secs(1);
+/// The password rules of 2.8. Four generated words are 27 characters.
+pub const PASSWORD_MIN: usize = 8;
+pub const PASSWORD_MAX: usize = 128;
+/// Beyond the per-address throttle: this many failed logins from all
+/// addresses together within [`GLOBAL_WINDOW`] pause the password login
+/// for [`GLOBAL_LOCKOUT`] (since 2.8). The device login keeps working.
+const GLOBAL_MAX_FAILURES: usize = 30;
+const GLOBAL_WINDOW: Duration = Duration::from_secs(300);
+const GLOBAL_LOCKOUT: Duration = Duration::from_secs(600);
+/// `lastSeen` is written at most this often per session (since 2.8).
+const TOUCH_EVERY: Duration = Duration::from_secs(60);
 
 pub fn hash_password(password: &str) -> Result<String> {
     let salt = SaltString::generate(&mut OsRng);
@@ -64,13 +77,101 @@ pub fn is_loopback(addr: &SocketAddr) -> bool {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Session {
+/// How a session came to be (since 2.8).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Via {
+    /// The password on the login page. Sessions from before 2.8 are these.
+    #[default]
+    Password,
+    /// Approved on this PC after the device asked (since 2.8).
+    Approve,
+    /// A scanned QR code (since 2.8).
+    Qr,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Session {
+    /// Handle for the device list and for revoking (since 2.8); random,
+    /// not a secret.
+    pub id: String,
     /// SHA-256 of the token, hex.
     hash: String,
-    created: String,
+    /// What the device calls itself, "iPhone, Safari" (since 2.8).
+    pub name: String,
+    /// The `User-Agent` as it arrived (since 2.8).
+    pub agent: String,
+    /// The address the session was created from (since 2.8).
+    pub ip: String,
+    pub created: String,
+    /// Local timestamp of the last request, at most one write a minute
+    /// (since 2.8).
+    pub last_seen: String,
+    pub via: Via,
     /// Unix seconds.
     expires: u64,
+}
+
+/// What a new session records about the device it belongs to (since 2.8).
+#[derive(Debug, Clone)]
+pub struct NewSession {
+    pub name: String,
+    pub agent: String,
+    pub ip: String,
+    pub via: Via,
+}
+
+impl NewSession {
+    /// A password login: the name is guessed from the `User-Agent`.
+    pub fn from_agent(agent: &str, ip: IpAddr, via: Via) -> Self {
+        Self {
+            name: device_name(agent),
+            agent: agent.chars().take(200).collect(),
+            ip: ip.to_string(),
+            via,
+        }
+    }
+}
+
+/// A short name for a browser, "iPhone, Safari" (since 2.8). The device
+/// may replace it when it asks for access; this is the suggestion and what
+/// a password login is filed under.
+pub fn device_name(agent: &str) -> String {
+    if agent.trim().is_empty() {
+        return "Unknown device".into();
+    }
+    let system = if agent.contains("iPhone") {
+        "iPhone"
+    } else if agent.contains("iPad") {
+        "iPad"
+    } else if agent.contains("Android") {
+        "Android"
+    } else if agent.contains("Windows") {
+        "Windows PC"
+    } else if agent.contains("Macintosh") || agent.contains("Mac OS") {
+        "Mac"
+    } else if agent.contains("Linux") {
+        "Linux"
+    } else {
+        "Device"
+    };
+    // Order matters: Edge and Opera also call themselves Chrome, and
+    // every Chrome also claims Safari.
+    let browser = if agent.contains("Edg/") {
+        "Edge"
+    } else if agent.contains("OPR/") || agent.contains("Opera") {
+        "Opera"
+    } else if agent.contains("Firefox/") {
+        "Firefox"
+    } else if agent.contains("Chrome/") || agent.contains("CriOS/") {
+        "Chrome"
+    } else if agent.contains("Safari/") {
+        "Safari"
+    } else {
+        "Browser"
+    };
+    format!("{system}, {browser}")
 }
 
 struct Attempts {
@@ -78,11 +179,22 @@ struct Attempts {
     last: Instant,
 }
 
+/// The throttle over all addresses (since 2.8).
+#[derive(Default)]
+struct Global {
+    /// Failed logins inside the window, oldest first.
+    recent: Vec<Instant>,
+    locked_until: Option<Instant>,
+}
+
 /// Browser sessions plus the login throttle.
 pub struct Sessions {
     file: PathBuf,
     list: Mutex<Vec<Session>>,
     attempts: Mutex<HashMap<IpAddr, Attempts>>,
+    global: Mutex<Global>,
+    /// When `lastSeen` of a session (by token hash) was last written.
+    touched: Mutex<HashMap<String, Instant>>,
 }
 
 fn now_unix() -> u64 {
@@ -97,6 +209,13 @@ fn token_hash(token: &str) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// `n` bytes from the OS random source as hex.
+pub fn random_hex(n: usize) -> String {
+    let mut bytes = vec![0u8; n];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 impl Sessions {
     pub fn load(file: &Path) -> Self {
         let mut list: Vec<Session> = std::fs::read_to_string(file)
@@ -105,11 +224,36 @@ impl Sessions {
             .unwrap_or_default();
         let now = now_unix();
         list.retain(|s| s.expires > now);
-        Self {
+        // Sessions written before 2.8 only knew the token hash: give them
+        // an id and say what little is known about the device.
+        let mut migrated = false;
+        for s in &mut list {
+            if s.id.is_empty() {
+                s.id = random_hex(8);
+                migrated = true;
+            }
+            if s.name.is_empty() {
+                s.name = "Unknown device".into();
+                migrated = true;
+            }
+            if s.last_seen.is_empty() {
+                s.last_seen.clone_from(&s.created);
+                migrated = true;
+            }
+        }
+        let sessions = Self {
             file: file.to_path_buf(),
             list: Mutex::new(list),
             attempts: Mutex::new(HashMap::new()),
+            global: Mutex::new(Global::default()),
+            touched: Mutex::new(HashMap::new()),
+        };
+        if migrated {
+            tracing::info!("sessions.json: filled in the device fields of 2.8");
+            let list = sessions.list.lock();
+            sessions.save(&list);
         }
+        sessions
     }
 
     fn save(&self, list: &[Session]) {
@@ -119,17 +263,22 @@ impl Sessions {
         }
     }
 
-    /// A new session; returns the token for the cookie.
-    pub fn create(&self) -> String {
-        let mut bytes = [0u8; 32];
-        OsRng.fill_bytes(&mut bytes);
-        let token: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    /// A new session for a device; returns the token for the cookie.
+    pub fn create(&self, new: NewSession) -> String {
+        let token = random_hex(32);
         let now = now_unix();
+        let stamp = util::now_local();
         let mut list = self.list.lock();
         list.retain(|s| s.expires > now);
         list.push(Session {
+            id: random_hex(8),
             hash: token_hash(&token),
-            created: util::now_local(),
+            name: new.name,
+            agent: new.agent,
+            ip: new.ip,
+            created: stamp.clone(),
+            last_seen: stamp,
+            via: new.via,
             expires: now + SESSION_DAYS * 86_400,
         });
         self.save(&list);
@@ -139,10 +288,36 @@ impl Sessions {
     pub fn is_valid(&self, token: &str) -> bool {
         let hash = token_hash(token);
         let now = now_unix();
-        self.list
+        let valid = self
+            .list
             .lock()
             .iter()
-            .any(|s| s.hash == hash && s.expires > now)
+            .any(|s| s.hash == hash && s.expires > now);
+        if valid {
+            self.touch(&hash);
+        }
+        valid
+    }
+
+    /// Note that the session was used. The file is written at most once a
+    /// minute per session, so a polling page does not keep the disk busy.
+    fn touch(&self, hash: &str) {
+        {
+            let mut touched = self.touched.lock();
+            if let Some(last) = touched.get(hash) {
+                if last.elapsed() < TOUCH_EVERY {
+                    return;
+                }
+            }
+            touched.insert(hash.to_string(), Instant::now());
+        }
+        let stamp = util::now_local();
+        let mut list = self.list.lock();
+        let Some(session) = list.iter_mut().find(|s| s.hash == hash) else {
+            return;
+        };
+        session.last_seen = stamp;
+        self.save(&list);
     }
 
     pub fn remove(&self, token: &str) {
@@ -172,17 +347,46 @@ impl Sessions {
         Ok(())
     }
 
-    pub fn record_failure(&self, ip: IpAddr) {
-        let mut attempts = self.attempts.lock();
-        let entry = attempts.entry(ip).or_insert(Attempts {
-            failures: 0,
-            last: Instant::now(),
-        });
-        if entry.failures >= MAX_FAILURES && entry.last.elapsed() >= LOCKOUT {
-            entry.failures = 0;
+    /// Before checking a password: `Err(seconds)` while the password login
+    /// is paused for everyone (since 2.8). The device login is not.
+    pub fn check_global(&self) -> Result<(), u64> {
+        let mut global = self.global.lock();
+        match global.locked_until {
+            Some(until) if until > Instant::now() => Err((until - Instant::now()).as_secs().max(1)),
+            Some(_) => {
+                global.locked_until = None;
+                global.recent.clear();
+                Ok(())
+            }
+            None => Ok(()),
         }
-        entry.failures += 1;
-        entry.last = Instant::now();
+    }
+
+    pub fn record_failure(&self, ip: IpAddr) {
+        {
+            let mut attempts = self.attempts.lock();
+            let entry = attempts.entry(ip).or_insert(Attempts {
+                failures: 0,
+                last: Instant::now(),
+            });
+            if entry.failures >= MAX_FAILURES && entry.last.elapsed() >= LOCKOUT {
+                entry.failures = 0;
+            }
+            entry.failures += 1;
+            entry.last = Instant::now();
+        }
+        let mut global = self.global.lock();
+        global.recent.retain(|t| t.elapsed() < GLOBAL_WINDOW);
+        global.recent.push(Instant::now());
+        if global.recent.len() > GLOBAL_MAX_FAILURES && global.locked_until.is_none() {
+            global.locked_until = Some(Instant::now() + GLOBAL_LOCKOUT);
+            tracing::warn!(
+                "{} failed logins within {} s: the password login is paused for {} minutes",
+                global.recent.len(),
+                GLOBAL_WINDOW.as_secs(),
+                GLOBAL_LOCKOUT.as_secs() / 60
+            );
+        }
     }
 
     pub fn record_success(&self, ip: IpAddr) {
@@ -230,6 +434,77 @@ pub fn origin_allowed(origin: Option<&str>, host: Option<&str>) -> bool {
         return false;
     };
     origin_host.eq_ignore_ascii_case(host.trim())
+}
+
+/// The name part of a `Host` header: `gaming-pc:8420` -> `gaming-pc`,
+/// `[::1]:8420` -> `::1`. Lower case, because names are.
+pub fn host_name(raw: &str) -> String {
+    let raw = raw.trim();
+    if let Some(rest) = raw.strip_prefix('[') {
+        return rest
+            .split(']')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+    }
+    match raw.rsplit_once(':') {
+        Some((name, port)) if !name.contains(':') && port.bytes().all(|b| b.is_ascii_digit()) => {
+            name.to_ascii_lowercase()
+        }
+        _ => raw.to_ascii_lowercase(),
+    }
+}
+
+/// Whether a request may name this host (since 2.8): `localhost`, any IP
+/// address, this machine's name (also with `.local`) and the names in
+/// `allowedHosts` are fine, everything else is not.
+///
+/// An IP address is always allowed because DNS rebinding - the attack this
+/// check is for - needs a name: the browser sends the name the attacker's
+/// page used, and a name that is not ours never reaches a handler.
+pub fn host_allowed(raw: Option<&str>, hostname: &str, allowed: &[String]) -> bool {
+    // A request without a Host carries no name to rebind (and HTTP/1.1
+    // clients always send one).
+    let Some(raw) = raw else {
+        return true;
+    };
+    let name = host_name(raw);
+    if name.is_empty() {
+        return false;
+    }
+    if name == "localhost" || name.ends_with(".localhost") {
+        return true;
+    }
+    if name.parse::<IpAddr>().is_ok() {
+        return true;
+    }
+    let hostname = hostname.to_ascii_lowercase();
+    if !hostname.is_empty() && (name == hostname || name == format!("{hostname}.local")) {
+        return true;
+    }
+    allowed
+        .iter()
+        .any(|a| a.trim().to_ascii_lowercase() == name)
+}
+
+/// Refuse a request whose `Host` names something that is not this service
+/// (since 2.8): `421 { ok: false, error: "unknown host" }`.
+pub async fn host_check(State(state): State<Arc<AppState>>, req: Request, next: Next) -> Response {
+    let host = req.headers().get(HOST).and_then(|v| v.to_str().ok());
+    if !host_allowed(host, &crate::platform::hostname(), &state.allowed_hosts()) {
+        tracing::warn!(
+            "refused {} {} for host {:?}",
+            req.method(),
+            req.uri().path(),
+            host
+        );
+        return (
+            StatusCode::MISDIRECTED_REQUEST,
+            Json(json!({ "ok": false, "error": "unknown host" })),
+        )
+            .into_response();
+    }
+    next.run(req).await
 }
 
 /// Refuse cross-site writes: any method but GET/HEAD/OPTIONS whose Origin
@@ -355,8 +630,18 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("sessions.json");
         let sessions = Sessions::load(&file);
-        let token = sessions.create();
+        let token = sessions.create(NewSession::from_agent(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/605.1.15",
+            "192.0.2.7".parse().unwrap(),
+            Via::Approve,
+        ));
         assert_eq!(token.len(), 64);
+        let listed = sessions.list.lock()[0].clone();
+        assert_eq!(listed.name, "iPhone, Safari");
+        assert_eq!(listed.ip, "192.0.2.7");
+        assert_eq!(listed.via, Via::Approve);
+        assert_eq!(listed.id.len(), 16);
+        assert_eq!(listed.last_seen, listed.created);
         assert!(sessions.is_valid(&token));
         assert!(!sessions.is_valid("nope"));
 
@@ -376,6 +661,112 @@ mod tests {
         assert!(!again.is_valid(&token));
         assert!(!Sessions::load(&file).is_valid(&token));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sessions_of_2_7_keep_working_and_gain_the_new_fields() {
+        let dir = std::env::temp_dir().join(format!("rc-migrate-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("sessions.json");
+        // what 2.7 wrote: the token hash, when it was made, when it ends
+        let token = "cafe";
+        let old = json!([{
+            "hash": token_hash(token),
+            "created": "2026-09-01T20:15:00",
+            "expires": now_unix() + 86_400,
+        }]);
+        std::fs::write(&file, old.to_string()).unwrap();
+
+        let sessions = Sessions::load(&file);
+        let migrated = sessions.list.lock()[0].clone();
+        assert_eq!(migrated.id.len(), 16);
+        assert_eq!(migrated.name, "Unknown device");
+        assert_eq!(migrated.via, Via::Password);
+        // nothing is known about the device, so it was last seen when it signed in
+        assert_eq!(migrated.last_seen, "2026-09-01T20:15:00");
+        assert!(migrated.agent.is_empty() && migrated.ip.is_empty());
+        assert!(sessions.is_valid(token), "the old session still opens");
+        assert_ne!(
+            sessions.list.lock()[0].last_seen,
+            migrated.last_seen,
+            "using it writes lastSeen"
+        );
+        // and the file on disk carries them now
+        let again = Sessions::load(&file);
+        assert_eq!(again.list.lock()[0].id, migrated.id);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn host_rules() {
+        let allowed = ["replay.example".to_string(), "Proxy.Example".to_string()];
+        let host = |h: &str| host_allowed(Some(h), "gaming-pc", &allowed);
+        // this machine, however it is addressed
+        assert!(host("localhost:8420"));
+        assert!(host("LOCALHOST"));
+        assert!(host("127.0.0.1:8420"));
+        assert!(host("[::1]:8420"));
+        assert!(host("[::1]"));
+        assert!(host("192.168.1.23:8420"));
+        assert!(host("gaming-pc:8420"));
+        assert!(host("Gaming-PC"));
+        assert!(host("gaming-pc.local:8420"));
+        // names the settings allow, case-insensitively
+        assert!(host("replay.example"));
+        assert!(host("proxy.example:8420"));
+        // and the ones a rebinding attack would use
+        assert!(!host("evil.example"));
+        assert!(!host("evil.example:8420"));
+        assert!(!host("gaming-pc.evil.example"));
+        assert!(!host(""));
+        // no Host header at all carries no name to rebind
+        assert!(host_allowed(None, "gaming-pc", &allowed));
+        assert_eq!(host_name("[fe80::1%25eth0]:8420"), "fe80::1%25eth0");
+        assert_eq!(host_name("gaming-pc:8420"), "gaming-pc");
+        assert_eq!(host_name("gaming-pc"), "gaming-pc");
+    }
+
+    #[test]
+    fn thirty_failures_from_anywhere_pause_the_password_login() {
+        let dir = std::env::temp_dir().join(format!("rc-global-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sessions = Sessions::load(&dir.join("s.json"));
+        // one failure each from thirty addresses: below the limit, and no
+        // single address is locked out either
+        for i in 0..30u8 {
+            sessions.record_failure(IpAddr::from([192, 0, 2, i]));
+        }
+        assert!(sessions.check_global().is_ok());
+        assert!(sessions.check_lockout(IpAddr::from([192, 0, 2, 0])).is_ok());
+        sessions.record_failure(IpAddr::from([192, 0, 2, 200]));
+        let seconds = sessions.check_global().expect_err("paused");
+        assert!(seconds > 500 && seconds <= 600, "{seconds} s");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn device_names_read_the_usual_agents() {
+        let name = |a: &str| device_name(a);
+        assert_eq!(
+            name("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"),
+            "iPhone, Safari"
+        );
+        assert_eq!(
+            name("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0"),
+            "Windows PC, Edge"
+        );
+        assert_eq!(
+            name(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0"
+            ),
+            "Windows PC, Firefox"
+        );
+        assert_eq!(
+            name("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36"),
+            "Android, Chrome"
+        );
+        assert_eq!(name(""), "Unknown device");
+        assert_eq!(name("curl/8.9.1"), "Device, Browser");
     }
 
     #[test]

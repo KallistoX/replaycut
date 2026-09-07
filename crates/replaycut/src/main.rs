@@ -40,6 +40,7 @@ mod update;
 mod util;
 #[cfg(windows)]
 mod winshell;
+mod wordlist;
 mod x;
 mod youtube;
 
