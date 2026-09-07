@@ -255,6 +255,12 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
         mode: share_mode,
         kbps: limits.max_kbps,
         max_height: limits.max_height,
+        codec: clip.codec.clone(),
+        source_kbps: if clip.duration > 0.0 {
+            (clip.size as f64 * 8.0 / clip.duration / 1000.0).round() as u32
+        } else {
+            0
+        },
         vertical: req.vertical,
         vertical_pos,
         stage: "queued".into(),
@@ -355,6 +361,8 @@ pub fn publish(
         audio: src.audio.clone(),
         mode: src.mode.clone(),
         kbps: src.kbps,
+        codec: src.codec.clone(),
+        source_kbps: src.source_kbps,
         vertical: src.vertical,
         vertical_pos: src.vertical_pos,
         title: src.title.clone(),

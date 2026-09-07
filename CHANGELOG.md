@@ -10,7 +10,19 @@ contract.
 
 ## [Unreleased]
 
+### Changed
+
+- The size estimate in the share row learns from your own shares: the job
+  records the recording's codec and bitrate (`codec`, `sourceKbps`), and
+  the row uses the median ratio of the last plain H.264 shares of that
+  codec instead of a fixed factor per codec.
+
 ### Fixed
+
+- The page is mobile-friendly again: 2.7.0 shipped with a broken viewport
+  meta tag, so phones rendered the desktop layout scaled down.
+- The "Limits" fields on the storage cards save from the settings page
+  again; 2.7.0 sent the height as text and the service answered 400.
 
 - A restart (update, settings, `replaycut stop`) no longer waits up to 5 s
   while a browser has the player open on a long clip: the shutdown now

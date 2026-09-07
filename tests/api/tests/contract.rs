@@ -1931,6 +1931,16 @@ fn since_27() -> bool {
     (major, minor) >= (2, 7)
 }
 
+fn since_28() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (2, 8)
+}
+
 #[test]
 fn t42_quality_by_default_limits_per_target_and_posting_on_request() {
     let _g = serial();
@@ -1968,6 +1978,12 @@ fn t42_quality_by_default_limits_per_target_and_posting_on_request() {
     let (_, job) = wait_job(v["job"].as_str().unwrap_or(""), JOB_TIMEOUT);
     assert_eq!(job["stage"], "done", "{}", job["error"]);
     assert_eq!(job["kbps"], 0, "{job}");
+    if since_28() {
+        // the recording's codec and bitrate travel with the job (the UI learns
+        // its size estimate from them)
+        assert!(job["codec"].is_string(), "{job}");
+        assert!(job["sourceKbps"].as_u64().unwrap_or(0) > 0, "{job}");
+    }
     assert!(job.get("maxHeight").is_none(), "{job}");
     let file = env()
         .clip_dir

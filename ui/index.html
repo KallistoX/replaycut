@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="view/Kbps|Threads|port|expireDays|Height/" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>replaycut</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
@@ -1247,7 +1247,7 @@ async function initSettings() {
   const fields = [...document.querySelectorAll('#page-settings [data-f]')];
   const tabs = () => { const t = location.hash === '#integrations' ? 'integrations' : 'general'; $('tabGeneral').hidden = t !== 'general'; $('tabIntegrations').hidden = t !== 'integrations'; document.querySelectorAll('#page-settings .tabs a').forEach(a => { if (a.dataset.tab === t) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }); if (location.hash === '#qr') setTimeout(() => $('sAddr').click(), 0); };
   window.addEventListener('hashchange', tabs); tabs();
-  function readField(el) { if (el.type === 'checkbox') return el.checked; if (el.type === 'number' || /Kbps|Threads|port|expireDays/.test(el.dataset.f)) return Number(el.value); return el.value; }
+  function readField(el) { if (el.type === 'checkbox') return el.checked; if (el.type === 'number' || /Kbps|Threads|port|expireDays|Height/.test(el.dataset.f)) return Number(el.value); return el.value; }
   function fill(s) {
     orig = s;
     const themeSel = document.querySelector('[data-f="theme"]'); themeSel.innerHTML = (s.themes || ['wardogs']).map(t => `<option value="${esc(t)}">${esc(t)}${t === 'wardogs' ? ' (default)' : ''}</option>`).join('');
@@ -1505,7 +1505,7 @@ async function initDiagnostics() {
 
 // ------------------------------------------------------------ clips
 let clips = [], cur = null, tIn = 0, tOut = 0, edited = false, busy = false, lastSeen = null, stopAt = null;
-let watchingJob = null, shownLast = null, failures = 0, histKey = '', audioBuilt = '', listKey = '';
+let watchingJob = null, shownLast = null, failures = 0, histKey = '', audioBuilt = '', listKey = '', histData = [];
 let updDismissed = '', failedDismissed = '', pendingNew = null, pollT = null;
 let v, tl, sel, hin, hout, ph;
 
@@ -1514,7 +1514,10 @@ const audioLabel = id => (cfg.audio.find(a => a.id === id) || {}).label || id ||
 function expiry() { return cfg.expireDays > 0 ? 'link expires in ' + cfg.expireDays + ' days' : 'link never expires'; }
 // size estimate (since 2.7): the share keeps the recording's quality, so the recording's own rate is the guide
 function plan(d) { const a = 128000; if (cfg.shareKbps > 0) { const vb = cfg.shareKbps * 1000; return { mb: (vb + a) * d / 8 / 1048576, kbps: vb / 1000 }; } // H.264 needs more bits than the recording's codec for the same picture
-  const factor = { av1: 2.5, hevc: 2, h264: 1.3 }[(cur && cur.codec || '').toLowerCase()] || 2;
+  const codec = (cur && cur.codec || '').toLowerCase();
+  // since 2.8 the ratio is learned from the last plain H.264 shares of the same codec (median of up to five); the table is the fallback
+  const learned = (histData || []).filter(e => e.sourceKbps > 0 && e.sizeMB > 0 && e.seconds > 0 && !e.cancelled && e.mode !== 'copy' && !e.vertical && !e.maxHeight && !e.kbps && (e.codec || '').toLowerCase() === codec).slice(0, 5).map(e => e.sizeMB * 8388.608 / e.seconds / e.sourceKbps).sort((a, b) => a - b);
+  const factor = learned.length ? learned[Math.floor(learned.length / 2)] : ({ av1: 2.5, hevc: 2, h264: 1.3 }[codec] || 2);
   const bps = cur && cur.size && cur.duration ? cur.size * 8 / cur.duration * factor : 20e6; return { mb: (bps + a) * d / 8 / 1048576, kbps: 0 }; }
 
 function initClips() {
@@ -2060,7 +2063,7 @@ function applyState(d, polled) {
       }
       lastSeen = newest.base;
     } else { if (cur) unload(); showEmpty(cfg.setupDone === false ? 'setup' : 'none'); }
-    buildAudio(); renderHistory(d.history);
+    buildAudio(); histData = d.history || []; renderHistory(d.history);
     if (d.job && watchingJob !== d.job) watchJob(d.job);                      // running job (e.g. after reload)
     else if (!d.job && !watchingJob && d.last && d.last.id !== shownLast) { showResult(d.last); shownLast = d.last.id; cfg._lastFailed = d.last.ok === false && !d.last.cancelled; cfg._lastFailedId = d.last.id; setBusy(false); }
     const failed = !watchingJob && d.last && d.last.ok === false && !d.last.cancelled && failedDismissed !== d.last.id;

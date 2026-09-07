@@ -933,6 +933,19 @@ history and `config.last`). 400 for a job without
 a link or an unknown or unconfigured notify target, 404 for an unknown
 job. The result card and the history offer it as "Post to ...".
 
+## Since 2.8
+
+### The recording's codec and bitrate on the job
+
+A share job and its history entry carry `codec` (the recording's video
+codec as in the clip, e.g. `av1`) and `sourceKbps` (the recording's total
+bitrate in kbit/s, from its size and duration, at the time of the share);
+a publish inherits both from its source. The UI learns the size estimate
+of the share row from them: the median ratio of output to recording
+bitrate over the last plain H.264 shares of the same codec (no copy mode,
+no vertical cut, no limits) replaces the fixed per-codec factor once one
+such share exists.
+
 ## Behaviour
 
 ### Folder scan

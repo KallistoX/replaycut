@@ -136,6 +136,13 @@ pub struct Job {
     // recording's resolution); `kbps` is its bitrate cap, 0 = quality-driven
     #[serde(default, skip_serializing_if = "is_zero")]
     pub max_height: u32,
+    // since 2.8: the recording's codec and total bitrate (kbit/s) when the
+    // share was made, so the UI can learn the H.264-to-recording size ratio
+    // from the history instead of guessing it per codec
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub codec: String,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub source_kbps: u32,
     // since 2.6: a 9:16 cut (`crop` at `verticalPos`, 0 = left edge, 1 = right edge)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub vertical: bool,
