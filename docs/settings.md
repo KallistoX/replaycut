@@ -11,7 +11,7 @@ plain text.
 | Data directory | `%LOCALAPPDATA%\replaycut` (override with `--data-dir`) |
 | Settings | `<data-dir>\settings.json` (override with `--settings`) |
 | State files | `<data-dir>\clip-names.json`, `clip-seen.json`, `clip-history.json` |
-| Browser sessions | `<data-dir>\sessions.json` (hashes of the login cookies, 30 days) |
+| Browser sessions | `<data-dir>\sessions.json` (hashes of the login cookies, 30 days; since 2.8 with the device's name, browser, address, when it was made and last seen, and how it got in) |
 | Themes | `<data-dir>\themes\<name>.css` (see `docs/themes.md`) |
 | Logs | `<data-dir>\logs\replaycut.<date>.log`, daily rotation, 7 files kept |
 | Previews | `<clipDir>\.preview\` |
@@ -28,7 +28,9 @@ fine.
 {
   "clipDir": "C:\\Users\\you\\Videos",
   "port": 8420,
-  "bind": "0.0.0.0",
+  "bind": "127.0.0.1",
+  "allowedHosts": [],
+  "requireLoginOnLoopback": false,
   "uiFile": "ui/index.html",
   "displayName": "replaycut",
   "encoder": "auto",
@@ -82,7 +84,9 @@ fine.
 |---|---|
 | `clipDir` | Folder OBS writes replays to. Scanned for `*.mkv`, not recursively. Default: `Videos` in the user profile. |
 | `port` | HTTP port of the UI and API. |
-| `bind` | Address to listen on. `0.0.0.0` makes the UI reachable from other devices in the network, `127.0.0.1` restricts it to this PC. |
+| `bind` | Address to listen on. Since 2.8 the default is `127.0.0.1`: this PC only. `0.0.0.0` makes the UI reachable from other devices in the network - the switch under Settings › Access sets it, together with the password and the firewall rule (see "Security" in the README). Any other address is left alone by that switch and shown as "custom". |
+| `allowedHosts` | Since 2.8: host names this service answers to besides `localhost`, its own computer name and any IP address - for an own DNS name or a reverse proxy. Up to 20 names without scheme or port; everything else gets a `421`. Default empty. |
+| `requireLoginOnLoopback` | Since 2.8: `true` asks for the password on this PC as well, for a Windows account other people use. It applies to answering sign-in requests too. Default `false`. |
 | `uiFile` | The UI file. A relative path is looked up next to the executable first, then in the working directory. |
 | `displayName` | Prefix of the Discord post (`**<displayName>** ...`) and the webhook user name. Clip names that start with this word are shortened in the post. |
 | `encoder` | `auto` tries `h264_amf`, `h264_nvenc`, `h264_qsv`, `libx264` in that order with a real test encode and uses the first that works. An encoder name forces that encoder. |
@@ -94,12 +98,13 @@ fine.
 | `setupDone` | `false` until the browser setup (`/setup`) finished. A file without the field counts as set up, so an installation from 2.0 is not asked again. |
 | `theme` | Name of the UI theme: `wardogs` (built in) or a file `themes\<name>.css` in the data directory. See `docs/themes.md`. |
 | `previewH264` | Since 2.6: `onDemand` (default) shows "Make a playable preview" in the player when the browser cannot decode the recording (AV1 on an iPhone, say) and makes a 720p H.264 copy on click; `always` makes the copy right after every recording, behind the running jobs, with ffmpeg at idle priority (about a minute of GPU per 5-minute buffer). The copy lives next to the preview as `<base>.h264.mp4`. Recording in H.264 in OBS avoids the need. |
-| `passwordHash` | Set through the settings page or `PUT /api/settings` with `password`; an argon2id hash, never the password. Absent means no password: every device in the network may use the UI. This PC (loopback) never needs the password. |
+| `passwordHash` | Set through the settings page or `PUT /api/settings` with `password`; an argon2id hash, never the password. Since 2.8 a password is 8 to 128 characters, and "Generate one for me" offers four words from a built-in list. Absent means no password - which is why network access cannot be turned on without setting one first. This PC (loopback) never needs the password unless `requireLoginOnLoopback` is set. |
 | `obs` | Since 2.2: `{ "enabled": true, "host": "localhost", "port": 4455 }` - where obs-websocket listens (OBS: Tools › WebSocket Server Settings). With `enabled` the service connects on its own and retries quietly while OBS is closed. The password is a credential, see below. |
 
 Since 2.1 the settings page and `PUT /api/settings` change the file at
 runtime; everything but `port`, `bind` and `uiFile` takes effect without a
-restart. Command-line overrides win over the file for as long as the
+restart. The network switch of 2.8 changes `bind` and restarts the service
+for you. Command-line overrides win over the file for as long as the
 process runs but are never written back.
 | `integrations.nextcloud` | `enabled` switches the upload on. `url` is the server, `folder` the target folder (clips land in `<folder>/<YYYY-MM>/`), `expireDays` sets an expiry on the public link (`0` = never; an expired link also kills the Discord post). `quickShare` (default true, since 2.5) makes it the target of the Share button; off keeps the button local and leaves Nextcloud in the button's menu. |
 | `integrations.discord` | `enabled` switches the webhook post on. The webhook URL itself is a credential. `autoPost` (default true, since 2.5) posts every share that produced a link; since 2.7 only the quick share, the others on request ("Post to ..."). |

@@ -10,6 +10,14 @@ contract.
 
 ## [Unreleased]
 
+Secure by default. replaycut now listens on your PC only until you open it
+up, and opening it up is one switch that asks for a password first. The
+everyday way onto a phone is no longer typing that password: the phone
+asks, your PC shows the request with a code and the device's name, and one
+click lets it in - or the phone scans the QR code, which signs it in on the
+spot. Settings lists every signed-in device and lets you sign one out.
+Nothing about your clips or the sharing changed.
+
 ### Added
 
 - **replaycut now listens on this PC only.** A new installation is not
@@ -24,10 +32,10 @@ contract.
   it is open to the network without a password), whether the firewall rule
   exists, and how the device login is doing.
 - **Sign in on your phone without typing the password.** The login page
-  offers "Ask &lt;your PC&gt;": the PC shows a notification, the open UI a
-  card and the tray an entry, all with the same four-character code and
-  with the device's name and address. One click on Allow and the phone is
-  in. A request runs out after two minutes.
+  offers "Ask" plus the name of your PC: the PC shows a notification, the
+  open UI a card and the tray an entry, all with the same four-character
+  code and with the device's name and address. One click on Allow and the
+  phone is in. A request runs out after two minutes.
 - The QR code in the wizard and in the settings signs a phone in when it
   is scanned: its address carries a token that is good once and for two
   minutes. Only this PC and signed-in devices get such a code.

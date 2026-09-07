@@ -294,10 +294,15 @@ below 2.1. The 1.4 contract above is unchanged.
   `POST /api/login`) require `Content-Type: application/json` and answer
   `415` otherwise. `POST /api/save` keeps accepting an empty body.
 
+Since 2.8 this section has three additions: every request is checked
+against its `Host` header, the password has a length rule and a generator,
+and a device can be let in without the password at all (the device login).
+`requireLoginOnLoopback` makes this PC sign in as well. See "Since 2.8".
+
 ### `GET /setup`, `/settings`, `/diagnostics`, `/login`, `/obs`
 
 The UI file, exactly as `GET /`; the page's script shows the page named by
-the path.
+the path. Since 2.8 `/approve` and `/approve/<id>` join them.
 
 ### `GET /api/settings`
 
@@ -305,7 +310,8 @@ The settings file without secrets plus what the settings page needs:
 
 ```json
 {
-  "clipDir": "C:\\Users\\you\\Videos", "port": 8420, "bind": "0.0.0.0",
+  "clipDir": "C:\\Users\\you\\Videos", "port": 8420, "bind": "127.0.0.1",
+  "allowedHosts": [], "requireLoginOnLoopback": false,
   "displayName": "replaycut", "shareKbps": 6000, "encoder": "auto",
   "hwaccel": "", "ffmpegPriority": "belowNormal", "ffmpegThreads": 0,
   "logLevel": "info", "checkUpdates": true, "setupDone": true,
@@ -370,6 +376,8 @@ run `{ ok: true, dryRun: true }` without sending.
 `qrSvg` is an SVG document encoding `urls[0]`. With `bind` set to loopback
 only the localhost address is listed, `local` is true and `qrSvg` is empty
 (since 2.3): a code for localhost would only lead a phone to itself.
+Since 2.8 the code signs the scanning phone in and `qrSignsIn` says so -
+see "QR pairing" below; the `urls` never carry a token.
 
 ### `GET /themes/<name>.css`
 
@@ -435,7 +443,9 @@ Runs every check (each with a 5 s timeout, in parallel) and answers
     { "id": "quota",     "label": "Nextcloud quota", "status": "skip", "detail": "integration is off" },
     { "id": "webhook",   "label": "Discord webhook", "status": "fail", "detail": "HTTP 404 - ...", "fix": "Discord: Server settings › ..." },
     { "id": "obs",       "label": "OBS",             "status": "skip", "detail": "not connected - ..." },
-    { "id": "network",   "label": "Network",         "status": "ok",   "detail": "listening on 0.0.0.0:8420 · http://<host>:8420/ ..." }
+    { "id": "network",   "label": "Network",         "status": "ok",   "detail": "listening on 0.0.0.0:8420 · http://<host>:8420/ ... · password set" },
+    { "id": "firewall",  "label": "Firewall",        "status": "ok",   "detail": "rule \"replaycut\" allows the port in private networks" },
+    { "id": "pairing",   "label": "Device login",    "status": "ok",   "detail": "ready" }
   ],
   "text": "replaycut 2.1.0 - 2026-09-04T21:25:10\nservice   OK    ...\n..."
 }
@@ -1030,6 +1040,9 @@ request lives in memory: at most five open at a time, two minutes each.
   device's name and `via: approve`.
 - `GET /api/pair/pending` -> `200 { ok: true, pending: [...] }`, the same
   list as below, for the approve page.
+- `GET /approve` and `GET /approve/<id>` serve the UI file like the other
+  pages (since 2.1): the requests as cards with Allow and Deny, the one
+  named in the path first.
 - `GET /api/clips` and the `state` event of `GET /api/events` carry
   `pending: [ { id, name, agent, ip, code, asked, expires } ]` **for
   loopback and signed-in clients only** - the code belongs to the person

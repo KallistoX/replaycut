@@ -41,16 +41,17 @@ Releases are published on GitHub as a ZIP for Windows x64; see
 1. Download the release ZIP, unpack it anywhere and run `install.cmd`. It
    copies replaycut to `%LOCALAPPDATA%\replaycut\app`, adds a start menu and
    a desktop shortcut, asks whether replaycut should start when you sign in
-   (default: no) and whether other devices in your private network may reach
-   it (one administrator prompt for the firewall rule), then starts the
-   service and opens the page in your browser. No admin rights otherwise.
+   (default: no), then starts the service and opens the page in your
+   browser. No admin rights, and no firewall rule: replaycut listens on this
+   PC only until you say otherwise.
 2. The browser opens the setup: it suggests the recording folder from your
    OBS profile, waits for the first replay and reports codec and audio
    tracks, lets you switch on Nextcloud and Discord with a test each, and
-   offers a password for other devices. Skip what you do not need; without
-   integrations replaycut is a local clip manager. Everything can be changed
-   later under Settings (`replaycut setup` on the console still works; see
-   [`docs/settings.md`](docs/settings.md)).
+   ends with access from other devices - a switch that asks for a password
+   and for the firewall rule (see [Security](#security)). Skip what you do
+   not need; without integrations replaycut is a local clip manager.
+   Everything can be changed later under Settings (`replaycut setup` on the
+   console still works; see [`docs/settings.md`](docs/settings.md)).
 3. Play. Press the replay hotkey when something happens, open the page, trim,
    Share.
 
@@ -73,8 +74,9 @@ Windows SmartScreen may warn about an unsigned download the first time: click
   page is open on, "Publish to ..." for another
   storage, and the share history.
 - **Settings** (`/settings`): everything in `settings.json`, integrations
-  with their tests, theme, autostart and the password; changes apply at
-  once, port and bind after "Restart now".
+  with their tests, theme, autostart, access from other devices with the
+  password and the signed-in devices; changes apply at once, the port after
+  "Restart now".
 - **OBS** (`/obs`): with the WebSocket server switched on in OBS (Tools ›
   WebSocket Server Settings), replaycut connects on its own, saves replays
   through OBS instead of a simulated key press, warns while the replay
@@ -82,13 +84,10 @@ Windows SmartScreen may warn about an unsigned download the first time: click
   and audio tracks with what it expects - every difference with the OBS
   menu path. It never changes OBS settings.
 - **Diagnostics** (`/diagnostics`): ffmpeg, encoder, folder, scan,
-  integrations, network as one list with a fix per problem, and "Copy
-  diagnostics" for a support message. `replaycut test` prints the same.
+  integrations, network, firewall and the device login as one list with a
+  fix per problem, and "Copy diagnostics" for a support message.
+  `replaycut test` prints the same.
 - **Setup** (`/setup`): the wizard, any time again.
-
-With a password set, phones and other computers see a login page; the PC
-that runs replaycut never needs it. Every cross-site write is refused, so a
-web page you visit cannot change your settings.
 
 ### Update
 
@@ -112,8 +111,68 @@ are never touched.
 `install.cmd` detects the old scheduled task and takes over its clip folder,
 port, Nextcloud settings, titles, history and credentials, then stops and
 removes the task so the port is free. Autostart is switched on, because the
-old service started at sign-in. The old firewall rule and URL reservation are
-removed in the same administrator step as the new firewall rule.
+old service started at sign-in. The old service was reachable in the
+network, so that stays: the old firewall rule and URL reservation are
+removed in the same administrator step that adds the new rule, and the
+switch under Settings › Access closes it again when you want it closed.
+
+## Security
+
+replaycut serves your recordings and can upload them and post links, so it
+starts closed and opens only where you say so.
+
+**This PC only, until you change it.** A new installation listens on
+`127.0.0.1` and the installer adds no firewall rule. Access from other
+devices is one switch, in the setup wizard and under Settings › Access: it
+asks for a password first, then for the one administrator prompt that opens
+the port in your *private* network profile, and restarts the service. The
+switch turns it all off again. An installation from before 2.8 that is open
+to the network without a password keeps running, but says so - a red
+banner, a notification once per start, and a failing diagnostics line.
+
+**Signing in on a phone, without typing the password.** The login page
+leads with "Ask &lt;your PC&gt;". The PC shows a notification, a card in
+every open page and an entry in the tray, all with the same four-character
+code and with the asking device's name and address; one click on Allow and
+the phone is in for 30 days. The QR code in the wizard and in the settings
+does the same in one scan: its address carries a token that is good once
+and for two minutes, and only this PC and already signed-in devices get to
+see such a code. Sign-in requests run out after two minutes, at most five
+are open at a time, and a burst from several addresses pauses the device
+login for ten minutes - the password keeps working.
+
+**The password** is the way back in and 8 to 128 characters long; there are
+no rules about digits or symbols, because length is what counts. "Generate
+one for me" offers four words from a list built into the executable, shown
+once. Ten wrong tries from one address lock that address for a minute, more
+than 30 wrong tries from anywhere within five minutes pause the password
+login for ten. The password is stored as an argon2id hash; sessions are
+stored as SHA-256 of their cookie.
+
+**Settings › Signed-in devices** lists every browser that may use replaycut
+with its name, address and when it was last seen. "Sign out" ends one at
+once, "Sign out everywhere" all but your own.
+
+**What a web page you visit cannot do.** Every write with a foreign
+`Origin` is refused, and every request whose `Host` is not `localhost`, an
+IP address, this computer's name or a name in `allowedHosts` is answered
+with `421` - that closes DNS rebinding, where a page uses its own name to
+reach a service on your machine.
+
+**Not in 2.8**: HTTPS. The traffic in your network is plain HTTP, so the
+password crosses it once when you use it - which is why the device login
+exists and is the everyday way in. Do not put replaycut on the open
+internet; a VPN or a mesh network (Tailscale and friends) is the way to
+reach it from outside.
+
+`requireLoginOnLoopback` in the settings asks for the password on this PC
+as well, for a Windows account other people use.
+
+The generated passphrases use the [EFF Short Wordlist
+#1](https://www.eff.org/dice) by the Electronic Frontier Foundation,
+licensed [CC-BY 3.0
+US](https://creativecommons.org/licenses/by/3.0/us/); the list is embedded
+in `crates/replaycut/src/wordlist.rs`.
 
 ## Development
 
