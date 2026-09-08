@@ -12,6 +12,9 @@ contract.
 
 ### Fixed
 
+- Rendering a cut no longer marks its clip done. "Afterwards" belongs to the
+  share row; a render often happens days later and says nothing about the
+  clip. (The endpoint still takes `after`, the page no longer sends it.)
 - The migration lists the clips whose recording is long gone. Their old
   shares hung under a clip the page never showed, so they were only
   reachable on Activity; they now appear under "Done" with their links,
