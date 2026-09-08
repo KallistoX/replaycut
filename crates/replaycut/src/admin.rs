@@ -52,7 +52,11 @@ fn theme_names(app: &AppState) -> Vec<String> {
 fn autostart_enabled() -> bool {
     crate::winshell::autostart_entry().is_some()
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn autostart_enabled() -> bool {
+    crate::linuxshell::autostart_enabled()
+}
+#[cfg(not(any(windows, target_os = "linux")))]
 fn autostart_enabled() -> bool {
     false
 }
@@ -66,9 +70,18 @@ fn set_autostart(on: bool) -> anyhow::Result<()> {
         crate::winshell::clear_autostart().map(|_| ())
     }
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn set_autostart(on: bool) -> anyhow::Result<()> {
+    if on {
+        let exe = std::env::current_exe()?;
+        crate::linuxshell::set_autostart(&exe)
+    } else {
+        crate::linuxshell::clear_autostart().map(|_| ())
+    }
+}
+#[cfg(not(any(windows, target_os = "linux")))]
 fn set_autostart(_on: bool) -> anyhow::Result<()> {
-    anyhow::bail!("autostart is only available on Windows")
+    anyhow::bail!("autostart is only available on Windows and Linux")
 }
 
 /// `GET /api/settings`
