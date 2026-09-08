@@ -20,10 +20,9 @@ contract.
   the contrast targets of `docs/themes.md`, and the light ones carry the
   selected range on the timeline at the same strength as the dark ones
   (`--accent-soft` at 0.22), where a weaker tint went under. A theme file
-  of the same name
-  in the `themes` folder of the data directory still wins, so a shipped
-  theme can be copied and changed. Contributed by almighty-atlas,
-  issue #11.
+  of the same name in the `themes` folder of the data directory still
+  wins, so a shipped theme can be copied and changed. Contributed by
+  almighty-atlas, issue #11.
 - **Linux, second stage: the platform services.** Secrets go to the
   keyring behind the freedesktop Secret Service (gnome-keyring, KWallet,
   KeePassXC), so every integration and the obs-websocket password can be

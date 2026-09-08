@@ -89,14 +89,29 @@ mod tests {
     ];
 
     /// The value of `--<token>` in a theme file. Themes are plain
-    /// `--token: value;` lines, so a line scan is enough.
+    /// `--token: value;` lines, so a line scan is enough; a trailing
+    /// comment is cut off.
     fn token<'a>(css: &'a str, name: &str) -> Option<&'a str> {
         let needle = format!("--{name}:");
         css.lines().find_map(|line| {
             let line = line.trim();
             let rest = line.strip_prefix(&needle)?;
-            Some(rest.trim_end_matches(';').trim())
+            let rest = rest.split("/*").next().unwrap_or(rest);
+            Some(rest.trim().trim_end_matches(';').trim())
         })
+    }
+
+    /// `rgba(r, g, b, a)`, the shape of every `-soft` tint.
+    fn rgba(value: &str) -> Option<([f64; 3], f64)> {
+        let inner = value.strip_prefix("rgba(")?.strip_suffix(')')?;
+        let parts: Vec<f64> = inner
+            .split(',')
+            .filter_map(|p| p.trim().parse().ok())
+            .collect();
+        match parts[..] {
+            [r, g, b, a] => Some(([r, g, b], a)),
+            _ => None,
+        }
     }
 
     fn rgb(value: &str) -> Option<[f64; 3]> {
@@ -165,6 +180,30 @@ mod tests {
                 assert!(code.starts_with("--"), "{name}: {line}");
             }
         }
+    }
+
+    /// The selected range on the timeline is `--accent-soft` over the
+    /// `--surface-2` track, both from the theme itself. A tint that is too
+    /// weak leaves the range invisible, which the contrast targets do not
+    /// catch because neither token carries text. The shipped themes are
+    /// between 1.31 and 1.67; a light track cannot reach the dark ones with
+    /// the same tint, so the floor is what the light themes hold.
+    #[test]
+    fn the_selected_range_shows_on_the_timeline_track() {
+        let mut weak = Vec::new();
+        for (name, css) in BUILT_IN_THEMES {
+            let value = token(css, "surface-2").unwrap_or_else(|| panic!("{name} sets no track"));
+            let track = rgb(value).unwrap_or_else(|| panic!("{name}: --surface-2 is {value}"));
+            let value = token(css, "accent-soft").unwrap_or_else(|| panic!("{name} sets no tint"));
+            let (tint, alpha) =
+                rgba(value).unwrap_or_else(|| panic!("{name}: --accent-soft is {value}"));
+            let band = std::array::from_fn(|i| alpha * tint[i] + (1.0 - alpha) * track[i]);
+            let ratio = contrast(band, track);
+            if ratio < 1.3 {
+                weak.push(format!("{name}: the range is {ratio:.2} against the track"));
+            }
+        }
+        assert!(weak.is_empty(), "{}", weak.join("\n"));
     }
 
     /// The contrast targets of docs/themes.md, for every shipped theme.

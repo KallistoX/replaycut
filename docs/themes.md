@@ -42,7 +42,10 @@ light one - into `<data-dir>\themes\`, rename it, change values. Rules:
 
 - Only `:root { --token: value; }`. Nothing else is read.
 - Colours can be any CSS colour. The `-soft` tokens are translucent tints
-  and are usually `rgba(<accent or state colour>, 0.12 - 0.22)`.
+  and are usually `rgba(<accent or state colour>, 0.12 - 0.22)`. Every
+  shipped theme uses 0.22 for `--accent-soft`: the selected range on the
+  timeline is that tint on the `--surface-2` track and nothing else, and a
+  lighter one disappears, on a light track first.
 - Keep the contrast targets below; the component sheet
   (`docs/design/components.html`, theme switcher top right) computes them
   live for your file, so open it with your theme and look at the table.

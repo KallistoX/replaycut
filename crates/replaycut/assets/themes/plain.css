@@ -19,7 +19,7 @@
   --accent: #2f6fd6;
   --accent-hover: #245cb5;
   --accent-fg: #ffffff;
-  --accent-soft: rgba(47, 111, 214, 0.16);
+  --accent-soft: rgba(47, 111, 214, 0.22);  /* 0.22 like the dark themes; a lighter tint loses the range */
 
   --ok: #1f8f5a;
   --ok-soft: rgba(31, 143, 90, 0.12);
