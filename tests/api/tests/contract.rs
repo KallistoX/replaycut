@@ -2910,3 +2910,40 @@ fn t53_config_names_the_platform() {
         }
     }
 }
+
+/// Built-in themes (3.2): the executable carries twelve theme files, so a
+/// fresh installation offers more than `wardogs` and `/themes/<name>.css`
+/// answers without a file in the data directory. A name nobody ships stays
+/// a 404.
+#[test]
+fn t54_built_in_themes_are_offered_and_served() {
+    let _g = serial();
+    if !since_32() {
+        eprintln!("skipped: service older than 3.2");
+        return;
+    }
+    let (status, doc) = get_json("/api/settings");
+    assert_eq!(status, 200);
+    let themes = doc["themes"].as_array().cloned().unwrap_or_default();
+    for name in ["wardogs", "nord", "plain"] {
+        assert!(
+            themes.iter().any(|n| n == name),
+            "themes must offer {name}: {}",
+            doc["themes"]
+        );
+    }
+
+    let resp = get("/themes/nord.css");
+    assert_eq!(resp.status().as_u16(), 200);
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    assert!(ct.starts_with("text/css"), "content-type {ct}");
+    let css = resp.text().unwrap();
+    assert!(css.contains("--accent"), "nord.css sets no --accent");
+
+    assert_eq!(get("/themes/nope.css").status().as_u16(), 404);
+}

@@ -390,8 +390,17 @@ see "QR pairing" below; the `urls` never carry a token.
 ### `GET /themes/<name>.css`
 
 `<data-dir>\themes\<name>.css` as `text/css`; `<name>` is lower-case
-letters, digits and dashes. Anything else, including a missing file, is
-`404`. The built-in theme `wardogs` has no file.
+letters, digits and dashes. Anything else is `404`, and before 3.2 a
+missing file was too. The built-in theme `wardogs` has no file.
+
+Since 3.2 twelve themes are built into the executable: `catppuccin-frappe`,
+`catppuccin-latte`, `catppuccin-macchiato`, `catppuccin-mocha`, `dracula`,
+`gruvbox-dark`, `material-dark`, `material-light`, `nord`, `plain`,
+`solarized-dark`, `tokyo-night`. The folder is read first, so a file of the
+same name overrides the built-in theme and a user can copy one and change
+it; with neither a file nor a built-in the answer stays `404`.
+`settings.themes` lists `wardogs`, the built-in names and the folder
+together, sorted and without duplicates.
 
 ### `GET /api/session`, `POST /api/login`, `POST /api/logout`
 
