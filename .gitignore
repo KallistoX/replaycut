@@ -2,9 +2,11 @@
 /target/
 **/*.rs.bk
 
-# Media produced or consumed by the service and the tests
+# Media produced or consumed by the service and the tests. The demo clip the
+# screenshots are made of is the one recording that belongs in the repository.
 *.mkv
 *.mp4
+!tools/screenshots/demo.mkv
 .preview/
 shared/
 
