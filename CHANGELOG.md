@@ -85,7 +85,6 @@ contract.
   while the service listened on loopback only: the note is a flex row, and
   the bold words became a flex item of their own. It reads as one paragraph
   again, with the info icon the same note carries in the wizard. (issue #9)
-
 - Linux: "Open log folder" in the tray opens the folder in the file manager
   again. It went through `xdg-open`, whose handler for folders may be a
   terminal program that shows nothing when started without a terminal;
