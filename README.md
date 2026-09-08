@@ -10,9 +10,11 @@ post the link.**
 [![License: AGPL-3.0-only](https://img.shields.io/github/license/KallistoX/replaycut)](LICENSE)
 ![Platform: Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%2F11-0aa)
 
-![The clips page: the clip list with thumbnails on the left, the player with
-the in and out marks on the timeline, and the share row with audio, codec and
-aspect below it](docs/images/clips.jpg)
+![replaycut - clip manager for the OBS replay buffer. F9 in the game, trim on
+your phone, link in Discord.](docs/design/icons/social.png)
+
+**Preview:** [the clips page](docs/images/clips.jpg) ·
+[the same page on a phone](docs/images/clips_mobile.png)
 
 ## What you get
 
@@ -48,11 +50,8 @@ aspect below it](docs/images/clips.jpg)
    **Post to ...**.
 
 Everything runs on the PC that runs the game. The browser - on that PC, a
-laptop or a phone in the same network - is only the remote control:
-
-<img src="docs/images/clips_mobile.png" width="320" alt="The clips page on a
-phone: the clip list collapsed into one row, then the player, the timeline with
-the selection, and the share button">
+laptop or a phone in the same network - is only the remote control
+([the clips page on a phone](docs/images/clips_mobile.png)).
 
 ## Install
 
