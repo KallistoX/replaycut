@@ -1,6 +1,8 @@
-# Release: on a tag v<version>, build the Windows executable, pack the ZIP
-# with the files of the release package, write SHA256SUMS and publish a
-# GitHub release whose notes are that version's section of CHANGELOG.md.
+# Release: on a tag v<version>, build the Windows executable and the static
+# Linux executable, pack one ZIP per platform with the files of the release
+# package, write one SHA256SUMS for both and publish a GitHub release whose
+# notes are that version's section of CHANGELOG.md. The signature
+# (SHA256SUMS.minisig) is added by hand afterwards, see dist/sign-release.ps1.
 name: Release
 
 on:
@@ -14,12 +16,25 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  release:
-    name: Build and publish
-    runs-on: windows-latest
+  build:
+    name: Build ${{ matrix.suffix }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            suffix: windows-x64
+            target: ""
+          - os: ubuntu-latest
+            suffix: linux-x64
+            # static: one file that runs on any distribution
+            target: x86_64-unknown-linux-musl
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
 
       - name: Check that the tag matches the workspace version
@@ -32,23 +47,64 @@ jobs:
           fi
 
       - name: Build
+        if: runner.os == 'Windows'
         run: cargo build --release --locked -p replaycut
 
+      - name: Build (static)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+          cargo build --release --locked -p replaycut --target ${{ matrix.target }}
+          file target/${{ matrix.target }}/release/replaycut
+
       - name: Package
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $version = "$env:GITHUB_REF_NAME".TrimStart('v')
-          $pkg = "replaycut-$version-windows-x64"
+          $pkg = "replaycut-$version-${{ matrix.suffix }}"
           New-Item -ItemType Directory "$pkg\ui" | Out-Null
           Copy-Item target\release\replaycut.exe, dist\install.cmd, dist\uninstall.cmd, README.md, LICENSE, CHANGELOG.md $pkg
           Copy-Item ui\index.html "$pkg\ui"
           Compress-Archive -Path "$pkg\*" -DestinationPath "$pkg.zip"
-          $hash = (Get-FileHash "$pkg.zip" -Algorithm SHA256).Hash.ToLower()
-          [IO.File]::WriteAllText("SHA256SUMS", "$hash  $pkg.zip`n")
-          Get-Content SHA256SUMS
+
+      - name: Package
+        if: runner.os == 'Linux'
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          pkg="replaycut-$version-${{ matrix.suffix }}"
+          mkdir -p "$pkg/ui"
+          cp target/${{ matrix.target }}/release/replaycut dist/install.sh dist/uninstall.sh README.md LICENSE CHANGELOG.md "$pkg"
+          cp ui/index.html "$pkg/ui"
+          chmod +x "$pkg/replaycut" "$pkg/install.sh" "$pkg/uninstall.sh"
+          (cd "$pkg" && zip -r "../$pkg.zip" .)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.suffix }}
+          path: replaycut-*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          merge-multiple: true
+
+      # One line per ZIP, `<sha256>  <name>`: what the updater reads and what
+      # dist/sign-release.ps1 signs.
+      - name: SHA256SUMS
+        run: |
+          sha256sum replaycut-*.zip > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Release notes from CHANGELOG.md
-        shell: bash
         run: |
           version=${GITHUB_REF_NAME#v}
           awk -v v="$version" '/^## \[/ { p = (index($0, "## [" v "]") == 1) } /^\[/ { p = 0 } p' CHANGELOG.md > notes.md
@@ -59,5 +115,5 @@ jobs:
         with:
           body_path: notes.md
           files: |
-            replaycut-*-windows-x64.zip
+            replaycut-*.zip
             SHA256SUMS
