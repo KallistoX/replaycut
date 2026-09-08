@@ -1,7 +1,8 @@
-//! Desktop notifications ("toasts") through WinRT. Windows only shows them
-//! for a registered application id (`replaycut install` writes that
-//! registration); without it the first failure is logged once and the
-//! service carries on. In dry-run mode toasts are only logged.
+//! Desktop notifications ("toasts"): through WinRT on Windows, which only
+//! shows them for a registered application id (`replaycut install` writes
+//! that registration), and through the freedesktop notification service on
+//! Linux. Without either the first failure is logged once and the service
+//! carries on. In dry-run mode toasts are only logged.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -173,12 +174,19 @@ pub fn show(state: &AppState, toast: Toast) {
                 tracing::debug!("toast failed: {e}");
             } else {
                 tracing::warn!(
-                    "toast failed: {e} - notifications need the app registration written by `replaycut install`; further failures are logged at debug level"
+                    "toast failed: {e} - {UNAVAILABLE_HINT}; further failures are logged at debug level"
                 );
             }
         }
     });
 }
+
+#[cfg(windows)]
+const UNAVAILABLE_HINT: &str =
+    "notifications need the app registration written by `replaycut install`";
+#[cfg(not(windows))]
+const UNAVAILABLE_HINT: &str =
+    "notifications need a notification service on the session bus (the desktop's own or a daemon such as mako or dunst)";
 
 #[cfg(windows)]
 fn show_now(toast: &Toast) -> anyhow::Result<()> {
@@ -196,9 +204,46 @@ fn show_now(toast: &Toast) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(not(windows))]
+/// `org.freedesktop.Notifications`: two lines, the app icon, and a click
+/// opens `url`. The click arrives as the "default" action, which only the
+/// process that posted the notification hears, so a thread of its own waits
+/// for it until the notification is gone - a plain thread, not a blocking
+/// task, so that a notification left on screen does not hold up shutdown.
+#[cfg(target_os = "linux")]
+fn show_now(toast: &Toast) -> anyhow::Result<()> {
+    use notify_rust::Notification;
+    let toast = toast.clone();
+    let handle = crate::platform::linux::off_runtime(move || {
+        let mut notification = Notification::new();
+        notification
+            .appname("replaycut")
+            .summary(&toast.title)
+            .body(&toast.text)
+            .icon("replaycut");
+        if toast.url.is_some() {
+            notification.action("default", "Open");
+        }
+        Ok((notification.show()?, toast.url))
+    })?;
+    if let (handle, Some(url)) = handle {
+        std::thread::Builder::new()
+            .name("toast-action".into())
+            .spawn(move || {
+                handle.wait_for_action(|action| {
+                    if action == "default" {
+                        if let Err(e) = crate::platform::open_url(&url) {
+                            tracing::warn!("cannot open {url}: {e}");
+                        }
+                    }
+                });
+            })?;
+    }
+    Ok(())
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 fn show_now(_toast: &Toast) -> anyhow::Result<()> {
-    anyhow::bail!("toasts are only supported on Windows")
+    anyhow::bail!("toasts are only supported on Windows and Linux")
 }
 
 #[cfg(test)]
