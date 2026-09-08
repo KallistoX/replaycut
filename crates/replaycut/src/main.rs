@@ -16,8 +16,12 @@ mod diagnostics;
 mod http;
 #[cfg(windows)]
 mod install;
+#[cfg(target_os = "linux")]
+mod install_linux;
 mod integrations;
 mod lifecycle;
+#[cfg(target_os = "linux")]
+mod linuxshell;
 mod media;
 #[cfg(windows)]
 mod migrate;
@@ -115,7 +119,7 @@ enum Command {
     },
     /// Stop the running service.
     Stop,
-    /// Install or update replaycut for this user (files, shortcuts, optional autostart and firewall rule).
+    /// Install or update replaycut for this user (files, shortcuts or desktop entry, optional autostart; on Windows the firewall rule).
     Install,
     /// Remove the installation; settings and clips stay unless --purge.
     Uninstall {
@@ -123,7 +127,7 @@ enum Command {
         #[arg(long)]
         purge: bool,
     },
-    /// Start replaycut at sign-in: on, off or status.
+    /// Start replaycut at sign-in (Windows) or with the desktop session (Linux): on, off or status.
     Autostart {
         #[arg(value_enum)]
         mode: AutostartMode,
@@ -132,9 +136,11 @@ enum Command {
 
 #[cfg(windows)]
 use crate::install::AutostartMode;
+#[cfg(target_os = "linux")]
+use crate::install_linux::AutostartMode;
 
 /// Placeholder so the command line parses on other platforms.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 enum AutostartMode {
     On,
@@ -207,9 +213,19 @@ fn real_main(cli: Cli, console: bool) -> Result<()> {
         }
         #[cfg(windows)]
         Some(Command::Autostart { mode }) => install::autostart(mode),
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
+        Some(Command::Install) => {
+            install_linux::install(&runtime()?, &mut settings, &settings_path, &data_dir)
+        }
+        #[cfg(target_os = "linux")]
+        Some(Command::Uninstall { purge }) => {
+            install_linux::uninstall(purge, settings.port, &settings_path, &data_dir)
+        }
+        #[cfg(target_os = "linux")]
+        Some(Command::Autostart { mode }) => install_linux::autostart(mode),
+        #[cfg(not(any(windows, target_os = "linux")))]
         Some(Command::Install | Command::Uninstall { .. } | Command::Autostart { .. }) => {
-            anyhow::bail!("this command is only supported on Windows")
+            anyhow::bail!("this command is only supported on Windows and Linux")
         }
         Some(Command::Run) | None => run_service(
             &cli,

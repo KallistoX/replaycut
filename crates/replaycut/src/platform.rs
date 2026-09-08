@@ -155,7 +155,12 @@ pub fn free_space(_dir: &Path) -> Option<u64> {
 pub fn autostart_enabled() -> bool {
     crate::winshell::autostart_entry().is_some()
 }
-#[cfg(not(windows))]
+/// Whether the systemd user unit is enabled (Linux).
+#[cfg(target_os = "linux")]
+pub fn autostart_enabled() -> bool {
+    crate::linuxshell::autostart_enabled()
+}
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn autostart_enabled() -> bool {
     false
 }
