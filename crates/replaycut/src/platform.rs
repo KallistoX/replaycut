@@ -768,8 +768,16 @@ mod other {
 
     pub fn set_app_id() {}
 
+    /// `xdg-open` hands the URL to the browser. Its standard streams are
+    /// closed: the browser it starts would otherwise inherit ours and hold
+    /// a pipe open (an installer whose output is piped hangs on that).
     pub fn open_url(url: &str) -> Result<()> {
-        std::process::Command::new("xdg-open").arg(url).spawn()?;
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
         Ok(())
     }
 
