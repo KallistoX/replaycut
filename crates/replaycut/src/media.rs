@@ -14,19 +14,31 @@ use crate::settings::FfmpegPriority;
 pub struct Media {
     pub ffmpeg: PathBuf,
     pub ffprobe: PathBuf,
-    /// Windows priority class passed as a process creation flag (0 = inherit).
-    #[cfg_attr(not(windows), allow(dead_code))]
-    priority_flag: u32,
+    /// Priority of every ffmpeg/ffprobe process; `None` inherits ours.
+    priority: Option<FfmpegPriority>,
     /// `-threads` for encodes; 0 = leave it to ffmpeg.
     pub threads: u32,
 }
 
-/// Process creation flag for a priority class.
+/// Windows process creation flag for a priority class.
+#[cfg(windows)]
 pub fn priority_flag(priority: FfmpegPriority) -> u32 {
     match priority {
         FfmpegPriority::Normal => 0x0000_0020,
         FfmpegPriority::BelowNormal => 0x0000_4000,
         FfmpegPriority::Idle => 0x0000_0040,
+    }
+}
+
+/// Unix nice level for a priority class: `normal` inherits, `belowNormal`
+/// yields to anything at the default level (the game), `idle` takes only
+/// what nobody else wants.
+#[cfg(not(windows))]
+pub fn nice_level(priority: FfmpegPriority) -> i32 {
+    match priority {
+        FfmpegPriority::Normal => 0,
+        FfmpegPriority::BelowNormal => 10,
+        FfmpegPriority::Idle => 19,
     }
 }
 
@@ -38,12 +50,19 @@ pub struct Encoder {
     /// Short name of the profile, for the log and the diagnostics.
     pub label: &'static str,
     pub name: String,
+    /// Global options that name the device (`-vaapi_device ...`), empty for
+    /// encoders that find theirs on their own.
+    pub global: Vec<&'static str>,
     /// Input options before `-i` (`-hwaccel ...`), empty for software decoding.
     pub decode: Vec<&'static str>,
     /// The scale filter of the profile with `{h}` for the height; only used
     /// when a target limits the height (since 2.7 shares keep the
     /// recording's resolution).
     pub scale: &'static str,
+    /// The filter that hands software frames to an encoder that only takes
+    /// frames on the card (`format=nv12,hwupload` for VAAPI); empty when the
+    /// encoder takes software frames itself.
+    pub upload: &'static str,
     /// Preset plus rate control for a bitrate cap (`-b:v` follows).
     pub opts: Vec<&'static str>,
     /// Preset plus quality-driven rate control (since 2.7, the default: no
@@ -66,7 +85,21 @@ impl Encoder {
 
     /// The `-vf` value that scales to `height`.
     pub fn filter_for(&self, height: u32) -> String {
-        self.scale.replace("{h}", &height.to_string())
+        self.filters(Some(self.scale.replace("{h}", &height.to_string())))
+            .unwrap_or_default()
+    }
+
+    /// The `-vf` value for a share: `base` (a scale or a crop, in software
+    /// or on the card) plus the upload the encoder needs when the frames
+    /// reach it in software; `None` when nothing has to happen.
+    pub fn filters(&self, base: Option<String>) -> Option<String> {
+        let upload = (!self.gpu_frames() && !self.upload.is_empty()).then_some(self.upload);
+        match (base, upload) {
+            (None, None) => None,
+            (Some(b), None) => Some(b),
+            (None, Some(u)) => Some(u.to_string()),
+            (Some(b), Some(u)) => Some(format!("{b},{u}")),
+        }
     }
 
     /// The same encoder with software decoding and CPU scaling.
@@ -74,11 +107,13 @@ impl Encoder {
         Self {
             label: "fallback",
             name: self.name.clone(),
+            global: self.global.clone(),
             decode: Vec::new(),
             scale: SW_SCALE,
+            upload: self.upload,
             opts: self.opts.clone(),
             quality: self.quality.clone(),
-            pix_fmt: true,
+            pix_fmt: self.upload.is_empty(),
         }
     }
 
@@ -104,14 +139,33 @@ pub const SW_SCALE: &str = "scale=-2:{h}";
 
 /// One candidate of the detection, in preference order per vendor: the
 /// full GPU path first, then the same encoder with software decoding.
+#[derive(Clone, Copy)]
 struct Profile {
     label: &'static str,
     encoder: &'static str,
+    global: &'static [&'static str],
     decode: &'static [&'static str],
     scale: &'static str,
+    upload: &'static str,
     opts: &'static [&'static str],
     quality: &'static [&'static str],
     pix_fmt: bool,
+}
+
+impl Profile {
+    fn encoder(&self) -> Encoder {
+        Encoder {
+            label: self.label,
+            name: self.encoder.to_string(),
+            global: self.global.to_vec(),
+            decode: self.decode.to_vec(),
+            scale: self.scale,
+            upload: self.upload,
+            opts: self.opts.to_vec(),
+            quality: self.quality.to_vec(),
+            pix_fmt: self.pix_fmt,
+        }
+    }
 }
 
 // Bitrate-capped rate control, for targets with a limit (and the test encodes).
@@ -134,8 +188,10 @@ const PROFILES: [Profile; 7] = [
     Profile {
         label: "amf-d3d11",
         encoder: "h264_amf",
+        global: &[],
         decode: &["-hwaccel", "d3d11va"],
         scale: SW_SCALE,
+        upload: "",
         opts: AMF_OPTS,
         quality: AMF_QUALITY,
         pix_fmt: true,
@@ -143,8 +199,10 @@ const PROFILES: [Profile; 7] = [
     Profile {
         label: "amf",
         encoder: "h264_amf",
+        global: &[],
         decode: &[],
         scale: SW_SCALE,
+        upload: "",
         opts: AMF_OPTS,
         quality: AMF_QUALITY,
         pix_fmt: true,
@@ -152,8 +210,10 @@ const PROFILES: [Profile; 7] = [
     Profile {
         label: "nvenc-cuda",
         encoder: "h264_nvenc",
+        global: &[],
         decode: &["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"],
         scale: "scale_cuda=-2:{h}",
+        upload: "",
         opts: NVENC_OPTS,
         quality: NVENC_QUALITY,
         pix_fmt: false,
@@ -161,8 +221,10 @@ const PROFILES: [Profile; 7] = [
     Profile {
         label: "nvenc",
         encoder: "h264_nvenc",
+        global: &[],
         decode: &[],
         scale: SW_SCALE,
+        upload: "",
         opts: NVENC_OPTS,
         quality: NVENC_QUALITY,
         pix_fmt: true,
@@ -170,8 +232,10 @@ const PROFILES: [Profile; 7] = [
     Profile {
         label: "qsv-full",
         encoder: "h264_qsv",
+        global: &[],
         decode: &["-hwaccel", "qsv", "-hwaccel_output_format", "qsv"],
         scale: "scale_qsv=-1:{h}",
+        upload: "",
         opts: QSV_OPTS,
         quality: QSV_QUALITY,
         pix_fmt: false,
@@ -179,8 +243,10 @@ const PROFILES: [Profile; 7] = [
     Profile {
         label: "qsv",
         encoder: "h264_qsv",
+        global: &[],
         decode: &[],
         scale: SW_SCALE,
+        upload: "",
         opts: QSV_OPTS,
         quality: QSV_QUALITY,
         pix_fmt: true,
@@ -188,8 +254,10 @@ const PROFILES: [Profile; 7] = [
     Profile {
         label: "libx264",
         encoder: "libx264",
+        global: &[],
         decode: &[],
         scale: SW_SCALE,
+        upload: "",
         opts: X264_OPTS,
         quality: X264_QUALITY,
         pix_fmt: true,
@@ -215,7 +283,98 @@ pub enum HwAccel {
 }
 
 /// Values `hwaccel` accepts in settings.json.
-pub const HWACCEL_VALUES: [&str; 6] = ["", "auto", "none", "cuda", "d3d11va", "qsv"];
+pub const HWACCEL_VALUES: [&str; 7] = ["", "auto", "none", "cuda", "d3d11va", "qsv", "vaapi"];
+
+/// The candidates in preference order: the static table, and on Linux the
+/// VAAPI profiles for every render node (`/dev/dri/renderD*`) between NVENC
+/// and Quick Sync, since VAAPI is what AMD and Intel offer there. Test
+/// encodes decide which of them actually works.
+fn profiles() -> Vec<Profile> {
+    #[cfg(target_os = "linux")]
+    {
+        let mut all: Vec<Profile> = Vec::new();
+        for p in PROFILES {
+            if p.encoder == "h264_qsv" && !all.iter().any(|q| q.encoder == "h264_qsv") {
+                all.extend(vaapi_profiles());
+            }
+            all.push(p);
+        }
+        all
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        PROFILES.to_vec()
+    }
+}
+
+// VAAPI: `-rc_mode CBR` for a bitrate cap, constant QP for quality (20 is
+// about where the other encoders sit).
+#[cfg(target_os = "linux")]
+const VAAPI_OPTS: &[&str] = &["-rc_mode", "CBR"];
+#[cfg(target_os = "linux")]
+const VAAPI_QUALITY: &[&str] = &["-rc_mode", "CQP", "-qp", "20"];
+#[cfg(target_os = "linux")]
+const VAAPI_UPLOAD: &str = "format=nv12,hwupload";
+
+/// Two profiles per render node: the full path (decode, scale and encode on
+/// the card) and software decoding with an upload before the encoder. The
+/// strings are leaked once; the list is built at most a handful of times.
+#[cfg(target_os = "linux")]
+fn vaapi_profiles() -> Vec<Profile> {
+    use std::sync::OnceLock;
+    static NODES: OnceLock<Vec<&'static str>> = OnceLock::new();
+    let nodes = NODES.get_or_init(|| {
+        let mut nodes: Vec<String> = std::fs::read_dir("/dev/dri")
+            .map(|rd| {
+                rd.flatten()
+                    .map(|e| e.path().to_string_lossy().into_owned())
+                    .filter(|p| {
+                        p.rsplit('/')
+                            .next()
+                            .is_some_and(|n| n.starts_with("renderD"))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        nodes.sort();
+        nodes
+            .into_iter()
+            .map(|n| &*Box::leak(n.into_boxed_str()))
+            .collect()
+    });
+    let mut out = Vec::new();
+    for node in nodes {
+        let short = node.rsplit('/').next().unwrap_or(node);
+        let global: &'static [&'static str] = Box::leak(Box::new(["-vaapi_device", node]));
+        out.push(Profile {
+            label: Box::leak(format!("vaapi-full/{short}").into_boxed_str()),
+            encoder: "h264_vaapi",
+            global,
+            decode: &["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi"],
+            scale: "scale_vaapi=-2:{h}",
+            upload: VAAPI_UPLOAD,
+            opts: VAAPI_OPTS,
+            quality: VAAPI_QUALITY,
+            pix_fmt: false,
+        });
+    }
+    for node in nodes {
+        let short = node.rsplit('/').next().unwrap_or(node);
+        let global: &'static [&'static str] = Box::leak(Box::new(["-vaapi_device", node]));
+        out.push(Profile {
+            label: Box::leak(format!("vaapi/{short}").into_boxed_str()),
+            encoder: "h264_vaapi",
+            global,
+            decode: &[],
+            scale: SW_SCALE,
+            upload: VAAPI_UPLOAD,
+            opts: VAAPI_OPTS,
+            quality: VAAPI_QUALITY,
+            pix_fmt: false,
+        });
+    }
+    out
+}
 
 /// The newest preview in the clip folder, the sample for testing a GPU path
 /// (lavfi sources cannot exercise a hardware decoder).
@@ -276,14 +435,14 @@ impl Media {
         Ok(Self {
             ffmpeg,
             ffprobe,
-            priority_flag: 0,
+            priority: None,
             threads: 0,
         })
     }
 
     /// Run every ffmpeg/ffprobe process at this priority and encode with this many threads.
     pub fn with_resource_limits(mut self, priority: FfmpegPriority, threads: u32) -> Self {
-        self.priority_flag = priority_flag(priority);
+        self.priority = Some(priority);
         self.threads = threads;
         self
     }
@@ -295,7 +454,17 @@ impl Media {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW | self.priority_flag);
+        cmd.creation_flags(CREATE_NO_WINDOW | self.priority.map(priority_flag).unwrap_or(0));
+        #[cfg(target_os = "linux")]
+        if let Some(nice) = self.priority.map(nice_level).filter(|n| *n > 0) {
+            // SAFETY: setpriority is async-signal-safe and touches no memory
+            // shared with the parent, which is all pre_exec asks for.
+            unsafe {
+                cmd.pre_exec(move || {
+                    rustix::process::setpriority_process(None, nice).map_err(Into::into)
+                });
+            }
+        }
         cmd
     }
 
@@ -347,7 +516,7 @@ impl Media {
                 .any(|l| l.split_whitespace().nth(1) == Some(name))
         };
         let auto = preferred.is_empty() || preferred == "auto";
-        let mut candidates: Vec<Encoder> = PROFILES
+        let mut candidates: Vec<Encoder> = profiles()
             .iter()
             .filter(|p| auto || p.encoder == preferred)
             .filter(|p| match hwaccel {
@@ -355,23 +524,17 @@ impl Media {
                 _ => p.decode.is_empty() && p.scale == SW_SCALE,
             })
             .filter(|p| p.decode.is_empty() || sample.is_some())
-            .map(|p| Encoder {
-                label: p.label,
-                name: p.encoder.to_string(),
-                decode: p.decode.to_vec(),
-                scale: p.scale,
-                opts: p.opts.to_vec(),
-                quality: p.quality.to_vec(),
-                pix_fmt: p.pix_fmt,
-            })
+            .map(Profile::encoder)
             .collect();
         if !auto && candidates.is_empty() {
             // an encoder we have no profile for: bare, as the user asked
             candidates.push(Encoder {
                 label: "custom",
                 name: preferred.to_string(),
+                global: Vec::new(),
                 decode: Vec::new(),
                 scale: SW_SCALE,
+                upload: "",
                 opts: Vec::new(),
                 quality: Vec::new(),
                 pix_fmt: true,
@@ -413,6 +576,7 @@ impl Media {
     /// `-f null`, or a synthetic source when no sample exists.
     async fn test_encode(&self, enc: &Encoder, sample: Option<&Path>) -> Result<Output> {
         let mut args: Vec<&str> = vec!["-v", "error"];
+        args.extend(enc.global.iter().copied());
         let sample_s = sample.map(|p| p.to_string_lossy().into_owned());
         match &sample_s {
             Some(s) => {
@@ -447,19 +611,21 @@ impl Media {
         let mut rows = Vec::new();
         let clip_s = clip.to_string_lossy().into_owned();
         let secs = seconds.to_string();
-        for p in PROFILES.iter() {
+        for p in profiles().iter() {
             if !have
                 .lines()
                 .any(|l| l.split_whitespace().nth(1) == Some(p.encoder))
             {
                 continue;
             }
-            let out = std::env::temp_dir().join(format!("replaycut-bench-{}.mp4", p.label));
+            let out = std::env::temp_dir()
+                .join(format!("replaycut-bench-{}.mp4", p.label.replace('/', "-")));
             let out_s = out.to_string_lossy().into_owned();
             let mut args: Vec<&str> = vec!["-y", "-v", "error"];
+            args.extend(p.global.iter().copied());
             args.extend(p.decode.iter().copied());
             args.extend(["-t", &secs, "-i", &clip_s, "-map", "0:v:0", "-an"]);
-            let vf = p.scale.replace("{h}", "1080");
+            let vf = p.encoder().filter_for(1080);
             args.extend(["-vf", &vf, "-c:v", p.encoder]);
             args.extend(p.opts.iter().copied());
             args.extend(["-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"]);
@@ -709,7 +875,7 @@ pub struct BenchRow {
     pub encoder: &'static str,
     pub ok: bool,
     pub wall: f64,
-    /// Kernel plus user time of the ffmpeg process, seconds (Windows only).
+    /// Kernel plus user time of the ffmpeg process, seconds (Windows and Linux).
     pub cpu: Option<f64>,
     pub size_mb: f64,
     pub error: String,
@@ -736,11 +902,22 @@ fn run_timed(exe: &Path, args: &[&str]) -> (bool, Option<f64>, String) {
         }
         String::from_utf8_lossy(&buf).into_owned()
     });
+    #[cfg(target_os = "linux")]
+    let children_before = children_cpu_seconds();
     let status = match child.wait() {
         Ok(s) => s,
         Err(e) => return (false, None, format!("ffmpeg: {e}")),
     };
+    #[cfg(windows)]
     let cpu = process_cpu_seconds(&child);
+    // The child is reaped, so its time is in the children total now; the
+    // bench runs one ffmpeg at a time, so the difference is this one.
+    #[cfg(target_os = "linux")]
+    let cpu = children_cpu_seconds()
+        .zip(children_before)
+        .map(|(after, before)| after - before);
+    #[cfg(not(any(windows, target_os = "linux")))]
+    let cpu: Option<f64> = None;
     let err = reader
         .join()
         .unwrap_or_default()
@@ -771,9 +948,19 @@ fn process_cpu_seconds(child: &std::process::Child) -> Option<f64> {
     Some((ticks(k) + ticks(u)) as f64 / 10_000_000.0)
 }
 
-#[cfg(not(windows))]
-fn process_cpu_seconds(_child: &std::process::Child) -> Option<f64> {
-    None
+/// Kernel plus user time of every reaped child so far, from `/proc/self/stat`
+/// (fields 16 and 17, in clock ticks).
+#[cfg(target_os = "linux")]
+fn children_cpu_seconds() -> Option<f64> {
+    let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+    // the command name in parentheses may contain spaces: count from its end
+    let rest = stat.rsplit_once(')')?.1;
+    let fields: Vec<&str> = rest.split_whitespace().collect();
+    // `rest` starts with field 3 (state), so fields 16 and 17 are at 13 and 14
+    let cutime: u64 = fields.get(13)?.parse().ok()?;
+    let cstime: u64 = fields.get(14)?.parse().ok()?;
+    let ticks = rustix::param::clock_ticks_per_second().max(1) as f64;
+    Some((cutime + cstime) as f64 / ticks)
 }
 
 /// What the setup wizard and the OBS page say about a clip's video.

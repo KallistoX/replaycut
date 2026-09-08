@@ -770,7 +770,7 @@ impl Settings {
         );
         anyhow::ensure!(
             crate::media::HWACCEL_VALUES.contains(&self.hwaccel.trim()),
-            "hwaccel must be auto, none, cuda, d3d11va or qsv"
+            "hwaccel must be auto, none, cuda, d3d11va, qsv or vaapi"
         );
         anyhow::ensure!(
             self.ffmpeg_threads <= 256,
