@@ -10,6 +10,15 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- The migration lists the clips whose recording is long gone. Their old
+  shares hung under a clip the page never showed, so they were only
+  reachable on Activity; they now appear under "Done" with their links,
+  their title and the day they were recorded (read out of the file name).
+  A cut from before 3.0 has no cut file, says so and offers "Marks" instead
+  of "Render": the range goes back on the timeline and one Share makes it.
+
 ## [3.0.0] - 2026-09-08
 
 Cut, then decide. A clip used to be one dialog on a five-minute recording:

@@ -507,13 +507,14 @@ impl AppState {
         create_dirs(&paths)?;
         let sessions = Sessions::load(&data_dir.join("sessions.json"));
         let db = Db::open(&data_dir.join(crate::db::FILE))?;
-        match db.import_2x(&data_dir) {
+        match db.import_2x(&data_dir, &paths.clip_dir) {
             Ok(Some(i)) => tracing::info!(
-                "state of 2.x imported: {} titles, {} clips announced, {} history entries under {} cuts; the files are now in {}",
+                "state of 2.x imported: {} titles, {} clips announced, {} history entries under {} cuts, {} clips without their recording (listed as done); the files are now in {}",
                 i.titles,
                 i.seen,
                 i.jobs,
                 i.cuts,
+                i.gone,
                 i.backup.display()
             ),
             Ok(None) => {}

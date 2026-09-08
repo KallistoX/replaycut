@@ -2494,13 +2494,16 @@ function renderCuts() {
     const el = document.createElement('div');
     const here = Math.abs(c.start - tIn) < 0.05 && Math.abs(c.end - tOut) < 0.05;
     el.className = 'cut' + (here ? ' is-current' : '');
-    const state = c.state === 'ready' ? '' : `<span class="badge ${c.state === 'pending' ? '' : 'warn'}">${esc(c.state === 'pending' ? 'cutting …' : 'file missing')}</span>`;
+    const state = c.state === 'ready' ? '' : `<span class="badge ${c.state === 'pending' ? '' : 'warn'}">${esc(c.state === 'pending' ? 'cutting …' : 'no cut file')}</span>`;
+    // a cut without its file renders nothing; the range is still good, so
+    // "Marks" puts it back on the timeline and Share makes it again
+    const canRender = c.state === 'ready' ? '' : ' disabled title="This cut has no file - put its range on the timeline with Marks and share it again"';
     el.innerHTML = `<div class="head">
         <span class="range">${cutRange(c)}</span>
         <span class="muted sm">${fmt(c.end - c.start)} · ${esc(audioLabel(c.audio))}${c.vertical ? ' · 9:16' : ''}</span>
         ${state}
         <span class="grow"></span>
-        <div class="split"><button class="btn btn-sm" data-render title="Encode this cut and send it to the default target">Render</button><button class="btn btn-sm btn-icon" data-render-menu title="Render to another target">▾</button><div class="menu" hidden></div></div>
+        <div class="split"><button class="btn btn-sm" data-render${canRender || ' title="Encode this cut and send it to the default target"'}>Render</button><button class="btn btn-sm btn-icon" data-render-menu${canRender || ' title="Render to another target"'}>▾</button><div class="menu" hidden></div></div>
         <button class="btn btn-sm btn-ghost" data-marks title="Put the marks of the timeline on this range"><svg class="icon icon-sm"><use href="#i-cut-in"/></svg> Marks</button>
         <button class="btn btn-sm btn-ghost btn-icon" data-del title="Delete this cut and everything it produced"><svg class="icon icon-sm"><use href="#i-trash"/></svg></button>
       </div>`;
@@ -2515,9 +2518,15 @@ function renderCuts() {
       wirePublish(row, o.id); wirePost(row, o.id);
       el.appendChild(row);
     });
-    if (!(c.outputs || []).length) {
+    if (c.state === 'missing') {
       const note = document.createElement('div'); note.className = 'muted sm';
-      note.textContent = c.state === 'missing' ? 'Nothing came out of this one, and its file is gone.' : 'Saved, not rendered yet.';
+      note.textContent = cur && cur.file !== null
+        ? 'From before 3.0, so there is no cut file. "Marks" puts its range back on the timeline - share it from there and the cut is made.'
+        : 'From before 3.0: no cut file, and the recording is gone too. What it produced is still listed above.';
+      el.appendChild(note);
+    } else if (!(c.outputs || []).length) {
+      const note = document.createElement('div'); note.className = 'muted sm';
+      note.textContent = 'Saved, not rendered yet.';
       el.appendChild(note);
     }
     el.querySelector('[data-marks]').onclick = () => { if (!cur) return; tIn = c.start; tOut = Math.min(c.end, cur.duration || c.end); edited = true; if (v && v.src) seek(tIn); render(); renderCuts(); };

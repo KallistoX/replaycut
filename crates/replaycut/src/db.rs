@@ -101,6 +101,9 @@ pub struct Import {
     pub seen: usize,
     pub jobs: usize,
     pub cuts: usize,
+    /// Clips whose recording is no longer in the folder: they are listed
+    /// as done, for the outputs that came out of them.
+    pub gone: usize,
     pub backup: PathBuf,
 }
 
@@ -575,7 +578,7 @@ impl Db {
     /// Take over `clip-names.json`, `clip-seen.json` and `clip-history.json`
     /// and move them to `backup-2.x\`. Runs once: afterwards `meta.import`
     /// says when, and the files are no longer in the data directory.
-    pub fn import_2x(&self, data_dir: &Path) -> Result<Option<Import>> {
+    pub fn import_2x(&self, data_dir: &Path, clip_dir: &Path) -> Result<Option<Import>> {
         if self.meta("import")?.is_some() {
             return Ok(None);
         }
@@ -671,6 +674,31 @@ impl Db {
                 )?;
                 import.jobs += 1;
             }
+        }
+        // Which of these clips still have their recording? A clip whose file
+        // is gone would otherwise never be listed, and its old shares with
+        // it: the import looks once, and the scanner keeps it right after.
+        let mut rows = tx.prepare(CLIP_COLUMNS)?;
+        let bases: Vec<String> = rows
+            .query_map([], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        drop(rows);
+        for base in bases {
+            if clip_dir.join(format!("{base}.mkv")).is_file() {
+                continue;
+            }
+            // it is done: nothing left to cut from, only what it produced
+            tx.execute(
+                "UPDATE clips SET has_file = 0, state = ?2, done_at = COALESCE(done_at, ?3), doc = ?4
+                  WHERE base = ?1",
+                params![
+                    base,
+                    CLIP_DONE,
+                    crate::util::now_local(),
+                    gone_clip_doc(&base).to_string()
+                ],
+            )?;
+            import.gone += 1;
         }
         tx.execute(
             "INSERT INTO meta (key, value) VALUES ('import', ?1)
@@ -839,6 +867,50 @@ fn prune_clips(tx: &rusqlite::Transaction<'_>) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// The clip document for a recording that is already gone at import time:
+/// what the page needs to list it for its cuts. The time comes out of the
+/// base name (`... 2026-09-05 23-17-55`), which is how OBS names a replay;
+/// everything the file would have told us stays empty.
+fn gone_clip_doc(base: &str) -> Value {
+    serde_json::json!({
+        "base": base,
+        "name": format!("{base}.mkv"),
+        "path": "",
+        "size": 0,
+        "duration": 0.0,
+        "tracks": 0,
+        "created": created_from_base(base),
+        "preview": "",
+        "status": "gone",
+        "codec": "",
+        "width": 0,
+        "height": 0,
+        "fps": 0.0,
+        "thumb": Value::Null,
+        "previewH264": Value::Null,
+    })
+}
+
+/// `<anything> YYYY-MM-DD HH-MM-SS` -> `YYYY-MM-DDTHH:MM:SS`, else empty.
+fn created_from_base(base: &str) -> String {
+    let b = base.as_bytes();
+    if b.len() < 19 {
+        return String::new();
+    }
+    for i in 0..=b.len() - 19 {
+        let w = &b[i..i + 19];
+        let digits = [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18]
+            .iter()
+            .all(|&k| w[k].is_ascii_digit());
+        if digits && w[4] == b'-' && w[7] == b'-' && w[10] == b' ' && w[13] == b'-' && w[16] == b'-'
+        {
+            let s = String::from_utf8_lossy(w);
+            return format!("{}T{}:{}:{}", &s[..10], &s[11..13], &s[14..16], &s[17..19]);
+        }
+    }
+    String::new()
+}
+
 /// What makes a range of a clip one cut: where it starts and ends and which
 /// audio mode it was shared with.
 fn range_key(entry: &Value, base: &str) -> String {
@@ -996,7 +1068,10 @@ mod tests {
         );
 
         let db = Db::open(&dir.join(FILE)).unwrap();
-        let import = db.import_2x(&dir).unwrap().expect("something to import");
+        let import = db
+            .import_2x(&dir, &dir)
+            .unwrap()
+            .expect("something to import");
         assert_eq!((import.titles, import.seen, import.jobs), (2, 3, 4));
         // one cut per range: Replay A was shared twice from the same range
         assert_eq!(import.cuts, 3);
@@ -1023,10 +1098,10 @@ mod tests {
             );
         }
         // and a second start does nothing at all
-        assert!(db.import_2x(&dir).unwrap().is_none());
+        assert!(db.import_2x(&dir, &dir).unwrap().is_none());
         drop(db);
         let again = Db::open(&dir.join(FILE)).unwrap();
-        assert!(again.import_2x(&dir).unwrap().is_none());
+        assert!(again.import_2x(&dir, &dir).unwrap().is_none());
         assert_eq!(again.recent_jobs(50).unwrap().len(), 4);
         assert_eq!(again.titles().unwrap().len(), 2);
         drop(again);
@@ -1078,7 +1153,10 @@ mod tests {
         std::fs::write(dir.join(STATE_FILES[2]), history.to_string()).unwrap();
 
         let db = Db::open(&dir.join(FILE)).unwrap();
-        let import = db.import_2x(&dir).unwrap().expect("something to import");
+        let import = db
+            .import_2x(&dir, &dir)
+            .unwrap()
+            .expect("something to import");
         assert_eq!(import.jobs, 6);
         // Replay A one range; Replay B three (9:16, the full clip, the range
         // that was shared and published). The cancelled job joins the range it
@@ -1115,7 +1193,7 @@ mod tests {
     fn an_import_that_finds_nothing_leaves_the_store_alone() {
         let dir = scratch("empty");
         let db = Db::open(&dir.join(FILE)).unwrap();
-        assert!(db.import_2x(&dir).unwrap().is_none());
+        assert!(db.import_2x(&dir, &dir).unwrap().is_none());
         // nothing was marked: state files that arrive later are still taken over
         assert!(db.meta("import").unwrap().is_none());
         assert!(!dir.join(BACKUP_DIR).exists());
@@ -1210,5 +1288,67 @@ mod tests {
         let next = db.jobs_before(Some(&oldest), 100).unwrap();
         assert_eq!(next.len(), 100);
         assert_eq!(next[0]["id"], "j149");
+    }
+
+    /// The clips of an old history whose recordings are long gone: they are
+    /// listed as done, with what the base name still tells us, so their
+    /// outputs stay reachable from the clip they came from.
+    #[test]
+    fn the_import_marks_clips_without_a_recording() {
+        let dir = scratch("gone");
+        let clips = dir.join("clips");
+        std::fs::create_dir_all(&clips).unwrap();
+        // one recording is still there, the other one is not
+        std::fs::write(clips.join("WARDOGS 2026-09-05 23-17-55.mkv"), b"x").unwrap();
+        let history = json!([
+            { "id": "j2", "base": "WARDOGS 2026-09-05 23-17-55", "start": 1.0, "end": 6.0,
+              "audio": "mix", "at": "2026-09-05T23:20:00", "file": "a.mp4",
+              "link": "https://example.com/a", "target": "nextcloud" },
+            { "id": "j1", "base": "WARDOGS 2026-09-01 20-15-00", "start": 2.0, "end": 9.0,
+              "audio": "mix", "at": "2026-09-01T20:16:00", "file": "b.mp4",
+              "link": "https://example.com/b", "target": "nextcloud" }
+        ]);
+        std::fs::write(dir.join(STATE_FILES[2]), history.to_string()).unwrap();
+
+        let db = Db::open(&dir.join(FILE)).unwrap();
+        let import = db.import_2x(&dir, &clips).unwrap().expect("an import");
+        assert_eq!(import.gone, 1, "one recording is still in the folder");
+
+        let here = db.clip("WARDOGS 2026-09-05 23-17-55").unwrap().unwrap();
+        assert!(here.has_file, "this recording is there: {here:?}");
+        assert_eq!(here.state, CLIP_ACTIVE, "{here:?}");
+
+        let gone = db.clip("WARDOGS 2026-09-01 20-15-00").unwrap().unwrap();
+        assert!(!gone.has_file, "{gone:?}");
+        assert_eq!(
+            gone.state, CLIP_DONE,
+            "a clip without its recording is done"
+        );
+        assert!(gone.done_at.is_some(), "{gone:?}");
+        let doc = gone.doc.expect("a document, or the page cannot list it");
+        assert_eq!(
+            doc["created"], "2026-09-01T20:15:00",
+            "the time out of the name"
+        );
+        assert_eq!(doc["name"], "WARDOGS 2026-09-01 20-15-00.mkv");
+        assert_eq!(doc["duration"], 0.0, "nothing is invented about the file");
+        // and its share still hangs under a cut of that clip
+        assert_eq!(db.cuts_of("WARDOGS 2026-09-01 20-15-00").unwrap().len(), 1);
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_time_is_read_out_of_the_base_name() {
+        assert_eq!(
+            created_from_base("WARDOGS 2026-09-05 23-17-55"),
+            "2026-09-05T23:17:55"
+        );
+        assert_eq!(
+            created_from_base("Replay 2026-09-05 23-17-55 take 2"),
+            "2026-09-05T23:17:55"
+        );
+        assert_eq!(created_from_base("no time here"), "");
+        assert_eq!(created_from_base("2026-09-05"), "");
     }
 }
