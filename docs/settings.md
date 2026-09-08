@@ -21,6 +21,11 @@ sensitive is ever written to disk in plain text.
 | Shared clips | `<clipDir>\shared\` |
 | Credentials | Credential Manager, generic credentials `replaycut/nextcloud`, `replaycut/discord-webhook`, `replaycut/obs-websocket`, `replaycut/onedrive`, `replaycut/s3`, `replaycut/webdav`, `replaycut/youtube`, `replaycut/youtube-client` |
 
+On Linux the data directory is `$XDG_DATA_HOME/replaycut`
+(`~/.local/share/replaycut`), the paths below it are the same with forward
+slashes, and the credentials live in the keyring behind the Secret Service
+(see [Credentials](#credentials)).
+
 The settings file is created with defaults on the first start. Unknown
 fields are ignored, missing fields take their defaults, so a partial file is
 fine.
@@ -160,7 +165,7 @@ Commands:
   stop       Stop the running service
   install    Install or update replaycut for this user
   uninstall  Remove the installation (--purge also removes settings and credentials)
-  autostart  on | off | status: start replaycut at sign-in
+  autostart  on | off | status: start replaycut at sign-in (Windows) or with the desktop session (Linux)
 
 Options:
   --data-dir <DIR>     Data directory (settings, state, logs)
@@ -262,17 +267,24 @@ available"; the icon carries a badge while a share runs and a red badge
 after a failed one.
 
 `replaycut stop` asks the running service to shut down (through a named
-event, not through HTTP, so a web page cannot stop the service) and waits
-for it to exit. Only one instance runs at a time; a second start opens the
-browser and exits.
+event on Windows and SIGTERM to the process behind the lock file on Linux,
+not through HTTP, so a web page cannot stop the service) and waits for it
+to exit. Only one instance runs at a time; a second start opens the browser
+and exits.
 
 Desktop notifications ("Clip saved", "Clip shared, link copied", "Share
 failed") need the application registered with Windows, which
-`replaycut install` does; without it they are skipped and a hint is logged
-once. `--dry-run` only logs them.
+`replaycut install` does; on Linux they go to the session's notification
+service. Without either they are skipped and a hint is logged once.
+`--dry-run` only logs them.
 
 The log records why the service stopped (Ctrl+C, the console closing, the
 stop event, Quit in the tray menu, sign-out) and any panic with a backtrace.
+
+On Linux there is no tray yet; a start without a terminal (the desktop
+entry, the systemd unit) opens the browser like the Windows shortcut unless
+`--no-browser` is given, and the lock file `$XDG_RUNTIME_DIR/replaycut-
+<port>.lock` is what keeps a second instance out.
 
 ## Installation layout
 
@@ -287,6 +299,25 @@ admin rights except for the optional firewall rule:
 | Notification registration | `HKCU\Software\Classes\AppUserModelId\replaycut` |
 | Autostart (optional) | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\replaycut` = `"<app>\replaycut.exe" --no-browser` |
 | Firewall rule (optional) | `replaycut`, inbound TCP on the configured port, private profile, bound to the executable |
+
+On Linux `replaycut install` (what `install.sh` runs) lays the same
+installation out with the XDG base directories, without root and without a
+firewall step:
+
+| Item | Where |
+|---|---|
+| Program files | `$XDG_DATA_HOME/replaycut/app/` (`replaycut`, `ui/index.html`, docs) |
+| Settings, state, logs | `$XDG_DATA_HOME/replaycut/` |
+| Command line | `~/.local/bin/replaycut`, a link to the installed executable |
+| App menu | `$XDG_DATA_HOME/applications/replaycut.desktop` and the icon `$XDG_DATA_HOME/icons/hicolor/scalable/apps/replaycut.svg` |
+| Autostart (optional) | the systemd user unit `$XDG_CONFIG_HOME/systemd/user/replaycut.service`, enabled for `graphical-session.target`, `ExecStart=<app>/replaycut --no-browser` |
+
+The unit is part of the graphical session, so it starts once the desktop is
+up (the clipboard and the notifications need the session's environment) and
+stops with it. Desktops that run under systemd (GNOME, KDE, sway and
+Hyprland with uwsm) reach `graphical-session.target` on their own; a
+compositor started otherwise has to start the unit itself (Hyprland:
+`exec-once = systemctl --user start replaycut`).
 
 Migration from the 1.x service happens inside `install` when the scheduled
 task `WARDOGS Clip-Service` or its state files exist: the task's arguments

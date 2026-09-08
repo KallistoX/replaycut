@@ -10,6 +10,31 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- **Linux, second stage: the platform services.** Secrets go to the
+  keyring behind the freedesktop Secret Service (gnome-keyring, KWallet,
+  KeePassXC), so every integration and the obs-websocket password can be
+  set up; notifications appear on the desktop and a click opens the page;
+  "Copy link" serves the Wayland clipboard (and stays there after the
+  service moved on), "Copy file" offers the file to paste in a file
+  manager, "Open folder" asks the file manager to show it; ffmpeg runs at
+  the nice level `ffmpegPriority` asks for; the diagnostics show memory
+  and free space; and `h264_vaapi` joins the encoder detection for AMD and
+  Intel GPUs, one profile pair per render node, with `hwaccel: vaapi` as a
+  manual choice. The replay hotkey stays unavailable on Wayland; the page
+  says so and points at obs-websocket.
+- **Linux, third stage: install, autostart and the page's wording.**
+  `replaycut install` (or `install.sh`) puts the files under
+  `~/.local/share/replaycut/app`, links `~/.local/bin/replaycut`, adds a
+  desktop entry and an icon and asks whether replaycut should start with
+  the desktop session, which a systemd user unit then does; the switch on
+  the settings page and `replaycut autostart` drive the same unit.
+  `uninstall` takes it all back again. The status document says which
+  platform the service runs on (`config.platform`), and the page words
+  things for it: keyring instead of Credential Manager, trash instead of
+  recycle bin, the app menu instead of the Start menu.
+
 ## [3.1.0] - 2026-09-08
 
 The clips page of 3.0 put the same thing on the screen three times. This is
@@ -29,18 +54,6 @@ the service learns a second platform.
   notifications, the clipboard under Wayland, GPU encoding through VAAPI,
   autostart, the installer and the tray follow in the next stages; until
   then those report that they are not available on this platform.
-- **Linux, second stage: the platform services.** Secrets go to the
-  keyring behind the freedesktop Secret Service (gnome-keyring, KWallet,
-  KeePassXC), so every integration and the obs-websocket password can be
-  set up; notifications appear on the desktop and a click opens the page;
-  "Copy link" serves the Wayland clipboard (and stays there after the
-  service moved on), "Copy file" offers the file to paste in a file
-  manager, "Open folder" asks the file manager to show it; ffmpeg runs at
-  the nice level `ffmpegPriority` asks for; the diagnostics show memory
-  and free space; and `h264_vaapi` joins the encoder detection for AMD and
-  Intel GPUs, one profile pair per render node, with `hwaccel: vaapi` as a
-  manual choice. The replay hotkey stays unavailable on Wayland; the page
-  says so and points at obs-websocket.
 
 ### Changed
 

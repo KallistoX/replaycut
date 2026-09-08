@@ -31,10 +31,14 @@ crates/replaycut/       the service binary
   src/media.rs           ffmpeg/ffprobe, encoder detection, resource limits
   src/share.rs           the share pipeline
   src/integrations.rs    storage (Nextcloud) and notify (Discord) plus dry-run stand-ins
-  src/credentials.rs     Windows Credential Manager
+  src/credentials.rs     Windows Credential Manager / Secret Service on Linux
   src/setup.rs           `replaycut setup` and `replaycut test`
   src/http.rs            axum router, one handler per endpoint
-  src/platform.rs        recycle bin, replay hotkey, clipboard
+  src/platform.rs        recycle bin, replay hotkey, clipboard, single instance
+  src/winshell.rs        Windows: app folder, shortcuts, registry, elevation
+  src/install.rs         Windows: `replaycut install|uninstall|autostart`
+  src/linuxshell.rs      Linux: XDG paths, desktop entry, systemd user unit
+  src/install_linux.rs   Linux: `replaycut install|uninstall|autostart`
 ui/index.html           the browser UI (vanilla JS, served by the service)
 tests/api/              black-box HTTP contract tests, run against BASE_URL
 docs/api.md             the HTTP API contract - binding for every implementation
