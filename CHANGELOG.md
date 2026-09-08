@@ -10,6 +10,8 @@ contract.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-09-08
+
 Cut, then decide. A clip used to be one dialog on a five-minute recording:
 pick a range, pick the audio, upload, and whatever you did not decide then
 was gone with the recording. 3.0 puts a **cut** in between - the range as its
@@ -37,10 +39,8 @@ longer capped at 200 entries.
   rendered from that. So audio mode, 9:16 and quality are decisions you can
   take again later: the cut is enough, the five-minute recording is not
   needed any more.
-- Save a range now and render it after the game: `POST /api/cuts` stores a
-  cut without encoding anything, `POST /api/cuts/<id>/render` sends it to
-  any target later. The buttons for this arrive with the rest of 3.0; the
-  clips page already shows every clip's cuts and what came out of them.
+- **Save cut**: save a range while you play and render it after the game -
+  to any target, with another audio mix or as a Short, as often as you like.
 - **Shared clips leave the list.** A clip you have shared is done and is out
   of the way; `?done=1` lists the done ones, and one call brings a clip back.
   "Afterwards" per share decides between keeping it, marking it done and
@@ -66,23 +66,21 @@ longer capped at 200 entries.
   output ever made - newest first, filtered per target, one click to the clip
   it came from. It replaces the "Shared" list on the clips page.
 
-### Removed
-
-- The "Shared" section of the clips page: its entries are on Activity now,
-  and under the cut they came from on the clip itself.
-
 ### Changed
-
-- The share progress has one more step, "Cut", before "Encode". It takes
-  about a second and needs no graphics card. What comes out is frame for
-  frame what 2.8 produced.
 
 - **replaycut keeps its state in one file.** Clip titles, which clips have
   already been announced and the share history moved out of three JSON files
   and into `replaycut.db` next to the settings. The first start of 3.0
   imports the old files and moves them to `backup-2.x\`, so an installation
-  of 2.x put back later finds its state where it left it. Nothing changes in
-  the UI or in the API.
+  of 2.x put back later finds its state where it left it.
+- The share progress has one more step, "Cut", before "Encode". It takes
+  about a second and needs no graphics card. What comes out is frame for
+  frame what 2.8 produced.
+
+### Removed
+
+- The "Shared" section of the clips page: its entries are on Activity now,
+  and under the cut they came from on the clip itself.
 
 ### Fixed
 
