@@ -42,15 +42,25 @@ function ffmpeg(args) {
 }
 
 /** Wait for the clips page, put marks on the timeline, hide the caret. */
-async function prepare(page, { marks = true } = {}) {
+async function prepare(page) {
   await page.goto(base, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#cliplist', { state: 'visible' });
-  await page.waitForFunction(() => {
-    const v = document.querySelector('video');
-    return v && v.readyState >= 2;
-  });
 
-  if (marks) {
+  // The recordings are H.264, which the browser must be able to decode for
+  // the marks to mean anything. A browser that cannot still gets a picture:
+  // the poster below carries the frame.
+  let plays = true;
+  try {
+    await page.waitForFunction(() => {
+      const v = document.querySelector('video');
+      return v && v.readyState >= 2;
+    }, null, { timeout: 15_000 });
+  } catch {
+    plays = false;
+    console.warn('the browser did not decode the recording - no marks on this one');
+  }
+
+  if (plays) {
     for (const [time, button] of [[IN_AT, '#bIn'], [OUT_AT, '#bOut']]) {
       await page.evaluate((t) => new Promise((done) => {
         const v = document.querySelector('video');
@@ -100,7 +110,21 @@ async function shoot(browser, { width, height, file, theme }) {
   await context.close();
 }
 
-const browser = await chromium.launch();
+// Playwright's own Chromium is built without the proprietary codecs, so it
+// cannot decode an H.264 recording. Edge and Chrome can, and both sit on a
+// Windows runner; the bundled browser stays as the fallback.
+async function launch() {
+  for (const channel of ['msedge', 'chrome']) {
+    try {
+      return await chromium.launch({ channel });
+    } catch {
+      console.warn(`no ${channel} on this machine`);
+    }
+  }
+  return chromium.launch();
+}
+
+const browser = await launch();
 
 // The clips page as it looks on a desktop and on a phone.
 await shoot(browser, { width: 1440, height: 900, file: join(tmp, 'desktop.png') });
