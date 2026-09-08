@@ -381,7 +381,10 @@ run `{ ok: true, dryRun: true }` without sending.
 ### `GET /api/addresses`
 
 `{ hostname, port, bind, urls: ["http://<host>:<port>/", "http://<ip>:<port>/", "http://localhost:<port>/"], qrSvg }`.
-`qrSvg` is an SVG document encoding `urls[0]`. With `bind` set to loopback
+`qrSvg` is an SVG document encoding `urls[0]`. `<host>` is the computer name
+on Windows; on Linux it is `<computer name>.local` when the machine
+announces itself over mDNS, else the IPv4 address (since 3.2). `hostname`
+stays the bare computer name. With `bind` set to loopback
 only the localhost address is listed, `local` is true and `qrSvg` is empty
 (since 2.3): a code for localhost would only lead a phone to itself.
 Since 2.8 the code signs the scanning phone in and `qrSignsIn` says so -

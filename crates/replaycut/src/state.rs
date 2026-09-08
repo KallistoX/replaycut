@@ -674,7 +674,7 @@ impl AppState {
     pub fn lan_url(&self) -> String {
         format!(
             "http://{}:{}/",
-            platform::hostname(),
+            platform::lan_host(),
             self.settings.read().port
         )
     }

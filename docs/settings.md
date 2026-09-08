@@ -257,7 +257,10 @@ the shell to wait: use `start /wait replaycut setup` in `cmd.exe` and
 files wait on their own.
 
 The tray icon offers **Open** (the UI in the browser), **Copy address**
-(`http://<computer name>:<port>/` for a phone or laptop in the same network),
+(`http://<computer name>:<port>/` for a phone or laptop in the same network;
+on Linux `<computer name>.local` when the machine announces itself over
+mDNS, else its IPv4 address, because a bare Linux host name does not
+resolve from other devices),
 **Show QR code** (the settings page with the address dialog open), **Pause
 scanning** (new replays wait in the folder until unticked; forgotten at the
 next start), **Check for updates** (asks GitHub now and answers with a

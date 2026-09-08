@@ -774,7 +774,7 @@ pub async fn run(state: &AppState) -> Report {
             }
             detail.push_str(&format!(
                 " · http://{}:{}/",
-                platform::hostname(),
+                platform::lan_host(),
                 settings.port
             ));
             if let Some(ip) = platform::primary_ipv4() {

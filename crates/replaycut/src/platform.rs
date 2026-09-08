@@ -197,6 +197,43 @@ pub fn hostname() -> String {
         .unwrap_or_else(|| "localhost".to_string())
 }
 
+/// The host name other devices use in the address we hand out. Windows
+/// resolves computer names over the network (LLMNR, NetBIOS), so the name is
+/// the address; Linux does not, so the name is only advertised as
+/// `<host>.local` when this machine resolves it over mDNS (Avahi or
+/// systemd-resolved), and the IPv4 address stands in otherwise. Computed
+/// once, the resolution can take a moment.
+pub fn lan_host() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        linux::lan_host().to_string()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        hostname()
+    }
+}
+
+/// The name to advertise, from what is known: `<host>.local` when mDNS
+/// resolves it, else the IPv4 address, else the bare name.
+pub fn advertised_host(
+    hostname: &str,
+    mdns_resolves: bool,
+    ip: Option<std::net::Ipv4Addr>,
+) -> String {
+    if mdns_resolves && !hostname.is_empty() {
+        return if hostname.ends_with(".local") {
+            hostname.to_string()
+        } else {
+            format!("{hostname}.local")
+        };
+    }
+    match ip {
+        Some(ip) => ip.to_string(),
+        None => hostname.to_string(),
+    }
+}
+
 // ---------------------------------------------------------------- Windows
 
 #[cfg(windows)]
@@ -638,6 +675,23 @@ pub mod linux {
         std::io::stdout().is_terminal() || std::io::stderr().is_terminal()
     }
 
+    /// `<host>.local` when this machine resolves it (mDNS through Avahi or
+    /// systemd-resolved, which also means the name is announced), else the
+    /// IPv4 address. Cached: the first resolution may take a second.
+    pub fn lan_host() -> &'static str {
+        use std::net::ToSocketAddrs;
+        use std::sync::OnceLock;
+        static HOST: OnceLock<String> = OnceLock::new();
+        HOST.get_or_init(|| {
+            let name = super::hostname();
+            let mdns = (format!("{name}.local").as_str(), 80u16)
+                .to_socket_addrs()
+                .map(|mut a| a.next().is_some())
+                .unwrap_or(false);
+            super::advertised_host(&name, mdns, super::primary_ipv4())
+        })
+    }
+
     /// The kernel's node name, lower-cased; `None` when it is empty.
     pub fn hostname() -> Option<String> {
         let uname = rustix::system::uname();
@@ -882,6 +936,17 @@ mod tests {
         let h = super::hostname();
         assert!(!h.is_empty());
         assert_eq!(h, h.to_ascii_lowercase());
+    }
+
+    #[test]
+    fn advertised_host_prefers_mdns_then_the_address_then_the_name() {
+        use std::net::Ipv4Addr;
+        let ip = Some(Ipv4Addr::new(192, 0, 2, 7));
+        assert_eq!(super::advertised_host("pc", true, ip), "pc.local");
+        assert_eq!(super::advertised_host("pc.local", true, ip), "pc.local");
+        assert_eq!(super::advertised_host("pc", false, ip), "192.0.2.7");
+        assert_eq!(super::advertised_host("pc", false, None), "pc");
+        assert_eq!(super::advertised_host("", true, None), "");
     }
 
     #[cfg(target_os = "linux")]
