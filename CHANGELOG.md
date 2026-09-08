@@ -10,6 +10,13 @@ contract.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-09-08
+
+The clips page of 3.0 put the same thing on the screen three times. This is
+that page after a tidy-up: a cut is a row, an output looks the same wherever
+it shows up, and the button per action became a menu per row. Underneath,
+the service learns a second platform.
+
 ### Added
 
 - **Linux, first stage.** The service builds, passes its tests and runs on
