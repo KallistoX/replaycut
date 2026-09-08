@@ -90,7 +90,9 @@ jobs:
       # Only from main, and only when a picture actually changed. The push
       # filter above does not list docs/images, so this commit starts nothing.
       - name: Commit what changed
-        if: github.ref == 'refs/heads/main'
+        # Off for the first run: the pictures are looked at before the
+        # workflow is allowed to commit them.
+        if: false && github.ref == 'refs/heads/main'
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
