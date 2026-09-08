@@ -1,7 +1,10 @@
-//! Secrets live in the Windows Credential Manager as generic credentials.
-//! The secret blob is stored as UTF-16, the way the 1.x service did it, so
-//! entries can be copied between the two.
+//! Secrets live in the platform's credential store: on Windows the
+//! Credential Manager as generic credentials (the secret blob as UTF-16, the
+//! way the 1.x service did it, so entries can be copied between the two); on
+//! Linux the freedesktop Secret Service (gnome-keyring, KWallet, KeePassXC)
+//! in the default collection. Never in a file.
 
+#[cfg(not(target_os = "linux"))]
 use anyhow::Result;
 
 pub const NEXTCLOUD: &str = "replaycut/nextcloud";
@@ -127,15 +130,97 @@ pub fn delete(target: &str) -> Result<bool> {
     win::delete(target)
 }
 
-#[cfg(not(windows))]
+/// An item in the default collection carries `application=replaycut`,
+/// `target=<name>` and `user=<user>` as attributes; the secret is the
+/// password or token as UTF-8. The two lookup attributes are what
+/// `secret-tool lookup application replaycut target <name>` needs.
+#[cfg(target_os = "linux")]
+mod linux {
+    use std::collections::HashMap;
+
+    use anyhow::{Context, Result};
+    use secret_service::blocking::{Collection, SecretService};
+    use secret_service::EncryptionType;
+
+    use super::Credential;
+    use crate::platform::linux::off_runtime;
+
+    const APPLICATION: &str = "replaycut";
+
+    fn with_collection<T: Send>(f: impl FnOnce(&Collection<'_>) -> Result<T> + Send) -> Result<T> {
+        off_runtime(move || {
+            let service = SecretService::connect(EncryptionType::Dh).context(
+                "cannot reach the Secret Service (org.freedesktop.secrets) - a keyring such as gnome-keyring, KWallet or KeePassXC has to run in this session",
+            )?;
+            let collection = service
+                .get_default_collection()
+                .context("the Secret Service has no default collection")?;
+            collection
+                .ensure_unlocked()
+                .context("cannot unlock the default keyring")?;
+            f(&collection)
+        })
+    }
+
+    fn lookup(target: &str) -> HashMap<&str, &str> {
+        HashMap::from([("application", APPLICATION), ("target", target)])
+    }
+
+    pub fn read(target: &str) -> Result<Option<Credential>> {
+        with_collection(|collection| {
+            let Some(item) = collection.search_items(lookup(target))?.into_iter().next() else {
+                return Ok(None);
+            };
+            item.ensure_unlocked()?;
+            let user = item.get_attributes()?.remove("user").unwrap_or_default();
+            let secret = String::from_utf8(item.get_secret()?)
+                .with_context(|| format!("{target}: the secret is not UTF-8"))?;
+            Ok(Some(Credential { user, secret }))
+        })
+    }
+
+    pub fn write(target: &str, user: &str, secret: &str) -> Result<()> {
+        with_collection(|collection| {
+            let mut attributes = lookup(target);
+            attributes.insert("user", user);
+            collection
+                .create_item(
+                    &format!("replaycut {target}"),
+                    attributes,
+                    secret.as_bytes(),
+                    true,
+                    "text/plain",
+                )
+                .with_context(|| format!("cannot store {target}"))?;
+            Ok(())
+        })
+    }
+
+    pub fn delete(target: &str) -> Result<bool> {
+        with_collection(|collection| {
+            let items = collection.search_items(lookup(target))?;
+            let found = !items.is_empty();
+            for item in items {
+                item.delete()
+                    .with_context(|| format!("cannot delete {target}"))?;
+            }
+            Ok(found)
+        })
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub use linux::{delete, read, write};
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn read(_target: &str) -> Result<Option<Credential>> {
     Ok(None)
 }
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn write(_target: &str, _user: &str, _secret: &str) -> Result<()> {
-    anyhow::bail!("credential storage is only available on Windows")
+    anyhow::bail!("credential storage is only available on Windows and Linux")
 }
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn delete(_target: &str) -> Result<bool> {
     Ok(false)
 }
