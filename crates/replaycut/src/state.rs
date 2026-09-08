@@ -164,6 +164,10 @@ pub struct Job {
     // since 2.4: ended by the user (stage `cancelled`)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub cancelled: bool,
+    // since 3.0: what happens to the clip when this job is done -
+    // `keep`, `done` or `recycle` (the recording goes to the recycle bin)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub after: String,
 }
 
 fn default_mode() -> String {
@@ -432,6 +436,8 @@ pub enum StateError {
     UnknownJob,
     /// The job is past the point where cancelling makes sense.
     TooLate(String),
+    /// The store could not be written (since 3.0).
+    Store(String),
 }
 
 impl std::fmt::Display for StateError {
@@ -441,7 +447,19 @@ impl std::fmt::Display for StateError {
             StateError::ClipBusy => write!(f, "this clip is being shared right now - please wait"),
             StateError::UnknownJob => write!(f, "unknown job"),
             StateError::TooLate(stage) => write!(f, "too late to cancel - the job is {stage}"),
+            StateError::Store(e) => write!(f, "the state store refused: {e}"),
         }
+    }
+}
+
+/// What a clip's state is: what the store says, or - for a clip nobody has
+/// touched - whether it has cuts (since 3.0).
+pub fn clip_state(row: Option<&crate::db::ClipRow>, cuts: &[Value]) -> &'static str {
+    match row.map(|r| r.state.as_str()) {
+        Some(crate::db::CLIP_DONE) => crate::db::CLIP_DONE,
+        Some(crate::db::CLIP_ACTIVE) if !cuts.is_empty() => crate::db::CLIP_ACTIVE,
+        _ if !cuts.is_empty() => crate::db::CLIP_ACTIVE,
+        _ => crate::db::CLIP_NEW,
     }
 }
 impl std::error::Error for StateError {}
@@ -745,6 +763,61 @@ impl AppState {
 
     // --- queries and mutations used by the HTTP layer ---
 
+    /// `PUT /api/clips/<base>/state` (since 3.0): take a clip out of the list
+    /// or bring it back. A running job is not touched by it.
+    pub fn set_clip_state(&self, base: &str, state: &str) -> Result<Value, StateError> {
+        let known =
+            self.inner.lock().clips.contains_key(base) || matches!(self.db.clip(base), Ok(Some(_)));
+        if !known {
+            return Err(StateError::UnknownClip(base.to_string()));
+        }
+        let done_at = (state == crate::db::CLIP_DONE).then(util::now_local);
+        // "active" without cuts is "new": the state follows what is there
+        let state = if state == crate::db::CLIP_ACTIVE && !self.has_cuts(base) {
+            crate::db::CLIP_NEW
+        } else {
+            state
+        };
+        self.db
+            .set_clip_state(base, state, done_at.as_deref())
+            .map_err(|e| StateError::Store(format!("{e:#}")))?;
+        tracing::info!("clip {base} is {state}");
+        self.tray_changed();
+        Ok(json!({ "ok": true, "base": base, "state": state, "doneAt": done_at }))
+    }
+
+    /// A job of this cut is running or waiting (since 3.0).
+    pub fn cut_busy(&self, cut: &str) -> bool {
+        let inner = self.inner.lock();
+        inner
+            .current_job
+            .iter()
+            .chain(inner.queue.iter())
+            .any(|id| {
+                inner
+                    .jobs
+                    .get(id)
+                    .is_some_and(|j| j.cut.as_deref() == Some(cut))
+            })
+    }
+
+    pub fn has_cuts(&self, base: &str) -> bool {
+        self.db
+            .cuts_of(base)
+            .map(|c| !c.is_empty())
+            .unwrap_or(false)
+    }
+
+    /// A clip that lost its last cut is a fresh clip again (since 3.0).
+    pub fn reset_state_without_cuts(&self, base: &str) {
+        if self.has_cuts(base) {
+            return;
+        }
+        if let Err(e) = self.db.set_clip_state(base, crate::db::CLIP_NEW, None) {
+            tracing::warn!("cannot reset the state of {base}: {e:#}");
+        }
+    }
+
     /// The cuts of every clip with their outputs, for the status document
     /// (since 3.0). Two queries, whatever the number of clips.
     fn cuts_by_base(&self) -> BTreeMap<String, Vec<Value>> {
@@ -765,21 +838,65 @@ impl AppState {
         by_base
     }
 
-    /// The `/api/clips` document.
+    /// The `/api/clips` document without the clips that are done.
     pub fn status(&self) -> Value {
+        self.status_for(false)
+    }
+
+    /// The `/api/clips` document. `done` clips are out of the list unless
+    /// `include_done` (since 3.0, `GET /api/clips?done=1`); a clip whose
+    /// recording is gone stays in it as long as it has cuts.
+    pub fn status_for(&self, include_done: bool) -> Value {
         let mut cuts = self.cuts_by_base();
+        let rows = self.db.clips().unwrap_or_else(|e| {
+            tracing::warn!("cannot read the clips: {e:#}");
+            BTreeMap::new()
+        });
         let inner = self.inner.lock();
-        let mut clips: Vec<Value> = inner
-            .clips
-            .values()
-            .map(|c| {
-                let mut v = serde_json::to_value(c).unwrap_or(Value::Null);
-                v["title"] = Value::String(inner.names.get(&c.base).cloned().unwrap_or_default());
-                // since 3.0: the ranges of this clip with what came out of them
-                v["cuts"] = Value::Array(cuts.remove(&c.base).unwrap_or_default());
-                v
-            })
-            .collect();
+        let (mut active, mut done) = (0usize, 0usize);
+        let mut clips: Vec<Value> = Vec::new();
+        let mut push = |mut v: Value, base: &str, cuts: Vec<Value>| {
+            let row = rows.get(base);
+            let state = clip_state(row, &cuts);
+            if state == crate::db::CLIP_DONE {
+                done += 1;
+            } else {
+                active += 1;
+            }
+            if state == crate::db::CLIP_DONE && !include_done {
+                return;
+            }
+            v["title"] = Value::String(inner.names.get(base).cloned().unwrap_or_default());
+            // since 3.0: the state, and the ranges with what came out of them
+            v["state"] = Value::String(state.to_string());
+            v["doneAt"] = row
+                .and_then(|r| r.done_at.clone())
+                .map_or(Value::Null, Value::String);
+            v["firstSeen"] = row
+                .and_then(|r| r.first_seen.clone())
+                .map_or(Value::Null, Value::String);
+            v["cuts"] = Value::Array(cuts);
+            clips.push(v);
+        };
+        for c in inner.clips.values() {
+            let mut v = serde_json::to_value(c).unwrap_or(Value::Null);
+            v["file"] = Value::String(c.name.clone());
+            push(v, &c.base, cuts.remove(&c.base).unwrap_or_default());
+        }
+        // Clips whose recording is gone: they live on for their cuts, with
+        // everything the scanner last knew about them (since 3.0).
+        for (base, row) in rows.iter().filter(|(b, r)| {
+            !r.has_file && r.doc.is_some() && !inner.clips.contains_key(b.as_str())
+        }) {
+            let Some(cuts) = cuts.remove(base).filter(|c| !c.is_empty()) else {
+                continue;
+            };
+            let mut v = row.doc.clone().unwrap_or(Value::Null);
+            v["file"] = Value::Null;
+            v["size"] = json!(0);
+            v["previewH264"] = Value::Null;
+            push(v, base, cuts);
+        }
         clips.sort_by(|a, b| b["created"].as_str().cmp(&a["created"].as_str()));
         let history: Vec<Value> = inner
             .history
@@ -799,6 +916,8 @@ impl AppState {
         let targets = runtime.integrations.targets(&settings);
         json!({
             "clips": clips,
+            // since 3.0: what the filter above the list says
+            "counts": { "active": active, "done": done },
             "last": inner.last,
             "busy": inner.current_job.is_some(),
             "job": inner.current_job,
@@ -859,35 +978,42 @@ impl AppState {
         Some(v)
     }
 
-    pub fn history(&self) -> Value {
-        json!({ "history": self.inner.lock().history })
+    /// `GET /api/history[?limit=&before=]`. Since 3.0 the store keeps every
+    /// entry; the cache in `inner` is only what the status document shows.
+    pub fn history_page(&self, limit: usize, before: Option<&str>) -> Value {
+        match self.db.jobs_before(before, limit) {
+            Ok(history) => json!({ "history": history }),
+            Err(e) => {
+                tracing::warn!("cannot read the history: {e:#}");
+                json!({ "history": self.inner.lock().history })
+            }
+        }
     }
 
     pub fn job(&self, id: &str) -> Option<Job> {
         self.inner.lock().jobs.get(id).cloned()
     }
 
-    /// The finished file of a job, from the jobs or the history (since 2.6).
+    /// The finished file of a job, from the jobs or the store (since 2.6).
     pub fn job_file(&self, id: &str) -> Option<String> {
-        let inner = self.inner.lock();
-        if let Some(j) = inner.jobs.get(id) {
+        if let Some(j) = self.inner.lock().jobs.get(id) {
             return j.file.clone().filter(|_| j.ok == Some(true));
         }
-        inner
-            .history
-            .iter()
-            .find(|e| e["id"] == id)
+        self.db
+            .entry(id)
+            .ok()
+            .flatten()
             .and_then(|e| e["file"].as_str().map(str::to_string))
     }
 
-    /// A finished job read back from its history entry (since 2.6.1).
+    /// A finished job read back from its stored entry (since 2.6.1). The
+    /// store keeps every one of them, however old.
     pub fn history_job(&self, id: &str) -> Option<Job> {
-        self.inner
-            .lock()
-            .history
-            .iter()
-            .find(|e| e["id"] == id)
-            .and_then(|e| serde_json::from_value::<Job>(e.clone()).ok())
+        self.db
+            .entry(id)
+            .ok()
+            .flatten()
+            .and_then(|e| serde_json::from_value::<Job>(e).ok())
             .map(|mut j| {
                 j.ok = Some(true);
                 j
@@ -971,14 +1097,16 @@ impl AppState {
         Ok(title)
     }
 
-    /// Forget a clip after its files were removed. Returns the clip.
-    pub fn take_clip_for_delete(&self, base: &str) -> Result<Clip, StateError> {
+    /// What a delete has to touch, once it is sure no job of this clip runs.
+    /// Since 3.0 a clip may be listed without its recording, so the path is
+    /// optional; `cuts` are the ranges that would go with `scope=all`.
+    pub fn take_clip_for_delete(&self, base: &str) -> Result<DeleteTarget, StateError> {
         let inner = self.inner.lock();
-        let clip = inner
-            .clips
-            .get(base)
-            .cloned()
-            .ok_or_else(|| StateError::UnknownClip(base.to_string()))?;
+        let path = inner.clips.get(base).map(|c| PathBuf::from(&c.path));
+        let known = path.is_some() || matches!(self.db.clip(base), Ok(Some(_)));
+        if !known {
+            return Err(StateError::UnknownClip(base.to_string()));
+        }
         let busy = inner
             .current_job
             .iter()
@@ -987,9 +1115,14 @@ impl AppState {
         if busy {
             return Err(StateError::ClipBusy);
         }
-        Ok(clip)
+        drop(inner);
+        Ok(DeleteTarget {
+            path: path.filter(|p| p.is_file()),
+            cuts: self.db.cuts_of(base).unwrap_or_default(),
+        })
     }
 
+    /// Forget a clip with everything that hangs off it (`scope=all`).
     pub fn forget_clip(&self, base: &str) {
         let mut inner = self.inner.lock();
         inner.clips.remove(base);
@@ -1000,7 +1133,38 @@ impl AppState {
         if inner.last.as_ref().is_some_and(|j| j.base == base) {
             inner.last = None;
         }
+        drop(inner);
+        if let Err(e) = self.db.delete_cuts_of(base) {
+            tracing::warn!("cannot drop the cuts of {base}: {e:#}");
+        }
+        if let Err(e) = self.db.delete_clip(base) {
+            tracing::warn!("cannot drop the clip {base}: {e:#}");
+        }
     }
+
+    /// The recording went to the recycle bin, the cuts stay (`scope=clip`,
+    /// `after: recycle` and the cleanup rule, all since 3.0). The clip keeps
+    /// its row - it is done, and its cuts are still there to render.
+    pub fn recording_recycled(&self, base: &str) {
+        self.inner.lock().clips.remove(base);
+        if let Err(e) = self.db.set_clip_file(base, false) {
+            tracing::warn!("cannot mark {base} as recycled: {e:#}");
+        }
+        if let Err(e) = self
+            .db
+            .set_clip_state(base, crate::db::CLIP_DONE, Some(&util::now_local()))
+        {
+            tracing::warn!("cannot mark {base} done: {e:#}");
+        }
+        self.tray_changed();
+    }
+}
+
+/// A clip a delete is about to work on.
+pub struct DeleteTarget {
+    /// The recording, when it is still there.
+    pub path: Option<PathBuf>,
+    pub cuts: Vec<crate::db::Cut>,
 }
 
 impl AppState {
@@ -1169,14 +1333,20 @@ impl AppState {
         }
     }
 
+    /// Every stored job of a clip (since 3.0 the store answers, not the
+    /// 200-entry cache: an old share's remote copy is still its own).
+    fn jobs_of(&self, base: &str) -> Vec<Value> {
+        self.db.jobs_of_base(base).unwrap_or_else(|e| {
+            tracing::warn!("cannot read the jobs of {base}: {e:#}");
+            Vec::new()
+        })
+    }
+
     /// Remote paths recorded in history for a clip.
     /// Entries from before 2.5 carry no target: they were Nextcloud uploads.
     pub fn history_paths_for(&self, base: &str) -> Vec<String> {
-        self.inner
-            .lock()
-            .history
+        self.jobs_of(base)
             .iter()
-            .filter(|e| e["base"] == base)
             .filter(|e| {
                 e["target"]
                     .as_str()
@@ -1188,11 +1358,20 @@ impl AppState {
 
     /// Remote paths a clip's jobs recorded for one storage target (since 2.5).
     pub fn history_paths_for_target(&self, base: &str, target: &str) -> Vec<String> {
-        self.inner
-            .lock()
-            .history
+        self.jobs_of(base)
             .iter()
-            .filter(|e| e["base"] == base && e["target"] == target)
+            .filter(|e| e["target"] == target)
+            .filter_map(|e| e["ncPath"].as_str().map(str::to_string))
+            .collect()
+    }
+
+    /// Remote paths one cut's outputs recorded for a storage target (since 3.0).
+    pub fn cut_paths_for_target(&self, cut: &str, target: &str) -> Vec<String> {
+        self.db
+            .jobs_of_cut(cut)
+            .unwrap_or_default()
+            .iter()
+            .filter(|e| e["target"] == target)
             .filter_map(|e| e["ncPath"].as_str().map(str::to_string))
             .collect()
     }
@@ -1205,6 +1384,49 @@ impl AppState {
             tracing::warn!("cannot drop the jobs of {base}: {e:#}");
         }
     }
+
+    /// Drop one cut's outputs from the history (it is being deleted).
+    pub fn remove_history_of_cut(&self, cut: &str) {
+        let mut inner = self.inner.lock();
+        inner.history.retain(|e| e["cut"] != cut);
+        if let Err(e) = self.db.delete_jobs_of_cut(cut) {
+            tracing::warn!("cannot drop the jobs of cut {cut}: {e:#}");
+        }
+    }
+}
+
+/// Move a clip's recording and its playable copies to the recycle bin and
+/// mark the clip done (since 3.0). The thumbnail stays: the page still shows
+/// the clip for its cuts. Returns how many files were moved.
+pub async fn recycle_recording(state: &AppState, base: &str) -> usize {
+    let paths = state.paths();
+    let recording = state
+        .inner
+        .lock()
+        .clips
+        .get(base)
+        .map(|c| PathBuf::from(&c.path));
+    let files: Vec<PathBuf> = recording
+        .into_iter()
+        .chain([paths.preview_of(base), paths.preview_h264_of(base)])
+        .filter(|f| f.is_file())
+        .collect();
+    let moved = tokio::task::spawn_blocking(move || {
+        let mut n = 0;
+        for f in files {
+            match platform::recycle(&f) {
+                Ok(()) => n += 1,
+                Err(e) => tracing::warn!("cannot recycle {}: {e:#}", f.display()),
+            }
+        }
+        n
+    })
+    .await
+    .unwrap_or(0);
+    state.recording_recycled(base);
+    state.scan_wake.notify_one();
+    tracing::info!("recording of {base} recycled ({moved} file(s)), its cuts stay");
+    moved
 }
 
 /// Background task: the quota five seconds after start, then every 15

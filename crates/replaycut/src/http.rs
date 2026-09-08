@@ -19,7 +19,7 @@ use crate::admin;
 use crate::auth;
 use crate::platform;
 use crate::share::{self, ShareError, ShareRequest};
-use crate::state::{AppState, StateError};
+use crate::state::{AppState, StateError, MAX_HISTORY};
 
 type App = Arc<AppState>;
 
@@ -43,6 +43,11 @@ pub fn router(state: App) -> Router {
             "/api/clips/{base}/name",
             axum::routing::put(set_name).post(set_name),
         )
+        // since 3.0
+        .route(
+            "/api/clips/{base}/state",
+            axum::routing::put(set_clip_state).post(set_clip_state),
+        )
         .route("/api/history", get(history))
         .route("/api/jobs/{id}", get(job))
         .route("/api/jobs/{id}/open-folder", post(job_open_folder))
@@ -56,7 +61,7 @@ pub fn router(state: App) -> Router {
         .route("/api/clips/{base}/preview", post(clip_preview))
         // since 3.0: the cut between the recording and every rendering
         .route("/api/cuts", post(cuts_create))
-        .route("/api/cuts/{id}", get(cut))
+        .route("/api/cuts/{id}", get(cut).delete(delete_cut))
         .route("/api/cuts/{id}/render", post(cut_render))
         .route("/api/share", post(share))
         .route("/api/save", post(save))
@@ -159,6 +164,7 @@ impl From<StateError> for ApiError {
             StateError::UnknownClip(_) | StateError::UnknownJob => StatusCode::NOT_FOUND,
             StateError::TooLate(_) => StatusCode::CONFLICT,
             StateError::ClipBusy => StatusCode::CONFLICT,
+            StateError::Store(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         ApiError::new(status, e.to_string())
     }
@@ -254,8 +260,17 @@ fn state_document(app: &AppState, addr: &SocketAddr, headers: &HeaderMap) -> Val
 async fn clips(
     State(app): State<App>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Query(query): Query<HashMap<String, String>>,
     headers: HeaderMap,
 ) -> Json<Value> {
+    // since 3.0: `?done=1` lists the clips that were marked done as well
+    if query.get("done").is_some_and(|v| v == "1") {
+        let mut doc = app.status_for(true);
+        if auth::is_authenticated(&app, &addr, &headers) {
+            doc["pending"] = Value::Array(app.pairing.pending());
+        }
+        return Json(doc);
+    }
     Json(state_document(&app, &addr, &headers))
 }
 
@@ -334,8 +349,40 @@ async fn events(
         .into_response()
 }
 
-async fn history(State(app): State<App>) -> Json<Value> {
-    Json(app.history())
+/// `GET /api/history[?limit=&before=]`: the outputs, newest first. Since 3.0
+/// the store keeps every one of them, so a page is what the client asks for.
+async fn history(
+    State(app): State<App>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Json<Value> {
+    let limit = query
+        .get("limit")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(MAX_HISTORY)
+        .clamp(1, 5000);
+    let before = query
+        .get("before")
+        .map(String::as_str)
+        .filter(|b| !b.is_empty());
+    Json(app.history_page(limit, before))
+}
+
+/// `PUT /api/clips/<base>/state { state }` (since 3.0): `done` takes a clip
+/// out of the list, `active` brings it back. A running job is not touched.
+async fn set_clip_state(
+    State(app): State<App>,
+    Path(base): Path<String>,
+    body: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    let v = parse_body(&body);
+    let state = v["state"].as_str().unwrap_or("").trim().to_string();
+    if ![crate::db::CLIP_DONE, crate::db::CLIP_ACTIVE].contains(&state.as_str()) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "state must be done or active",
+        ));
+    }
+    Ok(Json(app.set_clip_state(&base, &state)?))
 }
 
 async fn job(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>, ApiError> {
@@ -420,20 +467,47 @@ async fn delete_clip(
     Path(base): Path<String>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, ApiError> {
-    let remote = query.get("nextcloud").is_some_and(|v| v == "1");
+    // `nextcloud=1` is what 1.4 called it; `remote=1` is the name since 3.0
+    let remote = query
+        .get("nextcloud")
+        .or_else(|| query.get("remote"))
+        .is_some_and(|v| v == "1");
+    // since 3.0: `scope=clip` recycles the recording and leaves the cuts,
+    // `all` (the default, and what 1.4 did) takes everything with it
+    let scope = query.get("scope").map(String::as_str).unwrap_or(SCOPE_ALL);
+    if ![SCOPE_ALL, SCOPE_CLIP].contains(&scope) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "scope must be clip or all",
+        ));
+    }
     let clip = app.take_clip_for_delete(&base)?;
+    // a clip without cuts has nothing left to keep: `clip` is then `all`
+    let scope = if scope == SCOPE_CLIP && clip.cuts.is_empty() {
+        SCOPE_ALL
+    } else {
+        scope
+    };
+    let keep_cuts = scope == SCOPE_CLIP;
+    let remote = remote && !keep_cuts;
 
-    // The MKV plus every share derived from it.
-    let prefix = base.split_whitespace().collect::<Vec<_>>().join("_") + "_";
-    let mut files = vec![std::path::PathBuf::from(&clip.path)];
+    // The MKV plus, unless the cuts stay, every share derived from it and
+    // every cut file.
     let paths = app.paths();
-    if let Ok(entries) = std::fs::read_dir(&paths.shared_dir) {
-        for e in entries.flatten() {
-            let name = e.file_name().to_string_lossy().to_string();
-            if name.starts_with(&prefix) && name.to_ascii_lowercase().ends_with(".mp4") {
-                files.push(e.path());
-            }
-        }
+    let shared = if keep_cuts {
+        Vec::new()
+    } else {
+        shared_files_of(&paths.shared_dir, &base)
+    };
+    let mut files: Vec<std::path::PathBuf> = clip.path.into_iter().collect();
+    files.extend(shared.iter().cloned());
+    if !keep_cuts {
+        files.extend(
+            clip.cuts
+                .iter()
+                .map(|c| paths.cut_of(&c.id))
+                .filter(|f| f.is_file()),
+        );
     }
     let remote_deleted = if remote {
         let runtime = app.runtime();
@@ -450,7 +524,7 @@ async fn delete_clip(
         for entry in &runtime.integrations.storages {
             let mut paths = app.history_paths_for_target(&base, entry.id);
             if entry.id == "nextcloud" {
-                paths.extend(files.iter().skip(1).filter_map(|f| {
+                paths.extend(shared.iter().filter_map(|f| {
                     f.file_name()
                         .map(|n| entry.storage.remote_path(&month, &n.to_string_lossy()))
                 }));
@@ -484,13 +558,135 @@ async fn delete_clip(
     .await
     .map_err(ApiError::internal)?
     .map_err(ApiError::internal)?;
+    // The playable copies go with the recording either way; the thumbnail
+    // stays as long as the clip is still listed for its cuts.
     let _ = std::fs::remove_file(paths.preview_of(&base));
     let _ = std::fs::remove_file(paths.preview_h264_of(&base));
-    app.forget_clip(&base);
+    if keep_cuts {
+        app.recording_recycled(&base);
+    } else {
+        let _ = std::fs::remove_file(paths.thumb_of(&base));
+        app.forget_clip(&base);
+    }
     app.scan_wake.notify_one();
-    tracing::info!("deleted {base}: {recycled} file(s) to the recycle bin");
+    tracing::info!(
+        "deleted {base} (scope {scope}): {recycled} file(s) to the recycle bin{}",
+        if keep_cuts {
+            format!(", {} cut(s) kept", clip.cuts.len())
+        } else {
+            String::new()
+        }
+    );
+    Ok(Json(json!({
+        "ok": true, "recycled": recycled, "nextcloud": remote_deleted,
+        // since 3.0
+        "scope": scope, "cuts": if keep_cuts { clip.cuts.len() } else { 0 },
+    })))
+}
+
+pub const SCOPE_ALL: &str = "all";
+pub const SCOPE_CLIP: &str = "clip";
+
+/// The finished files of a clip in `shared\`: `<base with whitespace as _>_*.mp4`.
+fn shared_files_of(shared_dir: &std::path::Path, base: &str) -> Vec<std::path::PathBuf> {
+    let prefix = base.split_whitespace().collect::<Vec<_>>().join("_") + "_";
+    let Ok(entries) = std::fs::read_dir(shared_dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            name.starts_with(&prefix) && name.to_ascii_lowercase().ends_with(".mp4")
+        })
+        .map(|e| e.path())
+        .collect()
+}
+
+/// `DELETE /api/cuts/<id>[?remote=1]` (since 3.0): one cut with the outputs
+/// that came from it. A clip that loses its last cut is a fresh clip again.
+async fn delete_cut(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiError> {
+    let remote = query
+        .get("remote")
+        .or_else(|| query.get("nextcloud"))
+        .is_some_and(|v| v == "1");
+    let Some(cut) = app.db.cut(&id).map_err(ApiError::internal)? else {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("unknown cut: {id}"),
+        ));
+    };
+    if app.cut_busy(&id) {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "this cut is being worked on right now - please wait",
+        ));
+    }
+    let outputs = app.db.jobs_of_cut(&id).map_err(ApiError::internal)?;
+    let paths = app.paths();
+    let mut files: Vec<std::path::PathBuf> = outputs
+        .iter()
+        .filter_map(|o| o["file"].as_str())
+        .map(|f| paths.shared_dir.join(f))
+        .filter(|f| f.is_file())
+        .collect();
+    files.sort();
+    files.dedup();
+    let cut_file = paths.cut_of(&cut.id);
+    if cut_file.is_file() {
+        files.push(cut_file);
+    }
+    let remote_deleted = if remote {
+        let runtime = app.runtime();
+        if runtime.integrations.storages.is_empty() {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "no storage integration is enabled",
+            ));
+        }
+        let mut n = 0usize;
+        for entry in &runtime.integrations.storages {
+            let mut paths = app.cut_paths_for_target(&cut.id, entry.id);
+            paths.sort();
+            paths.dedup();
+            if !paths.is_empty() {
+                n += entry
+                    .storage
+                    .delete(&paths)
+                    .await
+                    .map_err(ApiError::internal)?;
+            }
+        }
+        n
+    } else {
+        0
+    };
+    let recycled = tokio::task::spawn_blocking(move || -> Result<usize, anyhow::Error> {
+        let mut n = 0;
+        for f in files {
+            platform::recycle(&f)?;
+            n += 1;
+        }
+        Ok(n)
+    })
+    .await
+    .map_err(ApiError::internal)?
+    .map_err(ApiError::internal)?;
+    app.remove_history_of_cut(&cut.id);
+    app.db.delete_cut(&cut.id).map_err(ApiError::internal)?;
+    app.reset_state_without_cuts(&cut.base);
+    app.tray_changed();
+    tracing::info!(
+        "deleted cut {} of {}: {recycled} file(s) to the recycle bin",
+        cut.id,
+        cut.base
+    );
     Ok(Json(
-        json!({ "ok": true, "recycled": recycled, "nextcloud": remote_deleted }),
+        json!({ "ok": true, "recycled": recycled, "nextcloud": remote_deleted, "base": cut.base }),
     ))
 }
 
@@ -562,6 +758,7 @@ fn share_request(v: &Value) -> ShareRequest {
         target: v["target"].as_str().unwrap_or("").to_string(),
         vertical: v["vertical"].as_bool().unwrap_or(false),
         vertical_pos: v["verticalPos"].as_f64().unwrap_or(0.5),
+        after: v["after"].as_str().unwrap_or("").to_string(),
     }
 }
 
@@ -599,6 +796,7 @@ async fn cut_render(State(app): State<App>, Path(id): Path<String>, body: Bytes)
         audio: v["audio"].as_str().map(str::to_string),
         vertical: v["vertical"].as_bool(),
         vertical_pos: v["verticalPos"].as_f64(),
+        after: v["after"].as_str().unwrap_or("").to_string(),
     };
     match share::start_render(&app, &id, req) {
         Ok(started) => accepted(&app, started, Value::Null),

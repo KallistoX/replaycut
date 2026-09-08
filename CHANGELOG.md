@@ -22,6 +22,22 @@ contract.
   cut without encoding anything, `POST /api/cuts/<id>/render` sends it to
   any target later. The buttons for this arrive with the rest of 3.0; the
   clips page already shows every clip's cuts and what came out of them.
+- **Shared clips leave the list.** A clip you have shared is done and is out
+  of the way; `?done=1` lists the done ones, and one call brings a clip back.
+  "Afterwards" per share decides between keeping it, marking it done and
+  moving the recording to the recycle bin - the new setting
+  `cleanup.afterShare` (default: done) is what the share row starts with.
+  `cleanup.recycleDoneAfterDays` does the same on a timer.
+- Deleting a clip has a reach: `?scope=clip` recycles only the recording and
+  leaves the cuts, so the clip can still be rendered and published;
+  `?scope=all` (the default, as before) takes everything with it. A single
+  cut can go on its own with `DELETE /api/cuts/<id>`.
+- A recording that disappears from the folder no longer takes its cuts with
+  it: the clip stays in the list, marked done, with everything it produced.
+- Diagnostics: a line for the cuts - how many files, how much space, how
+  many the service knows about - with a warning from 10 GB on.
+- The history keeps every entry now instead of the newest 200, and
+  `GET /api/history` takes `limit` and `before` to walk back through it.
 
 ### Changed
 

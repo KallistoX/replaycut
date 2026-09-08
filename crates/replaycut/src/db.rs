@@ -30,7 +30,11 @@ pub const BACKUP_DIR: &str = "backup-2.x";
 /// The state files of 1.4 and 2.x, in the order they are imported.
 pub const STATE_FILES: [&str; 3] = ["clip-names.json", "clip-seen.json", "clip-history.json"];
 
-const SCHEMA: i64 = 1;
+const SCHEMA: i64 = 2;
+
+/// Schema 2 (R11c): a clip keeps what the scanner knew about it, so a clip
+/// whose recording is gone can still be listed for its cuts.
+const UPGRADE_2: &str = "ALTER TABLE clips ADD COLUMN doc TEXT";
 
 const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
@@ -46,7 +50,10 @@ CREATE TABLE IF NOT EXISTS clips (
     state      TEXT NOT NULL DEFAULT 'new',
     done_at    TEXT,
     first_seen TEXT,
-    has_file   INTEGER NOT NULL DEFAULT 1
+    has_file   INTEGER NOT NULL DEFAULT 1,
+    -- the clip document as the scanner last saw it, so a recording that is
+    -- gone can still be listed for its cuts
+    doc        TEXT
 );
 -- The trimmed ranges with their own file (from R11b); the import puts one row
 -- here per range shared with 2.x so that its outputs hang under a cut.
@@ -123,8 +130,26 @@ impl Db {
         let db = Self {
             conn: Mutex::new(conn),
         };
+        db.upgrade()?;
         db.set_meta("schema", &SCHEMA.to_string())?;
         Ok(db)
+    }
+
+    /// Bring a store written by an older 3.0 build up to the current schema.
+    /// A fresh store already has everything; the statements are run only for
+    /// the versions in between.
+    fn upgrade(&self) -> Result<()> {
+        let from: i64 = self
+            .meta("schema")?
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(SCHEMA);
+        if from < 2 {
+            // a store made by the first 3.0 build has no `doc` column
+            if let Err(e) = self.conn.lock().execute(UPGRADE_2, []) {
+                tracing::debug!("schema 2: {e}");
+            }
+        }
+        Ok(())
     }
 
     // --- meta ---
@@ -201,6 +226,87 @@ impl Db {
         Ok(())
     }
 
+    // --- clips (since 3.0: state, and what is known about a clip whose
+    //     recording is gone) ---
+
+    /// Every clip row, by base.
+    pub fn clips(&self) -> Result<BTreeMap<String, ClipRow>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(CLIP_COLUMNS)?;
+        let rows = stmt.query_map([], clip_from_row)?;
+        let mut out = BTreeMap::new();
+        for row in rows {
+            let row = row?;
+            out.insert(row.base.clone(), row);
+        }
+        Ok(out)
+    }
+
+    pub fn clip(&self, base: &str) -> Result<Option<ClipRow>> {
+        Ok(self
+            .conn
+            .lock()
+            .query_row(
+                &format!("{CLIP_COLUMNS} WHERE base = ?1"),
+                params![base],
+                clip_from_row,
+            )
+            .optional()?)
+    }
+
+    /// What the scanner sees: the clip document as it is now, the recording
+    /// is there, and when it was first noticed.
+    pub fn remember_clip(&self, base: &str, doc: &Value, first_seen: &str) -> Result<()> {
+        self.conn.lock().execute(
+            "INSERT INTO clips (base, doc, has_file, first_seen) VALUES (?1, ?2, 1, ?3)
+             ON CONFLICT(base) DO UPDATE SET
+                doc = excluded.doc, has_file = 1,
+                first_seen = COALESCE(clips.first_seen, excluded.first_seen)",
+            params![base, doc.to_string(), first_seen],
+        )?;
+        Ok(())
+    }
+
+    /// `new`, `active` or `done`; `done_at` goes with `done`.
+    pub fn set_clip_state(&self, base: &str, state: &str, done_at: Option<&str>) -> Result<()> {
+        self.conn.lock().execute(
+            "INSERT INTO clips (base, state, done_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(base) DO UPDATE SET state = excluded.state, done_at = excluded.done_at",
+            params![base, state, done_at],
+        )?;
+        Ok(())
+    }
+
+    /// Whether the recording is still there.
+    pub fn set_clip_file(&self, base: &str, has_file: bool) -> Result<()> {
+        self.conn.lock().execute(
+            "UPDATE clips SET has_file = ?2 WHERE base = ?1",
+            params![base, has_file],
+        )?;
+        Ok(())
+    }
+
+    /// Forget a clip completely (its cuts and outputs are removed by the
+    /// caller, which knows the files).
+    pub fn delete_clip(&self, base: &str) -> Result<()> {
+        self.conn
+            .lock()
+            .execute("DELETE FROM clips WHERE base = ?1", params![base])?;
+        Ok(())
+    }
+
+    /// Clips marked done before `before` whose recording is still there -
+    /// the candidates of `cleanup.recycleDoneAfterDays`.
+    pub fn done_before(&self, before: &str) -> Result<Vec<String>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT base FROM clips
+              WHERE state = ?1 AND has_file = 1 AND done_at IS NOT NULL AND done_at < ?2",
+        )?;
+        let rows = stmt.query_map(params![CLIP_DONE, before], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     // --- jobs (the history) ---
 
     /// Store a finished job. `cut` is the cut it was rendered from.
@@ -232,10 +338,22 @@ impl Db {
 
     /// The newest `limit` entries, newest first.
     pub fn recent_jobs(&self, limit: usize) -> Result<Vec<Value>> {
+        self.jobs_before(None, limit)
+    }
+
+    /// A page of the history: the newest `limit` entries that started before
+    /// `before` (a local timestamp), newest first. Since 3.0 the store keeps
+    /// every entry, so the page is how the UI walks back through them.
+    pub fn jobs_before(&self, before: Option<&str>, limit: usize) -> Result<Vec<Value>> {
         let conn = self.conn.lock();
-        let mut stmt =
-            conn.prepare("SELECT entry FROM jobs ORDER BY at DESC, rowid DESC LIMIT ?1")?;
-        let rows = stmt.query_map(params![limit as i64], |r| r.get::<_, String>(0))?;
+        let limit = limit as i64;
+        // an empty `before` means "from the newest", so one statement does both
+        let before = before.unwrap_or_default();
+        let mut stmt = conn.prepare(
+            "SELECT entry FROM jobs WHERE ?2 = '' OR at < ?2
+              ORDER BY at DESC, rowid DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit, before], |r| r.get::<_, String>(0))?;
         let mut out = Vec::new();
         for row in rows {
             match serde_json::from_str(&row?) {
@@ -244,6 +362,53 @@ impl Db {
             }
         }
         Ok(out)
+    }
+
+    /// Every stored job of one clip, newest first (the delete paths ask for
+    /// the remote copies they have to remove).
+    pub fn jobs_of_base(&self, base: &str) -> Result<Vec<Value>> {
+        let conn = self.conn.lock();
+        let mut stmt =
+            conn.prepare("SELECT entry FROM jobs WHERE base = ?1 ORDER BY at DESC, rowid DESC")?;
+        let rows = stmt.query_map(params![base], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for row in rows {
+            if let Ok(v) = serde_json::from_str(&row?) {
+                out.push(v);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every stored job of one cut, newest first.
+    pub fn jobs_of_cut(&self, cut: &str) -> Result<Vec<Value>> {
+        let conn = self.conn.lock();
+        let mut stmt =
+            conn.prepare("SELECT entry FROM jobs WHERE cut = ?1 ORDER BY at DESC, rowid DESC")?;
+        let rows = stmt.query_map(params![cut], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for row in rows {
+            if let Ok(v) = serde_json::from_str(&row?) {
+                out.push(v);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Drop the jobs of one cut (a cut that is deleted takes its outputs).
+    pub fn delete_jobs_of_cut(&self, cut: &str) -> Result<usize> {
+        Ok(self
+            .conn
+            .lock()
+            .execute("DELETE FROM jobs WHERE cut = ?1", params![cut])?)
+    }
+
+    /// How many entries the store holds (the diagnostics say so).
+    pub fn job_count(&self) -> Result<i64> {
+        Ok(self
+            .conn
+            .lock()
+            .query_row("SELECT count(*) FROM jobs", [], |r| r.get(0))?)
     }
 
     /// One stored entry, for a job that is no longer in the cache.
@@ -352,6 +517,41 @@ impl Db {
             params![id, CUT_PENDING],
         )?;
         Ok(gone > 0)
+    }
+
+    /// The cuts of one clip, oldest first.
+    pub fn cuts_of(&self, base: &str) -> Result<Vec<Cut>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(&format!(
+            "{CUT_COLUMNS} WHERE base = ?1 ORDER BY created, rowid"
+        ))?;
+        let rows = stmt.query_map(params![base], cut_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Forget one cut. The caller removes its file and its outputs.
+    pub fn delete_cut(&self, id: &str) -> Result<()> {
+        self.conn
+            .lock()
+            .execute("DELETE FROM cuts WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Forget every cut of a clip.
+    pub fn delete_cuts_of(&self, base: &str) -> Result<usize> {
+        Ok(self
+            .conn
+            .lock()
+            .execute("DELETE FROM cuts WHERE base = ?1", params![base])?)
+    }
+
+    /// Mark a cut whose file is no longer there.
+    pub fn set_cut_state(&self, id: &str, state: &str) -> Result<()> {
+        self.conn.lock().execute(
+            "UPDATE cuts SET state = ?2, file = NULL WHERE id = ?1",
+            params![id, state],
+        )?;
+        Ok(())
     }
 
     /// What the cut stage produced: the file, where it really begins, and the
@@ -493,6 +693,41 @@ impl Db {
         }
         Ok(Some(import))
     }
+}
+
+/// What the store knows about a clip beyond its file (since 3.0).
+/// The title and the seen flag have queries of their own; this is the rest.
+#[derive(Debug, Clone, Default)]
+pub struct ClipRow {
+    pub base: String,
+    /// `new` (no cuts), `active` (cuts) or `done` (out of the list).
+    pub state: String,
+    pub done_at: Option<String>,
+    /// When the scanner first saw the recording.
+    pub first_seen: Option<String>,
+    /// The recording is still in the clip folder.
+    pub has_file: bool,
+    /// The clip document as the scanner last saw it.
+    pub doc: Option<Value>,
+}
+
+pub const CLIP_NEW: &str = "new";
+pub const CLIP_ACTIVE: &str = "active";
+pub const CLIP_DONE: &str = "done";
+
+const CLIP_COLUMNS: &str = "SELECT base, state, done_at, first_seen, has_file, doc FROM clips";
+
+fn clip_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ClipRow> {
+    Ok(ClipRow {
+        base: r.get(0)?,
+        state: r.get(1)?,
+        done_at: r.get(2)?,
+        first_seen: r.get(3)?,
+        has_file: r.get::<_, i64>(4)? != 0,
+        doc: r
+            .get::<_, Option<String>>(5)?
+            .and_then(|t| serde_json::from_str(&t).ok()),
+    })
 }
 
 /// A range of a clip with its own file: the lossless keyframe cut every
@@ -658,7 +893,10 @@ mod tests {
     #[test]
     fn an_empty_store_knows_nothing_yet() {
         let db = Db::memory().unwrap();
-        assert_eq!(db.meta("schema").unwrap().as_deref(), Some("1"));
+        assert_eq!(
+            db.meta("schema").unwrap().as_deref(),
+            Some(SCHEMA.to_string().as_str())
+        );
         assert!(db.titles().unwrap().is_empty());
         assert!(db.seen().unwrap().is_empty());
         assert!(db.recent_jobs(50).unwrap().is_empty());
@@ -883,5 +1121,94 @@ mod tests {
         assert!(!dir.join(BACKUP_DIR).exists());
         drop(db);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_clip_walks_from_new_over_active_to_done_and_back() {
+        let db = Db::memory().unwrap();
+        let doc = json!({ "base": "Replay A", "name": "Replay A.mkv", "duration": 20.0 });
+        db.remember_clip("Replay A", &doc, "2026-09-08T20:00:00")
+            .unwrap();
+        let row = db.clip("Replay A").unwrap().expect("the clip is known");
+        assert_eq!(row.state, CLIP_NEW);
+        assert!(row.has_file);
+        assert_eq!(row.first_seen.as_deref(), Some("2026-09-08T20:00:00"));
+        assert_eq!(row.doc.unwrap()["name"], "Replay A.mkv");
+
+        // a cut makes it active
+        db.put_cut(&Cut {
+            id: "aaaa1111".into(),
+            base: "Replay A".into(),
+            start: 1.0,
+            end: 5.0,
+            audio: "mix".into(),
+            vertical: false,
+            vertical_pos: None,
+            file: Some("aaaa1111.mkv".into()),
+            actual_start: Some(0.5),
+            created: "2026-09-08T20:01:00".into(),
+            state: CUT_READY.into(),
+        })
+        .unwrap();
+        assert_eq!(db.clip("Replay A").unwrap().unwrap().state, CLIP_ACTIVE);
+        assert_eq!(db.cuts_of("Replay A").unwrap().len(), 1);
+
+        // done and back, and a second scan does not undo the state
+        db.set_clip_state("Replay A", CLIP_DONE, Some("2026-09-08T21:00:00"))
+            .unwrap();
+        db.remember_clip("Replay A", &doc, "2026-09-08T22:00:00")
+            .unwrap();
+        let row = db.clip("Replay A").unwrap().unwrap();
+        assert_eq!(row.state, CLIP_DONE);
+        assert_eq!(row.done_at.as_deref(), Some("2026-09-08T21:00:00"));
+        assert_eq!(
+            row.first_seen.as_deref(),
+            Some("2026-09-08T20:00:00"),
+            "the first sighting is not overwritten"
+        );
+
+        // the tidy-up finds it once it is old enough, and not before
+        assert!(db.done_before("2026-09-08T20:30:00").unwrap().is_empty());
+        assert_eq!(db.done_before("2026-09-09T21:00:00").unwrap(), ["Replay A"]);
+        db.set_clip_file("Replay A", false).unwrap();
+        assert!(
+            db.done_before("2026-09-09T21:00:00").unwrap().is_empty(),
+            "a recording that is already gone is nothing to tidy up"
+        );
+
+        db.set_clip_state("Replay A", CLIP_ACTIVE, None).unwrap();
+        assert_eq!(db.clip("Replay A").unwrap().unwrap().state, CLIP_ACTIVE);
+        db.delete_cuts_of("Replay A").unwrap();
+        db.delete_clip("Replay A").unwrap();
+        assert!(db.clip("Replay A").unwrap().is_none());
+    }
+
+    #[test]
+    fn the_history_has_no_cap_and_is_read_in_pages() {
+        let db = Db::memory().unwrap();
+        for i in 0..250 {
+            db.put_job(
+                &json!({
+                    "id": format!("j{i:03}"), "base": "Replay A",
+                    "at": format!("2026-09-08T{:02}:{:02}:00", i / 60, i % 60),
+                    "file": "a.mp4",
+                }),
+                None,
+            )
+            .unwrap();
+        }
+        assert_eq!(db.job_count().unwrap(), 250);
+        // the default page is the newest 200, and the rest is still there
+        assert_eq!(db.recent_jobs(200).unwrap().len(), 200);
+        let all = db.jobs_before(None, 1000).unwrap();
+        assert_eq!(all.len(), 250);
+        assert_eq!(all[0]["id"], "j249");
+        assert_eq!(all[249]["id"], "j000");
+        // walking back with `before`
+        let page = db.jobs_before(None, 100).unwrap();
+        let oldest = page.last().unwrap()["at"].as_str().unwrap().to_string();
+        let next = db.jobs_before(Some(&oldest), 100).unwrap();
+        assert_eq!(next.len(), 100);
+        assert_eq!(next[0]["id"], "j149");
     }
 }

@@ -245,6 +245,57 @@ pub async fn run(state: &AppState) -> Report {
         }
     };
 
+    // cuts (since 3.0): what the pipeline keeps on disk. They are never
+    // removed automatically, so the number is worth seeing.
+    let cuts_check = {
+        let cuts_dir = paths.cuts_dir.clone();
+        let cuts = state.db.cuts().unwrap_or_default();
+        let outputs = state.db.job_count().unwrap_or(0);
+        async move {
+            let (mut files, mut bytes) = (0u64, 0u64);
+            if let Ok(entries) = std::fs::read_dir(&cuts_dir) {
+                for e in entries.flatten() {
+                    if let Ok(m) = e.metadata() {
+                        if m.is_file() {
+                            files += 1;
+                            bytes += m.len();
+                        }
+                    }
+                }
+            }
+            let missing = cuts
+                .iter()
+                .filter(|c| c.state == crate::db::CUT_MISSING)
+                .count();
+            let big = bytes >= 10 * 1_073_741_824;
+            let mut c = Check::new(
+                "cuts",
+                "Cuts",
+                if big { "warn" } else { "ok" },
+                format!(
+                    "{files} file{} · {} · {} cut{} known, {outputs} output{}{}",
+                    if files == 1 { "" } else { "s" },
+                    gb(bytes),
+                    cuts.len(),
+                    if cuts.len() == 1 { "" } else { "s" },
+                    if outputs == 1 { "" } else { "s" },
+                    if missing > 0 {
+                        format!(" · {missing} without a file")
+                    } else {
+                        String::new()
+                    }
+                ),
+            );
+            if big {
+                c = c.with_fix(
+                    "The cuts take more than 10 GB. Delete the cuts you no longer need on the clips page; \
+                     the recordings behind them are not needed for rendering.",
+                );
+            }
+            c
+        }
+    };
+
     // scan
     let scan_check = {
         let scan_at = state.inner.lock().scan_at.clone();
@@ -750,9 +801,10 @@ pub async fn run(state: &AppState) -> Report {
         }
     };
 
-    let (ffmpeg, folder, scan, (nextcloud, quota), webhook, network, firewall) = tokio::join!(
+    let (ffmpeg, folder, cuts, scan, (nextcloud, quota), webhook, network, firewall) = tokio::join!(
         ffmpeg_check,
         folder_check,
+        cuts_check,
         scan_check,
         nc_check,
         webhook_check,
@@ -786,6 +838,7 @@ pub async fn run(state: &AppState) -> Report {
     }
     checks.push(encoder);
     checks.push(folder);
+    checks.push(cuts);
     checks.push(scan);
     checks.push(nextcloud);
     checks.push(quota);

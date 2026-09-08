@@ -358,11 +358,14 @@ pub fn assert_stages_monotonic(stages: &[String]) {
     }
 }
 
-/// Start a share and return the job id.
+/// Start a share and return the job id. `after: keep` leaves the clip in the
+/// list: since 3.0 a share takes it out by default (`cleanup.afterShare`),
+/// and the tests here share one clip between them. Older services ignore the
+/// field. What the default does is t50's business.
 pub fn share(base: &str, start: f64, end: f64, audio: &str) -> String {
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": base, "start": start, "end": end, "audio": audio }),
+        &json!({ "base": base, "start": start, "end": end, "audio": audio, "after": "keep" }),
     );
     assert_eq!(status, 202, "POST /api/share: {v}");
     assert_eq!(v["ok"], true, "POST /api/share: {v}");

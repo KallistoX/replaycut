@@ -52,7 +52,38 @@ pub struct Settings {
     pub integrations: Integrations,
     /// obs-websocket on this PC (the password lives in the Credential Manager).
     pub obs: Obs,
+    /// What happens to a recording once its clip has been shared (since 3.0).
+    pub cleanup: Cleanup,
 }
+
+/// Tidying up after a share (since 3.0). Cuts and outputs are never removed
+/// automatically - only the recording, which the cut has made replaceable.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Cleanup {
+    /// `keep`, `done` (the default: the clip leaves the list) or `recycle`
+    /// (the recording goes to the recycle bin as well). The share may say
+    /// otherwise per job.
+    pub after_share: String,
+    /// Recordings of clips marked done go to the recycle bin after this many
+    /// days. 0 = never.
+    pub recycle_done_after_days: u32,
+}
+
+impl Default for Cleanup {
+    fn default() -> Self {
+        Self {
+            after_share: AFTER_DONE.into(),
+            recycle_done_after_days: 0,
+        }
+    }
+}
+
+/// What "Afterwards" can be, in `POST /api/share` and in the settings.
+pub const AFTER_KEEP: &str = "keep";
+pub const AFTER_DONE: &str = "done";
+pub const AFTER_RECYCLE: &str = "recycle";
+pub const AFTER_VALUES: [&str; 3] = [AFTER_KEEP, AFTER_DONE, AFTER_RECYCLE];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
@@ -377,6 +408,7 @@ impl Default for Settings {
             require_login_on_loopback: false,
             integrations: Integrations::default(),
             obs: Obs::default(),
+            cleanup: Cleanup::default(),
         }
     }
 }
@@ -418,8 +450,9 @@ pub fn is_theme_name(name: &str) -> bool {
 
 /// Top-level keys `PUT /api/settings` accepts, and the nested ones below
 /// `integrations`. Anything else is a 400 with the offending name.
-const PATCH_KEYS: [&str; 18] = [
+const PATCH_KEYS: [&str; 19] = [
     "obs",
+    "cleanup",
     "allowedHosts",
     "requireLoginOnLoopback",
     "previewH264",
@@ -509,6 +542,7 @@ impl Settings {
     }
 }
 const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
+const CLEANUP_KEYS: [&str; 2] = ["afterShare", "recycleDoneAfterDays"];
 
 impl Settings {
     /// Apply a partial JSON object (the body of `PUT /api/settings`) and
@@ -534,6 +568,16 @@ impl Settings {
                         return Err(format!("unknown field: obs.{field}"));
                     }
                     current["obs"][field] = v.clone();
+                }
+            } else if key == "cleanup" {
+                let Some(fields) = value.as_object() else {
+                    return Err("cleanup must be an object".into());
+                };
+                for (field, v) in fields {
+                    if !CLEANUP_KEYS.contains(&field.as_str()) {
+                        return Err(format!("unknown field: cleanup.{field}"));
+                    }
+                    current["cleanup"][field] = v.clone();
                 }
             } else if key == "integrations" {
                 let Some(groups) = value.as_object() else {
@@ -676,6 +720,14 @@ impl Settings {
             is_theme_name(&self.theme),
             "theme must be a name of lower-case letters, digits and dashes"
         );
+        anyhow::ensure!(
+            AFTER_VALUES.contains(&self.cleanup.after_share.as_str()),
+            "cleanup.afterShare must be keep, done or recycle"
+        );
+        anyhow::ensure!(
+            self.cleanup.recycle_done_after_days <= 3650,
+            "cleanup.recycleDoneAfterDays must be 0 (never) or at most 3650"
+        );
         anyhow::ensure!(self.obs.port != 0, "obs.port must not be 0");
         anyhow::ensure!(
             !self.obs.host.trim().is_empty(),
@@ -784,6 +836,23 @@ mod tests {
         assert!(next.integrations.nextcloud.enabled);
         assert_eq!(next.integrations.nextcloud.folder, "Clips");
         assert_eq!(next.port, 8420);
+
+        // since 3.0: what happens to a clip after a share
+        assert_eq!(s.cleanup.after_share, AFTER_DONE);
+        assert_eq!(s.cleanup.recycle_done_after_days, 0);
+        let next = s
+            .with_patch(&serde_json::json!({ "cleanup": { "afterShare": "recycle", "recycleDoneAfterDays": 14 } }))
+            .unwrap();
+        assert_eq!(next.cleanup.after_share, AFTER_RECYCLE);
+        assert_eq!(next.cleanup.recycle_done_after_days, 14);
+        let err = s
+            .with_patch(&serde_json::json!({ "cleanup": { "afterShare": "burn" } }))
+            .unwrap_err();
+        assert!(err.contains("afterShare"), "{err}");
+        let err = s
+            .with_patch(&serde_json::json!({ "cleanup": { "keepForever": true } }))
+            .unwrap_err();
+        assert!(err.contains("unknown field: cleanup.keepForever"), "{err}");
 
         let err = s
             .with_patch(&serde_json::json!({ "passwordHash": "x" }))

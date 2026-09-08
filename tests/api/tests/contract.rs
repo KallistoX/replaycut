@@ -330,7 +330,7 @@ fn t07_share_rejects_bad_requests() {
 
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": "no such clip", "start": 0, "end": 5 }),
+        &json!({ "after": "keep", "base": "no such clip", "start": 0, "end": 5 }),
     );
     assert_eq!(status, 404, "unknown clip: {v}");
     assert_eq!(v["ok"], false);
@@ -338,7 +338,7 @@ fn t07_share_rejects_bad_requests() {
 
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": f.base, "start": 5, "end": 5.5, "audio": "mix" }),
+        &json!({ "after": "keep", "base": f.base, "start": 5, "end": 5.5, "audio": "mix" }),
     );
     assert!(
         status == 400 || status == 500,
@@ -349,7 +349,7 @@ fn t07_share_rejects_bad_requests() {
 
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": f.base, "start": 0, "end": 5, "audio": "nope" }),
+        &json!({ "after": "keep", "base": f.base, "start": 0, "end": 5, "audio": "nope" }),
     );
     assert!(
         status == 400 || status == 500,
@@ -374,7 +374,7 @@ fn t08_second_share_gets_409() {
     let first = share(&f.base, 0.0, FIXTURE_SECONDS + 5.0, "gamemic");
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": f.base, "start": 0, "end": 3, "audio": "mix" }),
+        &json!({ "after": "keep", "base": f.base, "start": 0, "end": 3, "audio": "mix" }),
     );
     // since 2.4 a second share waits in the queue instead of a 409
     let queued = if since_24() {
@@ -1167,12 +1167,12 @@ fn t31_copy_share_keeps_the_stream_and_reports_the_real_start() {
     wait_for_clip(&base, Duration::from_secs(20));
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": base, "start": 5, "end": 9, "audio": "mix", "mode": "bogus" }),
+        &json!({ "after": "keep", "base": base, "start": 5, "end": 9, "audio": "mix", "mode": "bogus" }),
     );
     assert_eq!(status, 400, "{v}");
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": base, "start": 5, "end": 9, "audio": "mix", "mode": "copy" }),
+        &json!({ "after": "keep", "base": base, "start": 5, "end": 9, "audio": "mix", "mode": "copy" }),
     );
     assert_eq!(status, 202, "{v}");
     let id = v["job"].as_str().unwrap_or("").to_string();
@@ -1315,12 +1315,12 @@ fn t33_share_targets_and_publish_again() {
     // an unknown target is a 400, `file` skips the upload
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": base, "start": 0, "end": 2, "audio": "mix", "target": "bogus" }),
+        &json!({ "after": "keep", "base": base, "start": 0, "end": 2, "audio": "mix", "target": "bogus" }),
     );
     assert_eq!(status, 400, "{v}");
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": base, "start": 0, "end": 2, "audio": "mix", "target": "file" }),
+        &json!({ "after": "keep", "base": base, "start": 0, "end": 2, "audio": "mix", "target": "file" }),
     );
     assert_eq!(status, 202, "{v}");
     let (stages, job) = wait_job(v["job"].as_str().unwrap_or(""), JOB_TIMEOUT);
@@ -1591,12 +1591,12 @@ fn t36_youtube_target_and_vertical_cut() {
     wait_for_clip(&base, Duration::from_secs(20));
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": base, "start": 0, "end": 2, "audio": "mix", "mode": "copy", "vertical": true, "target": "file" }),
+        &json!({ "after": "keep", "base": base, "start": 0, "end": 2, "audio": "mix", "mode": "copy", "vertical": true, "target": "file" }),
     );
     assert_eq!(status, 400, "{v}");
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": base, "start": 0, "end": 2, "audio": "mix", "vertical": true, "verticalPos": 0.25, "target": "file" }),
+        &json!({ "after": "keep", "base": base, "start": 0, "end": 2, "audio": "mix", "vertical": true, "verticalPos": 0.25, "target": "file" }),
     );
     assert_eq!(status, 202, "{v}");
     let (_, job) = wait_job(v["job"].as_str().unwrap_or(""), JOB_TIMEOUT);
@@ -1614,7 +1614,7 @@ fn t36_youtube_target_and_vertical_cut() {
     // the same range without the crop is a different share, not a duplicate
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": base, "start": 0, "end": 2, "audio": "mix", "target": "file" }),
+        &json!({ "after": "keep", "base": base, "start": 0, "end": 2, "audio": "mix", "target": "file" }),
     );
     assert_eq!(status, 202, "{v}");
     let (_, wide) = wait_job(v["job"].as_str().unwrap_or(""), JOB_TIMEOUT);
@@ -1810,7 +1810,7 @@ fn t40_finished_file_downloads_as_attachment() {
     wait_for_clip(&base, Duration::from_secs(20));
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": base, "start": 0, "end": 2, "audio": "mix", "target": "file" }),
+        &json!({ "after": "keep", "base": base, "start": 0, "end": 2, "audio": "mix", "target": "file" }),
     );
     assert_eq!(status, 202, "{v}");
     let id = v["job"].as_str().unwrap_or("").to_string();
@@ -1972,7 +1972,7 @@ fn t42_quality_by_default_limits_per_target_and_posting_on_request() {
     // a share without limits keeps the recording's resolution and reports no bitrate cap
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": base, "start": 0, "end": 2, "audio": "mix", "target": "file" }),
+        &json!({ "after": "keep", "base": base, "start": 0, "end": 2, "audio": "mix", "target": "file" }),
     );
     assert_eq!(status, 202, "{v}");
     let (_, job) = wait_job(v["job"].as_str().unwrap_or(""), JOB_TIMEOUT);
@@ -2450,7 +2450,9 @@ fn t48_a_share_is_made_from_a_cut_that_stays() {
     let base = format!("{} cut", fixture().base);
     make_clip(&base);
     wait_for_clip(&base, Duration::from_secs(20));
-    let body = json!({ "base": base, "start": 6.0, "end": 12.0, "audio": "mix", "target": "file" });
+    // `after: keep` so the clip stays listed; t50 is about the default
+    let body = json!({ "base": base, "start": 6.0, "end": 12.0, "audio": "mix",
+                       "target": "file", "after": "keep" });
 
     let (status, v) = post_json("/api/share", &body);
     assert_eq!(status, 202, "{v}");
@@ -2601,7 +2603,7 @@ fn t49_a_cut_is_saved_now_and_rendered_later() {
     assert_eq!(status, 200, "{v}");
     let (status, v) = post_json(
         "/api/share",
-        &json!({ "base": base, "start": 2.0, "end": 9.0, "audio": "mix", "target": "file" }),
+        &json!({ "after": "keep", "base": base, "start": 2.0, "end": 9.0, "audio": "mix", "target": "file" }),
     );
     assert_eq!(status, 202, "{v}");
     let (_, direct) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
@@ -2634,4 +2636,248 @@ fn t49_a_cut_is_saved_now_and_rendered_later() {
         &json!({ "target": "nowhere" }),
     );
     assert_eq!(status, 400, "{v}");
+}
+
+/// A clip leaves the list when it is done and comes back on request.
+#[test]
+fn t50_afterwards_takes_the_clip_out_of_the_list() {
+    let _g = serial();
+    if !since_30() {
+        return;
+    }
+    let base = format!("{} done", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+
+    // the default is in the settings and can be overruled per share
+    let (_, s) = get_json("/api/settings");
+    assert!(
+        ["keep", "done", "recycle"].contains(&s["cleanup"]["afterShare"].as_str().unwrap_or("")),
+        "cleanup.afterShare: {}",
+        s["cleanup"]
+    );
+    assert!(
+        s["cleanup"]["recycleDoneAfterDays"].is_number(),
+        "{}",
+        s["cleanup"]
+    );
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "cleanup": { "afterShare": "nope" } }),
+    );
+    assert_eq!(status, 400, "{v}");
+
+    let (status, v) = post_json(
+        "/api/share",
+        &json!({ "base": base, "start": 1.0, "end": 4.0, "audio": "mix",
+                 "target": "file", "after": "keep" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let (_, kept) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(kept["ok"], true, "{kept}");
+    assert_eq!(kept["after"], "keep", "{kept}");
+    assert!(
+        find_clip(&base).is_some(),
+        "'keep' leaves the clip where it was"
+    );
+
+    // `done` takes it out of the list, `?done=1` still shows it
+    let (status, v) = post_json(
+        "/api/share",
+        &json!({ "base": base, "start": 5.0, "end": 8.0, "audio": "mix",
+                 "target": "file", "after": "done" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(done["after"], "done", "{done}");
+    assert!(
+        find_clip(&base).is_none(),
+        "the clip is still in the list after 'done'"
+    );
+    let (_, all) = get_json("/api/clips?done=1");
+    let clip = all["clips"]
+        .as_array()
+        .expect("clips")
+        .iter()
+        .find(|c| c["base"] == base.as_str())
+        .unwrap_or_else(|| panic!("?done=1 does not list the clip: {}", all["clips"]));
+    assert_eq!(clip["state"], "done", "{clip}");
+    assert!(
+        is_local_timestamp(clip["doneAt"].as_str().unwrap_or("")),
+        "{clip}"
+    );
+    assert!(
+        clip["file"].is_string(),
+        "the recording is still there: {clip}"
+    );
+    let counts = &all["counts"];
+    assert!(
+        counts["done"].as_u64().unwrap_or(0) >= 1 && counts["active"].is_number(),
+        "counts: {counts}"
+    );
+
+    // and one call brings it back
+    let (status, v) = put_json(
+        &format!("/api/clips/{}/state", encode(&base)),
+        &json!({ "state": "active" }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["state"], "active", "{v}");
+    assert!(find_clip(&base).is_some(), "'active' brings the clip back");
+    let (status, v) = put_json(
+        &format!("/api/clips/{}/state", encode(&base)),
+        &json!({ "state": "sideways" }),
+    );
+    assert_eq!(status, 400, "{v}");
+    let (status, v) = put_json("/api/clips/nothing-here/state", &json!({ "state": "done" }));
+    assert_eq!(status, 404, "{v}");
+}
+
+/// Deleting has a reach: only the recording, or everything.
+#[test]
+fn t51_delete_takes_the_recording_or_everything() {
+    let _g = serial();
+    if !since_30() {
+        return;
+    }
+    let base = format!("{} scope", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let (status, v) = post_json(
+        "/api/cuts",
+        &json!({ "base": base, "start": 2.0, "end": 8.0, "audio": "mix" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let cut = v["cut"].as_str().expect("cut").to_string();
+    let (_, made) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(made["ok"], true, "{made}");
+
+    // scope=clip: the recording goes, the cut stays and still renders
+    let (status, v) = delete(&format!("/api/clips/{}?scope=clip", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["scope"], "clip", "{v}");
+    assert!(v["recycled"].as_u64().unwrap_or(0) >= 1, "{v}");
+    let (_, all) = get_json("/api/clips?done=1");
+    let clip = all["clips"]
+        .as_array()
+        .expect("clips")
+        .iter()
+        .find(|c| c["base"] == base.as_str())
+        .unwrap_or_else(|| panic!("the clip is gone although its cut is not: {}", all["clips"]));
+    assert!(clip["file"].is_null(), "the recording is gone: {clip}");
+    assert_eq!(clip["state"], "done", "{clip}");
+    assert_eq!(clip["cuts"].as_array().map(Vec::len), Some(1), "{clip}");
+    let (status, one) = get_json(&format!("/api/cuts/{cut}"));
+    assert_eq!(status, 200, "{one}");
+    assert_eq!(one["state"], "ready", "{one}");
+
+    let (status, r) = post_json(
+        &format!("/api/cuts/{cut}/render"),
+        &json!({ "target": "file" }),
+    );
+    assert_eq!(status, 202, "{r}");
+    let (_, rendered) = wait_job(r["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(
+        rendered["ok"], true,
+        "a cut renders without its recording: {rendered}"
+    );
+
+    // scope=all: the cut and its outputs go too
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["scope"], "all", "{v}");
+    assert!(v["recycled"].as_u64().unwrap_or(0) >= 1, "{v}");
+    let (status, one) = get_json(&format!("/api/cuts/{cut}"));
+    assert_eq!(status, 404, "{one}");
+    let (_, all) = get_json("/api/clips?done=1");
+    assert!(
+        !all["clips"]
+            .as_array()
+            .expect("clips")
+            .iter()
+            .any(|c| c["base"] == base.as_str()),
+        "the clip survived scope=all"
+    );
+    let (status, v) = delete(&format!("/api/clips/{}?scope=sideways", encode(&base)));
+    assert_eq!(status, 400, "{v}");
+
+    // and one cut can go on its own
+    let base = format!("{} cutdel", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let (_, v) = post_json(
+        "/api/cuts",
+        &json!({ "base": base, "start": 1.0, "end": 6.0, "audio": "mix" }),
+    );
+    let cut = v["cut"].as_str().expect("cut").to_string();
+    let (_, made) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(made["ok"], true, "{made}");
+    let clip = find_clip(&base).expect("clip");
+    assert_eq!(
+        clip["state"], "active",
+        "a clip with a cut is active: {clip}"
+    );
+
+    let (status, v) = delete(&format!("/api/cuts/{cut}"));
+    assert_eq!(status, 200, "{v}");
+    assert!(v["recycled"].as_u64().unwrap_or(0) >= 1, "{v}");
+    let (status, _) = get_json(&format!("/api/cuts/{cut}"));
+    assert_eq!(status, 404);
+    let clip = find_clip(&base).expect("the clip stays, it still has its recording");
+    assert_eq!(
+        clip["state"], "new",
+        "a clip without cuts is new again: {clip}"
+    );
+    assert_eq!(clip["cuts"].as_array().map(Vec::len), Some(0), "{clip}");
+    let (status, v) = delete("/api/cuts/0badc0de");
+    assert_eq!(status, 404, "{v}");
+}
+
+/// The history keeps everything and is read in pages.
+#[test]
+fn t52_the_history_has_no_cap() {
+    let _g = serial();
+    if !since_30() {
+        return;
+    }
+    let (_, all) = get_json("/api/history");
+    let entries = all["history"].as_array().expect("history").clone();
+    assert!(!entries.is_empty(), "the tests before left entries behind");
+    // newest first, and every entry has what a client needs
+    for e in &entries {
+        assert!(e["id"].is_string() && e["base"].is_string(), "{e}");
+        assert!(is_local_timestamp(e["at"].as_str().unwrap_or("")), "{e}");
+    }
+    let times: Vec<&str> = entries.iter().filter_map(|e| e["at"].as_str()).collect();
+    let mut sorted = times.clone();
+    sorted.sort_by(|a, b| b.cmp(a));
+    assert_eq!(times, sorted, "the history is not newest first");
+
+    // a page, and the page after it
+    let (status, first) = get_json("/api/history?limit=2");
+    assert_eq!(status, 200, "{first}");
+    let page = first["history"].as_array().expect("history");
+    assert_eq!(page.len(), 2.min(entries.len()), "{first}");
+    assert_eq!(page[0]["id"], entries[0]["id"], "{first}");
+    let before = page.last().unwrap()["at"].as_str().unwrap().to_string();
+    let (status, next) = get_json(&format!("/api/history?limit=2&before={}", encode(&before)));
+    assert_eq!(status, 200, "{next}");
+    for e in next["history"].as_array().expect("history") {
+        assert!(
+            e["at"].as_str().unwrap_or("") < before.as_str(),
+            "a page after {before} contains {e}"
+        );
+    }
+    // the status document keeps its 50 for the clients of 1.4
+    let st = state();
+    assert!(
+        st["history"].as_array().map(Vec::len).unwrap_or(0) <= 50,
+        "the status document must stay small"
+    );
+    // the store is not capped: what the status shows is a window on it
+    assert!(
+        entries.len() >= st["history"].as_array().map(Vec::len).unwrap_or(0),
+        "the history endpoint returns at least what the status shows"
+    );
 }

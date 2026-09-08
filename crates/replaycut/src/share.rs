@@ -36,6 +36,22 @@ pub struct ShareRequest {
     /// window sits, 0.5 = centre.
     pub vertical: bool,
     pub vertical_pos: f64,
+    /// What happens to the clip afterwards (since 3.0): `keep`, `done` or
+    /// `recycle`; empty takes `cleanup.afterShare` from the settings.
+    pub after: String,
+}
+
+/// The "Afterwards" of a job: what the body said, or the settings default.
+fn after_of(state: &AppState, wanted: &str) -> Result<String, ShareError> {
+    if wanted.is_empty() {
+        return Ok(state.settings().cleanup.after_share);
+    }
+    if !crate::settings::AFTER_VALUES.contains(&wanted) {
+        return Err(ShareError::Invalid(format!(
+            "unknown after: {wanted} (keep, done or recycle)"
+        )));
+    }
+    Ok(wanted.to_string())
 }
 
 pub const SHARE_MODES: [&str; 2] = ["h264", "copy"];
@@ -289,6 +305,7 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<Started, ShareError>
     }
     // since 2.7: best quality unless the target has limits
     let limits = state.settings().limits(&target);
+    let after = after_of(state, &req.after)?;
     let mut job = Job {
         id: id.clone(),
         base: clip.base.clone(),
@@ -308,6 +325,7 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<Started, ShareError>
         },
         vertical: req.vertical,
         vertical_pos,
+        after,
         stage: "queued".into(),
         percent: 0,
         at: util::now_local(),
@@ -423,6 +441,8 @@ pub struct RenderRequest {
     pub audio: Option<String>,
     pub vertical: Option<bool>,
     pub vertical_pos: Option<f64>,
+    /// What happens to the clip afterwards, as in `POST /api/share`.
+    pub after: String,
 }
 
 /// `POST /api/cuts/<id>/render` (since 3.0): encode a cut that exists and
@@ -518,6 +538,7 @@ pub fn start_render(
         id = random_token(8);
     }
     let limits = state.settings().limits(&target);
+    let after = after_of(state, &req.after)?;
     let clip = inner.clips.get(&cut.base);
     let job = Job {
         id: id.clone(),
@@ -539,6 +560,7 @@ pub fn start_render(
             .unwrap_or(0),
         vertical,
         vertical_pos,
+        after,
         stage: "queued".into(),
         percent: 0,
         at: util::now_local(),
@@ -606,6 +628,8 @@ pub fn publish(state: &AppState, source: &str, target: &str) -> Result<Started, 
                 target,
                 vertical: src.vertical,
                 vertical_pos: src.vertical_pos.unwrap_or(0.5),
+                // a publish never changes the state of the clip itself
+                after: crate::settings::AFTER_KEEP.to_string(),
             },
         );
     }
@@ -714,6 +738,9 @@ async fn run_inner(state: Arc<AppState>, id: String) {
                 state.drop_pending_cut(cut);
             }
         }
+        if !failed {
+            apply_after(&state, &job).await;
+        }
         if !job.cancelled && !preview && !cut_only {
             let uploaded = job.direct.is_some();
             toast::show(&state, Toast::share_result(&job, uploaded, &state.ui_url()));
@@ -722,6 +749,24 @@ async fn run_inner(state: Arc<AppState>, id: String) {
     state.cancels.lock().remove(&id);
     if let Some(next) = next {
         tokio::spawn(run(state, next));
+    }
+}
+
+/// "Afterwards" of a finished job (since 3.0): the clip leaves the list, and
+/// with `recycle` its recording goes to the recycle bin as well. The cut and
+/// everything that came out of it stay either way.
+async fn apply_after(state: &Arc<AppState>, job: &Job) {
+    use crate::settings::{AFTER_DONE, AFTER_RECYCLE};
+    match job.after.as_str() {
+        AFTER_DONE => {
+            if let Err(e) = state.set_clip_state(&job.base, crate::db::CLIP_DONE) {
+                tracing::warn!("share [{}]: cannot mark the clip done: {e}", job.id);
+            }
+        }
+        AFTER_RECYCLE => {
+            crate::state::recycle_recording(state, &job.base).await;
+        }
+        _ => {}
     }
 }
 

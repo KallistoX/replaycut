@@ -197,6 +197,15 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
             let wants_h264 = clip.preview_h264.is_none()
                 && state.settings().preview_h264 == "always"
                 && !state.dry_run;
+            // since 3.0: the store keeps what we know, so the clip stays
+            // listed for its cuts once the recording is gone
+            if let Err(e) = state.db.remember_clip(
+                &base,
+                &serde_json::to_value(&clip).unwrap_or_default(),
+                &clip.created,
+            ) {
+                tracing::warn!("cannot remember {base}: {e:#}");
+            }
             let (new_to_seen, ready) = {
                 let mut inner = state.inner.lock();
                 inner.clips.insert(base.clone(), clip.clone());
@@ -271,11 +280,28 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
         .collect();
     {
         let mut inner = state.inner.lock();
-        let before = inner.clips.len();
+        let gone: Vec<String> = inner
+            .clips
+            .keys()
+            .filter(|b| !existing.contains(b))
+            .cloned()
+            .collect();
         inner.clips.retain(|base, _| existing.contains(base));
-        if inner.clips.len() != before {
+        if !gone.is_empty() {
             changed = true;
         }
+        drop(inner);
+        // A recording that disappeared from outside: with cuts the clip lives
+        // on as done, without them it is forgotten as before (since 3.0).
+        for base in gone {
+            if state.has_cuts(&base) {
+                tracing::info!("{base} is gone from the folder - its cuts stay");
+                state.recording_recycled(&base);
+            } else {
+                state.forget_clip(&base);
+            }
+        }
+        let mut inner = state.inner.lock();
         let before = inner.seen.len();
         inner.seen.retain(|base| existing.contains(base));
         if inner.seen.len() != before {
@@ -290,6 +316,16 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
     if changed {
         state.tray_changed();
     }
+    // Clips the store still lists although their recording is gone (since
+    // 3.0): their thumbnail is what the page shows for them, so it stays.
+    let listed: Vec<String> = state
+        .db
+        .clips()
+        .unwrap_or_default()
+        .into_values()
+        .filter(|r| !r.has_file)
+        .map(|r| r.base)
+        .collect();
     if let Ok(previews) = std::fs::read_dir(&paths.preview_dir) {
         for p in previews.flatten() {
             let path = p.path();
@@ -306,13 +342,75 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
                         .or_else(|| s.strip_suffix(".h264"))
                         .unwrap_or(s)
                 })
-                .is_none_or(|b| !existing.iter().any(|e| e == b));
+                .is_none_or(|b| !existing.iter().any(|e| e == b) && !listed.iter().any(|e| e == b));
             if is_mp4 && orphan {
                 let _ = std::fs::remove_file(&path);
             }
         }
     }
+    sweep_cuts(state).await;
+    recycle_done(state).await;
     Ok(retry)
+}
+
+/// The cut files against the store (since 3.0): a file nobody knows about
+/// goes to the recycle bin, a cut whose file is gone becomes `missing`.
+async fn sweep_cuts(state: &Arc<AppState>) {
+    let cuts = match state.db.cuts() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("cannot read the cuts: {e:#}");
+            return;
+        }
+    };
+    let paths = state.paths();
+    for cut in &cuts {
+        if cut.state == crate::db::CUT_READY && !paths.cut_of(&cut.id).is_file() {
+            tracing::warn!("the file of cut {} is gone", cut.id);
+            if let Err(e) = state.db.set_cut_state(&cut.id, crate::db::CUT_MISSING) {
+                tracing::warn!("cannot mark cut {} as missing: {e:#}", cut.id);
+            }
+            state.tray_changed();
+        }
+    }
+    let Ok(entries) = std::fs::read_dir(&paths.cuts_dir) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let path = e.path();
+        let known = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .is_some_and(|id| cuts.iter().any(|c| c.id == id));
+        if known || !path.is_file() {
+            continue;
+        }
+        tracing::info!("cut file {} belongs to no cut - recycled", path.display());
+        let _ = tokio::task::spawn_blocking(move || crate::platform::recycle(&path)).await;
+    }
+}
+
+/// `cleanup.recycleDoneAfterDays`: the recordings of clips that have been
+/// done for that long go to the recycle bin. Cuts and outputs stay.
+async fn recycle_done(state: &Arc<AppState>) {
+    let days = state.settings().cleanup.recycle_done_after_days;
+    if days == 0 {
+        return;
+    }
+    let cutoff = (chrono::Local::now() - chrono::Duration::days(days as i64))
+        .format("%Y-%m-%dT%H:%M:%S")
+        .to_string();
+    let bases = match state.db.done_before(&cutoff) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!("cannot look for clips to tidy up: {e:#}");
+            return;
+        }
+    };
+    for base in bases {
+        tracing::info!("{base} has been done for {days} day(s) - recycling the recording");
+        crate::state::recycle_recording(state, &base).await;
+    }
 }
 
 /// OBS still writing means the exclusive open fails.

@@ -16,6 +16,7 @@ plain text.
 | Themes | `<data-dir>\themes\<name>.css` (see `docs/themes.md`) |
 | Logs | `<data-dir>\logs\replaycut.<date>.log`, daily rotation, 7 files kept |
 | Previews | `<clipDir>\.preview\` |
+| Cuts | `<clipDir>\.cuts\<id>.mkv` (since 3.0) |
 | Shared clips | `<clipDir>\shared\` |
 | Credentials | Credential Manager, generic credentials `replaycut/nextcloud`, `replaycut/discord-webhook`, `replaycut/obs-websocket`, `replaycut/onedrive`, `replaycut/s3`, `replaycut/webdav`, `replaycut/youtube`, `replaycut/youtube-client` |
 
@@ -101,6 +102,7 @@ fine.
 | `previewH264` | Since 2.6: `onDemand` (default) shows "Make a playable preview" in the player when the browser cannot decode the recording (AV1 on an iPhone, say) and makes a 720p H.264 copy on click; `always` makes the copy right after every recording, behind the running jobs, with ffmpeg at idle priority (about a minute of GPU per 5-minute buffer). The copy lives next to the preview as `<base>.h264.mp4`. Recording in H.264 in OBS avoids the need. |
 | `passwordHash` | Set through the settings page or `PUT /api/settings` with `password`; an argon2id hash, never the password. Since 2.8 a password is 8 to 128 characters, and "Generate one for me" offers four words from a built-in list. Absent means no password - which is why network access cannot be turned on without setting one first. This PC (loopback) never needs the password unless `requireLoginOnLoopback` is set. |
 | `obs` | Since 2.2: `{ "enabled": true, "host": "localhost", "port": 4455 }` - where obs-websocket listens (OBS: Tools › WebSocket Server Settings). With `enabled` the service connects on its own and retries quietly while OBS is closed. The password is a credential, see below. |
+| `cleanup` | Since 3.0: `{ "afterShare": "done", "recycleDoneAfterDays": 0 }` - what happens to a clip once it has been shared. `afterShare` is the default of the "Afterwards" menu in the share row: `keep` leaves the clip in the list, `done` (the default) takes it out (one click brings it back), `recycle` also moves the recording to the recycle bin. The share may say otherwise per job (`after` in `POST /api/share`). `recycleDoneAfterDays` moves the recordings of clips that have been done that long to the recycle bin; `0` never does. **Cuts and shared files are never removed automatically** - the cut is what every later rendering is made from. |
 
 Since 2.1 the settings page and `PUT /api/settings` change the file at
 runtime; everything but `port`, `bind` and `uiFile` takes effect without a

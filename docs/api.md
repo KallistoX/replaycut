@@ -139,7 +139,8 @@ the clip and its title. The clip disappears from `/api/clips` immediately.
 
 ### `GET /api/history`
 
-`{ "history": [HistoryEntry, ...] }`, newest first, capped at 200 entries.
+`{ "history": [HistoryEntry, ...] }`, newest first, capped at 200 entries
+(since 3.0 the cap is a page size, see [below](#get-apihistorylimitbefore)).
 
 ### `POST /api/save`
 
@@ -1206,7 +1207,8 @@ pipeline gains the stage `cut` before `encode`.
 
 ### Additions to `GET /api/clips`
 
-Every clip carries `cuts: [Cut]`, oldest first, each with its `outputs`.
+Every clip carries `cuts: [Cut]`, oldest first, each with its `outputs`, plus
+the state fields below. The document gains `counts: { active, done }`.
 
 ### Additions to the job
 
@@ -1215,6 +1217,91 @@ Every clip carries `cuts: [Cut]`, oldest first, each with its `outputs`.
   it now says `publish` as well and keeps `source`.
 - `cut`: the cut this job cut, rendered or published from. Absent for a
   preview and for history entries written before 3.0.
+
+### The state of a clip
+
+A clip is `new` (nothing cut yet), `active` (it has cuts) or `done` (it is
+out of the list). `GET /api/clips` leaves the done ones out; `?done=1` lists
+them all. `counts` in the [State](#state) says how many there are of each,
+whichever way the list was asked for.
+
+Every clip carries `state`, `doneAt` (when it was marked, else `null`),
+`firstSeen` (when the scanner first saw the recording) and `file` - the name
+of the recording, or `null` once it has gone to the recycle bin. A clip
+without its recording stays in the list as long as it has cuts: its
+thumbnail, its cuts and their outputs are still there, only the player has
+nothing to play.
+
+### `PUT /api/clips/<base>/state`
+
+`{ "state": "done" }` or `{ "state": "active" }` ->
+`200 { ok: true, base, state, doneAt }`.
+
+- `done` takes the clip out of the list. It does not touch a running job,
+  and it deletes nothing.
+- `active` brings it back; a clip without cuts becomes `new` again, which is
+  the same thing to the list.
+- `400` for any other value, `404` for a clip nobody knows.
+
+### "Afterwards": `after`
+
+`POST /api/share` and `POST /api/cuts/<id>/render` take `after` in the body:
+
+| Value | What happens when the job is done |
+| --- | --- |
+| `keep` | Nothing. The clip stays in the list. |
+| `done` | The clip is marked done and leaves the list. |
+| `recycle` | Also moves the recording and its playable copies to the recycle bin. The cut and everything that came out of it stay. |
+
+Left out, the setting `cleanup.afterShare` decides (default `done`). An
+unknown value is a `400`. The job carries what it was told in `after`, and a
+failed job changes nothing.
+
+`cleanup.recycleDoneAfterDays` does the same as `recycle` later on: the
+recordings of clips that have been done for that many days go to the recycle
+bin. `0` (the default) never does. Cut files are never removed automatically.
+
+### `DELETE /api/clips/<base>[?scope=clip|all][&remote=1]`
+
+`scope` says how far the delete reaches:
+
+| `scope` | What goes |
+| --- | --- |
+| `all` (the default, and what 1.4 did) | The recording, its previews and thumbnail, every file in `shared\` that came from this clip, every cut file - and the clip itself, with its cuts. |
+| `clip` | Only the recording and its playable copies. The clip stays in the list as `done` with `file: null`, its cuts stay renderable. A clip without cuts falls back to `all`. |
+
+`remote=1` (`nextcloud=1` remains an alias) deletes the remote copies as
+well and drops the clip's history entries; with `scope=clip` nothing remote
+is touched, because no output is removed either.
+
+Response: `{ ok: true, recycled, nextcloud, scope, cuts }` - `cuts` is how
+many cuts were kept. `400` for another `scope`, `409` while a job of this
+clip runs, `404` for an unknown clip.
+
+### `DELETE /api/cuts/<id>[?remote=1]`
+
+One cut with the outputs that came from it: the cut file, the finished files
+of its jobs in `shared\`, their history entries and, with `remote=1`, the
+remote copies. A clip that loses its last cut is `new` again.
+
+`200 { ok: true, recycled, nextcloud, base }`, `404` for an unknown cut,
+`409` while a job of this cut runs.
+
+### `GET /api/history[?limit=&before=]`
+
+Since 3.0 the store keeps every entry - there is no 200 cap any more.
+
+- `limit`: how many entries at most (default 200, at most 5000).
+- `before`: only entries whose `at` is older than this local timestamp. The
+  `at` of the last entry of a page is what asks for the next one.
+
+`history` in the status document stays at the 50 newest entries.
+
+### Additions to the diagnostics
+
+One more line: `cuts` says how many cut files there are, how much space they
+take, how many cuts and outputs the store knows and how many cuts have lost
+their file. It warns from 10 GB on.
 
 ### Where the state lives
 
@@ -1291,11 +1378,17 @@ that works wins and is reported as `config.encoder`.
 
 See `DELETE /api/clips/<base>`. Files go to the recycle bin, never
 `unlink`. The title and, with `?nextcloud=1`, the history entries are removed.
+Since 3.0 the delete has a `scope`, and a recording that disappears from the
+folder on its own follows the same rule: with cuts the clip stays as `done`
+with `file: null`, without them it is forgotten. A cut file that belongs to
+no cut goes to the recycle bin on the next scan, and a cut whose file is gone
+becomes `missing`.
 
 ### Limits
 
-- One share job at a time; 30 jobs kept in memory; 200 history entries.
-  Titles, seen list and history are persisted as JSON until 2.8 and in
+- One share job at a time; 30 jobs kept in memory; 200 history entries until
+  2.8, since 3.0 all of them (`history` in the status stays at 50). Titles,
+  seen list and history are persisted as JSON until 2.8 and in
   `replaycut.db` since 3.0.
 - Log lines and toast texts are not part of the contract.
 
