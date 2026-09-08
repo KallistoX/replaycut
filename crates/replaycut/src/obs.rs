@@ -21,9 +21,27 @@ pub struct Profile {
     pub mode: String,
 }
 
-/// `%APPDATA%\obs-studio`.
+/// Where OBS keeps its configuration: `%APPDATA%\obs-studio` on Windows;
+/// `$XDG_CONFIG_HOME/obs-studio` (`~/.config/obs-studio`) elsewhere, or the
+/// Flatpak's private copy of the same when only that one exists.
 pub fn config_dir() -> Option<PathBuf> {
-    std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("obs-studio"))
+    if cfg!(windows) {
+        return std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("obs-studio"));
+    }
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| home.as_ref().map(|h| h.join(".config")));
+    let candidates: Vec<PathBuf> = config
+        .map(|c| c.join("obs-studio"))
+        .into_iter()
+        .chain(home.map(|h| h.join(".var/app/com.obsproject.Studio/config/obs-studio")))
+        .collect();
+    candidates
+        .iter()
+        .find(|d| d.is_dir())
+        .or(candidates.first())
+        .cloned()
 }
 
 /// A tiny INI reader: `[section]` and `key=value`, OBS escapes backslashes.
