@@ -337,6 +337,12 @@ fn run_service(
 
     let ui_url = format!("http://localhost:{}/", settings.port);
     let port = settings.port;
+    // What "Copy address" and the QR code hand out; resolved once here,
+    // before a request can ask for it.
+    tracing::info!(
+        "address for other devices: http://{}:{port}/",
+        platform::lan_host()
+    );
     if cli.wait_for_exit {
         // Started by `POST /api/restart`: the old process is still shutting down.
         let deadline = std::time::Instant::now() + Duration::from_secs(20);

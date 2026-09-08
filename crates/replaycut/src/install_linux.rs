@@ -195,7 +195,7 @@ pub fn install(
     println!("  this PC:       {ui_url}");
     println!(
         "  other devices: http://{}:{}/",
-        platform::hostname(),
+        platform::lan_host(),
         settings.port
     );
     if !settings.setup_done {

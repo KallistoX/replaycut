@@ -86,14 +86,16 @@ contract.
   the bold words became a flex item of their own. It reads as one paragraph
   again, with the info icon the same note carries in the wizard. (issue #9)
 
-### Fixed
-
 - Linux: "Open log folder" in the tray opens the folder in the file manager
   again. It went through `xdg-open`, whose handler for folders may be a
   terminal program that shows nothing when started without a terminal;
   folders now go to the file manager over D-Bus (`FileManager1.ShowFolders`)
   first, `xdg-open` is the fallback, and an `xdg-open` that exits with an
   error is logged instead of vanishing quietly. (#7)
+- Linux: the address for other devices ("Copy address" in the tray, the QR
+  code, the diagnostics) used the bare host name, which only resolves on
+  the PC itself. It is now `<host>.local` when the machine announces itself
+  over mDNS (Avahi, systemd-resolved), else the IPv4 address. (#8)
 
 ## [3.1.0] - 2026-09-08
 

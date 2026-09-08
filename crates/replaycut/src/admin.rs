@@ -461,7 +461,7 @@ pub async fn addresses(
     let mut urls = Vec::new();
     let local = settings.bind == "127.0.0.1" || settings.bind == "::1";
     if !local {
-        urls.push(format!("http://{}:{port}/", platform::hostname()));
+        urls.push(format!("http://{}:{port}/", platform::lan_host()));
         if let Some(ip) = platform::primary_ipv4() {
             urls.push(format!("http://{ip}:{port}/"));
         }
