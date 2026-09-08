@@ -1,0 +1,13 @@
+{
+  "name": "replaycut-screenshots",
+  "private": true,
+  "type": "module",
+  "description": "Takes the pictures of the UI that the README and replaycut.de use.",
+  "scripts": {
+    "seed": "node seed.mjs",
+    "shoot": "node shoot.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.55.0"
+  }
+}

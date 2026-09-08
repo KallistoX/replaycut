@@ -1,0 +1,104 @@
+# Takes the pictures of the UI whenever the UI changes, so README and website
+# cannot show a version of the page that no longer exists. See
+# tools/screenshots/README.md for what the scripts do and why.
+#
+# Windows on purpose: the UI asks for `Segoe UI`, which no Linux runner has.
+# Pictures taken there would show a font no user of replaycut ever sees.
+name: Screenshots
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ui/index.html'
+      - 'docs/design/**'
+      - 'tools/screenshots/**'
+      - '.github/workflows/screenshots.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: screenshots
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  shoot:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install ffmpeg
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP\ffmpeg.zip"
+          Invoke-WebRequest -UseBasicParsing `
+            -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\ffmpeg" -Force
+          $bin = (Get-ChildItem "$env:RUNNER_TEMP\ffmpeg" -Directory | Select-Object -First 1).FullName + "\bin"
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+
+      - run: cargo build -p replaycut
+
+      - name: Install Playwright
+        working-directory: tools/screenshots
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install chromium
+
+      # Encodes for real, uploads and posts nowhere, listens on this runner
+      # only. Its own port and folders, like the contract suite's service.
+      - name: Start the service
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\shots\clips" | Out-Null
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\shots\data" | Out-Null
+          Start-Process -FilePath "$env:GITHUB_WORKSPACE\target\debug\replaycut.exe" -ArgumentList `
+            '--dry-run','--port','8425','--no-browser','--bind','127.0.0.1', `
+            '--clip-dir',"$env:RUNNER_TEMP\shots\clips",'--data-dir',"$env:RUNNER_TEMP\shots\data", `
+            '--ui',"$env:GITHUB_WORKSPACE\ui\index.html"
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Get-Date) -lt $deadline) {
+            try {
+              if ((Invoke-WebRequest -UseBasicParsing http://localhost:8425/api/session).StatusCode -eq 200) {
+                Write-Host "the service answers on 8425"; exit 0
+              }
+            } catch { Start-Sleep -Milliseconds 500 }
+          }
+          Write-Host "the service did not answer within 60 s"; exit 1
+
+      - name: Seed the state
+        working-directory: tools/screenshots
+        shell: pwsh
+        run: node seed.mjs --base http://localhost:8425 --clips "$env:RUNNER_TEMP\shots\clips"
+
+      - name: Take the pictures
+        working-directory: tools/screenshots
+        run: node shoot.mjs --base http://localhost:8425 --out ../../docs/images --themes
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: docs/images
+
+      # Only from main, and only when a picture actually changed. The push
+      # filter above does not list docs/images, so this commit starts nothing.
+      - name: Commit what changed
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/images
+          if (git diff --cached --quiet) {
+            Write-Host "the pictures are unchanged"
+          } else {
+            git commit -m "Take the screenshots again [skip ci]"
+            git push
+          }
