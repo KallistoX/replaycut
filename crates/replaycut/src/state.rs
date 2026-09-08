@@ -670,7 +670,7 @@ impl AppState {
 
     /// The UI address for other devices in the network (the tray's "Copy
     /// address").
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
     pub fn lan_url(&self) -> String {
         format!(
             "http://{}:{}/",
