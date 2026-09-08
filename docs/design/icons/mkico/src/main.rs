@@ -1,9 +1,13 @@
 //! Renders docs/design/icons/*.svg to the three .ico files the service embeds
-//! (crates/replaycut/assets) plus PNG previews and a contact sheet.
+//! on Windows and the raw ARGB tray icons it embeds on Linux (both in
+//! crates/replaycut/assets), plus PNG previews and a contact sheet.
 //!
 //!   cd docs/design/icons/mkico && cargo run --release -- [out-dir]
 //!
-//! Sizes 16 and 20 use the `-small` variant of each SVG when it exists.
+//! Sizes 16 and 20 use the `-small` variant of each SVG when it exists. The
+//! ARGB files (`tray-<state>-<size>.argb`, 22 and 48 px) are what the
+//! StatusNotifierItem protocol carries: ARGB32 in network byte order, no
+//! header, so the service needs no image decoder.
 
 use std::error::Error;
 use std::fs;
@@ -13,10 +17,13 @@ use resvg::tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
 use resvg::usvg::{Options, Tree};
 
 const SIZES: [u32; 6] = [16, 20, 24, 32, 48, 256];
-const STATES: [(&str, &str); 3] = [
-    ("icon", "replaycut.ico"),
-    ("icon-busy", "tray-busy.ico"),
-    ("icon-error", "tray-error.ico"),
+/// The tray sizes on Linux: 22 px is what panels use, 48 px lets a panel with
+/// a bigger tray scale down instead of up.
+const ARGB_SIZES: [u32; 2] = [22, 48];
+const STATES: [(&str, &str, &str); 3] = [
+    ("icon", "replaycut.ico", "normal"),
+    ("icon-busy", "tray-busy.ico", "busy"),
+    ("icon-error", "tray-error.ico", "error"),
 ];
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -29,9 +36,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(&out)?;
 
     let mut sheet = Sheet::new();
-    for (state, ico_name) in STATES {
+    for (state, ico_name, tray_name) in STATES {
         let big = load(&icons.join(format!("{state}.svg")))?;
         let small = load(&icons.join(format!("{state}-small.svg"))).ok();
+        for size in ARGB_SIZES {
+            let tree = match (&small, size <= 22) {
+                (Some(s), true) => s,
+                _ => &big,
+            };
+            let path = out.join(format!("tray-{tray_name}-{size}.argb"));
+            fs::write(&path, argb(&render(tree, size)))?;
+            println!("{} ({size}x{size} ARGB32)", path.display());
+        }
         let mut dir = ico::IconDir::new(ico::ResourceType::Icon);
         for size in SIZES {
             let tree = match (&small, size <= 20) {
@@ -70,6 +86,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn load(path: &Path) -> Result<Tree, Box<dyn Error>> {
     let data = fs::read(path)?;
     Ok(Tree::from_data(&data, &Options::default())?)
+}
+
+/// ARGB32 in network byte order, straight (not premultiplied) alpha.
+fn argb(pixmap: &Pixmap) -> Vec<u8> {
+    let mut out = Vec::with_capacity(pixmap.pixels().len() * 4);
+    for px in pixmap.pixels() {
+        let c = px.demultiply();
+        out.extend_from_slice(&[c.alpha(), c.red(), c.green(), c.blue()]);
+    }
+    out
 }
 
 fn render(tree: &Tree, size: u32) -> Pixmap {
