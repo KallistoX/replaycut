@@ -13,7 +13,8 @@ post the link.**
 ![replaycut - clip manager for the OBS replay buffer. F9 in the game, trim on
 your phone, link in Discord.](docs/design/icons/social.png)
 
-**Preview:** [the clips page](docs/images/clips.jpg) ·
+**Website:** <https://replaycut.de> · **Preview:**
+[the clips page](docs/images/clips.jpg) ·
 [the same page on a phone](docs/images/clips_mobile.png)
 
 ## What you get

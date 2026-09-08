@@ -5,6 +5,11 @@ no replaycut server, account or telemetry. This page exists because the
 integrations with YouTube, X and OneDrive ask for a privacy policy of the
 application that requests access.
 
+The published version of this text lives at
+<https://replaycut.de/privacy/>, and that is the URL those integrations are
+registered with; it says the same thing plus what the website itself does.
+Change both together.
+
 ## What replaycut stores, and where
 
 - Your recordings, the previews and the shared clips stay in the folders

@@ -47,6 +47,15 @@ contract.
   folder, Quit; the tooltip and the busy and error badges follow the state
   as on Windows. Without a tray host the service runs without the icon.
 
+### Changed
+
+- replaycut has a website: <https://replaycut.de>, one page with the
+  screenshots, the four steps and the download. The OAuth integrations point
+  at it now: `docs/youtube.md` names `https://replaycut.de/` as the
+  application home page and `https://replaycut.de/privacy/` as the privacy
+  policy instead of two GitHub links. The site's source is its own
+  repository, `KallistoX/replaycut.de`.
+
 ## [3.1.0] - 2026-09-08
 
 The clips page of 3.0 put the same thing on the screen three times. This is

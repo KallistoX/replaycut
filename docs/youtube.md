@@ -38,11 +38,10 @@ click afterwards.
    the app in *Testing*: in that state Google expires the connection after
    seven days and replaycut would ask you to connect again every week.
    Publishing an external app needs, under **Branding**, an application
-   home page and a privacy policy URL (`localhost` is refused). You may
-   point both at this repository:
-   - Application home page: `https://github.com/KallistoX/replaycut`
-   - Privacy policy: `https://github.com/KallistoX/replaycut/blob/main/docs/privacy.md`
-   - Authorized domains: `github.com`
+   home page and a privacy policy URL (`localhost` is refused):
+   - Application home page: `https://replaycut.de/`
+   - Privacy policy: `https://replaycut.de/privacy/`
+   - Authorized domains: `replaycut.de`
 
    Leave the logo empty: an app with a logo must pass Google's review
    before it can be published.
