@@ -17,7 +17,10 @@ contract.
   flavours, Nord, Dracula, Gruvbox dark, Solarized dark, Tokyo Night and
   the light `plain` are built into the executable and appear in Settings ›
   General › Theme, switching without a restart. Every one of them meets
-  the contrast targets of `docs/themes.md`. A theme file of the same name
+  the contrast targets of `docs/themes.md`, and the light ones carry the
+  selected range on the timeline at the same strength as the dark ones
+  (`--accent-soft` at 0.22), where a weaker tint went under. A theme file
+  of the same name
   in the `themes` folder of the data directory still wins, so a shipped
   theme can be copied and changed. Contributed by almighty-atlas,
   issue #11.
@@ -64,6 +67,17 @@ contract.
   application home page and `https://replaycut.de/privacy/` as the privacy
   policy instead of two GitHub links. The site's source is its own
   repository, `KallistoX/replaycut.de`.
+- **One top bar for every width.** It carries the wordmark, the three pages
+  a session uses - Clips, Activity, Settings - as an icon with a label, the
+  status dot, and a "..." menu that holds OBS, Diagnostics, the keyboard
+  shortcuts, the encoder and storage badges and the version. Below 600 px
+  the three labels fall away and the icons grow to touch size, so the bar
+  stops running over the screen edge on a phone - it needed 424 px of the
+  375 a phone has. The page you are on is marked by the accent on its label
+  and its icon instead of a filled box with a line under it; when that page
+  is one from the menu, the "..." button carries the mark. Storage above
+  80 % puts a dot on that button, so the warning is visible without opening
+  the menu.
 
 ### Fixed
 

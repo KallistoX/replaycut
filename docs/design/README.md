@@ -12,7 +12,7 @@ grows; nothing is generated at build time.
 | `components.html` | The component sheet: every component in every state, every theme, a live contrast table, the UI icon sprite. |
 | `mockups/*.html` | One mockup per page with a state switcher (bottom left) and a theme switcher. Widths come from the window: 1000 px and up is two columns on the clips page, 700 px is "the window beside the game", 375 px is a phone. |
 | `mockups/mock.js`, `mock.css` | The switchers. Not part of the UI, except the three `matchMedia` lines that open the clip list on wide screens. |
-| `mockups/nav-a.html`, `nav-b.html`, `nav-c.html` | Three proposals for the navigation, up for a decision: a tab bar at the bottom on a phone (A), one bar with a "..." menu at every width (B), four pages with Diagnostics as a Settings tab (C). Every proposal shows a desktop view and a phone view on one sheet. `nav-b-active.html` puts the ways to mark the page you are on next to each other, for the same decision. |
+| `mockups/nav-a.html`, `nav-b.html`, `nav-c.html` | The three proposals the navigation of 3.2 was decided from: a tab bar at the bottom on a phone (A), one bar with a "..." menu at every width (B), four pages with Diagnostics as a Settings tab (C). Every proposal shows a desktop view and a phone view on one sheet. `nav-b-active.html` puts the ways to mark the page you are on next to each other, for the same decision. B with the accent-only mark is what the bar does now; A and C are kept as the record. |
 | `mockups/nav-frames.css`, `nav-frames.js` | The frames those three sheets are built from. A frame is a container query box, so a proposal is written as `@container` where `index.html` would say `@media`, and a phone view keeps its phone layout on a wide screen. |
 | `icons/` | SVG sources of the app icon and the two tray states, `mkico`, the tool that renders them to `.ico`, and `social.svg`, the 1280x640 social preview for the GitHub repository (rendered to `social.png`). |
 
@@ -21,10 +21,23 @@ no external asset.
 
 ## Navigation and layout
 
-- A top bar on every regular page: wordmark, the four pages (Clips,
-  Settings, OBS, Diagnostics), a status dot (ok / job running / warning /
-  failed / unreachable) and the version. The setup wizard and the login page
-  carry only the wordmark.
+- A top bar on every regular page, one layout for every width: wordmark,
+  the three pages a session uses (Clips, Activity, Settings) as an icon with
+  a label, and on the right a status dot (ok / job running / warning /
+  failed / unreachable) and a "..." button. Behind it sit OBS, Diagnostics,
+  the keyboard shortcuts, the encoder and storage badges and the version.
+  The setup wizard and the login page carry only the wordmark.
+- **The page you are on** is marked by the accent on its label and its icon.
+  No box, no underline: one mark, and the colour is the mark.
+  `aria-current="page"` carries the same thing for a screen reader, and the
+  bold weight is the second cue for anyone who does not see the colour. When
+  that page lives in the menu, the "..." button carries the accent instead,
+  so the bar answers "where am I" at every width.
+- **Below 600 px** the three labels fall away and the icons grow to touch
+  size; below 360 px the wordmark text goes too. Nothing else moves - the
+  menu is the same one the desktop has. A storage warning from 80 % puts a
+  dot on the "..." button, because a badge inside a closed menu warns
+  nobody.
 - Banners sit directly under the top bar, stacked in this order: service
   unreachable, last share failed, scan stuck, update available. They replace
   the old status block.

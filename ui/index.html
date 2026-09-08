@@ -137,10 +137,26 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
 .wordmark .icon { color: var(--accent); stroke-width: 2; }
 .wordmark:hover { text-decoration: none; }
 .nav { display: flex; gap: var(--space-1); }
-.nav a { color: var(--fg-muted); padding: var(--space-1) var(--space-3); border-radius: var(--radius-md); line-height: 24px; }
-.nav a:hover, .nav a.is-hover { color: var(--fg); background: var(--surface-2); text-decoration: none; }
-.nav a[aria-current="page"] { color: var(--fg); background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--accent); }
+.nav a { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--fg-muted); padding: var(--space-1) var(--space-3); border-radius: var(--radius-md); line-height: 24px; }
+.nav .icon { color: var(--fg-faint); }
+.nav a:hover, .nav a.is-hover { color: var(--fg); text-decoration: none; }
+.nav a:hover .icon, .nav a.is-hover .icon { color: var(--accent); }
+/* The page you are on is marked by the accent alone: no box, no line. */
+.nav a[aria-current="page"], .nav a[aria-current="page"] .icon { color: var(--accent); }
+.nav a[aria-current="page"] { font-weight: var(--weight-strong); }
 .topbar .right { display: flex; align-items: center; gap: var(--space-3); color: var(--fg-muted); font-size: var(--text-sm); }
+/* The bar carries the three pages of a session; OBS, Diagnostics, the help
+ * and the numbers live in the menu behind "...", at every width. */
+.navmenu { position: relative; display: flex; }
+/* Not `.menu.right`: `.topbar .right` would take the menu for the group of
+ * badges and lay its items out as a centred row. */
+.navmenu .menu { left: auto; right: 0; min-width: 240px; }
+.navmenu .menu a[aria-current="page"], .navmenu .menu a[aria-current="page"] .icon { color: var(--accent); font-weight: var(--weight-strong); }
+.navmenu .meta { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); color: var(--fg-muted); font-size: var(--text-sm); }
+.navmenu .meta > div { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.navmenu .btn { position: relative; }
+.navmenu .btn.is-current { color: var(--accent); }
+.navmenu .btn .dot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); flex: none; }
 .dot.warn { background: var(--warn); }
 .dot.err { background: var(--err); }
@@ -148,11 +164,15 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
 .dot.busy { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.35; } }
 .status { display: inline-flex; align-items: center; gap: var(--space-2); }
-@media (max-width: 480px) {
+/* On a phone the three labels fall away and the icons grow to touch size.
+ * Nothing else changes: one bar for every width. */
+@media (max-width: 600px) {
   .topbar { gap: var(--space-2); padding: 0 var(--space-3); }
-  .wordmark span, .topbar .version, .topbar .badge { display: none; }
-  .nav a { padding: var(--space-1) var(--space-2); }
+  .nav a span { display: none; }
+  .nav a { min-width: var(--touch); min-height: 36px; justify-content: center; padding: var(--space-1) var(--space-2); }
+  .nav .icon { width: 22px; height: 22px; }
 }
+@media (max-width: 360px) { .wordmark span { display: none; } }
 
 .page { max-width: var(--max-w); margin: 0 auto; padding: var(--space-5) var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
 .page-head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
@@ -464,7 +484,7 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; background: var(--
 .share-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 .share-row .select { width: auto; min-width: 180px; }
 .split { position: relative; display: inline-flex; } .split > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; } .split > .btn-icon { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 1px; }
-.menu { position: absolute; left: 0; top: calc(100% + 4px); min-width: 220px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(0,0,0,0.35); padding: var(--space-1); z-index: 5; display: flex; flex-direction: column; }
+.menu { position: absolute; left: 0; top: calc(100% + 4px); min-width: 220px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px var(--scrim); padding: var(--space-1); z-index: 5; display: flex; flex-direction: column; }
 .menu.right { left: auto; right: 0; }
 .menu button, .menu a { text-align: left; background: none; border: 0; color: var(--fg); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; font: inherit; display: flex; gap: var(--space-2); align-items: center; min-height: 36px; white-space: nowrap; text-decoration: none; }
 .menu button:hover, .menu a:hover { background: var(--surface-2); text-decoration: none; }
@@ -562,14 +582,24 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 <header class="topbar">
   <a class="wordmark" href="/"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
   <nav class="nav" id="nav">
-    <a href="/" data-page="clips">Clips</a><a href="/activity" data-page="activity">Activity</a><a href="/settings" data-page="settings">Settings</a><a href="/obs" data-page="obs">OBS</a><a href="/diagnostics" data-page="diagnostics">Diagnostics</a>
+    <a href="/" data-page="clips"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a><a href="/activity" data-page="activity"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a><a href="/settings" data-page="settings"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
   </nav>
-  <div class="right">
-    <span class="badge" id="encoder" hidden></span>
-    <span class="badge" id="quota" hidden></span>
-    <button class="btn btn-ghost btn-icon" id="helpBtn" title="Keyboard shortcuts (?)">?</button>
+  <div class="right" id="topRight">
     <span class="status" id="dotWrap" title="Service running"><i class="dot" id="dot"></i></span>
-    <span class="version" id="ver"></span>
+    <div class="navmenu">
+      <button class="btn btn-ghost btn-icon" id="navMore" title="More" aria-haspopup="true" aria-expanded="false"><svg class="icon"><use href="#i-more"/></svg><i class="dot warn" id="quotaDot" title="Nextcloud is filling up" hidden></i></button>
+      <div class="menu" id="navMenu" hidden>
+        <a href="/obs" data-page="obs"><svg class="icon"><use href="#i-obs"/></svg>OBS</a>
+        <a href="/diagnostics" data-page="diagnostics"><svg class="icon"><use href="#i-diagnostics"/></svg>Diagnostics</a>
+        <button type="button" id="helpBtn"><svg class="icon"><use href="#i-info"/></svg>Keyboard shortcuts <kbd>?</kbd></button>
+        <hr>
+        <div class="meta">
+          <div><span class="badge" id="encoder" hidden></span><span class="badge" id="quota" hidden></span></div>
+          <div><i class="dot" id="dot2"></i><span id="menuState">Service running</span></div>
+          <div>replaycut <span id="ver"></span></div>
+        </div>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -1209,11 +1239,24 @@ function copyText(t) {
 }
 function banner(id, show, text) { const b = $(id); if (!b) return; b.hidden = !show; if (text !== undefined) { const t = $(id + '-text'); if (t) t.textContent = text; } }
 document.querySelectorAll('[data-dismiss]').forEach(b => b.onclick = () => { $(b.dataset.dismiss).hidden = true; if (b.dataset.dismiss === 'b-update') updDismissed = upd && upd.latest ? upd.latest.version : (cfg.update && cfg.update.version); if (b.dataset.dismiss === 'b-failed') failedDismissed = cfg._lastFailedId; });
-function setDot(state, title) { $('dot').className = 'dot ' + (state || ''); $('dotWrap').title = title || ''; }
+// The dot sits in the bar and, in words, in the menu behind it.
+function setDot(state, title) {
+  $('dot').className = 'dot ' + (state || ''); $('dotWrap').title = title || '';
+  $('dot2').className = 'dot ' + (state || ''); $('menuState').textContent = title || '';
+}
 function showPage(name) {
   ['clips', 'login', 'approve', 'soon', 'setup', 'settings', 'diagnostics', 'obs', 'activity'].forEach(p => { $('page-' + p).hidden = p !== name; });
-  document.querySelectorAll('#nav a').forEach(a => { if (a.dataset.page === (name === 'clips' ? 'clips' : location.pathname.slice(1))) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  // The three pages in the bar and the two in the menu are marked the same way.
+  document.querySelectorAll('#nav a, #navMenu a[data-page]').forEach(a => { if (a.dataset.page === (name === 'clips' ? 'clips' : location.pathname.slice(1))) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  // On a page that lives in the menu, the button carries the mark, so the bar
+  // still answers "where am I".
+  $('navMore').classList.toggle('is-current', !!$('navMenu').querySelector('a[aria-current="page"]'));
 }
+// The menu: click to open, click anywhere else or Escape to close.
+$('navMore').onclick = e => { e.stopPropagation(); setNavMenu($('navMenu').hidden); };
+function setNavMenu(open) { $('navMenu').hidden = !open; $('navMore').setAttribute('aria-expanded', open ? 'true' : 'false'); }
+document.addEventListener('click', e => { if (!$('navMenu').hidden && !e.target.closest('.navmenu')) setNavMenu(false); });
+$('navMenu').addEventListener('click', e => { if (e.target.closest('a, button')) setNavMenu(false); });
 
 
 // ------------------------------------------------------------ login
@@ -1231,7 +1274,7 @@ function guessDeviceName() {
 
 async function initLogin() {
   showPage('login');
-  $('nav').hidden = true;
+  $('nav').hidden = true; $('topRight').hidden = true;
   const next = new URLSearchParams(location.search).get('next') || '/';
   let host = 'the PC', pairing = true;
   try {
@@ -1527,7 +1570,7 @@ async function runTest(kind, body, btn, msg) {
 
 // ------------------------------------------------------------ setup wizard
 async function initSetup() {
-  showPage('setup'); $('nav').hidden = true;
+  showPage('setup'); $('nav').hidden = true; $('topRight').hidden = true;
   let step = 1, settings = null, obsTimer = null, folderSaved = '', replayOk = false;
   const wiz = { 1: $('wiz1'), 2: $('wiz2'), 3: $('wiz3') };
   function go(n) {
@@ -2906,6 +2949,7 @@ $('helpClose').onclick = () => { $('helpModal').hidden = true; };
 $('helpModal').addEventListener('click', e => { if (e.target === $('helpModal')) $('helpModal').hidden = true; });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('helpModal').hidden) { $('helpModal').hidden = true; return; }
+  if (e.key === 'Escape' && !$('navMenu').hidden) { setNavMenu(false); $('navMore').focus(); return; }
   if ((e.key === '?' || (e.key === '/' && e.shiftKey)) && !['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) { e.preventDefault(); $('helpModal').hidden = !$('helpModal').hidden; }
 });
 $('updModal').addEventListener('click', e => { if (e.target === $('updModal')) $('updModal').hidden = true; });
@@ -2960,6 +3004,11 @@ function applyState(d, polled, withDone) {
     $('ver').textContent = cfg.version ? cfg.version : '';
     $('encoder').textContent = cfg.encoder || ''; $('encoder').hidden = !cfg.encoder;
     const q = cfg.quota; $('quota').hidden = !q;
+    // The badge sits in the menu now, so a filling Nextcloud puts a dot on
+    // the button as well - the warning has to be visible without opening it.
+    const qWarn = !!q && q.usedPercent >= 80;
+    $('quotaDot').hidden = !qWarn;
+    if (qWarn) { $('quotaDot').className = 'dot ' + (q.usedPercent >= 95 ? 'err' : 'warn'); $('quotaDot').title = `Nextcloud ${Math.round(q.usedPercent)} % used`; }
     if (q) { const gb = b => (b / 1073741824).toFixed(1) + ' GB'; $('quota').textContent = `Nextcloud ${Math.round(q.usedPercent)} %`; $('quota').className = 'badge' + (q.usedPercent >= 95 ? ' err' : q.usedPercent >= 80 ? ' warn' : ''); $('quota').title = `${gb(q.free)} free of ${gb(q.total)}` + (q.usedPercent >= 80 ? ' - delete old uploads or raise the quota' : ''); }
     if ((cfg.update || (upd && upd.latest)) && !updBusy) refreshUpdate();
     const ob = cfg.obs || {};

@@ -105,17 +105,44 @@
 
 <section id="top-bar-and-navigation">
   <h2>Top bar and navigation</h2>
-  <p class="muted">On every regular page. Wizard and login show only the wordmark. Below 480 px the wordmark keeps its icon, the version and encoder hide.</p>
+  <p class="muted">On every regular page, the same at every width: the three pages of a session, the status dot and the menu. Wizard and login show only the wordmark. Below 600 px the three labels fall away and the icons grow to touch size; below 360 px the wordmark text goes as well. The page you are on carries the accent on its label and its icon - no box, no line - and <code>aria-current="page"</code> with it.</p>
   <div class="frame">
     <header class="topbar" style="position:static">
       <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
       <nav class="nav">
-        <a href="#" aria-current="page">Clips</a><a href="#">Settings</a><a href="#" class="is-hover">OBS</a><a href="#">Diagnostics</a>
+        <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a><a href="#" class="is-hover"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a><a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
       </nav>
       <div class="right">
-        <span class="badge">h264_nvenc</span>
         <span class="status" title="Service running"><i class="dot"></i></span>
-        <span class="version">2.0.0</span>
+        <div class="navmenu">
+          <button class="btn btn-ghost btn-icon" title="More" aria-haspopup="true" aria-expanded="false"><svg class="icon"><use href="#i-more"/></svg><i class="dot warn" title="Nextcloud is filling up"></i></button>
+        </div>
+      </div>
+    </header>
+  </div>
+  <p class="muted">The menu behind the button. It opens on a click, closes on the next one and on <kbd>Esc</kbd>. While one of its pages is open, the button carries the accent as well; the dot on the button is the storage warning from 80 %.</p>
+  <div class="frame" style="height: 280px">
+    <header class="topbar" style="position:static">
+      <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+      <nav class="nav">
+        <a href="#"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a><a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a><a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+      </nav>
+      <div class="right">
+        <span class="status" title="Service running"><i class="dot"></i></span>
+        <div class="navmenu">
+          <button class="btn btn-ghost btn-icon is-current" title="More" aria-haspopup="true" aria-expanded="true"><svg class="icon"><use href="#i-more"/></svg><i class="dot warn"></i></button>
+          <div class="menu">
+            <a href="#"><svg class="icon"><use href="#i-obs"/></svg>OBS</a>
+            <a href="#" aria-current="page"><svg class="icon"><use href="#i-diagnostics"/></svg>Diagnostics</a>
+            <button type="button"><svg class="icon"><use href="#i-info"/></svg>Keyboard shortcuts <kbd>?</kbd></button>
+            <hr>
+            <div class="meta">
+              <div><span class="badge">h264_nvenc</span><span class="badge warn">Nextcloud 84 %</span></div>
+              <div><i class="dot"></i><span>Service running</span></div>
+              <div>replaycut 3.2.0</div>
+            </div>
+          </div>
+        </div>
       </div>
     </header>
   </div>
