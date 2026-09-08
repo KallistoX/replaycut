@@ -932,6 +932,8 @@ impl AppState {
                 "expireDays": settings.integrations.nextcloud.expire_days,
                 "version": VERSION,
                 "encoder": runtime.encoder.name,
+                // since 3.2: the page words things for the platform
+                "platform": std::env::consts::OS,
                 "audio": audio,
                 "webhook": webhook,
                 "nextcloud": nextcloud,

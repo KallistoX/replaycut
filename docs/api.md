@@ -251,6 +251,7 @@ A copy of a successfully finished Job without `percent`, `stage`, `ok` and
   "expireDays": 0,
   "version":    "1.4.1",
   "encoder":    "h264_amf",
+  "platform":   "windows",
   "audio": [
     { "id": "mix",         "label": "Mix (all)",                       "need": 1 },
     { "id": "gamemic",     "label": "Game + microphone (no voice chat)", "need": 4 },
@@ -266,6 +267,11 @@ A copy of a successfully finished Job without `percent`, `stage`, `ok` and
   tracks a clip needs for the mode to be offered. Labels are for display and
   may be translated; ids are the contract.
 - `version` and `encoder` are shown in the UI header.
+- `platform` (since 3.2): `windows` or `linux`, the operating system the
+  service runs on (`std::env::consts::OS`). The page words things for it:
+  "Credential Manager" or "keyring", "recycle bin" or "trash", where a
+  stopped service is started from. Absent before 3.2; the page then assumes
+  Windows.
 - `webhook` and `nextcloud` say whether the respective integration is
   usable: 1.4 checks that credentials exist (Credential Manager read on
   every call), 2.0 reports whether the integration is enabled and has

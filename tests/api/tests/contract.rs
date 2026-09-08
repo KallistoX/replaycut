@@ -2881,3 +2881,32 @@ fn t52_the_history_has_no_cap() {
         "the history endpoint returns at least what the status shows"
     );
 }
+
+/// 3.2 tells the page which platform the service runs on (`config.platform`).
+fn since_32() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (3, 2)
+}
+
+/// `config.platform` (3.2): the operating system the service runs on, so the
+/// page can word things for it. A service that carries the field must name
+/// a known platform; a 3.2 service must carry it; older ones need not.
+#[test]
+fn t53_config_names_the_platform() {
+    let config = state()["config"].clone();
+    match config.get("platform").and_then(|p| p.as_str()) {
+        Some(platform) => assert!(
+            ["windows", "linux"].contains(&platform),
+            "config.platform: {platform:?}"
+        ),
+        None => {
+            assert!(!since_32(), "a 3.2 service must name its platform");
+            eprintln!("skipped: no config.platform (service older than 3.2)");
+        }
+    }
+}
