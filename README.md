@@ -1,28 +1,93 @@
 # replaycut
 
-**Clip manager for the OBS replay buffer.**
+**Clip manager for the OBS replay buffer: trim replays in the browser from your
+phone or laptop, encode on the gaming PC with ffmpeg and your GPU, upload and
+post the link.**
 
-OBS keeps a replay buffer while you play. You press a hotkey, OBS writes the
-last few minutes to disk, replaycut notices the file, and you trim the good
-part in your browser: set in and out points, pick an audio mix, give it a
-title, hit Share. The clip is encoded on the gaming PC. Optional integrations
-upload the result (Nextcloud, OneDrive, any S3 bucket or WebDAV server, as
-a video on YouTube, a vertical cut as a Short, or as a post on X) and post
-the link into a Discord channel, a Telegram chat or any webhook; without
-them, replaycut is a local clip manager and the finished file lands in a
-folder.
+[![Latest release](https://img.shields.io/github/v/release/KallistoX/replaycut)](https://github.com/KallistoX/replaycut/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/KallistoX/replaycut/ci.yml?branch=main&label=CI)](https://github.com/KallistoX/replaycut/actions/workflows/ci.yml)
+[![Downloads](https://img.shields.io/github/downloads/KallistoX/replaycut/total)](https://github.com/KallistoX/replaycut/releases)
+[![License: AGPL-3.0-only](https://img.shields.io/github/license/KallistoX/replaycut)](LICENSE)
+![Platform: Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%2F11-0aa)
 
-Everything runs on the PC that runs the game. The browser, on the same PC, a
-laptop or a phone in the same network, is only the remote control.
+![The clips page: the clip list with thumbnails on the left, the player with
+the in and out marks on the timeline, and the share row with audio, codec and
+aspect below it](docs/images/clips.jpg)
 
-## Status
+## What you get
 
-replaycut 2.0 is a rewrite in Rust of a PowerShell service (1.x) that was in
-daily use but never published. It keeps that service's HTTP API
-([`docs/api.md`](docs/api.md) is the contract, checked by a black-box test
-suite) and its file formats, so a 1.x installation migrates in place.
-Releases are published on GitHub as a ZIP for Windows x64; see
-[`CHANGELOG.md`](CHANGELOG.md) for what each version brings.
+- **Trim in the browser.** F9 in the game, a toast on the desktop, in and out
+  points on your phone or laptop - the same page on every screen.
+- **The gaming PC does the work.** ffmpeg encodes on your GPU (AMD AMF, NVIDIA
+  NVENC, Intel Quick Sync) at below-normal priority with a thread cap, so the
+  game keeps the CPU.
+- **Upload where you like.** Nextcloud, OneDrive, any S3 bucket or WebDAV
+  server, YouTube (a vertical cut as a Short), X - or just a file in a folder.
+- **The link posts itself.** Discord, Telegram or any webhook right after the
+  quick share; every other share offers "Post to ..." when you want it.
+- **Closed until you open it.** A new installation listens on this PC only;
+  a phone gets in with one click on your PC or by scanning the QR code, without
+  typing a password.
+- **One EXE with a tray icon and a one-click update**, per user, without admin
+  rights and without a service; every release is signed.
+- **Made for the phone in your hand.** The finished MP4 downloads into the
+  gallery, and a recording your browser cannot play gets a playable preview.
+
+## How it works
+
+1. **Record.** OBS keeps the last minutes in the replay buffer. You press the
+   hotkey (or **Save replay** on the page) and the file lands at the top of the
+   clip list.
+2. **Trim.** Open the clip, **Set in** and **Set out**, pick the audio mix, the
+   codec and landscape or vertical, give it a title.
+3. **Share.** **Share** cuts the selection and uploads it to the quick-share
+   target; the menu next to the button holds every other storage and "file
+   only". Progress, queue and result stay on the page.
+4. **Post.** The quick share posts the link to Discord, Telegram or your
+   webhook; on every other share the result card and the history offer
+   **Post to ...**.
+
+Everything runs on the PC that runs the game. The browser - on that PC, a
+laptop or a phone in the same network - is only the remote control:
+
+<img src="docs/images/clips_mobile.png" width="320" alt="The clips page on a
+phone: the clip list collapsed into one row, then the player, the timeline with
+the selection, and the share button">
+
+## Install
+
+[**Download the latest release**](https://github.com/KallistoX/replaycut/releases/latest)
+(`replaycut-<version>-windows-x64.zip`, Windows x64).
+
+1. Unpack the ZIP anywhere and run `install.cmd`. It copies replaycut to
+   `%LOCALAPPDATA%\replaycut\app`, adds a start menu and a desktop shortcut,
+   asks whether replaycut should start when you sign in (default: no), then
+   starts the service and opens the page in your browser. No admin rights, and
+   no firewall rule: replaycut listens on this PC only until you say otherwise.
+2. The browser opens the setup: it suggests the recording folder from your
+   OBS profile, waits for the first replay and reports codec and audio
+   tracks, lets you switch on Nextcloud and Discord with a test each, and
+   ends with access from other devices - a switch that asks for a password
+   and for the firewall rule (see [Security](#security)). Skip what you do
+   not need; without integrations replaycut is a local clip manager.
+   Everything can be changed later under Settings (`replaycut setup` on the
+   console still works; see [`docs/settings.md`](docs/settings.md)).
+3. Play. Press the replay hotkey when something happens, open the page, trim,
+   Share.
+
+Every release's `SHA256SUMS` is signed with the maintainer's minisign key, so
+you can check what you downloaded - and so the built-in updater installs
+nothing else.
+
+replaycut runs as a tray icon: **Open** shows the page, **Copy address** puts
+the address for your phone into the clipboard, **Show QR code** shows it for
+scanning, **Pause scanning** keeps new replays out of the list for a while,
+**Check for updates** asks GitHub now, **Open log folder** and **Quit** do
+what they say. Double-click the shortcut to start it again; if it is already
+running, that opens the page.
+
+Windows SmartScreen may warn about an unsigned download the first time: click
+"More info", then "Run anyway".
 
 ## Requirements
 
@@ -36,36 +101,7 @@ Releases are published on GitHub as a ZIP for Windows x64; see
 - A hardware H.264 encoder is used when available (AMD AMF, NVIDIA NVENC,
   Intel Quick Sync), otherwise libx264.
 
-## Install
-
-1. Download the release ZIP, unpack it anywhere and run `install.cmd`. It
-   copies replaycut to `%LOCALAPPDATA%\replaycut\app`, adds a start menu and
-   a desktop shortcut, asks whether replaycut should start when you sign in
-   (default: no), then starts the service and opens the page in your
-   browser. No admin rights, and no firewall rule: replaycut listens on this
-   PC only until you say otherwise.
-2. The browser opens the setup: it suggests the recording folder from your
-   OBS profile, waits for the first replay and reports codec and audio
-   tracks, lets you switch on Nextcloud and Discord with a test each, and
-   ends with access from other devices - a switch that asks for a password
-   and for the firewall rule (see [Security](#security)). Skip what you do
-   not need; without integrations replaycut is a local clip manager.
-   Everything can be changed later under Settings (`replaycut setup` on the
-   console still works; see [`docs/settings.md`](docs/settings.md)).
-3. Play. Press the replay hotkey when something happens, open the page, trim,
-   Share.
-
-replaycut runs as a tray icon: **Open** shows the page, **Copy address** puts
-the address for your phone into the clipboard, **Show QR code** shows it for
-scanning, **Pause scanning** keeps new replays out of the list for a while,
-**Check for updates** asks GitHub now, **Open log folder** and **Quit** do
-what they say. Double-click
-the shortcut to start it again; if it is already running, that opens the page.
-
-Windows SmartScreen may warn about an unsigned download the first time: click
-"More info", then "Run anyway".
-
-### Pages
+## Pages
 
 - **Clips** (`/`): the list with thumbnails, the player with in/out marks,
   audio and mode choice, Share (the quick-share storage) with a menu for the
@@ -89,32 +125,22 @@ Windows SmartScreen may warn about an unsigned download the first time: click
   `replaycut test` prints the same.
 - **Setup** (`/setup`): the wizard, any time again.
 
-### Update
+## Update
 
 replaycut checks GitHub once a day and shows a banner when a newer release
 exists. "Update now" downloads the ZIP, verifies its signature and hash and
 restarts on the new version; settings, titles, history and credentials are
-kept. By hand: unpack the new ZIP and run its `install.cmd`. Every release's
-`SHA256SUMS` is signed with the maintainer's minisign key (the public key is
-built into replaycut); an unsigned or foreign release is never installed.
+kept. By hand: unpack the new ZIP and run its `install.cmd`. The public
+minisign key is built into replaycut; an unsigned or foreign release is never
+installed.
 
-### Uninstall
+## Uninstall
 
 Run `uninstall.cmd` from the unpacked ZIP (or `replaycut uninstall` from a
 terminal). It stops the service and removes the files, shortcuts, autostart
 entry and, after asking, the firewall rule. Settings, titles, history and
 credentials stay unless you use `replaycut uninstall --purge`. Your clips
 are never touched.
-
-### Coming from the 1.x PowerShell service
-
-`install.cmd` detects the old scheduled task and takes over its clip folder,
-port, Nextcloud settings, titles, history and credentials, then stops and
-removes the task so the port is free. Autostart is switched on, because the
-old service started at sign-in. The old service was reachable in the
-network, so that stays: the old firewall rule and URL reservation are
-removed in the same administrator step that adds the new rule, and the
-switch under Settings › Access closes it again when you want it closed.
 
 ## Security
 
@@ -174,7 +200,24 @@ licensed [CC-BY 3.0
 US](https://creativecommons.org/licenses/by/3.0/us/); the list is embedded
 in `crates/replaycut/src/wordlist.rs`.
 
+## Coming from the 1.x PowerShell service
+
+`install.cmd` detects the old scheduled task and takes over its clip folder,
+port, Nextcloud settings, titles, history and credentials, then stops and
+removes the task so the port is free. Autostart is switched on, because the
+old service started at sign-in. The old service was reachable in the
+network, so that stays: the old firewall rule and URL reservation are
+removed in the same administrator step that adds the new rule, and the
+switch under Settings › Access closes it again when you want it closed.
+
 ## Development
+
+replaycut 2.0 is a rewrite in Rust of a PowerShell service (1.x) that was in
+daily use but never published. It keeps that service's HTTP API
+([`docs/api.md`](docs/api.md) is the contract, checked by a black-box test
+suite) and its file formats, so a 1.x installation migrates in place.
+Releases are published on GitHub as a ZIP for Windows x64; see
+[`CHANGELOG.md`](CHANGELOG.md) for what each version brings.
 
 ```bash
 cargo build --workspace
@@ -196,6 +239,10 @@ created with defaults on first start; command-line flags override them.
 All settings, the credential targets and the command line are documented in
 [`docs/settings.md`](docs/settings.md).
 
+The web UI is one static file, `ui/index.html`, with no build step; its design
+system - tokens, component sheet and a mockup per page - lives in
+[`docs/design`](docs/design/README.md).
+
 ### Resource usage
 
 The service is meant to sit next to a game. Measured on the release build
@@ -212,7 +259,6 @@ The service is meant to sit next to a game. Measured on the release build
 With the tray icon (Windows integration, part 1) the release build sits at
 16.5 MB working set, 8 threads and 0.05 s CPU after one minute idle,
 started without a console.
-
 
 While a clip is shared, ffmpeg runs at below-normal priority with a thread
 cap (see `ffmpegPriority` and `ffmpegThreads`), so the game keeps the CPU.
