@@ -15,6 +15,24 @@ use crate::state::{AppState, VERSION};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
+// The fix texts name what the platform calls things.
+#[cfg(windows)]
+const FFMPEG_INSTALL: &str = "winget install Gyan.FFmpeg";
+#[cfg(not(windows))]
+const FFMPEG_INSTALL: &str = "from your distribution's packages";
+#[cfg(windows)]
+const TRASH: &str = "recycle bin";
+#[cfg(not(windows))]
+const TRASH: &str = "trash";
+#[cfg(windows)]
+const SHARED_DIR: &str = "shared\\";
+#[cfg(not(windows))]
+const SHARED_DIR: &str = "shared/";
+#[cfg(windows)]
+const RESUME_SCAN: &str = "Resume it in the tray menu (Pause scanning) or on the clips page.";
+#[cfg(not(windows))]
+const RESUME_SCAN: &str = "Resume it on the clips page.";
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Check {
     pub id: &'static str,
@@ -194,9 +212,12 @@ pub async fn run(state: &AppState) -> Report {
                     String::from_utf8_lossy(&out.stderr).trim()
                 ),
             )
-            .with_fix("Reinstall ffmpeg (winget install Gyan.FFmpeg) and restart replaycut."),
-            Err(e) => Check::new("ffmpeg", "ffmpeg", "fail", format!("{e:#}"))
-                .with_fix("Install ffmpeg (winget install Gyan.FFmpeg) and restart replaycut."),
+            .with_fix(format!(
+                "Reinstall ffmpeg ({FFMPEG_INSTALL}) and restart replaycut."
+            )),
+            Err(e) => Check::new("ffmpeg", "ffmpeg", "fail", format!("{e:#}")).with_fix(format!(
+                "Install ffmpeg ({FFMPEG_INSTALL}) and restart replaycut."
+            )),
         }
     };
 
@@ -239,7 +260,9 @@ pub async fn run(state: &AppState) -> Report {
                 ),
             );
             if status == "warn" {
-                c = c.with_fix("Less than 2 GB free: delete old clips (they go to the recycle bin) or move shared\\ elsewhere.");
+                c = c.with_fix(format!(
+                    "Less than 2 GB free: delete old clips (they go to the {TRASH}) or move {SHARED_DIR} elsewhere."
+                ));
             }
             c
         }
@@ -309,7 +332,7 @@ pub async fn run(state: &AppState) -> Report {
                     "warn",
                     "paused - new replays wait in the folder",
                 )
-                .with_fix("Resume it in the tray menu (Pause scanning) or on the clips page.");
+                .with_fix(RESUME_SCAN);
             }
             match scan_at {
                 None if just_started => Check::new(
