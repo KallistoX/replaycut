@@ -10,6 +10,15 @@ contract.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-09-08
+
+3.1 taught the service a second platform; this release finishes the job.
+Secrets, notifications, the clipboard, the installer, the autostart, the
+tray icon and a package of its own in every release: a Linux machine sets
+replaycut up the way a Windows one does, and the one-click update works
+there too. The browser side gets twelve themes to pick from and a top bar
+that fits on a phone.
+
 ### Added
 
 - **Twelve themes on board.** A fresh installation no longer offers the
