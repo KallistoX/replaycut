@@ -45,9 +45,20 @@ function ffmpeg(args) {
 }
 
 /** Wait for the clips page, put marks on the timeline, hide the caret. */
-async function prepare(page) {
+async function prepare(page, theme) {
   await page.goto(base, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#cliplist', { state: 'visible' });
+
+  // The page starts in the default and swaps the stylesheet when the settings
+  // arrive. Shooting in between catches a half-painted picture: the accent
+  // already the new one, the surfaces still the old.
+  if (theme && theme !== 'wardogs') {
+    await page.waitForFunction((name) => {
+      const link = document.getElementById('theme');
+      return link && link.getAttribute('href') === `/themes/${name}.css`
+        && link.sheet && link.sheet.cssRules.length > 0;
+    }, theme, { timeout: 15_000 });
+  }
 
   // The recordings are H.264, which the browser must be able to decode for
   // the marks to mean anything. A browser that cannot still gets a picture:
@@ -124,7 +135,7 @@ async function setTheme(name) {
   if (!res.ok) throw new Error(`could not switch to the theme ${name}: ${res.status}`);
 }
 
-async function shoot(browser, { width, height, file }) {
+async function shoot(browser, { width, height, file, theme }) {
   const context = await browser.newContext({
     viewport: { width, height },
     deviceScaleFactor: 2,
@@ -133,7 +144,7 @@ async function shoot(browser, { width, height, file }) {
     colorScheme: 'dark',
   });
   const page = await context.newPage();
-  await prepare(page);
+  await prepare(page, theme);
   await page.screenshot({ path: file });
   await context.close();
 }
@@ -167,7 +178,7 @@ if (withThemes) {
   for (const theme of THEMES) {
     await setTheme(theme);
     const shotFile = join(tmp, `theme-${theme}.png`);
-    await shoot(browser, { width: 1440, height: 900, file: shotFile });
+    await shoot(browser, { width: 1440, height: 900, file: shotFile, theme });
     ffmpeg(['-i', shotFile, '-vf', 'scale=960:-2', '-c:v', 'libwebp', '-quality', '80',
       join(outDir, 'themes', `${theme}.webp`)]);
   }
