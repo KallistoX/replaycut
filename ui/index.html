@@ -1165,7 +1165,6 @@ let cfg = { shareKbps: 0, expireDays: 0, audio: [{ id: 'mix', label: 'Mix (all)'
 const isLinux = () => cfg.platform === 'linux';
 const trashName = () => isLinux() ? 'trash' : 'recycle bin';
 const appMenuName = () => isLinux() ? 'your app menu' : 'the Start menu';
-const trayHint = () => isLinux() ? '' : ' Look for the tray icon.';
 
 // theme: remembered per browser so the page does not flash the default first
 function applyTheme(name) {
@@ -2498,7 +2497,7 @@ function showEmpty(kind) {
     t.innerHTML = '<b>Not set up yet</b><br>replaycut does not know your recording folder and integrations.';
     a.innerHTML = '<a class="btn btn-primary" href="/setup">Run the setup</a>';
   } else if (kind === 'offline') {
-    t.innerHTML = `<b>No connection to the service</b><br>Is replaycut running on the PC?${trayHint()}`;
+    t.innerHTML = '<b>No connection to the service</b><br>Is replaycut running on the PC? Look for the tray icon.';
     a.innerHTML = '';
   } else {
     t.innerHTML = `<b>Nothing to cut yet</b><br>Start the replay buffer in OBS, play, and press <kbd>F9</kbd> when something happens. The clip shows up here within a few seconds.`;
@@ -2933,7 +2932,7 @@ async function poll() {
   } catch (e) {
     if (e.message === 'login required') return;
     failures++;
-    banner('b-unreachable', true, `(${e.message}) - attempt ${failures}, retrying every 3 s. Is replaycut running on the PC?${trayHint()}`);
+    banner('b-unreachable', true, `(${e.message}) - attempt ${failures}, retrying every 3 s. Is replaycut running on the PC? Look for the tray icon.`);
     setDot('off', 'Service not responding');
     if (page === 'clips' && !clips.length) showEmpty('offline');
   }
