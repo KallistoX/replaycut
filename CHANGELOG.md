@@ -86,6 +86,15 @@ contract.
   the bold words became a flex item of their own. It reads as one paragraph
   again, with the info icon the same note carries in the wizard. (issue #9)
 
+### Fixed
+
+- Linux: "Open log folder" in the tray opens the folder in the file manager
+  again. It went through `xdg-open`, whose handler for folders may be a
+  terminal program that shows nothing when started without a terminal;
+  folders now go to the file manager over D-Bus (`FileManager1.ShowFolders`)
+  first, `xdg-open` is the fallback, and an `xdg-open` that exits with an
+  error is logged instead of vanishing quietly. (#7)
+
 ## [3.1.0] - 2026-09-08
 
 The clips page of 3.0 put the same thing on the screen three times. This is

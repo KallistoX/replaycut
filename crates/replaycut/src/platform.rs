@@ -519,12 +519,25 @@ pub fn open_folder_select(path: &Path) -> Result<()> {
 /// nothing answers, open the folder itself.
 #[cfg(target_os = "linux")]
 pub fn open_folder_select(path: &Path) -> Result<()> {
-    if let Err(e) = linux::show_in_file_manager(path) {
+    if let Err(e) = linux::file_manager("ShowItems", path) {
         tracing::debug!("FileManager1.ShowItems failed: {e:#} - opening the folder instead");
-        let folder = path.parent().unwrap_or(path);
-        return open_url(&folder.to_string_lossy());
+        return open_folder(path.parent().unwrap_or(path));
     }
     Ok(())
+}
+
+/// Open a folder in the file manager. Windows hands it to the shell; Linux
+/// asks the file manager over D-Bus (`FileManager1.ShowFolders`) and falls
+/// back to `xdg-open`, whose handler for folders may be a terminal program
+/// that shows nothing - which is why the D-Bus way comes first.
+pub fn open_folder(dir: &Path) -> Result<()> {
+    #[cfg(target_os = "linux")]
+    if let Err(e) = linux::file_manager("ShowFolders", dir) {
+        tracing::debug!("FileManager1.ShowFolders failed: {e:#} - trying xdg-open");
+    } else {
+        return Ok(());
+    }
+    open_url(&dir.to_string_lossy())
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
@@ -717,8 +730,11 @@ pub mod linux {
         )
     }
 
-    /// `org.freedesktop.FileManager1.ShowItems` on the session bus.
-    pub fn show_in_file_manager(path: &std::path::Path) -> Result<()> {
+    /// `org.freedesktop.FileManager1.<method>` on the session bus with one
+    /// URI: `ShowItems` selects the file, `ShowFolders` opens the folder.
+    /// Every major file manager answers; the call fails when none runs or
+    /// is registered, and the caller falls back to `xdg-open`.
+    pub fn file_manager(method: &'static str, path: &std::path::Path) -> Result<()> {
         let uri = file_uri(path);
         off_runtime(move || {
             let conn = zbus::blocking::Connection::session().context("session bus")?;
@@ -728,7 +744,7 @@ pub mod linux {
                 "/org/freedesktop/FileManager1",
                 "org.freedesktop.FileManager1",
             )?;
-            proxy.call_method("ShowItems", &(vec![uri.as_str()], ""))?;
+            proxy.call_method(method, &(vec![uri.as_str()], ""))?;
             Ok(())
         })
     }
@@ -768,16 +784,39 @@ mod other {
 
     pub fn set_app_id() {}
 
-    /// `xdg-open` hands the URL to the browser. Its standard streams are
-    /// closed: the browser it starts would otherwise inherit ours and hold
-    /// a pipe open (an installer whose output is piped hangs on that).
-    pub fn open_url(url: &str) -> Result<()> {
-        std::process::Command::new("xdg-open")
-            .arg(url)
+    /// `xdg-open` hands a URL or path to the application registered for
+    /// it. Its standard streams are closed: the browser it starts would
+    /// otherwise inherit ours and hold a pipe open (an installer whose
+    /// output is piped hangs on that). `xdg-open` often stays alive as long
+    /// as the application it started, so nothing waits for it here; a thread
+    /// watches the first seconds and logs an exit with an error, which is
+    /// what "no application is registered" looks like.
+    pub fn open_url(target: &str) -> Result<()> {
+        let mut child = std::process::Command::new("xdg-open")
+            .arg(target)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()?;
+        let target = target.to_string();
+        std::thread::Builder::new()
+            .name("xdg-open".into())
+            .spawn(move || {
+                for _ in 0..30 {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    match child.try_wait() {
+                        Ok(Some(status)) if !status.success() => {
+                            tracing::warn!(
+                                "xdg-open {target}: {status} - no application seems to be registered for it (xdg-mime shows and sets the default)"
+                            );
+                            return;
+                        }
+                        Ok(Some(_)) | Err(_) => return,
+                        Ok(None) => {}
+                    }
+                }
+            })
+            .ok();
         Ok(())
     }
 

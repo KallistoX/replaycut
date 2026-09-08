@@ -233,8 +233,8 @@ mod win {
     fn open_log_folder(state: &AppState) {
         let dir = state.data_dir.join("logs");
         let _ = std::fs::create_dir_all(&dir);
-        if let Err(e) = platform::open_url(&dir.display().to_string()) {
-            tracing::warn!("cannot open {}: {e}", dir.display());
+        if let Err(e) = platform::open_folder(&dir) {
+            tracing::warn!("cannot open {}: {e:#}", dir.display());
         }
     }
 
@@ -466,8 +466,8 @@ mod linux {
     fn open_log_folder(state: &AppState) {
         let dir = state.data_dir.join("logs");
         let _ = std::fs::create_dir_all(&dir);
-        if let Err(e) = platform::open_url(&dir.display().to_string()) {
-            tracing::warn!("cannot open {}: {e}", dir.display());
+        if let Err(e) = platform::open_folder(&dir) {
+            tracing::warn!("cannot open {}: {e:#}", dir.display());
         }
     }
 
