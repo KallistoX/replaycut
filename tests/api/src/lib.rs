@@ -332,8 +332,10 @@ pub fn wait_job(id: &str, timeout: Duration) -> (Vec<String>, Value) {
     }
 }
 
-pub const STAGE_ORDER: [&str; 8] = [
+pub const STAGE_ORDER: [&str; 9] = [
     "queued",
+    // since 3.0: the range becomes its own file before anything is encoded
+    "cut",
     "encode",
     "upload",
     "discord",

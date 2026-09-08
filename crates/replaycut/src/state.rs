@@ -128,9 +128,14 @@ pub struct Job {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     // since 2.6: `share` (the default) or `preview` (the playable H.264 copy
-    // of a clip, stages `queued -> encode -> done`, never in the history)
+    // of a clip, stages `queued -> encode -> done`, never in the history);
+    // since 3.0 also `cut` (make the cut file and stop), `render` (encode an
+    // existing cut) and `publish` (send a finished file on)
     #[serde(default = "default_kind", skip_serializing_if = "is_share")]
     pub kind: String,
+    // since 3.0: the cut this job cut, rendered or published from
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cut: Option<String>,
     // since 2.6: a preview made at scan time runs ffmpeg with idle priority
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub idle: bool,
@@ -166,7 +171,7 @@ fn default_mode() -> String {
 }
 
 fn default_kind() -> String {
-    "share".to_string()
+    KIND_SHARE.to_string()
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -175,14 +180,28 @@ fn is_zero(n: &u32) -> bool {
 
 fn is_share(kind: &str) -> bool {
     // `Job::default()` leaves the kind empty: that is a share too
-    kind.is_empty() || kind == "share"
+    kind.is_empty() || kind == KIND_SHARE
 }
 
+pub const KIND_SHARE: &str = "share";
 pub const KIND_PREVIEW: &str = "preview";
+/// Since 3.0: make the cut file and stop (`POST /api/cuts`).
+pub const KIND_CUT: &str = "cut";
+/// Since 3.0: encode and send a cut that exists (`POST /api/cuts/<id>/render`).
+pub const KIND_RENDER: &str = "render";
+/// Since 3.0: the finished file of a job to another target (`publish`); it
+/// was a share with a `source` until 2.8.
+pub const KIND_PUBLISH: &str = "publish";
 
 impl Job {
     pub fn is_preview(&self) -> bool {
         self.kind == KIND_PREVIEW
+    }
+
+    /// Housekeeping jobs leave nothing behind that the history should list:
+    /// the playable preview and the cut file are not outputs.
+    pub fn is_output(&self) -> bool {
+        !self.is_preview() && self.kind != KIND_CUT
     }
 }
 
@@ -212,6 +231,8 @@ impl Job {
 pub struct Paths {
     pub clip_dir: PathBuf,
     pub preview_dir: PathBuf,
+    /// The cut files, `.cuts\<id>.mkv` (since 3.0).
+    pub cuts_dir: PathBuf,
     pub shared_dir: PathBuf,
     pub data_dir: PathBuf,
     pub ui_file: PathBuf,
@@ -222,10 +243,16 @@ impl Paths {
         Self {
             clip_dir: clip_dir.to_path_buf(),
             preview_dir: clip_dir.join(".preview"),
+            cuts_dir: clip_dir.join(".cuts"),
             shared_dir: clip_dir.join("shared"),
             data_dir: data_dir.to_path_buf(),
             ui_file,
         }
+    }
+
+    /// The file of a cut; its name in the API is `<id>.mkv`.
+    pub fn cut_of(&self, id: &str) -> PathBuf {
+        self.cuts_dir.join(cut_file_name(id))
     }
 
     pub fn preview_of(&self, base: &str) -> PathBuf {
@@ -240,6 +267,11 @@ impl Paths {
     pub fn preview_h264_of(&self, base: &str) -> PathBuf {
         self.preview_dir.join(format!("{base}.h264.mp4"))
     }
+}
+
+/// The file name of a cut in `.cuts\` (since 3.0).
+pub fn cut_file_name(id: &str) -> String {
+    format!("{id}.mkv")
 }
 
 /// The `/media/...` URL of the H.264 preview.
@@ -432,6 +464,7 @@ fn create_dirs(paths: &Paths) -> Result<()> {
         &paths.data_dir,
         &paths.clip_dir,
         &paths.preview_dir,
+        &paths.cuts_dir,
         &paths.shared_dir,
     ] {
         std::fs::create_dir_all(d).with_context(|| format!("cannot create {}", d.display()))?;
@@ -702,7 +735,8 @@ impl AppState {
     /// Keep a finished job: in the store and at the front of the cache the
     /// status document and `GET /api/history` are served from.
     fn record_job(&self, inner: &mut Inner, entry: Value) {
-        if let Err(e) = self.db.put_job(&entry, None) {
+        let cut = entry["cut"].as_str().map(str::to_string);
+        if let Err(e) = self.db.put_job(&entry, cut.as_deref()) {
             tracing::warn!("cannot store the job: {e:#}");
         }
         inner.history.insert(0, entry);
@@ -711,8 +745,29 @@ impl AppState {
 
     // --- queries and mutations used by the HTTP layer ---
 
+    /// The cuts of every clip with their outputs, for the status document
+    /// (since 3.0). Two queries, whatever the number of clips.
+    fn cuts_by_base(&self) -> BTreeMap<String, Vec<Value>> {
+        let cuts = self.db.cuts().unwrap_or_else(|e| {
+            tracing::warn!("cannot read the cuts: {e:#}");
+            Vec::new()
+        });
+        let mut outputs = self.db.outputs_by_cut().unwrap_or_else(|e| {
+            tracing::warn!("cannot read the outputs: {e:#}");
+            BTreeMap::new()
+        });
+        let mut by_base: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+        for cut in cuts {
+            let mut v = serde_json::to_value(&cut).unwrap_or(Value::Null);
+            v["outputs"] = Value::Array(outputs.remove(&cut.id).unwrap_or_default());
+            by_base.entry(cut.base).or_default().push(v);
+        }
+        by_base
+    }
+
     /// The `/api/clips` document.
     pub fn status(&self) -> Value {
+        let mut cuts = self.cuts_by_base();
         let inner = self.inner.lock();
         let mut clips: Vec<Value> = inner
             .clips
@@ -720,6 +775,8 @@ impl AppState {
             .map(|c| {
                 let mut v = serde_json::to_value(c).unwrap_or(Value::Null);
                 v["title"] = Value::String(inner.names.get(&c.base).cloned().unwrap_or_default());
+                // since 3.0: the ranges of this clip with what came out of them
+                v["cuts"] = Value::Array(cuts.remove(&c.base).unwrap_or_default());
                 v
             })
             .collect();
@@ -780,6 +837,26 @@ impl AppState {
                 },
             }
         })
+    }
+
+    /// `GET /api/cuts/<id>`: the cut with its outputs (since 3.0).
+    pub fn cut_document(&self, id: &str) -> Option<Value> {
+        let cut = match self.db.cut(id) {
+            Ok(c) => c?,
+            Err(e) => {
+                tracing::warn!("cannot read cut {id}: {e:#}");
+                return None;
+            }
+        };
+        let outputs = self
+            .db
+            .outputs_by_cut()
+            .unwrap_or_default()
+            .remove(&cut.id)
+            .unwrap_or_default();
+        let mut v = serde_json::to_value(&cut).unwrap_or(Value::Null);
+        v["outputs"] = Value::Array(outputs);
+        Some(v)
     }
 
     pub fn history(&self) -> Value {
@@ -853,6 +930,18 @@ impl AppState {
         }
         drop(inner);
         self.tray_changed();
+    }
+
+    /// A cut whose job never made its file is no cut at all (since 3.0).
+    pub fn drop_pending_cut(&self, id: &str) {
+        match self.db.delete_pending_cut(id) {
+            Ok(true) => {
+                tracing::debug!("cut {id} dropped - its job left no file");
+                self.tray_changed();
+            }
+            Ok(false) => {}
+            Err(e) => tracing::warn!("cannot drop cut {id}: {e:#}"),
+        }
     }
 
     /// Record that a clip's H.264 preview exists (or is gone).
@@ -1011,9 +1100,10 @@ impl AppState {
         job.finished = Some(util::now_local());
         job.position = None;
         let job = job.clone();
-        // a preview job is housekeeping: no history entry, not the "last share"
+        // the playable preview is housekeeping: no history entry, not the
+        // "last share". A cut is no output either, but the page shows it.
         if !job.is_preview() {
-            if job.ok == Some(true) || job.cancelled {
+            if job.is_output() && (job.ok == Some(true) || job.cancelled) {
                 let entry = job.history_entry();
                 self.record_job(&mut inner, entry);
             }
@@ -1055,8 +1145,10 @@ impl AppState {
                     j.position = None;
                     j.finished = Some(util::now_local());
                     let done = j.clone();
-                    let entry = done.history_entry();
-                    self.record_job(&mut inner, entry);
+                    if done.is_output() {
+                        let entry = done.history_entry();
+                        self.record_job(&mut inner, entry);
+                    }
                     inner.last = Some(done);
                 }
                 drop(inner);

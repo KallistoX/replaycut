@@ -207,8 +207,8 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
             // behind the running jobs, with idle priority
             if wants_h264 {
                 match crate::share::start_preview(state, &base, true) {
-                    Ok((id, 0)) => {
-                        tokio::spawn(crate::share::run(state.clone(), id));
+                    Ok(s) if s.position == 0 => {
+                        tokio::spawn(crate::share::run(state.clone(), s.job));
                     }
                     Ok(_) => {}
                     Err(e) => tracing::debug!("preview for {base} not queued: {e:?}"),

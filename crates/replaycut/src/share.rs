@@ -12,9 +12,12 @@ use anyhow::{anyhow, bail, Context, Result};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio_util::sync::CancellationToken;
 
+use crate::db::{Cut, CUT_PENDING, CUT_READY};
 use crate::integrations::random_token;
 use crate::platform;
-use crate::state::{AppState, Job, AUDIO_MODES, MAX_QUEUE};
+use crate::state::{
+    cut_file_name, AppState, Job, AUDIO_MODES, KIND_CUT, KIND_PUBLISH, KIND_RENDER, MAX_QUEUE,
+};
 use crate::toast::{self, Toast};
 use crate::util;
 
@@ -49,8 +52,12 @@ pub enum ShareError {
     UnknownClip(String),
     /// `publish` of a job id nobody knows.
     UnknownJob(String),
+    /// `render` of a cut id nobody knows (since 3.0).
+    UnknownCut(String),
     /// The same share is already running or waiting; carries its id.
     Busy(String),
+    /// This range is already a cut of this clip; carries the cut id (since 3.0).
+    CutExists(String),
     Invalid(String),
     /// `MAX_QUEUE` jobs are waiting already.
     QueueFull,
@@ -149,11 +156,49 @@ pub fn post_label(prefix: &str, base: &str, title: &str) -> String {
     }
 }
 
+/// A registered job: its id, its place in the queue (0 = runs at once, the
+/// caller spawns `run` for it) and the cut it works on (since 3.0).
+pub struct Started {
+    pub job: String,
+    pub position: usize,
+    pub cut: Option<String>,
+}
+
+/// The cut of this job's range: the one that is already there, whatever
+/// state it is in, or a new pending row. The file itself is made by the
+/// `cut` stage of the job (since 3.0).
+fn cut_for(state: &AppState, job: &Job) -> Result<Cut, ShareError> {
+    let existing = state
+        .db
+        .cut_of_range(&job.base, job.start, job.end)
+        .map_err(|e| ShareError::Invalid(format!("cannot read the cuts: {e:#}")))?;
+    if let Some(cut) = existing {
+        return Ok(cut);
+    }
+    let cut = Cut {
+        id: crate::auth::random_hex(4),
+        base: job.base.clone(),
+        start: job.start,
+        end: job.end,
+        audio: job.audio.clone(),
+        vertical: job.vertical,
+        vertical_pos: job.vertical_pos,
+        file: None,
+        actual_start: None,
+        created: util::now_local(),
+        state: CUT_PENDING.to_string(),
+    };
+    state
+        .db
+        .put_cut(&cut)
+        .map_err(|e| ShareError::Invalid(format!("cannot store the cut: {e:#}")))?;
+    Ok(cut)
+}
+
 /// Validate and register a job. Holds the state lock for the whole check so
 /// two concurrent requests cannot both pass the busy check.
-/// Validate and register a share. Returns the job id and its place in the
-/// queue (0 = runs at once; the caller spawns `run` for it).
-pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), ShareError> {
+/// Validate and register a share.
+pub fn start(state: &AppState, req: ShareRequest) -> Result<Started, ShareError> {
     let mut inner = state.inner.lock();
     let clip = inner
         .clips
@@ -244,7 +289,7 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
     }
     // since 2.7: best quality unless the target has limits
     let limits = state.settings().limits(&target);
-    let job = Job {
+    let mut job = Job {
         id: id.clone(),
         base: clip.base.clone(),
         target,
@@ -268,17 +313,248 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<(String, usize), Sha
         at: util::now_local(),
         ..Job::default()
     };
+    // since 3.0 every share goes through a cut; the page has its id at once
+    let cut = cut_for(state, &job)?;
+    job.cut = Some(cut.id.clone());
     let position = state.register_job(&mut inner, job);
-    Ok((id, position))
+    Ok(Started {
+        job: id,
+        position,
+        cut: Some(cut.id),
+    })
+}
+
+/// `POST /api/cuts` (since 3.0): save a range without rendering anything.
+/// The job has the stages `queued -> cut -> done`.
+pub fn start_cut(state: &AppState, req: ShareRequest) -> Result<Started, ShareError> {
+    let mut inner = state.inner.lock();
+    let clip = inner
+        .clips
+        .get(&req.base)
+        .ok_or_else(|| ShareError::UnknownClip(req.base.clone()))?;
+    let start = req.start.max(0.0);
+    let end = req.end.min(clip.duration);
+    let seconds = ((end - start) * 100.0).round() / 100.0;
+    if seconds < 1.0 {
+        return Err(ShareError::Invalid(format!(
+            "selection too short ({seconds} s)"
+        )));
+    }
+    let audio = if req.audio.is_empty() {
+        "mix".to_string()
+    } else {
+        req.audio
+    };
+    let mode = AUDIO_MODES
+        .iter()
+        .find(|m| m.id == audio)
+        .ok_or_else(|| ShareError::Invalid(format!("unknown audio mode: {audio}")))?;
+    if clip.tracks < mode.need {
+        return Err(ShareError::Invalid(format!(
+            "clip has only {} audio track(s) - '{}' needs {}",
+            clip.tracks, mode.label, mode.need
+        )));
+    }
+    // the same range twice: the cut that is there answers, no second file
+    if let Some(cut) = state
+        .db
+        .cut_of_range(&req.base, start, end)
+        .map_err(|e| ShareError::Invalid(format!("cannot read the cuts: {e:#}")))?
+    {
+        if cut.state == CUT_READY && state.paths().cut_of(&cut.id).is_file() {
+            return Err(ShareError::CutExists(cut.id));
+        }
+    }
+    let duplicate = inner
+        .current_job
+        .iter()
+        .chain(inner.queue.iter())
+        .filter_map(|id| inner.jobs.get(id))
+        .find(|j| {
+            j.kind == KIND_CUT
+                && j.base == req.base
+                && (j.start - start).abs() < 0.005
+                && (j.end - end).abs() < 0.005
+        })
+        .map(|j| j.id.clone());
+    if let Some(id) = duplicate {
+        return Err(ShareError::Busy(id));
+    }
+    if inner.queue.len() >= MAX_QUEUE {
+        return Err(ShareError::QueueFull);
+    }
+    let mut id = random_token(8);
+    while inner.jobs.contains_key(&id) {
+        id = random_token(8);
+    }
+    let mut job = Job {
+        id: id.clone(),
+        kind: KIND_CUT.to_string(),
+        base: clip.base.clone(),
+        start,
+        end,
+        seconds,
+        audio,
+        vertical: req.vertical,
+        vertical_pos: req
+            .vertical
+            .then(|| (req.vertical_pos.clamp(0.0, 1.0) * 1000.0).round() / 1000.0),
+        stage: "queued".into(),
+        percent: 0,
+        at: util::now_local(),
+        ..Job::default()
+    };
+    let cut = cut_for(state, &job)?;
+    job.cut = Some(cut.id.clone());
+    let position = state.register_job(&mut inner, job);
+    Ok(Started {
+        job: id,
+        position,
+        cut: Some(cut.id),
+    })
+}
+
+/// What `POST /api/cuts/<id>/render` may say; everything it leaves out comes
+/// from the cut (since 3.0).
+#[derive(Default)]
+pub struct RenderRequest {
+    pub target: String,
+    pub mode: String,
+    pub audio: Option<String>,
+    pub vertical: Option<bool>,
+    pub vertical_pos: Option<f64>,
+}
+
+/// `POST /api/cuts/<id>/render` (since 3.0): encode a cut that exists and
+/// send it on. Stages `queued -> encode -> upload -> notify -> done`.
+pub fn start_render(
+    state: &AppState,
+    cut_id: &str,
+    req: RenderRequest,
+) -> Result<Started, ShareError> {
+    let cut = state
+        .db
+        .cut(cut_id)
+        .map_err(|e| ShareError::Invalid(format!("cannot read the cut: {e:#}")))?
+        .ok_or_else(|| ShareError::UnknownCut(cut_id.to_string()))?;
+    if !state.paths().cut_of(&cut.id).is_file() {
+        return Err(ShareError::Invalid(format!(
+            "the file of cut {} is gone - cut the range again",
+            cut.id
+        )));
+    }
+    let mut inner = state.inner.lock();
+    let audio = req.audio.unwrap_or_else(|| cut.audio.clone());
+    let mode = AUDIO_MODES
+        .iter()
+        .find(|m| m.id == audio)
+        .ok_or_else(|| ShareError::Invalid(format!("unknown audio mode: {audio}")))?;
+    // the cut carries every track of the recording, so the clip decides what
+    // the audio modes can do - and it may be gone by now
+    if let Some(clip) = inner.clips.get(&cut.base) {
+        if clip.tracks < mode.need {
+            return Err(ShareError::Invalid(format!(
+                "clip has only {} audio track(s) - '{}' needs {}",
+                clip.tracks, mode.label, mode.need
+            )));
+        }
+    }
+    let share_mode = if req.mode.is_empty() {
+        "h264".to_string()
+    } else if SHARE_MODES.contains(&req.mode.as_str()) {
+        req.mode
+    } else {
+        return Err(ShareError::Invalid(format!(
+            "unknown mode: {} (h264 or copy)",
+            req.mode
+        )));
+    };
+    let vertical = req.vertical.unwrap_or(cut.vertical);
+    if vertical && share_mode == "copy" {
+        return Err(ShareError::Invalid(
+            "a vertical cut needs the h264 mode (copy keeps the frame as recorded)".to_string(),
+        ));
+    }
+    let vertical_pos = vertical.then(|| {
+        let pos = req
+            .vertical_pos
+            .or(cut.vertical_pos)
+            .unwrap_or(0.5)
+            .clamp(0.0, 1.0);
+        (pos * 1000.0).round() / 1000.0
+    });
+    let target = state
+        .runtime()
+        .integrations
+        .resolve_target(&req.target)
+        .ok_or_else(|| {
+            ShareError::Invalid(format!(
+                "unknown or unconfigured target: {} (a storage id or 'file')",
+                req.target
+            ))
+        })?;
+    let duplicate = inner
+        .current_job
+        .iter()
+        .chain(inner.queue.iter())
+        .filter_map(|id| inner.jobs.get(id))
+        .find(|j| {
+            j.cut.as_deref() == Some(&cut.id)
+                && j.kind == KIND_RENDER
+                && j.target == target
+                && j.audio == audio
+                && j.mode == share_mode
+                && j.vertical == vertical
+        })
+        .map(|j| j.id.clone());
+    if let Some(id) = duplicate {
+        return Err(ShareError::Busy(id));
+    }
+    if inner.queue.len() >= MAX_QUEUE {
+        return Err(ShareError::QueueFull);
+    }
+    let mut id = random_token(8);
+    while inner.jobs.contains_key(&id) {
+        id = random_token(8);
+    }
+    let limits = state.settings().limits(&target);
+    let clip = inner.clips.get(&cut.base);
+    let job = Job {
+        id: id.clone(),
+        kind: KIND_RENDER.to_string(),
+        base: cut.base.clone(),
+        cut: Some(cut.id.clone()),
+        target,
+        start: cut.start,
+        end: cut.end,
+        seconds: ((cut.end - cut.start) * 100.0).round() / 100.0,
+        audio,
+        mode: share_mode,
+        kbps: limits.max_kbps,
+        max_height: limits.max_height,
+        codec: clip.map(|c| c.codec.clone()).unwrap_or_default(),
+        source_kbps: clip
+            .filter(|c| c.duration > 0.0)
+            .map(|c| (c.size as f64 * 8.0 / c.duration / 1000.0).round() as u32)
+            .unwrap_or(0),
+        vertical,
+        vertical_pos,
+        stage: "queued".into(),
+        percent: 0,
+        at: util::now_local(),
+        ..Job::default()
+    };
+    let position = state.register_job(&mut inner, job);
+    Ok(Started {
+        job: id,
+        position,
+        cut: Some(cut.id),
+    })
 }
 
 /// `POST /api/jobs/<id>/publish` (since 2.5): send the file of a finished
 /// job to another target without cutting again. Returns id and position.
-pub fn publish(
-    state: &AppState,
-    source: &str,
-    target: &str,
-) -> Result<(String, usize), ShareError> {
+pub fn publish(state: &AppState, source: &str, target: &str) -> Result<Started, ShareError> {
     let mut inner = state.inner.lock();
     // the source may be a job of this run or, after a restart, a history entry
     let src = inner
@@ -352,7 +628,10 @@ pub fn publish(
     }
     let job = Job {
         id: id.clone(),
+        kind: KIND_PUBLISH.to_string(),
         base: src.base.clone(),
+        // the same file, so the same cut it once came from (since 3.0)
+        cut: src.cut.clone(),
         target,
         source: Some(source.to_string()),
         start: src.start,
@@ -374,8 +653,13 @@ pub fn publish(
         at: util::now_local(),
         ..Job::default()
     };
+    let cut = job.cut.clone();
     let position = state.register_job(&mut inner, job);
-    Ok((id, position))
+    Ok(Started {
+        job: id,
+        position,
+        cut,
+    })
 }
 
 /// Does the finished file of `src` exceed `limits`? A copy-mode file and
@@ -400,13 +684,20 @@ pub fn run(
 
 async fn run_inner(state: Arc<AppState>, id: String) {
     let token = state.cancel_token(&id);
-    let preview = state.job(&id).is_some_and(|j| j.is_preview());
+    let kind = state.job(&id).map(|j| j.kind).unwrap_or_default();
+    let (preview, cut_only) = (kind == crate::state::KIND_PREVIEW, kind == KIND_CUT);
     let result = if preview {
         preview_pipeline(&state, &id, &token).await
+    } else if cut_only {
+        cut_pipeline(&state, &id, &token).await
     } else {
         pipeline(&state, &id, &token).await
     };
-    let what = if preview { "preview" } else { "share" };
+    let what = match (preview, cut_only) {
+        (true, _) => "preview",
+        (_, true) => "cut",
+        _ => "share",
+    };
     if let Err(e) = &result {
         if token.is_cancelled() {
             tracing::info!("{what} [{id}] cancelled");
@@ -414,9 +705,16 @@ async fn run_inner(state: Arc<AppState>, id: String) {
             tracing::error!("{what} [{id}] failed: {e:#}");
         }
     }
+    let failed = result.is_err();
     let next = state.complete_job(&id, result.map_err(|e| format!("{e:#}")));
     if let Some(job) = state.job(&id) {
-        if !job.cancelled && !preview {
+        // a cut that never got its file leaves no half-cut behind
+        if failed {
+            if let Some(cut) = job.cut.as_deref() {
+                state.drop_pending_cut(cut);
+            }
+        }
+        if !job.cancelled && !preview && !cut_only {
             let uploaded = job.direct.is_some();
             toast::show(&state, Toast::share_result(&job, uploaded, &state.ui_url()));
         }
@@ -427,14 +725,107 @@ async fn run_inner(state: Arc<AppState>, id: String) {
     }
 }
 
+/// Where a rendering starts inside the cut file: the cut begins at its
+/// keyframe, the range a moment later.
+fn seek_in_cut(cut: &Cut, start: f64) -> f64 {
+    (start - cut.actual_start.unwrap_or(cut.start)).max(0.0)
+}
+
+/// The cut file of this job's range: ready already, or made now. Stream copy
+/// with every audio track, so nothing is lost and no GPU is needed.
+async fn make_cut(
+    state: &AppState,
+    job: &Job,
+    clip: &Path,
+    token: &CancellationToken,
+) -> Result<Cut> {
+    let id = job
+        .cut
+        .as_deref()
+        .ok_or_else(|| anyhow!("job has no cut to make"))?;
+    let mut cut = state
+        .db
+        .cut(id)?
+        .ok_or_else(|| anyhow!("cut {id} is no longer known"))?;
+    let out = state.paths().cut_of(&cut.id);
+    if cut.state == CUT_READY && out.is_file() {
+        tracing::info!("share [{}]: cut {} is there already", job.id, cut.id);
+        return Ok(cut);
+    }
+    let runtime = state.runtime();
+    let started = Instant::now();
+    tokio::select! {
+        r = runtime.media.cut(clip, &out, job.start, job.seconds) => r.context("cut")?,
+        _ = token.cancelled() => {
+            let _ = std::fs::remove_file(&out);
+            bail!("cancelled during cut");
+        }
+    }
+    // The cut begins at the keyframe at or before `start`, and every
+    // rendering seeks by the difference. Asking the recording where that
+    // keyframe is beats deriving it from the length of the cut: a container
+    // duration counts the last frame's own time as well, which is a frame
+    // too much and costs the rendering its last one.
+    let actual_start = match runtime.media.keyframe_at_or_before(clip, job.start).await {
+        Some(keyframe) => keyframe,
+        None => {
+            let len = runtime
+                .media
+                .duration_exact(&out)
+                .await
+                .unwrap_or(job.seconds);
+            (job.start - (len - job.seconds)).max(0.0)
+        }
+    };
+    let size_mb = std::fs::metadata(&out)
+        .map(|m| (m.len() as f64 / 1_048_576.0 * 10.0).round() / 10.0)
+        .unwrap_or(0.0);
+    let name = cut_file_name(&cut.id);
+    state
+        .db
+        .set_cut_file(&cut.id, Some(&name), Some(actual_start), CUT_READY)?;
+    cut.file = Some(name);
+    cut.actual_start = Some(actual_start);
+    cut.state = CUT_READY.to_string();
+    tracing::info!(
+        "cut [{}]: {} {}-{} s -> {} ({size_mb} MB, starts at {actual_start:.3} s) in {:.1} s",
+        cut.id,
+        job.base,
+        job.start,
+        job.end,
+        out.display(),
+        started.elapsed().as_secs_f64()
+    );
+    state.tray_changed();
+    Ok(cut)
+}
+
+/// `kind: cut`: make the cut file and stop. Nothing is encoded or sent.
+async fn cut_pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Result<()> {
+    let job = state.job(id).ok_or_else(|| anyhow!("job vanished"))?;
+    let clip_path = clip_path_of(state, &job.base)?;
+    state.with_job(id, |j| j.stage = "cut".into());
+    let cut = make_cut(state, &job, &clip_path, token).await?;
+    state.with_job(id, |j| {
+        j.cut = Some(cut.id.clone());
+        j.percent = 100;
+    });
+    Ok(())
+}
+
+fn clip_path_of(state: &AppState, base: &str) -> Result<PathBuf> {
+    let inner = state.inner.lock();
+    let clip = inner
+        .clips
+        .get(base)
+        .ok_or_else(|| anyhow!("unknown clip: {base}"))?;
+    Ok(PathBuf::from(&clip.path))
+}
+
 /// `POST /api/clips/<base>/preview` (since 2.6): queue the playable H.264
 /// copy of a clip. `idle` marks the scan-time variant (idle priority).
 /// Returns the job id and its place in the queue.
-pub fn start_preview(
-    state: &AppState,
-    base: &str,
-    idle: bool,
-) -> Result<(String, usize), ShareError> {
+pub fn start_preview(state: &AppState, base: &str, idle: bool) -> Result<Started, ShareError> {
     let mut inner = state.inner.lock();
     let clip = inner
         .clips
@@ -480,7 +871,11 @@ pub fn start_preview(
         ..Job::default()
     };
     let position = state.register_job(&mut inner, job);
-    Ok((id, position))
+    Ok(Started {
+        job: id,
+        position,
+        cut: None,
+    })
 }
 
 /// The playable copy: 720p H.264 at `PREVIEW_KBPS` with audio track 1,
@@ -508,7 +903,7 @@ async fn preview_pipeline(state: &AppState, id: &str, token: &CancellationToken)
     state.with_job(id, |j| j.stage = "encode".into());
     let started = Instant::now();
     let profile = runtime.encoder.clone();
-    if let Err(e) = encode(state, id, &job, &clip_path, &tmp, token, &profile).await {
+    if let Err(e) = encode(state, id, &job, &clip_path, 0.0, &tmp, token, &profile).await {
         if token.is_cancelled() || !profile.is_gpu_path() {
             let _ = std::fs::remove_file(&tmp);
             return Err(e);
@@ -523,6 +918,7 @@ async fn preview_pipeline(state: &AppState, id: &str, token: &CancellationToken)
             id,
             &job,
             &clip_path,
+            0.0,
             &tmp,
             token,
             &profile.software_fallback(),
@@ -605,20 +1001,14 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
     // it runs does not swap integrations or encoder under its feet.
     let runtime = state.runtime();
     let settings = state.settings();
-    // A publish job (since 2.5) re-uses the file of its source; a share cuts one.
+    // A publish job (since 2.5) re-uses the file of its source; a share cuts
+    // one and renders it, a render (since 3.0) finds its cut ready.
     let republish = job.source.is_some();
-    let (clip_path, title) = if republish {
-        (PathBuf::new(), job.title.clone().unwrap_or_default())
+    let title = if republish {
+        job.title.clone().unwrap_or_default()
     } else {
         let inner = state.inner.lock();
-        let clip = inner
-            .clips
-            .get(&job.base)
-            .ok_or_else(|| anyhow!("unknown clip: {}", job.base))?;
-        (
-            PathBuf::from(&clip.path),
-            inner.names.get(&job.base).cloned().unwrap_or_default(),
-        )
+        inner.names.get(&job.base).cloned().unwrap_or_default()
     };
     let file_name = match &job.file {
         Some(f) if republish => f.clone(),
@@ -673,8 +1063,31 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         }
     );
 
+    // cut (since 3.0): the rendering is made from the cut file, not from the
+    // recording. A share cuts its range first (stage `cut`, stream copy, a
+    // second of IO); a render finds the cut it was asked for.
+    let source = if republish {
+        None
+    } else if job.kind == KIND_RENDER {
+        let cut = state
+            .db
+            .cut(job.cut.as_deref().unwrap_or_default())?
+            .ok_or_else(|| anyhow!("the cut of this render is no longer known"))?;
+        let file = state.paths().cut_of(&cut.id);
+        if !file.is_file() {
+            bail!("the file of cut {} is gone - cut the range again", cut.id);
+        }
+        Some((file, seek_in_cut(&cut, job.start)))
+    } else {
+        state.with_job(id, |j| j.stage = "cut".into());
+        let clip_path = clip_path_of(state, &job.base)?;
+        let cut = make_cut(state, &job, &clip_path, token).await?;
+        state.with_job(id, |j| j.cut = Some(cut.id.clone()));
+        Some((state.paths().cut_of(&cut.id), seek_in_cut(&cut, job.start)))
+    };
+
     // encode (skipped when the file already exists from the source job)
-    if !republish {
+    if let Some((input, seek)) = source {
         state.with_job(id, |j| {
             j.stage = "encode".into();
             j.title = Some(title.clone());
@@ -689,7 +1102,7 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         } else {
             runtime.encoder.clone()
         };
-        if let Err(e) = encode(state, id, &job, &clip_path, &out, token, &profile).await {
+        if let Err(e) = encode(state, id, &job, &input, seek, &out, token, &profile).await {
             if token.is_cancelled() || job.mode == "copy" || !profile.is_gpu_path() {
                 return Err(e);
             }
@@ -705,7 +1118,8 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
                 state,
                 id,
                 &job,
-                &clip_path,
+                &input,
+                seek,
                 &out,
                 token,
                 &profile.software_fallback(),
@@ -844,11 +1258,15 @@ fn notifies_len_is_one(runtime: &crate::state::Runtime) -> bool {
     runtime.integrations.auto_notifies().count() == 1
 }
 
+/// `seek` is where in `input` the range begins: zero for the preview copy of
+/// a whole clip, the offset into the cut file for everything else (since 3.0).
+#[allow(clippy::too_many_arguments)]
 async fn encode(
     state: &AppState,
     id: &str,
     job: &Job,
     input: &Path,
+    seek: f64,
     out: &Path,
     token: &CancellationToken,
     enc: &crate::media::Encoder,
@@ -859,7 +1277,7 @@ async fn encode(
         format!("{kbps}k"),
         format!("{}k", kbps * 2),
     );
-    let (start, seconds) = (job.start.to_string(), job.seconds.to_string());
+    let (start, seconds) = (seek.to_string(), job.seconds.to_string());
     let input_s = input.to_string_lossy().into_owned();
     let out_s = out.to_string_lossy().into_owned();
     // since 2.7 the recording's resolution stays unless the target caps it;

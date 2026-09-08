@@ -1113,6 +1113,117 @@ Three lines beside the existing ones:
 | `firewall` | Whether the rule for the port exists; `skip` while network access is off. |
 | `pairing` | The device login: ready, how many devices wait, or paused after a flood. |
 
+## Since 3.0
+
+### The cut between the recording and every rendering
+
+Everything a rendering is made from is now a **cut**: the range of a
+recording as its own file, `.cuts\<id>.mkv` in the clip folder, taken with a
+stream copy from the keyframe at or before `start` to `end`, with the
+picture untouched and **every** audio track of the recording. Nothing is
+re-encoded, so a cut costs about as long as copying its bytes and no GPU.
+
+Audio mode, the 9:16 window, the bitrate and the height cap are therefore
+parameters of the *rendering*, not of the cut: the same cut can be rendered
+again with another audio mode, to another target, later - the recording is
+no longer needed for that.
+
+A range is one cut per clip: the same range asked for twice answers with the
+cut that is already there instead of making a second file.
+
+### Cut
+
+```json
+{
+  "id": "24af8830",
+  "base": "Replay 2026-09-08 13-40-00",
+  "start": 6.0,
+  "end": 12.0,
+  "audio": "mix",
+  "vertical": false,
+  "verticalPos": 0.5,
+  "file": "24af8830.mkv",
+  "actualStart": 0.0,
+  "created": "2026-09-08T13:41:48",
+  "state": "ready",
+  "outputs": [HistoryEntry, ...]
+}
+```
+
+- `id`: eight hex characters.
+- `start`, `end`: the exact range in the recording, in seconds.
+- `audio`, `vertical`, `verticalPos`: what the next rendering of this cut
+  uses unless it says otherwise.
+- `file`: the name in `.cuts\`, `null` while the cut is being made and for
+  cuts the migration derived from the history of 2.x.
+- `actualStart`: where the file really begins - the keyframe at or before
+  `start`. A rendering seeks `start - actualStart` into the file.
+- `state`: `pending` (the file is being made), `ready`, `missing` (there is
+  no file).
+- `outputs`: the finished jobs of this cut that left a file or a link
+  behind, newest first, in the shape of a [HistoryEntry](#historyentry).
+
+### `POST /api/cuts`
+
+Body as `POST /api/share` minus `target` and `mode`: `base`, `start`, `end`,
+`audio`, `vertical`, `verticalPos`. Saves the range and renders nothing.
+
+`202 { ok: true, job, position, cut }` - the job has the stages
+`queued -> cut -> done` and `kind: "cut"`. It is no output: it never appears
+in the history.
+
+- `404` unknown clip, `400` a range under a second or an unknown audio mode.
+- `409 { ok: false, error, cut }` when the range is already a cut with its
+  file; `409 { ok: false, error, job }` when a job for it is already running.
+
+### `GET /api/cuts/<id>`
+
+`200` with the [Cut](#cut) and its `outputs`, `404` when the id is unknown.
+
+### `POST /api/cuts/<id>/render`
+
+```json
+{ "target": "nextcloud", "mode": "h264", "audio": "game",
+  "vertical": false, "verticalPos": 0.5 }
+```
+
+Encodes a cut that exists and sends it on. Everything the body leaves out
+comes from the cut; `target` may be `file` (render without an upload).
+Stages `queued -> encode -> upload -> notify -> done`, `kind: "render"`.
+
+`202 { ok: true, job, position, cut }`.
+
+- `404` unknown cut, `400` unknown target, unknown audio mode or `mode`
+  other than `h264`/`copy`, `409` the same render is already running.
+- `400` when the cut has no file any more: cut the range again.
+
+The clip may be gone by then; a cut is rendered from its own file.
+
+### Additions to `POST /api/share`
+
+The answer carries `cut` (the cut of this range, made or reused), and the
+pipeline gains the stage `cut` before `encode`.
+
+### Additions to `GET /api/clips`
+
+Every clip carries `cuts: [Cut]`, oldest first, each with its `outputs`.
+
+### Additions to the job
+
+- `kind`: `share` (the default, absent in the document), `cut`, `render`,
+  `publish` or `preview`. Until 2.8 a publish was a share with a `source`;
+  it now says `publish` as well and keeps `source`.
+- `cut`: the cut this job cut, rendered or published from. Absent for a
+  preview and for history entries written before 3.0.
+
+### Where the state lives
+
+Titles, the seen list and the history are rows in `<data-dir>\replaycut.db`
+(SQLite) instead of three JSON files. The first start of 3.0 imports
+`clip-names.json`, `clip-seen.json` and `clip-history.json` and moves them to
+`<data-dir>\backup-2.x\`; every share of 2.x becomes a cut without a file, so
+its outputs still hang under their clip. None of this is visible in the API.
+
 ## Behaviour
 
 ### Folder scan
@@ -1143,6 +1254,10 @@ Three lines beside the existing ones:
 ### Share pipeline
 
 1. `queued`: job created and registered; `busy` becomes `true`.
+   Since 3.0 a share first passes the stage `cut`: the range becomes
+   `.cuts\<id>.mkv` with a stream copy (or the cut that is already there is
+   used), and step 2 reads that file instead of the recording, seeking
+   `start - actualStart` into it. Everything below is unchanged.
 2. `encode`: ffmpeg cuts `[start, start + seconds]` from the MKV with input
    seeking (`-ss` before `-i`, frame-accurate), scales to 1080p height
    (`scale=-2:1080`), encodes H.264 with the detected encoder at `shareKbps`
@@ -1179,8 +1294,9 @@ See `DELETE /api/clips/<base>`. Files go to the recycle bin, never
 
 ### Limits
 
-- One share job at a time; 30 jobs kept in memory; 200 history entries and
-  the titles and seen-list persisted as JSON.
+- One share job at a time; 30 jobs kept in memory; 200 history entries.
+  Titles, seen list and history are persisted as JSON until 2.8 and in
+  `replaycut.db` since 3.0.
 - Log lines and toast texts are not part of the contract.
 
 ## Notes for the 2.0 implementation

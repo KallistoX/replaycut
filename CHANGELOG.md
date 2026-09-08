@@ -10,7 +10,24 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- **Every share keeps its cut.** The range you pick becomes a file of its
+  own first - `.cuts\<id>.mkv` in the clip folder, the recording's picture
+  and *all* its audio tracks, copied, not re-encoded - and the upload is
+  rendered from that. So audio mode, 9:16 and quality are decisions you can
+  take again later: the cut is enough, the five-minute recording is not
+  needed any more.
+- Save a range now and render it after the game: `POST /api/cuts` stores a
+  cut without encoding anything, `POST /api/cuts/<id>/render` sends it to
+  any target later. The buttons for this arrive with the rest of 3.0; the
+  clips page already shows every clip's cuts and what came out of them.
+
 ### Changed
+
+- The share progress has one more step, "Cut", before "Encode". It takes
+  about a second and needs no graphics card. What comes out is frame for
+  frame what 2.8 produced.
 
 - **replaycut keeps its state in one file.** Clip titles, which clips have
   already been announced and the share history moved out of three JSON files

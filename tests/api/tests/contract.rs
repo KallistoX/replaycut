@@ -2376,3 +2376,262 @@ fn t47_signed_in_devices_are_listed_and_can_be_revoked() {
         "the suite holds no cookie, so nothing is left: {s}"
     );
 }
+
+// ---------------------------------------------------------------- since 3.0
+
+fn since_30() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let major = v
+        .split('.')
+        .next()
+        .and_then(|p| p.parse::<u32>().ok())
+        .unwrap_or(0);
+    let ok = major >= 3;
+    if !ok {
+        eprintln!("skipped: needs replaycut 3.0, service is {v}");
+    }
+    ok
+}
+
+/// ffprobe on a file in `shared\`, through the ffprobe next to the ffmpeg
+/// the fixture uses.
+fn probe_shared(file: &str, args: &[&str]) -> String {
+    let ffprobe = env().ffmpeg.to_string().replace("ffmpeg", "ffprobe");
+    let out = std::process::Command::new(&ffprobe)
+        .args(["-v", "error"])
+        .args(args)
+        .args(["-of", "csv=p=0"])
+        .arg(env().clip_dir.join("shared").join(file))
+        .output()
+        .unwrap_or_else(|e| panic!("cannot run {ffprobe}: {e}"));
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    assert!(
+        !text.is_empty(),
+        "ffprobe said nothing about {file}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    text
+}
+
+fn shared_duration(file: &str) -> f64 {
+    let text = probe_shared(file, &["-show_entries", "format=duration"]);
+    text.parse()
+        .unwrap_or_else(|_| panic!("no duration for {file}: {text:?}"))
+}
+
+/// The number of video frames - the check that catches an off-by-one at the
+/// end that a duration in seconds still calls equal.
+fn shared_frames(file: &str) -> u64 {
+    let text = probe_shared(
+        file,
+        &[
+            "-count_frames",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=nb_read_frames",
+        ],
+    );
+    text.parse()
+        .unwrap_or_else(|_| panic!("no frame count for {file}: {text:?}"))
+}
+
+/// Every share is made from a cut now: the answer names it, the stage `cut`
+/// comes before `encode`, and the cut stays on the clip with its outputs.
+#[test]
+fn t48_a_share_is_made_from_a_cut_that_stays() {
+    let _g = serial();
+    if !since_30() {
+        return;
+    }
+    let base = format!("{} cut", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let body = json!({ "base": base, "start": 6.0, "end": 12.0, "audio": "mix", "target": "file" });
+
+    let (status, v) = post_json("/api/share", &body);
+    assert_eq!(status, 202, "{v}");
+    let cut = v["cut"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the share does not name its cut: {v}"))
+        .to_string();
+    let job = v["job"].as_str().expect("job").to_string();
+    let (stages, done) = wait_job(&job, JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+    // The cut is a stream copy of a few dozen milliseconds, so polling may
+    // step right over the stage; what it must never do is show it after the
+    // encode. That the cut ran at all is proven by the cut object below.
+    assert_stages_monotonic(&stages);
+    eprintln!("stages of the share: {stages:?}");
+    assert_eq!(done["cut"], cut.as_str(), "{done}");
+
+    // the cut hangs on the clip, with its file and this share as its output
+    let clip = find_clip(&base).unwrap_or_else(|| panic!("clip {base} is gone"));
+    let cuts = clip["cuts"].as_array().expect("the clip lists its cuts");
+    let entry = cuts
+        .iter()
+        .find(|c| c["id"] == cut.as_str())
+        .unwrap_or_else(|| panic!("cut {cut} is not on the clip: {cuts:?}"));
+    assert_eq!(entry["state"], "ready", "{entry}");
+    assert_eq!(entry["file"], format!("{cut}.mkv"), "{entry}");
+    assert_eq!(entry["start"], 6.0, "{entry}");
+    assert_eq!(entry["end"], 12.0, "{entry}");
+    let actual = entry["actualStart"].as_f64().expect("actualStart");
+    assert!(
+        (0.0..=6.0).contains(&actual),
+        "the cut starts at a keyframe at or before the range: {entry}"
+    );
+    assert!(
+        entry["outputs"]
+            .as_array()
+            .expect("outputs")
+            .iter()
+            .any(|o| o["id"] == job.as_str()),
+        "the share is not an output of its cut: {entry}"
+    );
+    assert!(
+        env()
+            .clip_dir
+            .join(".cuts")
+            .join(format!("{cut}.mkv"))
+            .is_file(),
+        "the cut file is not in .cuts"
+    );
+
+    // and one cut answers for itself
+    let (status, one) = get_json(&format!("/api/cuts/{cut}"));
+    assert_eq!(status, 200, "{one}");
+    assert_eq!(one["id"], cut.as_str(), "{one}");
+    assert_eq!(one["base"], base.as_str(), "{one}");
+    assert!(
+        one["outputs"].as_array().is_some_and(|o| !o.is_empty()),
+        "{one}"
+    );
+    let (status, v) = get_json("/api/cuts/0badc0de");
+    assert_eq!(status, 404, "{v}");
+
+    // the same range again is the same cut, not a second file
+    let (status, again) = post_json("/api/share", &body);
+    assert_eq!(status, 202, "{again}");
+    assert_eq!(
+        again["cut"],
+        cut.as_str(),
+        "the range was cut twice: {again}"
+    );
+    let (_, done) = wait_job(again["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+}
+
+/// Save a cut while playing, render it later: the rendering is the same
+/// length as a share of that range straight from the recording.
+#[test]
+fn t49_a_cut_is_saved_now_and_rendered_later() {
+    let _g = serial();
+    if !since_30() {
+        return;
+    }
+    let base = format!("{} render", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let body = json!({ "base": base, "start": 2.0, "end": 9.0, "audio": "mix" });
+
+    let (status, v) = post_json("/api/cuts", &body);
+    assert_eq!(status, 202, "{v}");
+    let (cut, job) = (
+        v["cut"].as_str().expect("cut").to_string(),
+        v["job"].as_str().expect("job").to_string(),
+    );
+    let (stages, done) = wait_job(&job, JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+    // `queued` and `cut` can both be over before the first poll; what this
+    // job must never do is encode or upload anything
+    assert_stages_monotonic(&stages);
+    assert_eq!(
+        stages.last().map(String::as_str),
+        Some("done"),
+        "{stages:?}"
+    );
+    assert!(
+        !stages.iter().any(|s| s == "encode" || s == "upload"),
+        "a cut renders and sends nothing: {stages:?}"
+    );
+    assert_eq!(done["kind"], "cut", "{done}");
+    // a cut renders nothing, so it is no output and no history entry
+    assert!(done["file"].is_null(), "{done}");
+    let (_, h) = get_json("/api/history");
+    assert!(
+        !h["history"]
+            .as_array()
+            .expect("history")
+            .iter()
+            .any(|e| e["id"] == job.as_str()),
+        "the cut job is in the history"
+    );
+
+    // the same range once more answers with the cut that is there
+    let (status, dup) = post_json("/api/cuts", &body);
+    assert_eq!(status, 409, "{dup}");
+    assert_eq!(dup["cut"], cut.as_str(), "{dup}");
+
+    // render it later, without an upload
+    let (status, r) = post_json(
+        &format!("/api/cuts/{cut}/render"),
+        &json!({ "target": "file" }),
+    );
+    assert_eq!(status, 202, "{r}");
+    assert_eq!(r["cut"], cut.as_str(), "{r}");
+    let (stages, rendered) = wait_job(r["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(rendered["ok"], true, "{rendered}");
+    assert_eq!(rendered["kind"], "render", "{rendered}");
+    assert_eq!(rendered["cut"], cut.as_str(), "{rendered}");
+    assert!(
+        !stages.contains(&"cut".to_string()),
+        "the cut was there already: {stages:?}"
+    );
+    let from_cut = rendered["file"].as_str().expect("file").to_string();
+
+    // a title makes the direct share of the same range a different file
+    let (status, v) = put_json(
+        &format!("/api/clips/{}/name", encode(&base)),
+        &json!({ "name": "Same range" }),
+    );
+    assert_eq!(status, 200, "{v}");
+    let (status, v) = post_json(
+        "/api/share",
+        &json!({ "base": base, "start": 2.0, "end": 9.0, "audio": "mix", "target": "file" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let (_, direct) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(direct["ok"], true, "{direct}");
+    let straight = direct["file"].as_str().expect("file").to_string();
+    assert_ne!(straight, from_cut);
+
+    let (a, b) = (shared_duration(&from_cut), shared_duration(&straight));
+    let frame = 1.0 / 30.0;
+    assert!(
+        (a - b).abs() <= frame,
+        "rendered from the cut: {a} s, straight from the recording: {b} s"
+    );
+    assert!(
+        (a - 7.0).abs() <= frame,
+        "the rendering is not the length of the range: {a} s"
+    );
+    assert_eq!(
+        shared_frames(&from_cut),
+        shared_frames(&straight),
+        "the rendering from the cut has a different number of frames than the one \
+         straight from the recording"
+    );
+
+    // 404 and 400 where they belong
+    let (status, v) = post_json("/api/cuts/0badc0de/render", &json!({ "target": "file" }));
+    assert_eq!(status, 404, "{v}");
+    let (status, v) = post_json(
+        &format!("/api/cuts/{cut}/render"),
+        &json!({ "target": "nowhere" }),
+    );
+    assert_eq!(status, 400, "{v}");
+}

@@ -54,6 +54,10 @@ pub fn router(state: App) -> Router {
         // since 2.7
         .route("/api/jobs/{id}/post", post(job_post))
         .route("/api/clips/{base}/preview", post(clip_preview))
+        // since 3.0: the cut between the recording and every rendering
+        .route("/api/cuts", post(cuts_create))
+        .route("/api/cuts/{id}", get(cut))
+        .route("/api/cuts/{id}/render", post(cut_render))
         .route("/api/share", post(share))
         .route("/api/save", post(save))
         .route("/media/{file}", get(media))
@@ -496,9 +500,60 @@ fn number(v: &Value) -> f64 {
         .unwrap_or(0.0)
 }
 
-async fn share(State(app): State<App>, body: Bytes) -> Response {
-    let v = parse_body(&body);
-    let req = ShareRequest {
+/// The `202` of a queued job, with what the endpoint wants to add. Since 3.0
+/// every answer that has a cut names it.
+fn accepted(app: &App, started: share::Started, extra: Value) -> Response {
+    if started.position == 0 {
+        tokio::spawn(share::run(app.clone(), started.job.clone()));
+    }
+    let mut doc = json!({ "ok": true, "job": started.job, "position": started.position });
+    if let Some(cut) = started.cut {
+        doc["cut"] = json!(cut);
+    }
+    if let Some(map) = extra.as_object() {
+        for (k, v) in map {
+            doc[k.as_str()] = v.clone();
+        }
+    }
+    (StatusCode::ACCEPTED, Json(doc)).into_response()
+}
+
+/// A job that could not be queued, as the contract answers it. `busy` is what
+/// "the same thing is already running" means for this endpoint.
+fn share_error(e: ShareError, busy: &str) -> Response {
+    match e {
+        ShareError::Busy(job) => (
+            StatusCode::CONFLICT,
+            Json(json!({ "ok": false, "error": busy, "job": job })),
+        )
+            .into_response(),
+        ShareError::CutExists(cut) => (
+            StatusCode::CONFLICT,
+            Json(json!({ "ok": false, "error": "this range is already a cut of this clip", "cut": cut })),
+        )
+            .into_response(),
+        ShareError::QueueFull => (
+            StatusCode::TOO_MANY_REQUESTS,
+            [("Retry-After", "30")],
+            Json(json!({ "ok": false, "error": "too many shares are waiting - try again in a moment" })),
+        )
+            .into_response(),
+        ShareError::UnknownClip(base) => {
+            ApiError::new(StatusCode::NOT_FOUND, format!("unknown clip: {base}")).into_response()
+        }
+        ShareError::UnknownJob(id) => {
+            ApiError::new(StatusCode::NOT_FOUND, format!("unknown job: {id}")).into_response()
+        }
+        ShareError::UnknownCut(id) => {
+            ApiError::new(StatusCode::NOT_FOUND, format!("unknown cut: {id}")).into_response()
+        }
+        ShareError::Invalid(msg) => ApiError::new(StatusCode::BAD_REQUEST, msg).into_response(),
+    }
+}
+
+/// The range of a request body, shared by `/api/share` and `/api/cuts`.
+fn share_request(v: &Value) -> ShareRequest {
+    ShareRequest {
         base: v["base"].as_str().unwrap_or("").to_string(),
         start: number(&v["start"]),
         end: number(&v["end"]),
@@ -507,38 +562,47 @@ async fn share(State(app): State<App>, body: Bytes) -> Response {
         target: v["target"].as_str().unwrap_or("").to_string(),
         vertical: v["vertical"].as_bool().unwrap_or(false),
         vertical_pos: v["verticalPos"].as_f64().unwrap_or(0.5),
-    };
+    }
+}
+
+async fn share(State(app): State<App>, body: Bytes) -> Response {
+    let req = share_request(&parse_body(&body));
     match share::start(&app, req) {
-        Ok((id, position)) => {
-            if position == 0 {
-                tokio::spawn(share::run(app.clone(), id.clone()));
-            }
-            (
-                StatusCode::ACCEPTED,
-                Json(json!({ "ok": true, "job": id, "position": position })),
-            )
-                .into_response()
-        }
-        Err(ShareError::Busy(job)) => (
-            StatusCode::CONFLICT,
-            Json(json!({ "ok": false, "error": "this share is already running or waiting", "job": job })),
-        )
-            .into_response(),
-        Err(ShareError::QueueFull) => (
-            StatusCode::TOO_MANY_REQUESTS,
-            [("Retry-After", "30")],
-            Json(json!({ "ok": false, "error": "too many shares are waiting - try again in a moment" })),
-        )
-            .into_response(),
-        Err(ShareError::UnknownClip(base)) => {
-            ApiError::new(StatusCode::NOT_FOUND, format!("unknown clip: {base}")).into_response()
-        }
-        Err(ShareError::UnknownJob(id)) => {
-            ApiError::new(StatusCode::NOT_FOUND, format!("unknown job: {id}")).into_response()
-        }
-        Err(ShareError::Invalid(msg)) => {
-            ApiError::new(StatusCode::BAD_REQUEST, msg).into_response()
-        }
+        Ok(started) => accepted(&app, started, Value::Null),
+        Err(e) => share_error(e, "this share is already running or waiting"),
+    }
+}
+
+/// `POST /api/cuts` (since 3.0): save a range as a cut, render nothing.
+async fn cuts_create(State(app): State<App>, body: Bytes) -> Response {
+    let req = share_request(&parse_body(&body));
+    match share::start_cut(&app, req) {
+        Ok(started) => accepted(&app, started, Value::Null),
+        Err(e) => share_error(e, "this cut is already being made"),
+    }
+}
+
+/// `GET /api/cuts/<id>` (since 3.0): one cut with its outputs.
+async fn cut(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>, ApiError> {
+    app.cut_document(&id)
+        .map(Json)
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown cut: {id}")))
+}
+
+/// `POST /api/cuts/<id>/render` (since 3.0): encode a cut that exists and
+/// send it to a target. What the body leaves out comes from the cut.
+async fn cut_render(State(app): State<App>, Path(id): Path<String>, body: Bytes) -> Response {
+    let v = parse_body(&body);
+    let req = share::RenderRequest {
+        target: v["target"].as_str().unwrap_or("").to_string(),
+        mode: v["mode"].as_str().unwrap_or("").to_string(),
+        audio: v["audio"].as_str().map(str::to_string),
+        vertical: v["vertical"].as_bool(),
+        vertical_pos: v["verticalPos"].as_f64(),
+    };
+    match share::start_render(&app, &id, req) {
+        Ok(started) => accepted(&app, started, Value::Null),
+        Err(e) => share_error(e, "this render is already running or waiting"),
     }
 }
 
@@ -607,34 +671,10 @@ async fn job_post(State(app): State<App>, Path(id): Path<String>, body: Bytes) -
 /// copy for browsers that cannot decode the recording.
 async fn clip_preview(State(app): State<App>, Path(base): Path<String>) -> Response {
     match share::start_preview(&app, &base, false) {
-        Ok((id, position)) => {
-            if position == 0 {
-                tokio::spawn(share::run(app.clone(), id.clone()));
-            }
-            (
-                StatusCode::ACCEPTED,
-                Json(json!({ "ok": true, "job": id, "position": position })),
-            )
-                .into_response()
-        }
-        Err(ShareError::Busy(job)) => (
-            StatusCode::CONFLICT,
-            Json(json!({ "ok": false, "error": "this preview is already being made", "job": job })),
-        )
-            .into_response(),
-        Err(ShareError::QueueFull) => (
-            StatusCode::TOO_MANY_REQUESTS,
-            [("Retry-After", "30")],
-            Json(json!({ "ok": false, "error": "too many jobs are waiting - try again in a moment" })),
-        )
-            .into_response(),
-        Err(ShareError::UnknownClip(base)) => {
-            ApiError::new(StatusCode::NOT_FOUND, format!("unknown clip: {base}")).into_response()
-        }
+        Ok(started) => accepted(&app, started, Value::Null),
+        // "the playable preview exists already" is a conflict, not a bad request
         Err(ShareError::Invalid(msg)) => ApiError::new(StatusCode::CONFLICT, msg).into_response(),
-        Err(ShareError::UnknownJob(id)) => {
-            ApiError::new(StatusCode::NOT_FOUND, format!("unknown job: {id}")).into_response()
-        }
+        Err(e) => share_error(e, "this preview is already being made"),
     }
 }
 
@@ -644,34 +684,8 @@ async fn job_publish(State(app): State<App>, Path(id): Path<String>, body: Bytes
     let v = parse_body(&body);
     let target = v["target"].as_str().unwrap_or("");
     match share::publish(&app, &id, target) {
-        Ok((job, position)) => {
-            if position == 0 {
-                tokio::spawn(share::run(app.clone(), job.clone()));
-            }
-            (
-                StatusCode::ACCEPTED,
-                Json(json!({ "ok": true, "job": job, "position": position, "source": id })),
-            )
-                .into_response()
-        }
-        Err(ShareError::UnknownJob(id)) => {
-            ApiError::new(StatusCode::NOT_FOUND, format!("unknown job: {id}")).into_response()
-        }
-        Err(ShareError::Busy(job)) => (
-            StatusCode::CONFLICT,
-            Json(json!({ "ok": false, "error": "this publish is already running or waiting", "job": job })),
-        )
-            .into_response(),
-        Err(ShareError::QueueFull) => (
-            StatusCode::TOO_MANY_REQUESTS,
-            [("Retry-After", "30")],
-            Json(json!({ "ok": false, "error": "too many shares are waiting - try again in a moment" })),
-        )
-            .into_response(),
-        Err(ShareError::Invalid(msg)) => ApiError::new(StatusCode::BAD_REQUEST, msg).into_response(),
-        Err(ShareError::UnknownClip(base)) => {
-            ApiError::new(StatusCode::NOT_FOUND, format!("unknown clip: {base}")).into_response()
-        }
+        Ok(started) => accepted(&app, started, json!({ "source": id })),
+        Err(e) => share_error(e, "this publish is already running or waiting"),
     }
 }
 

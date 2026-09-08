@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// The store in the data directory.
@@ -202,7 +203,7 @@ impl Db {
 
     // --- jobs (the history) ---
 
-    /// Store a finished job. `cut` is `None` until R11b links the two.
+    /// Store a finished job. `cut` is the cut it was rendered from.
     pub fn put_job(&self, entry: &Value, cut: Option<&str>) -> Result<()> {
         self.conn.lock().execute(
             "INSERT INTO jobs (id, base, cut, kind, target, at, finished, file, link, nc_path, entry)
@@ -274,6 +275,101 @@ impl Db {
             .execute("DELETE FROM jobs WHERE base = ?1", params![base])?)
     }
 
+    /// The outputs of every cut, newest first: the finished jobs that left a
+    /// file or a link behind. A cancelled job is in the store but is no
+    /// output, and neither is a job of a clip that was shared before 3.0.
+    pub fn outputs_by_cut(&self) -> Result<BTreeMap<String, Vec<Value>>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT cut, entry FROM jobs
+              WHERE cut IS NOT NULL AND (file IS NOT NULL OR link IS NOT NULL)
+              ORDER BY at DESC, rowid DESC",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+        for row in rows {
+            let (cut, entry) = row?;
+            match serde_json::from_str(&entry) {
+                Ok(v) => out.entry(cut).or_default().push(v),
+                Err(e) => tracing::warn!("output entry unreadable: {e}"),
+            }
+        }
+        Ok(out)
+    }
+
+    // --- cuts ---
+
+    /// Every cut, oldest first per clip.
+    pub fn cuts(&self) -> Result<Vec<Cut>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(&format!("{CUT_COLUMNS} ORDER BY base, created, rowid"))?;
+        let rows = stmt.query_map([], cut_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn cut(&self, id: &str) -> Result<Option<Cut>> {
+        Ok(self
+            .conn
+            .lock()
+            .query_row(
+                &format!("{CUT_COLUMNS} WHERE id = ?1"),
+                params![id],
+                cut_from_row,
+            )
+            .optional()?)
+    }
+
+    /// The cut of a range, whatever audio mode it was made with: the file
+    /// holds the picture and every track, so the range is what identifies it.
+    pub fn cut_of_range(&self, base: &str, start: f64, end: f64) -> Result<Option<Cut>> {
+        Ok(self
+            .conn
+            .lock()
+            .query_row(
+                &format!(
+                    "{CUT_COLUMNS} WHERE base = ?1 AND abs(start - ?2) < {TOLERANCE}
+                       AND abs(\"end\" - ?3) < {TOLERANCE} ORDER BY created, rowid"
+                ),
+                params![base, start, end],
+                cut_from_row,
+            )
+            .optional()?)
+    }
+
+    pub fn put_cut(&self, cut: &Cut) -> Result<()> {
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        insert_cut(&tx, cut)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Forget a cut that never got a file: the job that was to make it
+    /// failed or was cancelled. A cut with a file is never dropped this way.
+    pub fn delete_pending_cut(&self, id: &str) -> Result<bool> {
+        let gone = self.conn.lock().execute(
+            "DELETE FROM cuts WHERE id = ?1 AND file IS NULL AND state = ?2",
+            params![id, CUT_PENDING],
+        )?;
+        Ok(gone > 0)
+    }
+
+    /// What the cut stage produced: the file, where it really begins, and the
+    /// state that goes with it.
+    pub fn set_cut_file(
+        &self,
+        id: &str,
+        file: Option<&str>,
+        actual_start: Option<f64>,
+        state: &str,
+    ) -> Result<()> {
+        self.conn.lock().execute(
+            "UPDATE cuts SET file = ?2, actual_start = ?3, state = ?4 WHERE id = ?1",
+            params![id, file, actual_start, state],
+        )?;
+        Ok(())
+    }
+
     // --- the import of the 2.x state files ---
 
     /// Take over `clip-names.json`, `clip-seen.json` and `clip-history.json`
@@ -330,14 +426,17 @@ impl Db {
                 if cuts.contains_key(&key) {
                     continue;
                 }
-                let row = CutRow {
+                let row = Cut {
                     id: crate::auth::random_hex(4),
                     base,
                     start: number(entry, "start"),
                     end: number(entry, "end"),
                     audio: text(entry, "audio").unwrap_or_default(),
+                    vertical: entry.get("vertical").and_then(Value::as_bool) == Some(true),
+                    vertical_pos: entry.get("verticalPos").and_then(Value::as_f64),
                     file: None,
-                    state: "missing".into(),
+                    actual_start: None,
+                    state: CUT_MISSING.into(),
                     created: text(entry, "at").unwrap_or_default(),
                 };
                 insert_cut(&tx, &row)?;
@@ -396,36 +495,80 @@ impl Db {
     }
 }
 
-/// A row of the `cuts` table. The render parameters beyond the audio mode,
-/// and the queries that read cuts back, arrive with R11b.
-#[derive(Debug, Clone, PartialEq)]
-struct CutRow {
+/// A range of a clip with its own file: the lossless keyframe cut every
+/// rendering is made from (since 3.0). `audio`, `vertical` and `vertical_pos`
+/// are what the next rendering uses unless it says otherwise.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Cut {
     pub id: String,
     pub base: String,
     pub start: f64,
     pub end: f64,
     pub audio: String,
+    #[serde(default)]
+    pub vertical: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vertical_pos: Option<f64>,
+    /// The file in `.cuts\`, null while the cut is being made or after it
+    /// was imported from 2.x.
     pub file: Option<String>,
-    pub state: String,
+    /// Where the file really begins: the keyframe at or before `start`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_start: Option<f64>,
     pub created: String,
+    /// `pending`, `ready` or `missing`.
+    pub state: String,
 }
 
-fn insert_cut(tx: &rusqlite::Transaction<'_>, cut: &CutRow) -> rusqlite::Result<()> {
+pub const CUT_PENDING: &str = "pending";
+pub const CUT_READY: &str = "ready";
+pub const CUT_MISSING: &str = "missing";
+
+/// Two ranges are the same cut when they agree to within a frame or two.
+const TOLERANCE: f64 = 0.005;
+
+const CUT_COLUMNS: &str = "SELECT id, base, start, \"end\", audio, vertical, vertical_pos,
+                                  file, actual_start, created, state FROM cuts";
+
+fn cut_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Cut> {
+    Ok(Cut {
+        id: r.get(0)?,
+        base: r.get(1)?,
+        start: r.get(2)?,
+        end: r.get(3)?,
+        audio: r.get(4)?,
+        vertical: r.get::<_, i64>(5)? != 0,
+        vertical_pos: r.get(6)?,
+        file: r.get(7)?,
+        actual_start: r.get(8)?,
+        created: r.get(9)?,
+        state: r.get(10)?,
+    })
+}
+
+fn insert_cut(tx: &rusqlite::Transaction<'_>, cut: &Cut) -> rusqlite::Result<()> {
     tx.execute(
-        "INSERT INTO cuts (id, base, start, \"end\", audio, file, state, created)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "INSERT INTO cuts (id, base, start, \"end\", audio, vertical, vertical_pos,
+                           file, actual_start, created, state)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
          ON CONFLICT(id) DO UPDATE SET
             start = excluded.start, \"end\" = excluded.\"end\", audio = excluded.audio,
-            file = excluded.file, state = excluded.state",
+            vertical = excluded.vertical, vertical_pos = excluded.vertical_pos,
+            file = excluded.file, actual_start = excluded.actual_start,
+            state = excluded.state",
         params![
             cut.id,
             cut.base,
             cut.start,
             cut.end,
             cut.audio,
+            cut.vertical,
+            cut.vertical_pos,
             cut.file,
-            cut.state,
-            cut.created
+            cut.actual_start,
+            cut.created,
+            cut.state
         ],
     )?;
     // A clip with at least one cut is `active` (the state is served from R11c).

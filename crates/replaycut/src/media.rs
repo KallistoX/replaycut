@@ -518,6 +518,80 @@ impl Media {
         Ok(())
     }
 
+    /// The cut of `[start, end]` as its own file (since 3.0): the recording's
+    /// streams as they are, from the keyframe at or before `start` to `end`,
+    /// with every audio track. Nothing is re-encoded, so it takes about as
+    /// long as copying the bytes; the file starts at zero and the caller
+    /// learns from its length where in the recording that is.
+    pub async fn cut(&self, mkv: &Path, out: &Path, start: f64, seconds: f64) -> Result<()> {
+        let (mkv_s, out_s) = (mkv.to_string_lossy(), out.to_string_lossy());
+        let (start_s, seconds_s) = (start.to_string(), seconds.to_string());
+        let args = [
+            "-y",
+            "-v",
+            "error",
+            "-ss",
+            &start_s,
+            "-t",
+            &seconds_s,
+            "-i",
+            &mkv_s,
+            "-map",
+            "0",
+            "-c",
+            "copy",
+            "-avoid_negative_ts",
+            "make_zero",
+            &out_s,
+        ];
+        let res = self.ffmpeg(&args, Duration::from_secs(300)).await?;
+        if !res.status.success() || !out.is_file() {
+            let _ = std::fs::remove_file(out);
+            bail!(
+                "ffmpeg cut: {}",
+                String::from_utf8_lossy(&res.stderr).trim()
+            );
+        }
+        Ok(())
+    }
+
+    /// Where a stream copy of `[at, ...]` really begins: the timestamp of the
+    /// last video keyframe at or before `at` (since 3.0). Only packet headers
+    /// are read, and only from a window before `at`, so it costs no decoding.
+    /// `None` when ffprobe finds no keyframe there - the caller then knows
+    /// nothing better than the range itself.
+    pub async fn keyframe_at_or_before(&self, path: &Path, at: f64) -> Option<f64> {
+        // OBS writes a keyframe every one or two seconds; 30 s is room for
+        // a badly configured encoder and still a short read.
+        let from = (at - 30.0).max(0.0);
+        let interval = format!("{from:.3}%{at:.3}");
+        let p = path.to_string_lossy();
+        let out = self
+            .ffprobe(&[
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "packet=pts_time,flags",
+                "-of",
+                "csv=p=0",
+                "-read_intervals",
+                &interval,
+                &p,
+            ])
+            .await
+            .ok()?;
+        out.lines()
+            .filter_map(|line| {
+                let (pts, flags) = line.trim().split_once(',')?;
+                let pts: f64 = pts.parse().ok()?;
+                // a keyframe at most half a frame past `at` still starts it
+                (flags.starts_with('K') && pts <= at + 0.001).then_some(pts)
+            })
+            .next_back()
+    }
+
     /// One JPEG frame of the preview at `at` seconds, 320 px wide (since 2.4).
     pub async fn thumbnail(&self, preview: &Path, out: &Path, at: f64) -> Result<()> {
         let at_s = format!("{at:.2}");
@@ -552,6 +626,13 @@ impl Media {
 
     /// Container duration in seconds, rounded to two decimals.
     pub async fn duration(&self, path: &Path) -> Result<f64> {
+        Ok((self.duration_exact(path).await? * 100.0).round() / 100.0)
+    }
+
+    /// Container duration as ffprobe reports it. Where the number is used to
+    /// compute a seek (the cut file since 3.0), two decimals are a third of a
+    /// frame off - enough to lose the last one.
+    pub async fn duration_exact(&self, path: &Path) -> Result<f64> {
         let p = path.to_string_lossy();
         let out = self
             .ffprobe(&[
@@ -564,11 +645,9 @@ impl Media {
                 &p,
             ])
             .await?;
-        let d: f64 = out
-            .trim()
+        out.trim()
             .parse()
-            .with_context(|| format!("ffprobe duration {out:?}"))?;
-        Ok((d * 100.0).round() / 100.0)
+            .with_context(|| format!("ffprobe duration {out:?}"))
     }
 
     /// Codec, size and frame rate of the first video stream; empty values
