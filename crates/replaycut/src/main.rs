@@ -420,7 +420,30 @@ fn run_service(
             .join()
             .map_err(|_| anyhow::anyhow!("service thread panicked"))??;
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        // The tray is a task on the runtime; without a tray host it logs
+        // once and the service runs without the icon.
+        let tray = tray::TrayHandle::new();
+        let _ = state.tray.set(tray.clone());
+        runtime.spawn({
+            let state = state.clone();
+            let shutdown = shutdown.clone();
+            async move {
+                if let Err(e) = tray::run(state, shutdown, tray).await {
+                    tracing::warn!("tray icon unavailable: {e:#} - running without it");
+                }
+            }
+        });
+        runtime.block_on(serve(
+            state.clone(),
+            listener,
+            obs_events,
+            shutdown,
+            open_browser,
+        ))?;
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         runtime.block_on(serve(
             state.clone(),

@@ -31,7 +31,7 @@ impl Toast {
     }
 
     /// "Check for updates" in the tray found a newer release.
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
     pub fn update_available(version: &str, ui_url: &str) -> Self {
         Self {
             title: format!("replaycut {version} is available"),
@@ -41,7 +41,7 @@ impl Toast {
     }
 
     /// "Check for updates" in the tray found nothing newer.
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
     pub fn up_to_date(version: &str) -> Self {
         Self {
             title: "replaycut is up to date".into(),
@@ -51,7 +51,7 @@ impl Toast {
     }
 
     /// "Check for updates" in the tray could not reach GitHub.
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
     pub fn update_check_failed(error: &str) -> Self {
         Self {
             title: "Update check failed".into(),

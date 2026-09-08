@@ -3,15 +3,17 @@
 //! progress, "paused" or "update available"; icon state normal / job running
 //! / last job failed.
 //! Windows wants the icon's message loop on the thread that created it, so
-//! `run` owns the main thread and the tokio runtime lives on another one.
-//! The service pokes the loop through `TrayHandle::refresh` whenever the
-//! state changed; the loop then re-reads the state and updates what differs.
+//! `win::run` owns the main thread and the tokio runtime lives on another
+//! one. On Linux the icon is a StatusNotifierItem on the session bus (the
+//! protocol KDE, Waybar and GNOME's AppIndicator extension show), served by a
+//! task on the runtime. Either way the service pokes the tray through
+//! `TrayHandle::refresh` whenever the state changed; the tray then re-reads
+//! the state and updates what differs.
 
 use crate::state::AppState;
 
-/// What the tray shows, derived from the state. Platform-neutral; only the
-/// Windows tray reads it so far.
-#[cfg_attr(not(windows), allow(dead_code))]
+/// What the tray shows, derived from the state. Platform-neutral.
+#[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrayInfo {
     pub clips: usize,
@@ -28,7 +30,7 @@ pub struct TrayInfo {
     pub pending: usize,
 }
 
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 impl TrayInfo {
     pub fn of(state: &AppState) -> Self {
         let inner = state.inner.lock();
@@ -101,7 +103,7 @@ impl TrayInfo {
     }
 }
 
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IconState {
     Normal,
@@ -359,7 +361,276 @@ mod win {
 #[cfg(windows)]
 pub use win::{run, TrayHandle};
 
-#[cfg(not(windows))]
+/// The Linux tray: a StatusNotifierItem served over D-Bus by `ksni`. The
+/// icon comes as ARGB pixmaps rendered by `docs/design/icons/mkico` (no icon
+/// theme entry is needed, so it also works from a development build), the
+/// menu mirrors the Windows one, and a task waits for `TrayHandle::refresh`
+/// to push the changed state to the host.
+#[cfg(target_os = "linux")]
+mod linux {
+    use std::sync::Arc;
+
+    use anyhow::{anyhow, Result};
+    use ksni::menu::{CheckmarkItem, MenuItem, StandardItem};
+    use ksni::{Icon, ToolTip, TrayMethods};
+    use tokio::sync::Notify;
+
+    use super::{IconState, TrayInfo};
+    use crate::lifecycle::Shutdown;
+    use crate::platform;
+    use crate::state::{AppState, VERSION};
+    use crate::toast::{self, Toast};
+    use crate::update;
+
+    /// Pokes the tray task; cheap and safe from any thread.
+    #[derive(Debug, Clone, Default)]
+    pub struct TrayHandle {
+        changed: Arc<Notify>,
+    }
+
+    impl TrayHandle {
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        pub fn refresh(&self) {
+            self.changed.notify_one();
+        }
+    }
+
+    // 22 px is what panels show, 48 px lets a bigger tray scale down.
+    const NORMAL: (&[u8], &[u8]) = (
+        include_bytes!("../assets/tray-normal-22.argb"),
+        include_bytes!("../assets/tray-normal-48.argb"),
+    );
+    const BUSY: (&[u8], &[u8]) = (
+        include_bytes!("../assets/tray-busy-22.argb"),
+        include_bytes!("../assets/tray-busy-48.argb"),
+    );
+    const ERROR: (&[u8], &[u8]) = (
+        include_bytes!("../assets/tray-error-22.argb"),
+        include_bytes!("../assets/tray-error-48.argb"),
+    );
+
+    fn pixmaps(state: IconState) -> Vec<Icon> {
+        let (small, big) = match state {
+            IconState::Normal => NORMAL,
+            IconState::Busy => BUSY,
+            IconState::Error => ERROR,
+        };
+        vec![
+            Icon {
+                width: 22,
+                height: 22,
+                data: small.to_vec(),
+            },
+            Icon {
+                width: 48,
+                height: 48,
+                data: big.to_vec(),
+            },
+        ]
+    }
+
+    fn open_ui(state: &AppState) {
+        let url = state.ui_url();
+        if let Err(e) = platform::open_url(&url) {
+            tracing::warn!("cannot open {url}: {e}");
+        }
+    }
+
+    fn copy_address(state: &AppState) {
+        let url = state.lan_url();
+        match platform::copy_text(&url) {
+            Ok(()) => tracing::info!("address copied: {url}"),
+            Err(e) => tracing::warn!("clipboard: {e}"),
+        }
+    }
+
+    /// "Show QR code": the settings page opens its address dialog for `#qr`.
+    fn show_qr(state: &AppState) {
+        let url = format!("{}settings#qr", state.ui_url());
+        if let Err(e) = platform::open_url(&url) {
+            tracing::warn!("cannot open {url}: {e}");
+        }
+    }
+
+    /// "N sign-in requests": the approve page, over loopback (since 2.8).
+    fn show_requests(state: &AppState) {
+        let url = format!("{}approve", state.ui_url());
+        if let Err(e) = platform::open_url(&url) {
+            tracing::warn!("cannot open {url}: {e}");
+        }
+    }
+
+    fn open_log_folder(state: &AppState) {
+        let dir = state.data_dir.join("logs");
+        let _ = std::fs::create_dir_all(&dir);
+        if let Err(e) = platform::open_url(&dir.display().to_string()) {
+            tracing::warn!("cannot open {}: {e}", dir.display());
+        }
+    }
+
+    /// "Check for updates": ask now, then say what came of it in a toast.
+    /// The menu callback runs on the runtime, so the work is a task.
+    fn check_updates(state: Arc<AppState>) {
+        tokio::spawn(async move {
+            let t = match update::check(&state).await {
+                Ok(Some(info)) => Toast::update_available(&info.version, &state.ui_url()),
+                Ok(None) => Toast::up_to_date(VERSION),
+                Err(e) => Toast::update_check_failed(&format!("{e:#}")),
+            };
+            toast::show(&state, t);
+        });
+    }
+
+    struct Item {
+        state: Arc<AppState>,
+        shutdown: Shutdown,
+        info: TrayInfo,
+    }
+
+    impl ksni::Tray for Item {
+        fn id(&self) -> String {
+            "replaycut".into()
+        }
+
+        fn title(&self) -> String {
+            "replaycut".into()
+        }
+
+        fn icon_pixmap(&self) -> Vec<Icon> {
+            pixmaps(self.info.icon())
+        }
+
+        fn tool_tip(&self) -> ToolTip {
+            ToolTip {
+                title: self.info.tooltip(),
+                ..Default::default()
+            }
+        }
+
+        /// A left click opens the page, as on Windows.
+        fn activate(&mut self, _x: i32, _y: i32) {
+            open_ui(&self.state);
+        }
+
+        /// The menu is built from `info`; re-read it right before it shows so
+        /// the tick and the request count are current.
+        fn menu_about_to_show(&mut self) {
+            self.info = TrayInfo::of(&self.state);
+        }
+
+        fn menu(&self) -> Vec<MenuItem<Self>> {
+            vec![
+                StandardItem {
+                    label: "Open".into(),
+                    activate: Box::new(|t: &mut Self| open_ui(&t.state)),
+                    ..Default::default()
+                }
+                .into(),
+                StandardItem {
+                    label: "Copy address".into(),
+                    activate: Box::new(|t: &mut Self| copy_address(&t.state)),
+                    ..Default::default()
+                }
+                .into(),
+                StandardItem {
+                    label: "Show QR code".into(),
+                    activate: Box::new(|t: &mut Self| show_qr(&t.state)),
+                    ..Default::default()
+                }
+                .into(),
+                StandardItem {
+                    label: self.info.sign_in_label(),
+                    enabled: self.info.pending > 0,
+                    activate: Box::new(|t: &mut Self| show_requests(&t.state)),
+                    ..Default::default()
+                }
+                .into(),
+                MenuItem::Separator,
+                CheckmarkItem {
+                    label: "Pause scanning".into(),
+                    checked: self.info.paused,
+                    activate: Box::new(|t: &mut Self| {
+                        t.state.set_scanning_paused(!t.state.scanning_paused());
+                        t.info = TrayInfo::of(&t.state);
+                    }),
+                    ..Default::default()
+                }
+                .into(),
+                StandardItem {
+                    label: "Check for updates".into(),
+                    activate: Box::new(|t: &mut Self| check_updates(t.state.clone())),
+                    ..Default::default()
+                }
+                .into(),
+                StandardItem {
+                    label: "Open log folder".into(),
+                    activate: Box::new(|t: &mut Self| open_log_folder(&t.state)),
+                    ..Default::default()
+                }
+                .into(),
+                MenuItem::Separator,
+                StandardItem {
+                    label: "Quit".into(),
+                    activate: Box::new(|t: &mut Self| t.shutdown.request("Quit in the tray menu")),
+                    ..Default::default()
+                }
+                .into(),
+            ]
+        }
+
+        /// The host (the panel) went away; keep the item so it is back when
+        /// the panel is.
+        fn watcher_offline(&self, reason: ksni::OfflineReason) -> bool {
+            tracing::info!("tray host gone ({reason:?}) - the icon is back when it is");
+            true
+        }
+
+        fn watcher_online(&self) {
+            tracing::info!("tray host is back");
+        }
+    }
+
+    /// Register the item and keep it in step with the state until the
+    /// shutdown. An error means no tray host answered (a desktop without a
+    /// tray); the service runs without the icon then.
+    pub async fn run(state: Arc<AppState>, shutdown: Shutdown, handle: TrayHandle) -> Result<()> {
+        let item = Item {
+            state: state.clone(),
+            shutdown: shutdown.clone(),
+            info: TrayInfo::of(&state),
+        };
+        let sni = item.spawn().await.map_err(|e| anyhow!("{e}"))?;
+        tracing::info!("tray icon ready");
+        loop {
+            tokio::select! {
+                _ = handle.changed.notified() => {
+                    let now = TrayInfo::of(&state);
+                    let alive = sni
+                        .update(|t| {
+                            if t.info != now {
+                                t.info = now.clone();
+                            }
+                        })
+                        .await;
+                    if alive.is_none() {
+                        break;
+                    }
+                }
+                _ = shutdown.wait() => break,
+            }
+        }
+        sni.shutdown().await;
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub use linux::{run, TrayHandle};
+
+#[cfg(not(any(windows, target_os = "linux")))]
 mod other {
     /// No tray on other platforms; the handle is a no-op.
     #[derive(Debug, Clone, Copy)]
@@ -375,7 +646,7 @@ mod other {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub use other::TrayHandle;
 
 #[cfg(test)]
