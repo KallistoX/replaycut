@@ -91,7 +91,18 @@ async function prepare(page) {
   await page.waitForTimeout(250);
 }
 
-async function shoot(browser, { width, height, file, theme }) {
+/** The theme belongs to the service: the page takes the browser's guess only
+ * until the settings arrive, then the configured one wins. */
+async function setTheme(name) {
+  const res = await fetch(`${base}/api/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ theme: name }),
+  });
+  if (!res.ok) throw new Error(`could not switch to the theme ${name}: ${res.status}`);
+}
+
+async function shoot(browser, { width, height, file }) {
   const context = await browser.newContext({
     viewport: { width, height },
     deviceScaleFactor: 2,
@@ -99,11 +110,6 @@ async function shoot(browser, { width, height, file, theme }) {
     isMobile: width < 768,
     colorScheme: 'dark',
   });
-  if (theme) {
-    await context.addInitScript((name) => {
-      try { localStorage.setItem('rc-theme', name); } catch { /* private mode */ }
-    }, theme);
-  }
   const page = await context.newPage();
   await prepare(page);
   await page.screenshot({ path: file });
@@ -137,11 +143,13 @@ console.log('clips.jpg and clips_mobile.png written');
 // The same picture in six themes; the website fades them into each other.
 if (withThemes) {
   for (const theme of THEMES) {
+    await setTheme(theme);
     const shotFile = join(tmp, `theme-${theme}.png`);
-    await shoot(browser, { width: 1440, height: 900, file: shotFile, theme });
+    await shoot(browser, { width: 1440, height: 900, file: shotFile });
     ffmpeg(['-i', shotFile, '-vf', 'scale=960:-2', '-c:v', 'libwebp', '-quality', '80',
       join(outDir, 'themes', `${theme}.webp`)]);
   }
+  await setTheme('wardogs');
   console.log(`${THEMES.length} theme pictures written`);
 }
 
