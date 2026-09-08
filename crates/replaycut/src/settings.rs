@@ -413,19 +413,54 @@ impl Default for Settings {
     }
 }
 
+/// The user's videos folder: `%USERPROFILE%\Videos` on Windows; the XDG
+/// `VIDEOS` user directory elsewhere, which is `~/Videos` unless
+/// `user-dirs.dirs` moved or translated it.
 fn default_clip_dir() -> PathBuf {
-    let home = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
+    if !cfg!(windows) {
+        if let Some(videos) = xdg_videos_dir(&home) {
+            return videos;
+        }
+    }
     home.join("Videos")
+}
+
+/// `XDG_VIDEOS_DIR` from `$XDG_CONFIG_HOME/user-dirs.dirs`, if set.
+fn xdg_videos_dir(home: &Path) -> Option<PathBuf> {
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".config"));
+    let text = std::fs::read_to_string(config.join("user-dirs.dirs")).ok()?;
+    parse_user_dir(&text, "XDG_VIDEOS_DIR", home)
+}
+
+/// One `KEY="$HOME/Where"` line of `user-dirs.dirs`: shell-style, quoted,
+/// with `$HOME` allowed at the start and nothing else expanded.
+fn parse_user_dir(text: &str, key: &str, home: &Path) -> Option<PathBuf> {
+    let value = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with('#'))
+        .find_map(|l| l.strip_prefix(key)?.strip_prefix('='))?
+        .trim()
+        .trim_matches('"');
+    Some(match value.strip_prefix("$HOME") {
+        Some(rest) => home.join(rest.trim_start_matches('/')),
+        None if value.is_empty() => return None,
+        None => PathBuf::from(value),
+    })
 }
 
 /// Default data directory: `%LOCALAPPDATA%\replaycut` on Windows,
 /// `$XDG_DATA_HOME/replaycut` or `~/.local/share/replaycut` elsewhere.
 pub fn default_data_dir() -> PathBuf {
-    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-        return PathBuf::from(local).join("replaycut");
+    if cfg!(windows) {
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            return PathBuf::from(local).join("replaycut");
+        }
     }
     if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
         return PathBuf::from(xdg).join("replaycut");
@@ -991,5 +1026,36 @@ mod limit_tests {
         // an old settings.json with the field still loads
         let old: Settings = serde_json::from_str(r#"{"shareKbps": 6000, "port": 8420}"#).unwrap();
         assert_eq!(old.port, 8420);
+    }
+}
+
+#[cfg(test)]
+mod user_dirs_tests {
+    use super::*;
+
+    #[test]
+    fn user_dirs_line_expands_home_and_ignores_comments() {
+        let text = "# This file is written by xdg-user-dirs-update\n\
+                    XDG_DESKTOP_DIR=\"$HOME/Desktop\"\n\
+                    # XDG_VIDEOS_DIR=\"$HOME/Old\"\n\
+                    XDG_VIDEOS_DIR=\"$HOME/Aufnahmen/Videos\"\n";
+        let home = Path::new("/home/you");
+        assert_eq!(
+            parse_user_dir(text, "XDG_VIDEOS_DIR", home),
+            Some(PathBuf::from("/home/you/Aufnahmen/Videos"))
+        );
+        assert_eq!(
+            parse_user_dir("XDG_VIDEOS_DIR=\"/mnt/media\"\n", "XDG_VIDEOS_DIR", home),
+            Some(PathBuf::from("/mnt/media"))
+        );
+        assert_eq!(
+            parse_user_dir("XDG_VIDEOS_DIR=\"$HOME\"\n", "XDG_VIDEOS_DIR", home),
+            Some(PathBuf::from("/home/you"))
+        );
+        assert_eq!(parse_user_dir(text, "XDG_MUSIC_DIR", home), None);
+        assert_eq!(
+            parse_user_dir("XDG_VIDEOS_DIR=\"\"\n", "XDG_VIDEOS_DIR", home),
+            None
+        );
     }
 }

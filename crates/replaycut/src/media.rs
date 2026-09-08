@@ -252,7 +252,7 @@ impl Media {
                     .find(|f| f.is_file())
             })
             .unwrap_or(None);
-        if found.is_none() {
+        if found.is_none() && cfg!(windows) {
             if let Some(local) = std::env::var_os("LOCALAPPDATA") {
                 let packages = PathBuf::from(local)
                     .join("Microsoft")
