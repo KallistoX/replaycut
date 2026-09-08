@@ -28,9 +28,9 @@ const TRASH: &str = "trash";
 const SHARED_DIR: &str = "shared\\";
 #[cfg(not(windows))]
 const SHARED_DIR: &str = "shared/";
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 const RESUME_SCAN: &str = "Resume it in the tray menu (Pause scanning) or on the clips page.";
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 const RESUME_SCAN: &str = "Resume it on the clips page.";
 
 #[derive(Debug, Clone, Serialize)]
