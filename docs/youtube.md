@@ -69,8 +69,8 @@ deleting a video from replaycut's delete dialog need this one.
 
 1. Settings › Integrations › **YouTube**: choose the client type you
    created, paste client ID and client secret, click **Save**. They go to
-   the Windows Credential Manager (`replaycut/youtube-client`); nothing is
-   written to a file.
+   the credential store (`replaycut/youtube-client` in the Windows
+   Credential Manager or the Linux keyring); nothing is written to a file.
 2. Switch the card on and click **Connect YouTube**. With a TV client: open
    the link shown, enter the code, pick the channel, allow the access. With
    a Desktop client: a tab with Google's login opens; sign in, pick the

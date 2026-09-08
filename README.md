@@ -102,15 +102,17 @@ Windows SmartScreen may warn about an unsigned download the first time: click
 
 - Windows 10 or 11 (the service uses the recycle bin, toast notifications and
   the Credential Manager). Linux support is being built in stages: the
-  service builds, runs and is tested there, but secrets, notifications, the
-  installer and the tray are not available yet (see `CHANGELOG.md`).
+  service runs there with secrets in the keyring (Secret Service),
+  desktop notifications, the Wayland clipboard and VAAPI encoding, but the
+  installer, autostart and the tray are not available yet (see
+  `CHANGELOG.md`).
 - [OBS Studio](https://obsproject.com/) with the replay buffer enabled,
   recording to MKV. Multiple audio tracks are optional; the recommended
   layout is track 1 = mix, 2 = microphone, 3 = game, 4 = voice chat.
 - [ffmpeg](https://ffmpeg.org/) and ffprobe on the `PATH` (on Windows, for
   example `winget install Gyan.FFmpeg`).
 - A hardware H.264 encoder is used when available (AMD AMF, NVIDIA NVENC,
-  Intel Quick Sync), otherwise libx264.
+  Intel Quick Sync; VAAPI on Linux), otherwise libx264.
 
 ## Pages
 

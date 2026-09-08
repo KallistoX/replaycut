@@ -12,7 +12,8 @@ application that requests access.
 - Settings are a JSON file in your user profile.
 - Credentials and OAuth refresh tokens for the integrations you connect
   (Nextcloud, OneDrive, S3, WebDAV, YouTube, X, Telegram, Discord, webhook)
-  are stored in the Windows Credential Manager on your PC. They are never
+  are stored in your PC's credential store (the Windows Credential Manager,
+  or the keyring behind the Secret Service on Linux). They are never
   written to a file and never sent anywhere but to the service they belong
   to.
 
