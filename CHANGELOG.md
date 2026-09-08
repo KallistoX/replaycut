@@ -10,6 +10,12 @@ contract.
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-09-08
+
+Two things 3.0.0 got wrong, found by putting a real 2.x state next to real
+recordings. 3.0.0 was published but never signed, so this is the first 3.0
+anyone can install.
+
 ### Fixed
 
 - Rendering a cut no longer marks its clip done. "Afterwards" belongs to the
