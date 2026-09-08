@@ -6,6 +6,9 @@
 <title>replaycut</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
+/* platform wording: the service names its OS in config.platform (since 3.2);
+   without it the page assumes Windows */
+html[data-os="linux"] [data-os="windows"], html:not([data-os="linux"]) [data-os="linux"] { display: none; }
 /* ---- design tokens (docs/design/tokens.css, theme "wardogs") ---- */
 
 :root {
@@ -766,7 +769,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="field"><label>Server</label><input class="input" id="wNcUrl" placeholder="https://cloud.example.com"></div>
         <div class="fields-2">
           <div class="field"><label>User</label><input class="input" id="wNcUser" autocomplete="off"></div>
-          <div class="field"><label>App password</label><div class="input-group"><input class="input" id="wNcPw" type="password" autocomplete="off"><button class="btn btn-icon" type="button" data-eye="wNcPw" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Nextcloud › Settings › Security › Devices &amp; sessions. Stored in the Windows Credential Manager, never in a file.</span></div>
+          <div class="field"><label>App password</label><div class="input-group"><input class="input" id="wNcPw" type="password" autocomplete="off"><button class="btn btn-icon" type="button" data-eye="wNcPw" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Nextcloud › Settings › Security › Devices &amp; sessions. Stored in the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span>, never in a file.</span></div>
         </div>
         <div class="fields-2">
           <div class="field"><label>Folder</label><input class="input" id="wNcFolder" value="Clips"></div>
@@ -779,7 +782,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge" id="wDcBadge">off</span><label class="switch"><input type="checkbox" id="wDcOn"><span class="track"></span></label></div>
       <div class="card-body stack-3">
         <p class="muted sm">Posts <code>**&lt;name&gt;** &lt;title&gt; (&lt;s&gt; s) - &lt;link&gt;</code> into one channel through a webhook. Needs a storage integration for the link.</p>
-        <div class="field"><label>Webhook URL</label><div class="input-group"><input class="input mono" id="wDcHook" type="password" autocomplete="off" placeholder="https://discord.com/api/webhooks/..."><button class="btn btn-icon" type="button" data-eye="wDcHook" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Discord: Server settings › Integrations › Webhooks › Copy Webhook URL. Stored in the Credential Manager.</span></div>
+        <div class="field"><label>Webhook URL</label><div class="input-group"><input class="input mono" id="wDcHook" type="password" autocomplete="off" placeholder="https://discord.com/api/webhooks/..."><button class="btn btn-icon" type="button" data-eye="wDcHook" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Discord: Server settings › Integrations › Webhooks › Copy Webhook URL. Stored in the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span>.</span></div>
         <div class="field"><label>Display name</label><input class="input" id="wDcName"><span class="hint">Shown as the poster and as the bold prefix of every post.</span></div>
         <div class="row"><button class="btn" id="wDcTest">Send test message</button><span class="test-msg" id="wDcMsg"></span></div>
       </div>
@@ -830,7 +833,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 
 <!-- ===================== Settings ===================== -->
 <main class="page" id="page-settings" hidden>
-  <div class="page-head"><h1>Settings</h1><span class="muted">Saved to <code>settings.json</code>; secrets go to the Windows Credential Manager.</span></div>
+  <div class="page-head"><h1>Settings</h1><span class="muted">Saved to <code>settings.json</code>; secrets go to the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span>.</span></div>
   <div class="tabs"><a href="#general" data-tab="general">General</a><a href="#integrations" data-tab="integrations">Integrations</a></div>
 
   <div class="stack-4" id="tabGeneral">
@@ -860,7 +863,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       </div>
       <label class="switch"><input type="checkbox" data-f="checkUpdates"><span class="track"></span> Check GitHub once a day for a new release <span class="muted sm">(nothing is downloaded until you click)</span></label>
       <div class="row"><button class="btn" id="sUpdCheck"><svg class="icon"><use href="#i-refresh"/></svg> Check for updates now</button><span class="muted sm" id="sUpdText"></span></div>
-      <label class="switch"><input type="checkbox" id="sAutostart"><span class="track"></span> Start replaycut when I sign in <span class="muted sm">(saved at once)</span></label>
+      <label class="switch"><input type="checkbox" id="sAutostart"><span class="track"></span> Start replaycut <span data-os="windows">when I sign in</span><span data-os="linux">with my desktop session</span> <span class="muted sm">(saved at once)</span></label>
     </div>
     <div class="group" id="sAccess">
       <h2>Access</h2>
@@ -892,7 +895,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="field"><label>Server</label><input class="input" data-f="integrations.nextcloud.url"></div>
         <div class="fields-2">
           <div class="field"><label>User</label><input class="input" id="sNcUser" autocomplete="off"><span class="hint" id="sNcUserHint"></span></div>
-          <div class="field"><label>App password</label><div class="input-group"><input class="input" id="sNcPw" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sNcPw" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the Credential Manager as <code>replaycut/nextcloud</code>.</span></div>
+          <div class="field"><label>App password</label><div class="input-group"><input class="input" id="sNcPw" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sNcPw" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span> as <code>replaycut/nextcloud</code>.</span></div>
         </div>
         <div class="fields-2">
           <div class="field"><label>Folder</label><input class="input" data-f="integrations.nextcloud.folder"></div>
@@ -923,7 +926,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="field"><label>Bucket</label><input class="input mono" data-f="integrations.s3.bucket"></div>
           <div class="field"><label>Prefix</label><input class="input mono" data-f="integrations.s3.prefix"><span class="hint">Folder inside the bucket, may be empty.</span></div>
           <div class="field"><label>Access key ID</label><input class="input mono" id="sS3Key" autocomplete="off" placeholder="leave empty to keep"><span class="hint" id="sS3KeyHint"></span></div>
-          <div class="field"><label>Secret access key</label><div class="input-group"><input class="input mono" id="sS3Secret" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sS3Secret" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the Credential Manager as <code>replaycut/s3</code>.</span></div>
+          <div class="field"><label>Secret access key</label><div class="input-group"><input class="input mono" id="sS3Secret" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sS3Secret" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span> as <code>replaycut/s3</code>.</span></div>
           <div class="field"><label>Public URL</label><input class="input mono" data-f="integrations.s3.publicBase" placeholder="https://clips.example.com"><span class="hint">Serves the bucket publicly; the link is this URL plus the key. Leave empty for presigned links.</span></div>
           <div class="field"><label>Presigned links expire after</label><select class="select" data-f="integrations.s3.presignDays"><option value="1">1 day</option><option value="3">3 days</option><option value="7">7 days (maximum)</option></select></div>
         </div>
@@ -940,7 +943,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="field"><label>DAV URL</label><input class="input mono" data-f="integrations.webdav.url" placeholder="https://u123.your-storagebox.de"></div>
           <div class="field"><label>Folder</label><input class="input mono" data-f="integrations.webdav.folder"><span class="hint">Below the DAV root, may be empty.</span></div>
           <div class="field"><label>User</label><input class="input" id="sDavUser" autocomplete="off" placeholder="leave empty to keep"><span class="hint" id="sDavUserHint"></span></div>
-          <div class="field"><label>Password</label><div class="input-group"><input class="input" id="sDavPw" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sDavPw" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the Credential Manager as <code>replaycut/webdav</code>.</span></div>
+          <div class="field"><label>Password</label><div class="input-group"><input class="input" id="sDavPw" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sDavPw" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span> as <code>replaycut/webdav</code>.</span></div>
           <div class="field"><label>Public URL of the folder</label><input class="input mono" data-f="integrations.webdav.publicBase" placeholder="https://files.example.com/clips"><span class="hint">The link is this URL plus <code>&lt;month&gt;/&lt;file&gt;</code>.</span></div>
         </div>
         <label class="switch"><input type="checkbox" data-f="integrations.webdav.quickShare"><span class="track"></span> Quick share target</label>
@@ -955,7 +958,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="fields-2">
           <div class="field"><label>Client type</label><select class="select" data-f="integrations.youtube.clientType"><option value="tv">TVs and Limited Input devices - connect with a code, from any device</option><option value="desktop">Desktop app - connect in the browser on this PC</option></select><span class="hint">The application type you chose when creating the client in the Google console.</span></div>
           <div class="field"><label>Client ID</label><input class="input mono" id="sYtId" autocomplete="off" placeholder="1234-abcd.apps.googleusercontent.com"><span class="hint" id="sYtIdHint"></span></div>
-          <div class="field"><label>Client secret</label><div class="input-group"><input class="input mono" id="sYtSecret" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sYtSecret" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the Credential Manager as <code>replaycut/youtube-client</code>. Save, then connect.</span></div>
+          <div class="field"><label>Client secret</label><div class="input-group"><input class="input mono" id="sYtSecret" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sYtSecret" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span> as <code>replaycut/youtube-client</code>. Save, then connect.</span></div>
         </div>
         <div class="row" id="sYtRow"><button class="btn btn-primary" id="sYtConnect">Connect YouTube</button><button class="btn" id="sYtDisconnect" hidden>Disconnect</button><span class="muted sm" id="sYtStatus"></span></div>
         <div class="check-row" id="sYtCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label" id="sYtCodeLabel">Enter this code at Google</div><div class="detail" id="sYtCodeDetail">Open <a id="sYtUri" href="#" target="_blank" rel="noopener"></a> and type <b class="mono" id="sYtUserCode" style="font-size:1.2em;letter-spacing:0.08em"></b>, then pick the channel. The card updates when you are done.</div></div></div>
@@ -1133,14 +1136,14 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <div class="dialog danger" role="dialog" aria-modal="true">
     <h2>Delete clip?</h2>
     <div class="muted" id="delName"></div>
-    <div class="muted sm">The MKV and the files shared from it go to the recycle bin on the PC.</div>
+    <div class="muted sm">The MKV and the files shared from it go to the <span data-os="windows">recycle bin</span><span data-os="linux">trash</span> on the PC.</div>
     <!-- since 3.0: a clip with cuts can give up its recording and keep them -->
     <div class="stack-2" id="delScopeRow" hidden>
       <label class="check"><input type="radio" name="delScope" value="clip" checked> <span><b>Only the recording</b> - the <span id="delCutCount"></span> stay, you can render and publish them any time. The clip is marked done.</span></label>
       <label class="check"><input type="radio" name="delScope" value="all"> <span><b>Everything</b> - the recording, the cuts and the files shared from this clip.</span></label>
     </div>
     <label class="check" id="delNcRow"><input type="checkbox" id="delNc" checked> <span>Also remove the uploaded copies (Nextcloud, OneDrive, YouTube videos, …) - <b>shared links (e.g. in Discord) will stop working</b>. Unchecked keeps them where they are.</span></label>
-    <div class="actions"><button class="btn" id="delCancel">Cancel <kbd>Esc</kbd></button><button class="btn btn-danger" id="delOk">Move to recycle bin</button></div>
+    <div class="actions"><button class="btn" id="delCancel">Cancel <kbd>Esc</kbd></button><button class="btn btn-danger" id="delOk">Move to <span data-os="windows">recycle bin</span><span data-os="linux">trash</span></button></div>
   </div>
 </div>
 
@@ -1157,6 +1160,12 @@ const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup
 // /approve and /approve/<id> are the same page (since 2.8)
 const page = PAGES[location.pathname] || (location.pathname.startsWith('/approve') ? 'approve' : 'clips');
 let cfg = { shareKbps: 0, expireDays: 0, audio: [{ id: 'mix', label: 'Mix (all)', need: 1 }], displayName: '' };
+// since 3.2: the service says which platform it runs on (config.platform);
+// static markup uses [data-os] spans, the strings built here use these
+const isLinux = () => cfg.platform === 'linux';
+const trashName = () => isLinux() ? 'trash' : 'recycle bin';
+const appMenuName = () => isLinux() ? 'your app menu' : 'the Start menu';
+const trayHint = () => isLinux() ? '' : ' Look for the tray icon.';
 
 // theme: remembered per browser so the page does not flash the default first
 function applyTheme(name) {
@@ -1381,14 +1390,14 @@ async function restartService() {
     await new Promise(r => setTimeout(r, 500));
     try { const s = await fetch('/api/session', { cache: 'no-store' }); if (s.ok) return ''; } catch (e) {}
   }
-  return 'The service did not come back - start it from the Start menu.';
+  return `The service did not come back - start it from ${appMenuName()}.`;
 }
 
 // Turn network access on or off: the password first (it is what protects
 // it), then the switch, the firewall rule through the UAC prompt, and the
 // restart. Returns '' or a message.
 async function setNetworkAccess(on, say) {
-  say(on ? 'Windows asks for permission to open the port …' : 'Closing the port …');
+  say(on ? (isLinux() ? 'Opening the port …' : 'Windows asks for permission to open the port …') : 'Closing the port …');
   let r;
   try {
     r = await api('/api/network/' + (on ? 'enable' : 'disable'), { method: 'POST', body: '' }, { retries: 0, timeout: 180000 });
@@ -1548,7 +1557,7 @@ async function initSetup() {
     $('wNetOn').checked = on; $('wNetBadge').textContent = on ? 'on' : 'off';
     $('wNetIntro').textContent = on
       ? 'Other devices in this network reach replaycut, and they need the password or your yes. Scan the code on a phone to sign it in.'
-      : 'replaycut listens on this PC only. Turn this on to trim clips from your phone or laptop in the same network: it needs a password first, and Windows asks once for permission to open the port in your private network.';
+      : 'replaycut listens on this PC only. Turn this on to trim clips from your phone or laptop in the same network: it needs a password first' + (isLinux() ? ' (if a firewall runs on this PC, allow the port there).' : ', and Windows asks once for permission to open the port in your private network.');
     $('wNetBody').hidden = true; $('wNetDone').hidden = !on;
     if (on) { loadAddresses($('wQrCode'), $('wAddr')); loadDevices($('wDevices'), null); }
   }
@@ -1812,7 +1821,7 @@ async function initSettings() {
     catch (e) { /* the old process is gone already */ }
     const port = orig && orig.port ? orig.port : location.port, target = location.protocol + '//' + location.hostname + ':' + port + '/settings';
     for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 1000)); try { const s = await fetch(target.replace('/settings', '/api/session'), { cache: 'no-store' }); if (s.ok) { location.href = target; return; } } catch (e) {} }
-    toast('The service did not come back - start it from the Start menu.', 'err');
+    toast(`The service did not come back - start it from ${appMenuName()}.`, 'err');
   };
   // account integrations connect through the device-code flow: OneDrive (since 2.5), YouTube (since 2.6)
   // two ways in: a code typed at the provider (device flow), or - a provider with `loopback` - the browser on
@@ -2256,7 +2265,7 @@ async function deleteClip() {
     const q = `?scope=${scope}` + (nc ? '&remote=1' : '');
     const r = await api('/api/clips/' + encodeURIComponent(c.base) + q, { method: 'DELETE' }, { retries: 0, timeout: 30000 });
     if (r.ok) {
-      toast(`Deleted: ${r.recycled} file(s) in the recycle bin` + (r.cuts ? `, ${r.cuts} cut${r.cuts === 1 ? '' : 's'} kept` : '') + (nc ? `, ${r.nextcloud} uploaded cop${r.nextcloud === 1 ? 'y' : 'ies'} removed` : ''), 'ok');
+      toast(`Deleted: ${r.recycled} file(s) in the ${trashName()}` + (r.cuts ? `, ${r.cuts} cut${r.cuts === 1 ? '' : 's'} kept` : '') + (nc ? `, ${r.nextcloud} uploaded cop${r.nextcloud === 1 ? 'y' : 'ies'} removed` : ''), 'ok');
       lastSeen = null; showResult(null); shownLast = null;
     }
     else toast('Delete failed: ' + r.error, 'err');
@@ -2341,7 +2350,7 @@ function afterLine(box, r) {
   line.querySelector('[data-undo]').onclick = async () => {
     try {
       const res = await api('/api/clips/' + encodeURIComponent(r.base) + '/state', jsonOpts('PUT', { state: 'active' }), { retries: 0 });
-      if (res.ok) { toast(r.after === 'recycle' ? 'Clip is back in the list - the recording stays in the recycle bin' : 'Clip is back in the list', 'ok'); line.remove(); poll.now(); }
+      if (res.ok) { toast(r.after === 'recycle' ? `Clip is back in the list - the recording stays in the ${trashName()}` : 'Clip is back in the list', 'ok'); line.remove(); poll.now(); }
       else toast(res.error, 'err');
     } catch (e) { toast(e.message, 'err'); }
   };
@@ -2489,7 +2498,7 @@ function showEmpty(kind) {
     t.innerHTML = '<b>Not set up yet</b><br>replaycut does not know your recording folder and integrations.';
     a.innerHTML = '<a class="btn btn-primary" href="/setup">Run the setup</a>';
   } else if (kind === 'offline') {
-    t.innerHTML = '<b>No connection to the service</b><br>Is replaycut running on the PC? Look for the tray icon.';
+    t.innerHTML = `<b>No connection to the service</b><br>Is replaycut running on the PC?${trayHint()}`;
     a.innerHTML = '';
   } else {
     t.innerHTML = `<b>Nothing to cut yet</b><br>Start the replay buffer in OBS, play, and press <kbd>F9</kbd> when something happens. The clip shows up here within a few seconds.`;
@@ -2715,10 +2724,10 @@ async function renderCut(c, target) {
 async function deleteCut(c) {
   const remote = (c.outputs || []).some(o => o.target && o.target !== 'file');
   const what = `the cut ${cutRange(c)}` + ((c.outputs || []).length ? ` and its ${c.outputs.length} output${c.outputs.length === 1 ? '' : 's'}` : '');
-  if (!confirm(`Delete ${what}?\n\nThe files go to the recycle bin${remote ? ', and the uploaded copies are removed' : ''}.`)) return;
+  if (!confirm(`Delete ${what}?\n\nThe files go to the ${trashName()}${remote ? ', and the uploaded copies are removed' : ''}.`)) return;
   try {
     const r = await api('/api/cuts/' + encodeURIComponent(c.id) + (remote ? '?remote=1' : ''), { method: 'DELETE' }, { retries: 0, timeout: 30000 });
-    r.ok ? toast(`Cut deleted: ${r.recycled} file(s) in the recycle bin`, 'ok') : toast(r.error, 'err');
+    r.ok ? toast(`Cut deleted: ${r.recycled} file(s) in the ${trashName()}`, 'ok') : toast(r.error, 'err');
   } catch (e) { toast(e.message, 'err'); }
   cutsKey = ''; poll.now();
 }
@@ -2872,7 +2881,7 @@ async function updateNow() {
     const target = location.href.split('#')[0];
     await new Promise(res => setTimeout(res, 3000));
     for (let i = 0; i < 60; i++) { await new Promise(res => setTimeout(res, 1000)); try { const s = await fetch('/api/session', { cache: 'no-store' }); if (s.ok) { location.href = target; return; } } catch (e) {} }
-    toast('The service did not come back - start it from the Start menu.', 'err');
+    toast(`The service did not come back - start it from ${appMenuName()}.`, 'err');
   } catch (e) { toast(e.message, 'err'); }
   finally { updBusy = false; updateBanner(); }
 }
@@ -2924,7 +2933,7 @@ async function poll() {
   } catch (e) {
     if (e.message === 'login required') return;
     failures++;
-    banner('b-unreachable', true, `(${e.message}) - attempt ${failures}, retrying every 3 s. Is replaycut running on the PC? Look for the tray icon.`);
+    banner('b-unreachable', true, `(${e.message}) - attempt ${failures}, retrying every 3 s. Is replaycut running on the PC?${trayHint()}`);
     setDot('off', 'Service not responding');
     if (page === 'clips' && !clips.length) showEmpty('offline');
   }
@@ -2938,6 +2947,8 @@ function applyState(d, polled, withDone) {
     // devices waiting to sign in; only this PC and signed-in clients see them
     if (Array.isArray(d.pending)) { if (approveRender) approveRender(d.pending); else updatePendingModal(d.pending); }
     cfg = Object.assign(cfg, d.config);
+    // since 3.2: the page words things for the platform the service runs on
+    document.documentElement.dataset.os = cfg.platform || 'windows';
     // since 3.0: the document holds the done clips only when they were asked
     // for; the two sides of the list are kept apart here
     const all = d.clips || [];
@@ -2961,7 +2972,7 @@ function applyState(d, polled, withDone) {
     if (!afterChosen && cfg.cleanup && cfg.cleanup.afterShare) $('after').value = cfg.cleanup.afterShare;
     allClips().forEach(c => { if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; cur.cuts = c.cuts; if (document.activeElement !== $('title')) $('title').value = c.title || '';
       // the recording went to the recycle bin while the page was open (3.0)
-      if (c.file === null && cur.file !== null) { load(c, true); toast('The recording is in the recycle bin - its cuts are still here'); }
+      if (c.file === null && cur.file !== null) { load(c, true); toast(`The recording is in the ${trashName()} - its cuts are still here`); }
       // the playable copy arrived: switch the player to it, keeping the position (since 2.6)
       if (c.previewH264 && !cur.previewH264) { cur.previewH264 = c.previewH264; const t = v.currentTime, src = playerSource(cur); if (v.getAttribute('src') !== src) { v.src = src; v.load(); v.addEventListener('loadedmetadata', () => { v.currentTime = t; }, { once: true }); $('vidErr').hidden = true; toast('Playable preview ready', 'ok'); } h264Row(cur); } } });
     renderList(); renderCuts();
