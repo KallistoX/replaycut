@@ -10,6 +10,21 @@ contract.
 
 ## [Unreleased]
 
+### Changed
+
+- **The clips page carries less.** A cut is one row now - its range, how
+  long, which audio, and where its outputs went - and it opens to show them.
+  An output is the same row wherever it appears: under its cut, in the
+  result of the last share, on Activity. Each row has the one action you
+  want (copy the link, or open the folder for a local file); everything
+  rarer - the page link, download, post, publish, render to another target,
+  delete - moved into a "…" menu. The four settings of the share row read as
+  a sentence ("Mix (all) · H.264 · 16:9 · mark done afterwards") and open on
+  "Change", and the Share button says where it is going.
+- The clip list says what it knows in words instead of a wall of badges, the
+  key hint on the Share button no longer fights the accent colour, and a
+  section heading no longer competes with the buttons beside it.
+
 ## [3.0.1] - 2026-09-08
 
 Two things 3.0.0 got wrong, found by putting a real 2.x state next to real

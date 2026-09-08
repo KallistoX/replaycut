@@ -372,25 +372,59 @@ details.limits summary { cursor: pointer; list-style: none; } details.limits sum
 .clip .meta { color: var(--fg-muted); font-size: var(--text-sm); display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .clip.new .name::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
 .clip.deleting { opacity: 0.5; pointer-events: none; }
-/* since 3.0: day groups, the state badges of a clip and the cut cards */
+/* since 3.0, tidied in 3.1: a cut is a row that opens, an output is one row
+ * wherever it appears (under its cut, in the result, on Activity), and the
+ * rarer actions live in a menu instead of a button each. */
 .day { font-size: var(--text-xs); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: var(--space-3) var(--space-2) var(--space-1); }
 .day:first-child { margin-top: var(--space-1); }
-.clip .tags { grid-column: 2; display: flex; gap: var(--space-1); flex-wrap: wrap; }
-.clip.is-done { opacity: 0.75; }
+.clip .meta .faint { color: var(--fg-faint); }
+.clip .thumb.gone { border-style: dashed; }
+.clip.is-done .name { color: var(--fg-muted); font-weight: normal; }
+.section-title { font-size: var(--text-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); }
+.section-title .n { color: var(--fg-faint); margin-left: var(--space-1); letter-spacing: 0; }
 .cuts-box { display: flex; flex-direction: column; gap: var(--space-2); }
-.cut { border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
-.cut.is-current { border-color: var(--accent); }
-.cut > .head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-.cut > .head .range { font-weight: var(--weight-strong); }
-.cut .out { border-top: 1px solid var(--line); padding-top: var(--space-2); display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
-.cut .out .meta { color: var(--fg-muted); }
+.cuts { display: flex; flex-direction: column; gap: var(--space-1); }
+.cutrow { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+.cutrow.is-current { border-color: var(--accent); }
+.cutrow.is-missing > summary .range { color: var(--fg-muted); text-decoration: line-through; text-decoration-color: var(--fg-faint); }
+.cutrow > summary { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: var(--space-2); align-items: center; min-height: var(--touch); padding: var(--space-1) var(--space-2); list-style: none; cursor: pointer; user-select: none; }
+.cutrow > summary::-webkit-details-marker { display: none; }
+.cutrow > summary .chev { color: var(--fg-faint); transition: transform var(--duration); }
+.cutrow[open] > summary .chev { transform: rotate(90deg); }
+.cutrow .what { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); min-width: 0; }
+.cutrow .range { font-family: var(--font-mono); font-weight: var(--weight-strong); white-space: nowrap; }
+.cutrow .len { color: var(--fg-muted); font-size: var(--text-sm); white-space: nowrap; }
+.cutrow .where { display: flex; align-items: center; gap: var(--space-1); color: var(--fg-muted); font-size: var(--text-sm); flex-basis: 100%; min-width: 0; }
+.cutrow .where .icon-sm { color: var(--fg-faint); }
+.cutrow .where .ok { color: var(--ok); }
+.cutrow .where .warn { color: var(--warn); }
+.cutrow .act { display: flex; gap: var(--space-1); align-items: center; }
+.cutrow .bar { height: 3px; margin: 0 var(--space-2) var(--space-1) 30px; }
+.cutrow .body { border-top: 1px solid var(--line); padding: var(--space-1) var(--space-2) var(--space-2) 30px; display: flex; flex-direction: column; }
+.cutrow .body .note { color: var(--fg-muted); font-size: var(--text-sm); padding: var(--space-2) 0; }
+@media (min-width: 700px) { .cutrow .where { flex-basis: auto; margin-left: auto; } }
+.outrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: center; min-height: 40px; font-size: var(--text-sm); }
+.outrow + .outrow { border-top: 1px solid var(--line); }
+.outrow .meta { display: flex; flex-wrap: wrap; gap: 0 var(--space-2); color: var(--fg-muted); min-width: 0; }
+.outrow .meta b { color: var(--fg); font-weight: normal; }
+.outrow .meta .ok { color: var(--ok); }
+.outrow .meta .err { color: var(--err); }
+.outrow .act { display: flex; gap: var(--space-1); align-items: center; }
+.result .after { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-muted); }
+.result .outrow { min-height: 0; font-size: var(--text-base); }
+/* the share setup reads as a sentence and opens only on "Change" */
+.share-row .setup { display: flex; align-items: center; gap: var(--space-1); color: var(--fg-muted); font-size: var(--text-sm); min-width: 0; flex-wrap: wrap; }
+.share-row .setup b { color: var(--fg); font-weight: normal; }
+.share-row .setup .sep { color: var(--fg-faint); }
+.setup-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.btn.btn-primary kbd { background: transparent; color: var(--accent-fg); border-color: var(--accent-fg); opacity: 0.7; }
 /* the recording is in the recycle bin: its thumbnail stands in for the player */
 .gone-ov { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1); min-height: 220px; border-radius: var(--radius-md); border: 1px solid var(--line); background: var(--surface-2) center / cover no-repeat; color: var(--fg-muted); text-align: center; padding: var(--space-4); overflow: hidden; }
 .gone-ov::before { content: ""; position: absolute; inset: 0; background: var(--surface); opacity: 0.82; }
 .gone-ov > * { position: relative; }
 .gone-ov b { color: var(--fg); }
-.act { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--line); font-size: var(--text-sm); display: flex; flex-direction: column; gap: var(--space-1); }
-.act .meta { color: var(--fg-muted); }
+.actrow { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--line); font-size: var(--text-sm); display: flex; flex-direction: column; gap: var(--space-1); }
+.actrow .meta { color: var(--fg-muted); }
 .hist { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--line); font-size: var(--text-sm); display: flex; flex-direction: column; gap: var(--space-1); }
 .hist .meta { color: var(--fg-muted); }
 .hist.expired { opacity: 0.6; }
@@ -428,8 +462,15 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; background: var(--
 .share-row .select { width: auto; min-width: 180px; }
 .split { position: relative; display: inline-flex; } .split > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; } .split > .btn-icon { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 1px; }
 .menu { position: absolute; left: 0; top: calc(100% + 4px); min-width: 220px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(0,0,0,0.35); padding: var(--space-1); z-index: 5; display: flex; flex-direction: column; }
-.menu button { text-align: left; background: none; border: 0; color: var(--fg); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; font: inherit; display: flex; gap: var(--space-2); align-items: center; }
-.menu button:hover { background: var(--surface-2); } .menu .muted { margin-left: auto; }
+.menu.right { left: auto; right: 0; }
+.menu button, .menu a { text-align: left; background: none; border: 0; color: var(--fg); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; font: inherit; display: flex; gap: var(--space-2); align-items: center; min-height: 36px; white-space: nowrap; text-decoration: none; }
+.menu button:hover, .menu a:hover { background: var(--surface-2); text-decoration: none; }
+.menu button:disabled { opacity: 0.5; cursor: default; }
+.menu .muted { margin-left: auto; font-size: var(--text-sm); }
+.menu .danger { color: var(--err); }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-1) 0; }
+.menu .menu-title { padding: var(--space-1) var(--space-3) 0; font-size: var(--text-xs); color: var(--fg-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+@media (pointer: coarse) { .menu button, .menu a { min-height: var(--touch); } }
 .group-title { font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); margin: var(--space-2) 0 calc(-1 * var(--space-2)); }
 .list-head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2) var(--space-2); }
 .list-head .count { color: var(--fg-muted); font-size: var(--text-sm); }
@@ -510,6 +551,9 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5l3 2"/></symbol>
   <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12M2.5 8h3.5M14 8h3.5M2.5 12h3.5M14 12h3.5"/></symbol>
   <symbol id="i-skip" viewBox="0 0 20 20"><path d="M5 5l7 5-7 5zM14 5v10"/></symbol>
+  <symbol id="i-more" viewBox="0 0 20 20"><circle cx="4.5" cy="10" r="1.25"/><circle cx="10" cy="10" r="1.25"/><circle cx="15.5" cy="10" r="1.25"/></symbol>
+  <symbol id="i-send" viewBox="0 0 20 20"><path d="M17 3 3 9l6 2 2 6z"/><path d="m9 11 8-8"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 20 20"><path d="M4 8h8a4 4 0 0 1 0 8H8"/><path d="M7 5 4 8l3 3"/></symbol>
 </svg>
 
 <header class="topbar">
@@ -591,19 +635,24 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <div class="share-row">
         <div class="split"><button class="btn btn-primary" id="bShare"><svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd></button><button class="btn btn-primary btn-icon" id="bShareMenu" title="Share to another target">▾</button><div class="menu" id="shareMenu" hidden></div></div>
         <button class="btn" id="bCut" title="Save this range as a cut and render nothing - a cut keeps the picture and all audio tracks, so you can render it any way you like later"><svg class="icon"><use href="#i-cut-in"/></svg> Save cut</button>
-        <select class="select" id="audio" title="Which audio tracks go into the shared clip"></select>
-        <select class="select" id="mode" title="H.264: re-encoded in the recording's resolution at best quality, plays everywhere. As recorded: the OBS stream as it is - instant, no GPU, starts at the previous keyframe, plays only where the recording codec plays"><option value="h264">H.264 (best quality)</option><option value="copy">As recorded (no re-encode)</option></select>
-        <select class="select" id="frame" title="Landscape: the frame as recorded. Vertical: a 9:16 window of full height, scaled to 1080x1920 for YouTube Shorts, TikTok or Reels"><option value="wide">Landscape 16:9</option><option value="vertical">Vertical 9:16 (Short)</option></select>
-        <select class="select" id="after" title="What happens to this clip once the share is through. The cut and everything it produced always stay."><option value="keep">Afterwards: keep</option><option value="done">Afterwards: mark done</option><option value="recycle">Afterwards: recycle recording</option></select>
-        <span class="plan" id="planInfo"></span>
+        <!-- since 3.1: the four settings read as a sentence and open on "Change" -->
+        <span class="setup right" id="setupText"></span>
+        <button class="btn btn-sm btn-ghost" id="bSetup">Change</button>
       </div>
+      <div class="setup-row" id="setupRow" hidden>
+        <label class="field"><span>Audio</span><select class="select" id="audio" title="Which audio tracks go into the shared clip"></select></label>
+        <label class="field"><span>Quality</span><select class="select" id="mode" title="H.264: re-encoded in the recording's resolution at best quality, plays everywhere. As recorded: the OBS stream as it is - instant, no GPU, starts at the previous keyframe, plays only where the recording codec plays"><option value="h264">H.264 (best quality)</option><option value="copy">As recorded (no re-encode)</option></select></label>
+        <label class="field"><span>Frame</span><select class="select" id="frame" title="Landscape: the frame as recorded. Vertical: a 9:16 window of full height, scaled to 1080x1920 for YouTube Shorts, TikTok or Reels"><option value="wide">Landscape 16:9</option><option value="vertical">Vertical 9:16 (Short)</option></select></label>
+        <label class="field"><span>Afterwards</span><select class="select" id="after" title="What happens to this clip once the share is through. The cut and everything it produced always stay."><option value="keep">Keep</option><option value="done">Mark done</option><option value="recycle">Recycle recording</option></select></label>
+      </div>
+      <span class="plan" id="planInfo"></span>
       <div class="vpos-row" id="vposRow" hidden><span>Window position</span><input type="range" id="vpos" min="0" max="100" value="50" title="Where the 9:16 window sits: left edge, centre, right edge"><span id="vposText">centre</span></div>
       <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>I</kbd><kbd>O</kbd> marks</span><span><kbd>Enter</kbd> share</span></div>
       <div class="progress" id="prog" hidden><div class="row nowrap"><span class="grow" id="progText"></span><span class="muted sm" id="progPct"></span><button class="btn btn-sm btn-ghost" id="progCancel" title="Stop this share" hidden><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div><div class="bar"><i id="progBar"></i></div><div class="stages" id="stages"></div></div>
       <div class="result" id="result" hidden></div>
       <section class="cuts-box" id="cutsBox" hidden>
-        <div class="list-head"><h2 style="margin:0">Cuts</h2><span class="count" id="cutCount"></span></div>
-        <div id="cuts"></div>
+        <div class="section-title">Cuts<span class="n" id="cutCount"></span></div>
+        <div class="cuts" id="cuts"></div>
       </section>
     </div>
   </main>
@@ -2010,6 +2059,13 @@ function initClips() {
   });
   // since 3.0: save the range without rendering, and what happens afterwards
   $('bCut').onclick = saveCut;
+  // since 3.1: the four settings open on demand, the sentence shows the state
+  $('bSetup').onclick = () => {
+    const open = $('setupRow').hidden;
+    $('setupRow').hidden = !open;
+    $('bSetup').textContent = open ? 'Done' : 'Change';
+  };
+  ['audio', 'mode', 'frame', 'after'].forEach(id => $(id).addEventListener('change', setupText));
   $('after').onchange = () => { afterChosen = true; try { sessionStorage.setItem('rc-after', $('after').value); } catch (e) {} };
   $('clipFilter').querySelectorAll('button').forEach(b => b.onclick = () => {
     if (clipFilter === b.dataset.filter) return;
@@ -2096,6 +2152,18 @@ function render() {
   const vert = $('frame').value === 'vertical' ? ' · <span class="badge accent">9:16</span> 1080x1920, <code>#Shorts</code> on YouTube' : '';
   $('planInfo').innerHTML = size + warn + vert +
     (def === 'file' ? ` · <span class="badge accent">file only</span> no quick-share storage - the file stays in <code>shared\\</code>${storageTargets().length ? ', the menu offers ' + esc(storageTargets().map(t => t.label).join(', ')) : ''}` : ` · to <b>${esc(targetLabel(def))}</b>, ${esc(expiry())}${cfg.webhook ? ' + post' : ''}`);
+  setupText();
+}
+// since 3.1: the four settings of the share row read as a sentence, and the
+// share button says where it is going
+function setupText() {
+  const after = { keep: 'keep afterwards', done: 'mark done afterwards', recycle: 'recycle the recording afterwards' }[$('after').value] || '';
+  const frame = $('frame').value === 'vertical' ? '9:16' : '16:9';
+  const quality = $('mode').value === 'copy' ? 'as recorded' : 'H.264';
+  $('setupText').innerHTML = `<b>${esc(audioLabel($('audio').value))}</b><span class="sep">·</span><b>${quality}</b><span class="sep">·</span><b>${frame}</b><span class="sep">·</span>${esc(after)}`;
+  const def = defaultTarget();
+  const s = $('bShare');
+  if (!busy) s.innerHTML = `<svg class="icon"><use href="#i-share"/></svg> Share${def === 'file' ? '' : ' to ' + esc(targetLabel(def))} <kbd>Enter</kbd>`;
 }
 // the 9:16 window over the player: the video sits letterboxed inside its element, so find the rendered picture first
 function cropOverlay() {
@@ -2216,69 +2284,60 @@ function showProgress(j) {
   const list = j.kind === 'preview' ? [['encode', 'Encode 720p']] : (j.kind === 'cut' ? [['cut', 'Cut']] : stageList(j)), idx = list.findIndex(([id]) => id === j.stage || (id === 'notify' && j.stage === 'discord'));
   $('stages').innerHTML = list.map(([id, label], i) => `<span class="${id === 'nopost' ? 'st-skip' : (i < idx ? 'st-done' : (i === idx ? 'st-on' : ''))}">${id === 'nopost' ? '' : (i + 1) + ' '}${label}</span>`).join('');
 }
+// The result of the last job (3.1): a heading, the output as the same row it
+// has under its cut, and one line for what happened to the clip afterwards.
 function showResult(r) {
   const box = $('result'); if (!r) { box.hidden = true; return; }
   box.hidden = false;
-  const when = (r.finished || r.at) ? ` <span class="muted sm">${esc((r.finished || r.at).replace('T', ' ').slice(0, 16))} · ${esc(r.title ? r.title + ' - ' : '')}${esc(short(r.base))}</span>` : '';
+  box.className = 'result';
+  box.innerHTML = '';
+  const head = (icon, text) => { const h = document.createElement('div'); h.className = 'head'; h.innerHTML = `<svg class="icon"><use href="#i-${icon}"/></svg> `; h.append(text); box.appendChild(h); };
+  const note = text => { const n = document.createElement('div'); n.className = 'muted sm'; n.textContent = text; box.appendChild(n); };
+
   if (r.cancelled) {
-    box.className = 'result';
-    box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-close"/></svg> ${r.kind === 'preview' ? 'Preview' : 'Share'} cancelled</div>${when ? '<div>' + when + '</div>' : ''}`;
-    return;
-  }
-  // a cut renders nothing (since 3.0): the card says what was saved, the
-  // cut card below it is where it goes on
-  if (r.kind === 'cut') {
-    box.className = 'result' + (r.ok ? '' : ' err');
-    box.innerHTML = r.ok
-      ? `<div class="head"><svg class="icon"><use href="#i-check"/></svg> Cut saved - ${fmt(r.start)} - ${fmt(r.end)}, ${Number(r.seconds).toFixed(1)} s</div><div class="muted sm">Picture and every audio track, copied. Render it below whenever you like.</div>${when ? '<div>' + when + '</div>' : ''}`
-      : `<div class="head"><svg class="icon"><use href="#i-error"/></svg> Cut failed</div><div class="sm">${esc(r.error || 'unknown error')}</div>`;
-    return;
-  }
-  if (r.kind === 'preview') {
-    // the playable copy (since 2.6): the poll switches the player; here only the outcome
-    box.className = 'result' + (r.ok ? '' : ' err');
-    box.innerHTML = r.ok ? `<div class="head"><svg class="icon"><use href="#i-check"/></svg> Playable preview ready - ${r.sizeMB} MB, 720p H.264</div><div class="muted sm">The player uses it for this clip; cutting stays on the original.</div>`
-      : `<div class="head"><svg class="icon"><use href="#i-error"/></svg> Playable preview failed</div><div class="sm">${esc(r.error || 'unknown error')}</div>`;
+    head('close', `${r.kind === 'preview' ? 'Preview' : r.kind === 'cut' ? 'Cut' : 'Share'} cancelled`);
+    note(`${short(r.base)} · ${fmt(r.start)} - ${fmt(r.end)}`);
     return;
   }
   if (!r.ok) {
     box.className = 'result err';
-    box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-error"/></svg> Share failed</div><div class="sm">${esc(r.error || 'unknown error')}</div>${when ? '<div>' + when + '</div>' : ''}
-      <div class="row"><button class="btn btn-sm" id="rRetry"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Try again</button></div>`;
-    $('rRetry').onclick = () => share('');
+    head('error', r.kind === 'cut' ? 'Cut failed' : r.kind === 'preview' ? 'Playable preview failed' : 'Share failed');
+    note(r.error || 'unknown error');
+    if (r.kind !== 'cut' && r.kind !== 'preview') {
+      const row = document.createElement('div'); row.className = 'row';
+      row.innerHTML = '<button class="btn btn-sm" id="rRetry"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Try again</button>';
+      box.appendChild(row);
+      $('rRetry').onclick = () => share('');
+    }
     return;
   }
-  const earlier = r.mode === 'copy' && r.actualStart != null && r.actualStart < r.start - 0.05 ? `, starts ${(r.start - r.actualStart).toFixed(1)} s earlier (keyframe)` : '';
-  const meta = `${Number(r.seconds).toFixed(1)} s, ${r.sizeMB} MB, ${esc(audioLabel(r.audio))}${r.mode === 'copy' ? ' <span class="badge">copy</span>' : ''}${r.vertical ? ' <span class="badge accent">9:16</span>' : ''}${earlier}`;
-  if (!r.direct) {
-    // file only: the file is the result
-    box.className = 'result';
-    box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-check"/></svg> Ready - ${meta} <span class="badge accent">file only</span></div>
-      <div class="muted sm break">shared\\${esc(r.file || '')}</div>
-      <div class="row"><button class="btn" id="rOpen"><svg class="icon"><use href="#i-folder"/></svg> Open folder</button><button class="btn" id="rCopy"><svg class="icon"><use href="#i-copy"/></svg> Copy file</button>${downloadButton(r)}${publishButtons(r)}<span class="muted sm">Then Ctrl+V in Discord attaches it.</span></div>${when ? '<div>' + when + '</div>' : ''}`;
-    $('rOpen').onclick = () => jobAction(r.id, 'open-folder', 'Folder opened on the PC');
-    $('rCopy').onclick = () => jobAction(r.id, 'copy-file', 'File copied - paste it with Ctrl+V');
-    wirePublish(box, r.id); afterLine(box, r);
+  // the playable copy and a saved cut render nothing: they only report
+  if (r.kind === 'preview') {
+    head('check', `Playable preview ready - ${r.sizeMB} MB, 720p H.264`);
+    note('The player uses it for this clip; cutting stays on the original.');
+    return;
+  }
+  if (r.kind === 'cut') {
+    head('check', `Cut saved - ${fmt(r.start)} - ${fmt(r.end)}, ${Number(r.seconds).toFixed(1)} s`);
+    note('Picture and every audio track, copied. Render it below whenever you like.');
     return;
   }
   const postFailed = r.discord && /post failed/i.test(r.discord);
-  box.className = 'result' + (postFailed ? ' partial' : '');
-  const to = r.target && r.target !== 'file' ? ' to ' + esc(targetLabel(r.target)) : '';
-  box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-${postFailed ? 'warning' : 'check'}"/></svg> ${postFailed ? `Uploaded${to}, but not posted` : `Shared${to}`} - ${meta}, link copied</div>
-    <div class="input-group"><input class="input mono" readonly value="${esc(r.direct)}" onclick="this.select()"><button class="btn" id="cp"><svg class="icon"><use href="#i-copy"/></svg> Direct</button><button class="btn" id="cp2" title="Copy the share page link"><svg class="icon"><use href="#i-external"/></svg> Page</button></div>
-    ${r.discord ? `<div class="line ${postFailed ? 'err' : 'ok'}"><svg class="icon icon-sm"><use href="#i-${postFailed ? 'error' : 'check'}"/></svg> ${esc(r.discord)}</div>` : ''}
-    <div class="line"><span class="muted sm">${esc(expiry())}</span>${when}</div><div class="row">${downloadButton(r)}${r.discord ? '' : postButtons(r)}${publishButtons(r)}</div>`;
-  $('cp').onclick = () => copyText(r.direct).then(() => toast('Direct link copied', 'ok'));
-  $('cp2').onclick = () => copyText(r.link).then(() => toast('Page link copied', 'ok'));
-  wirePublish(box, r.id); wirePost(box, r.id);
+  if (postFailed) box.className = 'result partial';
+  const to = r.target && r.target !== 'file' ? targetLabel(r.target) : '';
+  head(postFailed ? 'warning' : 'check',
+    to ? (postFailed ? `Uploaded to ${to}, but not posted` : `Shared to ${to}`)
+       : 'Rendered into shared\\');
+  box.appendChild(outputRow(r, 'result'));
   afterLine(box, r);
+  if (!r.direct) note(`shared\\${r.file || ''} · Ctrl+V in Discord attaches it.`);
 }
 /// What "Afterwards" did, with a way back (since 3.0). The recycle bin is
 /// not emptied by us, so "Undo" only puts the clip back in the list.
 function afterLine(box, r) {
   if (!r.ok || !r.after || r.after === 'keep' || !r.base) return;
-  const line = document.createElement('div'); line.className = 'line';
-  line.innerHTML = `<svg class="icon icon-sm"><use href="#i-check"/></svg> <span class="grow">${r.after === 'recycle' ? 'Clip marked done, the recording is in the recycle bin' : 'Clip marked done'}</span><button class="btn btn-sm" data-undo>Undo</button>`;
+  const line = document.createElement('div'); line.className = 'after';
+  line.innerHTML = `<span>${r.after === 'recycle' ? 'Recording recycled - the cut and its outputs stay.' : 'Clip marked done.'}</span><button class="btn btn-sm btn-ghost" data-undo><svg class="icon icon-sm"><use href="#i-undo"/></svg> Undo</button>`;
   line.querySelector('[data-undo]').onclick = async () => {
     try {
       const res = await api('/api/clips/' + encodeURIComponent(r.base) + '/state', jsonOpts('PUT', { state: 'active' }), { retries: 0 });
@@ -2288,65 +2347,26 @@ function afterLine(box, r) {
   };
   box.appendChild(line);
 }
-// "Download" (since 2.6): the MP4 lands on the device the page is open on - the phone's gallery, the PC's downloads
-function downloadButton(j) {
-  if (!j.file || j.ok !== true) return '';
-  return `<a class="btn btn-sm" href="/api/jobs/${encodeURIComponent(j.id)}/file" download="${esc(j.file)}" title="Save the MP4 on this device"><svg class="icon icon-sm"><use href="#i-download"/></svg> Download</a>`;
-}
-// "Post to Discord" for every connected notify integration (since 2.7): menu shares and publishes do not post on their own
-function postButtons(j) {
-  if (!j.direct || j.ok !== true) return '';
-  return (cfg.targets || []).filter(t => t.kind === 'notify' && t.connected).map(t => `<button class="btn btn-sm" data-post="${esc(t.id)}" title="Post the link to ${esc(t.label)} now"><svg class="icon icon-sm"><use href="#i-info"/></svg> Post to ${esc(t.label)}</button>`).join('');
-}
-function wirePost(root, id) {
-  root.querySelectorAll('button[data-post]').forEach(b => b.onclick = async () => {
-    b.disabled = true;
-    try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/post', jsonOpts('POST', { target: b.dataset.post }), { retries: 0, timeout: 30000 }); if (r.ok) { toast(`${targetLabel(b.dataset.post)}: ${r.status}`, 'ok'); shownLast = null; poll.now(); } else toast(r.error, 'err'); }
-    catch (e) { toast(e.message, 'err'); }
-    b.disabled = false;
-  });
-}
-// "Publish to X" for every connected storage the job did not go to (since 2.5)
-function publishButtons(j) {
-  if (!j.file || j.ok !== true) return '';
-  return storageTargets().filter(t => t.id !== j.target).map(t => `<button class="btn btn-sm" data-publish="${esc(t.id)}"><svg class="icon icon-sm"><use href="#i-share"/></svg> Publish to ${esc(t.label)}</button>`).join('');
-}
-function wirePublish(root, id) {
-  root.querySelectorAll('button[data-publish]').forEach(b => b.onclick = async () => {
-    b.disabled = true;
-    try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/publish', jsonOpts('POST', { target: b.dataset.publish }), { retries: 0 }); if (r.ok) { toast(`Publishing to ${targetLabel(b.dataset.publish)}${r.position > 0 ? ` - ${r.position} ahead` : ''}`); watchJob(r.job, true); } else toast(r.error, 'err'); }
-    catch (e) { toast(e.message, 'err'); }
-    b.disabled = false;
-  });
-}
-async function jobAction(id, action, okText) {
-  try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/' + action, { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(okText, 'ok') : toast(r.error, 'err'); }
-  catch (e) { toast(e.message, 'err'); }
-}
 // ------------------------------------------------------------ Activity (3.0)
 // What is running, and everything that was ever rendered or sent somewhere.
 // This is where "what did I send where, and when" lives; the clip page shows
-// the same outputs under the cut they came from.
+// the same outputs under the cut they came from - as the same row (3.1).
 let actEntries = [], actFilter = '', actKey = '', actAll = false;
-function outputRow(e) {
-  const d = document.createElement('div'); d.className = 'act';
-  const when = esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16));
+function activityRow(e) {
+  const wrap = document.createElement('div'); wrap.className = 'actrow';
+  const name = document.createElement('div'); name.className = 'row nowrap';
+  name.innerHTML = '<b class="truncate grow"></b><button class="btn btn-sm btn-ghost" data-goto title="Open this clip">Clip <svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>';
+  name.querySelector('b').textContent = e.title || short(e.base);
+  name.querySelector('[data-goto]').onclick = () => { location.href = '/#' + encodeURIComponent(e.base); };
+  wrap.appendChild(name);
   if (e.cancelled) {
-    d.innerHTML = `<b class="truncate muted"></b><div class="meta">${fmt(e.seconds)} · ${when} · <span class="badge">cancelled</span></div>`;
-    d.querySelector('b').textContent = e.title || short(e.base);
-    return d;
+    const m = document.createElement('div'); m.className = 'meta';
+    m.textContent = `${fmt(e.start)} - ${fmt(e.end)} · ${esc(shortWhen(e.finished || e.at))} · cancelled`;
+    wrap.appendChild(m);
+    return wrap;
   }
-  const local = !e.direct;
-  const target = e.target && e.target !== 'file' ? `<span class="badge">${esc(targetLabel(e.target))}</span>` : (local ? '<span class="badge accent">file only</span>' : '');
-  d.innerHTML = `<div class="row nowrap"><b class="truncate grow"></b><button class="btn btn-sm btn-ghost" data-goto title="Open this clip">Clip <svg class="icon icon-sm"><use href="#i-chevron"/></svg></button></div>
-    <div class="meta">${fmt(e.seconds)} · ${e.sizeMB} MB · ${when} · ${esc(audioLabel(e.audio))} ${target}${e.vertical ? ' <span class="badge accent">9:16</span>' : ''}${e.source ? ' <span class="badge">republished</span>' : ''}${e.kind === 'render' ? ' <span class="badge">from a cut</span>' : ''}</div>
-    <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(e.link)}" target="_blank" rel="noopener">Open</a>`}${downloadButton(Object.assign({ ok: true }, e))}${e.discord ? '' : postButtons(Object.assign({ ok: true }, e))}${publishButtons(Object.assign({ ok: true }, e))}</div>`;
-  d.querySelector('b').textContent = e.title || short(e.base);
-  d.querySelector('[data-goto]').onclick = () => { location.href = '/#' + encodeURIComponent(e.base); };
-  d.querySelectorAll('button[data-c]').forEach(b => b.onclick = () => copyText(e[b.dataset.c]).then(() => toast(b.dataset.c === 'direct' ? 'Direct link copied' : 'Page link copied', 'ok')));
-  d.querySelectorAll('button[data-a]').forEach(b => b.onclick = () => jobAction(e.id, b.dataset.a, b.dataset.a === 'copy-file' ? 'File copied - paste it with Ctrl+V' : 'Folder opened on the PC'));
-  wirePublish(d, e.id); wirePost(d, e.id);
-  return d;
+  wrap.appendChild(outputRow(e, 'clip'));
+  return wrap;
 }
 /// The queue on top: the running job and what waits behind it. What a job is
 /// about only `/api/jobs/<id>` knows, so the rows fill in as the answers come.
@@ -2362,7 +2382,7 @@ function renderQueue(d) {
     const doing = i === 0
       ? `${esc(STAGE_TEXT[j.stage] || j.stage || 'Running')}${j.stage === 'encode' ? ` ${j.percent || 0} %` : ''}`
       : `Waiting - ${i} ahead`;
-    const row = document.createElement('div'); row.className = 'act';
+    const row = document.createElement('div'); row.className = 'actrow';
     row.innerHTML = `<div class="row nowrap"><b class="grow truncate">${what}</b><button class="btn btn-sm btn-ghost" data-cancel><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div>
       <div class="meta">${doing}${j.target ? ' · ' + esc(targetLabel(j.target)) : ''}${j.kind && j.kind !== 'share' ? ` · <span class="badge">${esc(j.kind)}</span>` : ''}</div>
       ${i === 0 && j.stage === 'encode' ? `<div class="bar"><i style="width:${j.percent || 0}%"></i></div>` : ''}`;
@@ -2401,7 +2421,7 @@ function renderActivity(d) {
   shown.forEach(e => {
     const dd = (e.finished || e.at || '').slice(0, 10);
     if (dd !== day) { day = dd; const h = document.createElement('div'); h.className = 'day'; h.textContent = dayLabel(dd); list.appendChild(h); }
-    list.appendChild(outputRow(e));
+    list.appendChild(activityRow(e));
   });
   $('actMore').hidden = actAll || actEntries.length < ACT_PAGE;
 }
@@ -2417,7 +2437,7 @@ function initActivity() {
   loadActivity(false).then(() => poll());
 }
 // since 2.4 the Share button stays usable while a job runs: further shares queue up
-function setBusy(b) { busy = b; const s = $('bShare'); s.innerHTML = b ? '<span class="spinner"></span> Share (queue)' : '<svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd>'; s.classList.toggle('is-busy', b); setDot(b ? 'busy' : (cfg._lastFailed ? 'err' : ''), b ? 'Sharing' : (cfg._lastFailed ? 'Last share failed' : 'Service running')); }
+function setBusy(b) { busy = b; const s = $('bShare'); if (b) s.innerHTML = '<span class="spinner"></span> Share (queue)'; else setupText(); s.classList.toggle('is-busy', b); setDot(b ? 'busy' : (cfg._lastFailed ? 'err' : ''), b ? 'Sharing' : (cfg._lastFailed ? 'Last share failed' : 'Service running')); }
 // share targets (since 2.5): the button takes the quick-share storage, the menu any other configured one or file only
 function storageTargets() { return (cfg.targets || []).filter(t => t.kind === 'storage' && t.connected); }
 function targetLabel(id) { if (id === 'file') return 'file only'; const t = (cfg.targets || []).find(t => t.id === id); return t ? t.label : id; }
@@ -2478,6 +2498,110 @@ function showEmpty(kind) {
   }
 }
 
+// ------------------------------------------------------------ menus (3.1)
+// One helper for every "..." on the page. Entries are objects, `'hr'` is a
+// separator and `{ heading }` a caption; the next click anywhere closes it.
+let openMenuEl = null;
+function closeMenu() { if (openMenuEl) { openMenuEl.remove(); openMenuEl = null; } }
+function menu(anchor, items) {
+  const again = openMenuEl && openMenuEl.dataset.for === anchor.dataset.menuId;
+  closeMenu();
+  if (again) return;
+  if (!anchor.dataset.menuId) anchor.dataset.menuId = String(++menu.n);
+  const m = document.createElement('div'); m.className = 'menu right'; m.dataset.for = anchor.dataset.menuId;
+  items.filter(Boolean).forEach(it => {
+    if (it === 'hr') { m.appendChild(document.createElement('hr')); return; }
+    if (it.heading) { const h = document.createElement('div'); h.className = 'menu-title'; h.textContent = it.heading; m.appendChild(h); return; }
+    const b = document.createElement(it.href ? 'a' : 'button');
+    if (it.href) { b.href = it.href; if (it.download) b.setAttribute('download', it.download); b.target = it.blank ? '_blank' : ''; if (it.blank) b.rel = 'noopener'; }
+    b.innerHTML = `${it.icon ? `<svg class="icon icon-sm"><use href="#${it.icon}"/></svg>` : ''}<span class="label"></span>${it.note ? `<span class="muted">${esc(it.note)}</span>` : ''}`;
+    b.querySelector('.label').textContent = it.label;
+    if (it.danger) b.classList.add('danger');
+    if (it.title) b.title = it.title;
+    if (it.disabled) b.disabled = true;
+    else b.addEventListener('click', () => { closeMenu(); if (it.onclick) it.onclick(); });
+    m.appendChild(b);
+  });
+  const holder = anchor.parentElement;
+  if (getComputedStyle(holder).position === 'static') holder.style.position = 'relative';
+  holder.appendChild(m); openMenuEl = m;
+}
+menu.n = 0;
+document.addEventListener('click', e => { if (openMenuEl && !e.target.closest('.menu') && !e.target.closest('[data-menu-id]')) closeMenu(); });
+/// The "..." button that opens one.
+function moreButton(items) {
+  const b = document.createElement('button');
+  b.className = 'btn btn-sm btn-ghost btn-icon'; b.style.width = '28px'; b.title = 'More';
+  b.innerHTML = '<svg class="icon icon-sm"><use href="#i-more"/></svg>';
+  b.onclick = e => { e.stopPropagation(); e.preventDefault(); menu(b, items()); };
+  return b;
+}
+
+// ------------------------------------------------------------ outputs (3.1)
+// An output is one row wherever it shows up - under its cut, in the result
+// of the last share, on Activity. One visible action, the rest in the menu.
+function shortWhen(at) {
+  const s = (at || '').replace('T', ' ');
+  return s.slice(0, 10) === localDay(0) ? s.slice(11, 16) : `${dayLabel(s.slice(0, 10))} ${s.slice(11, 16)}`;
+}
+function outputRow(o, mode) {
+  const row = document.createElement('div'); row.className = 'outrow';
+  const local = !o.direct;
+  const bits = [];
+  bits.push(`<b>${mode === 'result' ? `${fmt(o.start)} - ${fmt(o.end)}` : esc(shortWhen(o.finished || o.at))}</b>`);
+  if (mode === 'clip') bits.push(esc(local ? 'on this PC' : targetLabel(o.target)));
+  if (o.sizeMB) bits.push(`${o.sizeMB} MB`);
+  if (mode !== 'result') bits.push(`${Number(o.seconds).toFixed(1)} s`);
+  if (o.vertical) bits.push('9:16');
+  if (o.mode === 'copy') bits.push('as recorded');
+  if (o.source) bits.push('again');
+  if (mode === 'result') bits.push(local ? 'on this PC' : 'link copied');
+  if (o.discord) bits.push(`<span class="${/fail/i.test(o.discord) ? 'err' : 'ok'}">${esc(o.discord)}</span>`);
+  row.innerHTML = `<div class="meta">${bits.map(b => `<span>${b}</span>`).join('')}</div><div class="act"></div>`;
+  const act = row.querySelector('.act');
+  const primary = document.createElement('button');
+  primary.className = 'btn btn-sm';
+  if (local) {
+    primary.innerHTML = '<svg class="icon icon-sm"><use href="#i-folder"/></svg> Open folder';
+    primary.onclick = () => jobAction(o.id, 'open-folder', 'Folder opened on the PC');
+  } else {
+    primary.innerHTML = '<svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy link';
+    primary.onclick = () => copyText(o.direct).then(() => toast('Direct link copied', 'ok'));
+  }
+  act.appendChild(primary);
+  act.appendChild(moreButton(() => outputMenu(o, local)));
+  return row;
+}
+function outputMenu(o, local) {
+  const items = [{ heading: `Output · ${local ? 'on this PC' : targetLabel(o.target)}${o.sizeMB ? ` · ${o.sizeMB} MB` : ''}` }];
+  if (local) {
+    items.push({ label: 'Copy the file', icon: 'i-copy', onclick: () => jobAction(o.id, 'copy-file', 'File copied - paste it with Ctrl+V') });
+  } else {
+    items.push({ label: 'Copy the page link', icon: 'i-copy', onclick: () => copyText(o.link).then(() => toast('Page link copied', 'ok')) });
+    items.push({ label: 'Open in the browser', icon: 'i-external', href: o.link, blank: true });
+    items.push({ label: 'Open the folder', icon: 'i-folder', onclick: () => jobAction(o.id, 'open-folder', 'Folder opened on the PC') });
+  }
+  if (o.file) items.push({ label: 'Download to this device', icon: 'i-download', href: `/api/jobs/${encodeURIComponent(o.id)}/file`, download: o.file });
+  const posts = o.direct && !o.discord ? (cfg.targets || []).filter(t => t.kind === 'notify' && t.connected) : [];
+  const publishes = o.file ? storageTargets().filter(t => t.id !== o.target) : [];
+  if (posts.length || publishes.length) items.push('hr');
+  posts.forEach(t => items.push({ label: `Post the link to ${t.label}`, icon: 'i-send', onclick: () => postTo(o.id, t.id) }));
+  publishes.forEach(t => items.push({ label: `Publish to ${t.label}`, icon: 'i-share', onclick: () => publishTo(o.id, t.id) }));
+  return items;
+}
+async function jobAction(id, action, okText) {
+  try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/' + action, { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(okText, 'ok') : toast(r.error, 'err'); }
+  catch (e) { toast(e.message, 'err'); }
+}
+async function postTo(id, target) {
+  try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/post', jsonOpts('POST', { target }), { retries: 0, timeout: 30000 }); if (r.ok) { toast(`${targetLabel(target)}: ${r.status}`, 'ok'); shownLast = null; poll.now(); } else toast(r.error, 'err'); }
+  catch (e) { toast(e.message, 'err'); }
+}
+async function publishTo(id, target) {
+  try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/publish', jsonOpts('POST', { target }), { retries: 0 }); if (r.ok) { toast(`Publishing to ${targetLabel(target)}${r.position > 0 ? ` - ${r.position} ahead` : ''}`); watchJob(r.job, true); } else toast(r.error, 'err'); }
+  catch (e) { toast(e.message, 'err'); }
+}
+
 // ------------------------------------------------------------ cuts (3.0)
 // A cut is the range as its own file: picture and every audio track, copied,
 // not re-encoded. Everything below it came out of it.
@@ -2487,61 +2611,92 @@ function renderCuts() {
   const cuts = (cur && cur.cuts) || [];
   box.hidden = !cur || !cuts.length;
   if (box.hidden) { cutsKey = ''; return; }
+  const open = new Set([...list.querySelectorAll('details[open]')].map(d => d.dataset.cut));
   const key = cur.base + JSON.stringify(cuts.map(c => [c.id, c.state, (c.outputs || []).map(o => o.id + (o.discord ? '+' : '')).join()])); if (key === cutsKey) return; cutsKey = key;
   $('cutCount').textContent = cuts.length;
   list.innerHTML = '';
   cuts.forEach(c => {
-    const el = document.createElement('div');
+    const outs = c.outputs || [];
     const here = Math.abs(c.start - tIn) < 0.05 && Math.abs(c.end - tOut) < 0.05;
-    el.className = 'cut' + (here ? ' is-current' : '');
-    const state = c.state === 'ready' ? '' : `<span class="badge ${c.state === 'pending' ? '' : 'warn'}">${esc(c.state === 'pending' ? 'cutting …' : 'no cut file')}</span>`;
-    // a cut without its file renders nothing; the range is still good, so
-    // "Marks" puts it back on the timeline and Share makes it again
-    const canRender = c.state === 'ready' ? '' : ' disabled title="This cut has no file - put its range on the timeline with Marks and share it again"';
-    el.innerHTML = `<div class="head">
-        <span class="range">${cutRange(c)}</span>
-        <span class="muted sm">${fmt(c.end - c.start)} · ${esc(audioLabel(c.audio))}${c.vertical ? ' · 9:16' : ''}</span>
-        ${state}
-        <span class="grow"></span>
-        <div class="split"><button class="btn btn-sm" data-render${canRender || ' title="Encode this cut and send it to the default target"'}>Render</button><button class="btn btn-sm btn-icon" data-render-menu${canRender || ' title="Render to another target"'}>▾</button><div class="menu" hidden></div></div>
-        <button class="btn btn-sm btn-ghost" data-marks title="Put the marks of the timeline on this range"><svg class="icon icon-sm"><use href="#i-cut-in"/></svg> Marks</button>
-        <button class="btn btn-sm btn-ghost btn-icon" data-del title="Delete this cut and everything it produced"><svg class="icon icon-sm"><use href="#i-trash"/></svg></button>
-      </div>`;
-    (c.outputs || []).forEach(o => {
-      const row = document.createElement('div'); row.className = 'out';
-      const local = !o.direct;
-      const target = o.target && o.target !== 'file' ? `<span class="badge">${esc(targetLabel(o.target))}</span>` : '<span class="badge accent">file only</span>';
-      row.innerHTML = `<div class="meta">${esc((o.finished || o.at || '').replace('T', ' ').slice(0, 16))} · ${o.sizeMB} MB · ${esc(audioLabel(o.audio))} ${target}${o.vertical ? ' <span class="badge accent">9:16</span>' : ''}${o.source ? ' <span class="badge">republished</span>' : ''}</div>
-        <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(o.link)}" target="_blank" rel="noopener">Open</a>`}${downloadButton(Object.assign({ ok: true }, o))}${o.discord ? '' : postButtons(Object.assign({ ok: true }, o))}${publishButtons(Object.assign({ ok: true }, o))}</div>`;
-      row.querySelectorAll('button[data-c]').forEach(b => b.onclick = () => copyText(o[b.dataset.c]).then(() => toast(b.dataset.c === 'direct' ? 'Direct link copied' : 'Page link copied', 'ok')));
-      row.querySelectorAll('button[data-a]').forEach(b => b.onclick = () => jobAction(o.id, b.dataset.a, b.dataset.a === 'copy-file' ? 'File copied - paste it with Ctrl+V' : 'Folder opened on the PC'));
-      wirePublish(row, o.id); wirePost(row, o.id);
-      el.appendChild(row);
-    });
-    if (c.state === 'missing') {
-      const note = document.createElement('div'); note.className = 'muted sm';
-      note.textContent = cur && cur.file !== null
-        ? 'From before 3.0, so there is no cut file. "Marks" puts its range back on the timeline - share it from there and the cut is made.'
-        : 'From before 3.0: no cut file, and the recording is gone too. What it produced is still listed above.';
-      el.appendChild(note);
-    } else if (!(c.outputs || []).length) {
-      const note = document.createElement('div'); note.className = 'muted sm';
-      note.textContent = 'Saved, not rendered yet.';
-      el.appendChild(note);
+    const el = document.createElement('details');
+    el.className = 'cutrow' + (here ? ' is-current' : '') + (c.state === 'missing' ? ' is-missing' : '');
+    el.dataset.cut = c.id;
+    // stays open across a refresh, and a cut worth reading opens itself
+    if (open.has(c.id) || (open.size === 0 && here && outs.length)) el.open = true;
+    // where it went, or why it cannot go anywhere
+    const targets = [...new Set(outs.map(o => o.target && o.target !== 'file' ? targetLabel(o.target) : 'on this PC'))];
+    const where = c.state === 'pending'
+      ? '<span class="spinner"></span>cutting …'
+      : c.state === 'missing'
+        ? `<svg class="icon icon-sm warn"><use href="#i-warning"/></svg>no cut file${targets.length ? ' · ' + esc(targets.join(', ')) : ''}`
+        : targets.length
+          ? `<svg class="icon icon-sm ok"><use href="#i-check"/></svg>${esc(targets.join(', '))}`
+          : 'saved, not rendered';
+    el.innerHTML = `<summary>
+        <svg class="icon chev"><use href="#i-chevron"/></svg>
+        <div class="what"><span class="range">${cutRange(c)}</span><span class="len">${fmt(c.end - c.start)} · ${esc(audioLabel(c.audio))}${c.vertical ? ' · 9:16' : ''}</span><span class="where">${where}</span></div>
+        <div class="act"></div>
+      </summary>`;
+    const act = el.querySelector('.act');
+    const ready = c.state === 'ready';
+    const primary = document.createElement('button');
+    primary.className = 'btn btn-sm';
+    if (ready) {
+      primary.textContent = 'Render';
+      primary.title = 'Encode this cut and send it to the default target';
+      primary.onclick = e => { e.preventDefault(); renderCut(c, ''); };
+    } else {
+      primary.innerHTML = '<svg class="icon icon-sm"><use href="#i-cut-in"/></svg> Marks';
+      primary.title = 'Put the marks of the timeline on this range';
+      primary.disabled = c.state === 'pending';
+      primary.onclick = e => { e.preventDefault(); putMarks(c); };
     }
-    el.querySelector('[data-marks]').onclick = () => { if (!cur) return; tIn = c.start; tOut = Math.min(c.end, cur.duration || c.end); edited = true; if (v && v.src) seek(tIn); render(); renderCuts(); };
-    el.querySelector('[data-del]').onclick = () => deleteCut(c);
-    const menu = el.querySelector('.menu');
-    el.querySelector('[data-render]').onclick = () => renderCut(c, '');
-    el.querySelector('[data-render-menu]').onclick = e => {
-      e.stopPropagation();
-      menu.innerHTML = '';
-      storageTargets().forEach(t => { const b = document.createElement('button'); b.innerHTML = `<svg class="icon icon-sm"><use href="#i-share"/></svg> Render to ${esc(t.label)}`; b.onclick = () => { menu.hidden = true; renderCut(c, t.id); }; menu.appendChild(b); });
-      const f = document.createElement('button'); f.innerHTML = '<svg class="icon icon-sm"><use href="#i-folder"/></svg> File only'; f.onclick = () => { menu.hidden = true; renderCut(c, 'file'); }; menu.appendChild(f);
-      menu.hidden = !menu.hidden;
-    };
+    act.appendChild(primary);
+    act.appendChild(moreButton(() => cutMenu(c, ready)));
+    // the outputs, and a word when there are none
+    const body = document.createElement('div'); body.className = 'body';
+    if (c.state === 'missing') {
+      const note = document.createElement('div'); note.className = 'note';
+      note.textContent = cur && cur.file !== null
+        ? 'From before 3.0, so there is no cut file. "Marks" puts its range back on the timeline; share it from there and the cut is made.'
+        : 'From before 3.0: no cut file, and the recording is gone too. What it produced is still here.';
+      body.appendChild(note);
+    } else if (!outs.length) {
+      const note = document.createElement('div'); note.className = 'note';
+      note.textContent = 'Saved, not rendered yet.';
+      body.appendChild(note);
+    }
+    outs.forEach(o => body.appendChild(outputRow(o, 'clip')));
+    if (c.state === 'pending') {
+      const bar = document.createElement('div'); bar.className = 'bar'; bar.innerHTML = '<i style="width:40%"></i>';
+      el.appendChild(bar);
+    } else {
+      el.appendChild(body);
+    }
     list.appendChild(el);
   });
+}
+function putMarks(c) {
+  if (!cur) return;
+  tIn = c.start; tOut = Math.min(c.end, cur.duration || c.end); edited = true;
+  if (v && v.getAttribute('src')) seek(tIn);
+  render(); cutsKey = ''; renderCuts();
+}
+function cutMenu(c, ready) {
+  const items = [{ heading: `Cut · ${cutRange(c)}` }];
+  if (ready) {
+    items.push({ heading: 'Render to' });
+    const def = defaultTarget();
+    storageTargets().forEach(t => items.push({ label: t.label, icon: 'i-share', note: t.id === def ? 'default' : '', onclick: () => renderCut(c, t.id) }));
+    items.push({ label: 'File only', icon: 'i-folder', note: def === 'file' ? 'default' : '', onclick: () => renderCut(c, 'file') });
+    items.push('hr');
+  } else if (c.state === 'missing') {
+    items.push({ label: 'Render', icon: 'i-share', disabled: true, title: 'This cut has no file - put its range on the timeline and share it again' });
+  }
+  items.push({ label: 'Put marks on the timeline', icon: 'i-cut-in', onclick: () => putMarks(c) });
+  items.push('hr');
+  items.push({ label: (c.outputs || []).length ? 'Delete the cut and its outputs' : 'Delete the cut', icon: 'i-trash', danger: true, onclick: () => deleteCut(c) });
+  return items;
 }
 async function renderCut(c, target) {
   const body = { audio: $('audio').value, mode: $('mode').value };
@@ -2619,14 +2774,18 @@ function renderList() {
     const d = (c.created || '').slice(0, 10);
     if (d !== day) { day = d; const h = document.createElement('div'); h.className = 'day'; h.textContent = dayLabel(d); list.appendChild(h); }
     const e = document.createElement('div'); e.className = 'clip' + (cur && cur.base === c.base ? ' active' : '') + (c.state === 'done' ? ' is-done' : ''); e.dataset.base = c.base;
+    // since 3.1: what is worth knowing, as words in one line - no badge wall
     const cuts = (c.cuts || []).length;
-    const tags = [
-      cuts ? `<span class="badge" title="${cuts} saved cut${cuts === 1 ? '' : 's'}">${cuts} cut${cuts === 1 ? '' : 's'}</span>` : '',
-      ...clipTargets(c).slice(0, 3).map(t => `<span class="badge" title="An output went to ${esc(targetLabel(t))}">${esc(targetLabel(t))}</span>`),
-      c.state === 'done' ? '<span class="badge ok" title="Marked done"><svg class="icon icon-sm"><use href="#i-check"/></svg> done</span>' : '',
-      c.file === null ? '<span class="badge warn" title="The recording is in the recycle bin; the cuts are still here">no recording</span>' : '',
-    ].filter(Boolean).join('');
-    e.innerHTML = `${c.thumb ? `<img class="thumb" src="${esc(c.thumb)}" alt="" loading="lazy">` : '<div class="thumb none"><svg class="icon icon-sm"><use href="#i-film"/></svg></div>'}<div class="name"><span></span></div><div class="meta"><span>${fmt(c.duration)}</span>${c.file === null ? '' : `<span>${(c.size / 1048576).toFixed(0)} MB</span>`}<span>${esc((c.created || '').slice(11, 16))}</span></div>${tags ? `<div class="tags">${tags}</div>` : ''}`;
+    const gone = c.file === null;
+    const meta = [
+      esc((c.created || '').slice(11, 16)),
+      gone ? '' : fmt(c.duration),
+      cuts ? `${cuts} cut${cuts === 1 ? '' : 's'}` : '',
+      esc(clipTargets(c).map(targetLabel).join(', ')),
+      c.state === 'done' ? '<svg class="icon icon-sm ok"><use href="#i-check"/></svg>done' : '',
+      gone ? '<span class="faint">recording gone</span>' : '',
+    ].filter(Boolean).map(s => `<span>${s}</span>`).join('');
+    e.innerHTML = `${c.thumb ? `<img class="thumb" src="${esc(c.thumb)}" alt="" loading="lazy">` : `<div class="thumb none${gone ? ' gone' : ''}"><svg class="icon icon-sm"><use href="#i-film"/></svg></div>`}<div class="name"><span></span></div><div class="meta">${meta}</div>`;
     const n = e.querySelector('.name span'); if (c.title) { n.innerHTML = `<b></b>`; n.firstChild.textContent = c.title; n.title = short(c.base); } else n.textContent = short(c.base);
     e.onclick = () => { load(c); if (!matchMedia('(min-width: 1000px)').matches) $('cliplist').open = false; };
     list.appendChild(e);
