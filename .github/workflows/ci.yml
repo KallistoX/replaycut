@@ -1,6 +1,6 @@
 # CI. `check` lints and builds the workspace and runs the tests that need
 # nothing but the source; `contract` starts a real service and runs the API
-# contract suite against it.
+# contract suite against it. Both run on Windows and on Linux.
 # The release workflow (release.yml) runs on tags v*.
 name: CI
 
@@ -14,8 +14,12 @@ env:
 
 jobs:
   check:
-    name: fmt, clippy, build, unit tests
-    runs-on: windows-latest
+    name: fmt, clippy, build, unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -31,8 +35,12 @@ jobs:
         run: cargo test -p replaycut-api-tests --no-run
 
   contract:
-    name: API contract suite
-    runs-on: windows-latest
+    name: API contract suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -41,6 +49,7 @@ jobs:
       # The suite generates its clip with ffmpeg and the service encodes with
       # it, so the runner needs both ffmpeg and ffprobe on the PATH.
       - name: Install ffmpeg
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $zip = "$env:RUNNER_TEMP\ffmpeg.zip"
@@ -51,12 +60,20 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value $bin
           & "$bin\ffmpeg.exe" -hide_banner -version | Select-Object -First 1
           & "$bin\ffprobe.exe" -hide_banner -version | Select-Object -First 1
+      - name: Install ffmpeg
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -hide_banner -version | head -n 1
+          ffprobe -hide_banner -version | head -n 1
 
       - run: cargo build -p replaycut
 
       # Encodes for real, uploads and posts nowhere, and listens on this
       # runner only. Port 8423 keeps it out of the way of a developer machine.
       - name: Start the service
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\rc-data" | Out-Null
@@ -75,26 +92,53 @@ jobs:
           }
           Write-Host "the service did not answer within 60 s"
           exit 1
+      - name: Start the service
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "$RUNNER_TEMP/rc-data" "$RUNNER_TEMP/rc-clips"
+          nohup target/debug/replaycut --dry-run --port 8423 --no-browser \
+            --data-dir "$RUNNER_TEMP/rc-data" --clip-dir "$RUNNER_TEMP/rc-clips" >/dev/null 2>&1 &
+          for _ in $(seq 1 120); do
+            if curl -fsS http://localhost:8423/api/session >/dev/null 2>&1; then
+              echo "the service answers on 8423"
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "the service did not answer within 60 s"
+          exit 1
 
       # One share slot, one clip folder: the suite is serial by design
       # (`.cargo/config.toml` sets the same thing for a local run).
       - name: Contract suite
+        if: runner.os == 'Windows'
         shell: pwsh
         env:
           BASE_URL: http://localhost:8423
         run: |
           $env:CLIP_DIR = "$env:RUNNER_TEMP\rc-clips"
           cargo test -p replaycut-api-tests -- --test-threads=1
+      - name: Contract suite
+        if: runner.os == 'Linux'
+        env:
+          BASE_URL: http://localhost:8423
+          CLIP_DIR: ${{ runner.temp }}/rc-clips
+        run: cargo test -p replaycut-api-tests -- --test-threads=1
 
+      # `stop` goes through the platform's own channel (the stop event on
+      # Windows, the lock file and SIGTERM on Linux), so this step tests it.
       - name: Stop the service
-        if: always()
+        if: always() && runner.os == 'Windows'
         shell: pwsh
         run: target\debug\replaycut.exe stop --port 8423
+      - name: Stop the service
+        if: always() && runner.os == 'Linux'
+        run: target/debug/replaycut stop --port 8423
 
       - name: Service log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: service-log
+          name: service-log-${{ matrix.os }}
           path: ${{ runner.temp }}/rc-data/logs
           if-no-files-found: warn
