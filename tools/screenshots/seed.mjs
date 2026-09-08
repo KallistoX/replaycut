@@ -119,8 +119,9 @@ for (const range of [{ start: 0.4, end: 2.6, audio: 'mix' }, { start: 1.8, end: 
     method: 'POST',
     body: JSON.stringify({ base: withCuts.base, ...range }),
   });
-  const id = made.cut.id;
-  // GET /api/cuts/<id> answers with the cut itself, POST wraps it in `cut`.
+  // `cut` is the id here; `GET /api/cuts/<id>` answers with the cut itself.
+  const id = typeof made.cut === 'string' ? made.cut : made.cut?.id;
+  if (!id) throw new Error(`POST /api/cuts answered without an id: ${JSON.stringify(made)}`);
   await waitFor(`cut ${id}`, async () => (await api(`/api/cuts/${id}`)).state === 'ready');
   cuts.push(id);
 }
