@@ -44,6 +44,9 @@ tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "chrono"] }
 trash = "5.2.3"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { version = "1.1", features = ["fs", "process", "system"] }
+
 [target."cfg(windows)".dependencies]
 muda = { version = "0.19", default-features = false }
 tray-icon = { version = "0.24", default-features = false }
