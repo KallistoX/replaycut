@@ -10,6 +10,7 @@ use anyhow::Result;
 
 /// Application user model id: the toast registration and the start menu
 /// shortcut (both written by `replaycut install`) use the same id.
+#[cfg(windows)]
 pub const APP_ID: &str = "replaycut";
 
 /// Kernel object names carry the port, so a test instance on another port

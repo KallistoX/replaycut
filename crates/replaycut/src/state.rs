@@ -668,7 +668,9 @@ impl AppState {
         format!("http://localhost:{}/", self.settings.read().port)
     }
 
-    /// The UI address for other devices in the network.
+    /// The UI address for other devices in the network (the tray's "Copy
+    /// address").
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn lan_url(&self) -> String {
         format!(
             "http://{}:{}/",

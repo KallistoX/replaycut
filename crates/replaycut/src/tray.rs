@@ -9,7 +9,9 @@
 
 use crate::state::AppState;
 
-/// What the tray shows, derived from the state.
+/// What the tray shows, derived from the state. Platform-neutral; only the
+/// Windows tray reads it so far.
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrayInfo {
     pub clips: usize,
@@ -26,6 +28,7 @@ pub struct TrayInfo {
     pub pending: usize,
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 impl TrayInfo {
     pub fn of(state: &AppState) -> Self {
         let inner = state.inner.lock();
@@ -98,6 +101,7 @@ impl TrayInfo {
     }
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IconState {
     Normal,
@@ -361,6 +365,7 @@ mod other {
     #[derive(Debug, Clone, Copy)]
     pub struct TrayHandle;
 
+    #[allow(dead_code)]
     impl TrayHandle {
         pub fn for_current_thread() -> Self {
             Self
