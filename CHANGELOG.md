@@ -56,6 +56,14 @@ contract.
   policy instead of two GitHub links. The site's source is its own
   repository, `KallistoX/replaycut.de`.
 
+### Fixed
+
+- The note in "Open it on your phone" ("Only this PC can reach replaycut
+  ... set **Listen on** to all interfaces ...") broke into three columns
+  while the service listened on loopback only: the note is a flex row, and
+  the bold words became a flex item of their own. It reads as one paragraph
+  again, with the info icon the same note carries in the wizard. (issue #9)
+
 ## [3.1.0] - 2026-09-08
 
 The clips page of 3.0 put the same thing on the screen three times. This is
