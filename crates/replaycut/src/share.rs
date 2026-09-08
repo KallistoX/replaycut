@@ -1327,15 +1327,17 @@ async fn encode(
     let out_s = out.to_string_lossy().into_owned();
     // since 2.7 the recording's resolution stays unless the target caps it;
     // the preview copy is 720p, a vertical cut its own crop
-    let vf: Option<String> = if job.vertical {
+    let base_filter: Option<String> = if job.vertical {
         Some(vertical_filter(job.vertical_pos.unwrap_or(0.5)))
     } else if job.is_preview() {
-        Some(enc.filter_for(720))
+        Some(enc.scale.replace("{h}", "720"))
     } else if job.max_height > 0 {
-        Some(enc.filter_for(job.max_height))
+        Some(enc.scale.replace("{h}", &job.max_height.to_string()))
     } else {
         None
     };
+    // plus the upload an encoder needs when the frames reach it in software
+    let vf = enc.filters(base_filter);
     let mut args: Vec<&str> = vec!["-nostats", "-progress", "pipe:1", "-y", "-v", "error"];
     let runtime = state.runtime();
     let threads = runtime.media.threads.to_string();
@@ -1344,6 +1346,7 @@ async fn encode(
         args.extend(["-threads", &threads]); // decoder (dav1d takes every core otherwise)
     }
     if !copy {
+        args.extend(enc.global.iter().copied());
         args.extend(enc.decode.iter().copied());
     }
     args.extend([
