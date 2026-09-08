@@ -55,9 +55,21 @@ fn u01_ui_page_has_viewport_and_hooks() {
         "the viewport meta tag is not the one phones need"
     );
 
-    // The player, the share button, the two encode selects, the quota badge
-    // and the history list: without these the page loads and does nothing.
-    for id in ["v", "bShare", "mode", "frame", "quota", "hist"] {
+    // The player, the share row with its selects, the quota badge and, since
+    // 3.0, the cut list and the filter above the clips: without these the
+    // page loads and does nothing. (`hist`, the "Shared" list until 2.8, is
+    // gone - its entries live on the Activity page and under their cut.)
+    for id in [
+        "v",
+        "bShare",
+        "bCut",
+        "mode",
+        "frame",
+        "after",
+        "quota",
+        "cuts",
+        "clipFilter",
+    ] {
         assert!(
             body.contains(&format!("id=\"{id}\"")),
             "the page has no element with id=\"{id}\""

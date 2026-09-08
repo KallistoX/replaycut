@@ -33,6 +33,8 @@ pub fn router(state: App) -> Router {
         .route("/diagnostics", get(ui))
         .route("/login", get(ui))
         .route("/obs", get(ui))
+        // since 3.0: the queue and everything that was ever sent somewhere
+        .route("/activity", get(ui))
         // since 2.8: the device login
         .route("/approve", get(ui))
         .route("/approve/{id}", get(ui))

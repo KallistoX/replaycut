@@ -947,6 +947,8 @@ impl AppState {
                 "quota": *self.quota.lock(),
                 // since 2.5
                 "targets": targets,
+                // since 3.0: what the "Afterwards" menu of the share row starts with
+                "cleanup": settings.cleanup,
                 // since 2.8: with `lan` and no password every device in the
                 // network may use this replaycut - the page says so
                 "network": match settings.bind.as_str() {

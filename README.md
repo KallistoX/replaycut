@@ -20,6 +20,13 @@ your phone, link in Discord.](docs/design/icons/social.png)
 
 - **Trim in the browser.** F9 in the game, a toast on the desktop, in and out
   points on your phone or laptop - the same page on every screen.
+- **Cut now, decide later.** Every share keeps the range as a cut of its own:
+  the picture untouched, every audio track along. Render it again tomorrow -
+  another audio mix, vertical for a Short, to another target - without the
+  five-minute recording, which you can let go of.
+- **A list that empties itself.** A shared clip is done and out of the way,
+  grouped by the evening it belongs to; one click brings it back, and
+  **Activity** knows what went where.
 - **The gaming PC does the work.** ffmpeg encodes on your GPU (AMD AMF, NVIDIA
   NVENC, Intel Quick Sync) at below-normal priority with a thread cap, so the
   game keeps the CPU.
@@ -44,7 +51,10 @@ your phone, link in Discord.](docs/design/icons/social.png)
    codec and landscape or vertical, give it a title.
 3. **Share.** **Share** cuts the selection and uploads it to the quick-share
    target; the menu next to the button holds every other storage and "file
-   only". Progress, queue and result stay on the page.
+   only". Progress, queue and result stay on the page. **Save cut** stops
+   after the cut - render it when the evening is over. **Afterwards** decides
+   what happens to the clip: keep it, mark it done, or let the recording go
+   to the recycle bin.
 4. **Post.** The quick share posts the link to Discord, Telegram or your
    webhook; on every other share the result card and the history offer
    **Post to ...**.

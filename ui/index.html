@@ -112,6 +112,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
 .row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 .row.nowrap { flex-wrap: nowrap; }
 .stack { display: flex; flex-direction: column; gap: var(--space-2); }
+.stack-2 { display: flex; flex-direction: column; gap: var(--space-2); }
 .stack-3 { display: flex; flex-direction: column; gap: var(--space-3); }
 .stack-4 { display: flex; flex-direction: column; gap: var(--space-4); }
 .grow { flex: 1; min-width: 0; }
@@ -371,6 +372,25 @@ details.limits summary { cursor: pointer; list-style: none; } details.limits sum
 .clip .meta { color: var(--fg-muted); font-size: var(--text-sm); display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .clip.new .name::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
 .clip.deleting { opacity: 0.5; pointer-events: none; }
+/* since 3.0: day groups, the state badges of a clip and the cut cards */
+.day { font-size: var(--text-xs); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: var(--space-3) var(--space-2) var(--space-1); }
+.day:first-child { margin-top: var(--space-1); }
+.clip .tags { grid-column: 2; display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.clip.is-done { opacity: 0.75; }
+.cuts-box { display: flex; flex-direction: column; gap: var(--space-2); }
+.cut { border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.cut.is-current { border-color: var(--accent); }
+.cut > .head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.cut > .head .range { font-weight: var(--weight-strong); }
+.cut .out { border-top: 1px solid var(--line); padding-top: var(--space-2); display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
+.cut .out .meta { color: var(--fg-muted); }
+/* the recording is in the recycle bin: its thumbnail stands in for the player */
+.gone-ov { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1); min-height: 220px; border-radius: var(--radius-md); border: 1px solid var(--line); background: var(--surface-2) center / cover no-repeat; color: var(--fg-muted); text-align: center; padding: var(--space-4); overflow: hidden; }
+.gone-ov::before { content: ""; position: absolute; inset: 0; background: var(--surface); opacity: 0.82; }
+.gone-ov > * { position: relative; }
+.gone-ov b { color: var(--fg); }
+.act { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--line); font-size: var(--text-sm); display: flex; flex-direction: column; gap: var(--space-1); }
+.act .meta { color: var(--fg-muted); }
 .hist { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--line); font-size: var(--text-sm); display: flex; flex-direction: column; gap: var(--space-1); }
 .hist .meta { color: var(--fg-muted); }
 .hist.expired { opacity: 0.6; }
@@ -495,7 +515,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 <header class="topbar">
   <a class="wordmark" href="/"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
   <nav class="nav" id="nav">
-    <a href="/" data-page="clips">Clips</a><a href="/settings" data-page="settings">Settings</a><a href="/obs" data-page="obs">OBS</a><a href="/diagnostics" data-page="diagnostics">Diagnostics</a>
+    <a href="/" data-page="clips">Clips</a><a href="/activity" data-page="activity">Activity</a><a href="/settings" data-page="settings">Settings</a><a href="/obs" data-page="obs">OBS</a><a href="/diagnostics" data-page="diagnostics">Diagnostics</a>
   </nav>
   <div class="right">
     <span class="badge" id="encoder" hidden></span>
@@ -529,9 +549,11 @@ ol.steps b { color: var(--fg); font-weight: normal; }
     </summary>
     <div class="list-body">
       <div class="list-head"><h2 style="margin:0">Clips</h2><span class="count" id="count"></span><button class="btn btn-sm right" id="btnSave" title="Triggers the replay hotkey in OBS (saves the last minutes)">Save replay <kbd>F9</kbd></button></div>
+      <div class="tabs" id="clipFilter">
+        <button type="button" data-filter="active" aria-current="page" title="Clips you have not put away yet">Active <span class="count" id="cntActive"></span></button>
+        <button type="button" data-filter="done" title="Clips you have marked done - their cuts are still here">Done <span class="count" id="cntDone"></span></button>
+      </div>
       <div id="list"><div class="empty compact">Loading clips …</div></div>
-      <h2>Shared</h2>
-      <div id="hist"><div class="empty compact">Nothing shared yet.</div></div>
     </div>
   </details>
 
@@ -547,7 +569,9 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <input class="input" id="title" maxlength="80" placeholder="Title (optional) - shown in the list, the file name and the post" disabled>
         <button class="btn btn-danger" id="bDel" disabled><svg class="icon"><use href="#i-trash"/></svg> Delete</button>
       </div>
-      <div class="player-wrap"><video id="v" controls preload="auto" playsinline></video><div class="crop-ov" id="cropOv" hidden><i id="cropL"></i><b id="cropW"></b><i id="cropR"></i><span>9:16 window - drag the slider below</span></div></div>
+      <div class="player-wrap"><video id="v" controls preload="auto" playsinline></video><div class="crop-ov" id="cropOv" hidden><i id="cropL"></i><b id="cropW"></b><i id="cropR"></i><span>9:16 window - drag the slider below</span></div>
+        <div class="gone-ov" id="goneOv" hidden><svg class="icon"><use href="#i-film"/></svg><b>Recording recycled</b><span>Its cuts are still here - render and publish them below.</span></div>
+      </div>
       <div class="video-err" id="vidErr" hidden></div>
       <div class="row" id="h264Row" hidden><span class="muted sm" id="h264Text"></span><button class="btn btn-sm" id="bH264"><svg class="icon icon-sm"><use href="#i-play"/></svg> Make a playable preview</button></div>
       <div class="timeline" id="tl">
@@ -566,18 +590,39 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       </div>
       <div class="share-row">
         <div class="split"><button class="btn btn-primary" id="bShare"><svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd></button><button class="btn btn-primary btn-icon" id="bShareMenu" title="Share to another target">▾</button><div class="menu" id="shareMenu" hidden></div></div>
+        <button class="btn" id="bCut" title="Save this range as a cut and render nothing - a cut keeps the picture and all audio tracks, so you can render it any way you like later"><svg class="icon"><use href="#i-cut-in"/></svg> Save cut</button>
         <select class="select" id="audio" title="Which audio tracks go into the shared clip"></select>
         <select class="select" id="mode" title="H.264: re-encoded in the recording's resolution at best quality, plays everywhere. As recorded: the OBS stream as it is - instant, no GPU, starts at the previous keyframe, plays only where the recording codec plays"><option value="h264">H.264 (best quality)</option><option value="copy">As recorded (no re-encode)</option></select>
         <select class="select" id="frame" title="Landscape: the frame as recorded. Vertical: a 9:16 window of full height, scaled to 1080x1920 for YouTube Shorts, TikTok or Reels"><option value="wide">Landscape 16:9</option><option value="vertical">Vertical 9:16 (Short)</option></select>
+        <select class="select" id="after" title="What happens to this clip once the share is through. The cut and everything it produced always stay."><option value="keep">Afterwards: keep</option><option value="done">Afterwards: mark done</option><option value="recycle">Afterwards: recycle recording</option></select>
         <span class="plan" id="planInfo"></span>
       </div>
       <div class="vpos-row" id="vposRow" hidden><span>Window position</span><input type="range" id="vpos" min="0" max="100" value="50" title="Where the 9:16 window sits: left edge, centre, right edge"><span id="vposText">centre</span></div>
       <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>I</kbd><kbd>O</kbd> marks</span><span><kbd>Enter</kbd> share</span></div>
       <div class="progress" id="prog" hidden><div class="row nowrap"><span class="grow" id="progText"></span><span class="muted sm" id="progPct"></span><button class="btn btn-sm btn-ghost" id="progCancel" title="Stop this share" hidden><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div><div class="bar"><i id="progBar"></i></div><div class="stages" id="stages"></div></div>
       <div class="result" id="result" hidden></div>
+      <section class="cuts-box" id="cutsBox" hidden>
+        <div class="list-head"><h2 style="margin:0">Cuts</h2><span class="count" id="cutCount"></span></div>
+        <div id="cuts"></div>
+      </section>
     </div>
   </main>
 </div>
+
+<!-- ===================== Activity ===================== -->
+<main class="page" id="page-activity" hidden>
+  <div class="page-head"><h1>Activity</h1><span class="muted">What is running, and everything that was ever rendered or sent somewhere.</span></div>
+  <section class="card" id="actQueueCard" hidden>
+    <div class="card-head"><svg class="icon"><use href="#i-clock"/></svg><h2>Running now</h2></div>
+    <div id="actQueue"></div>
+  </section>
+  <section class="card">
+    <div class="card-head"><svg class="icon"><use href="#i-share"/></svg><h2>Outputs</h2><span class="count" id="actCount"></span></div>
+    <div class="row" id="actFilter"></div>
+    <div id="actList"><div class="empty compact">Loading …</div></div>
+    <div class="row"><button class="btn btn-sm" id="actMore" hidden>Show older</button></div>
+  </section>
+</main>
 
 <!-- ===================== Login ===================== -->
 <div class="centered" id="page-login" hidden>
@@ -1040,6 +1085,11 @@ ol.steps b { color: var(--fg); font-weight: normal; }
     <h2>Delete clip?</h2>
     <div class="muted" id="delName"></div>
     <div class="muted sm">The MKV and the files shared from it go to the recycle bin on the PC.</div>
+    <!-- since 3.0: a clip with cuts can give up its recording and keep them -->
+    <div class="stack-2" id="delScopeRow" hidden>
+      <label class="check"><input type="radio" name="delScope" value="clip" checked> <span><b>Only the recording</b> - the <span id="delCutCount"></span> stay, you can render and publish them any time. The clip is marked done.</span></label>
+      <label class="check"><input type="radio" name="delScope" value="all"> <span><b>Everything</b> - the recording, the cuts and the files shared from this clip.</span></label>
+    </div>
     <label class="check" id="delNcRow"><input type="checkbox" id="delNc" checked> <span>Also remove the uploaded copies (Nextcloud, OneDrive, YouTube videos, …) - <b>shared links (e.g. in Discord) will stop working</b>. Unchecked keeps them where they are.</span></label>
     <div class="actions"><button class="btn" id="delCancel">Cancel <kbd>Esc</kbd></button><button class="btn btn-danger" id="delOk">Move to recycle bin</button></div>
   </div>
@@ -1054,7 +1104,7 @@ const $ = s => document.getElementById(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
 const fmtShort = s => { s = Math.max(0, Math.round(s || 0)); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r; };
-const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup': 'setup', '/settings': 'settings', '/diagnostics': 'diagnostics', '/obs': 'obs' };
+const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup': 'setup', '/settings': 'settings', '/diagnostics': 'diagnostics', '/obs': 'obs', '/activity': 'activity' };
 // /approve and /approve/<id> are the same page (since 2.8)
 const page = PAGES[location.pathname] || (location.pathname.startsWith('/approve') ? 'approve' : 'clips');
 let cfg = { shareKbps: 0, expireDays: 0, audio: [{ id: 'mix', label: 'Mix (all)', need: 1 }], displayName: '' };
@@ -1104,7 +1154,7 @@ function banner(id, show, text) { const b = $(id); if (!b) return; b.hidden = !s
 document.querySelectorAll('[data-dismiss]').forEach(b => b.onclick = () => { $(b.dataset.dismiss).hidden = true; if (b.dataset.dismiss === 'b-update') updDismissed = upd && upd.latest ? upd.latest.version : (cfg.update && cfg.update.version); if (b.dataset.dismiss === 'b-failed') failedDismissed = cfg._lastFailedId; });
 function setDot(state, title) { $('dot').className = 'dot ' + (state || ''); $('dotWrap').title = title || ''; }
 function showPage(name) {
-  ['clips', 'login', 'approve', 'soon', 'setup', 'settings', 'diagnostics', 'obs'].forEach(p => { $('page-' + p).hidden = p !== name; });
+  ['clips', 'login', 'approve', 'soon', 'setup', 'settings', 'diagnostics', 'obs', 'activity'].forEach(p => { $('page-' + p).hidden = p !== name; });
   document.querySelectorAll('#nav a').forEach(a => { if (a.dataset.page === (name === 'clips' ? 'clips' : location.pathname.slice(1))) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
 }
 
@@ -1883,8 +1933,11 @@ async function initDiagnostics() {
 
 // ------------------------------------------------------------ clips
 let clips = [], cur = null, tIn = 0, tOut = 0, edited = false, busy = false, lastSeen = null, stopAt = null;
-let watchingJob = null, shownLast = null, failures = 0, histKey = '', audioBuilt = '', listKey = '', histData = [];
+let watchingJob = null, shownLast = null, failures = 0, audioBuilt = '', listKey = '', histData = [];
 let updDismissed = '', failedDismissed = '', pendingNew = null, pollT = null;
+// since 3.0: the list has two sides, and the clips that were put away are
+// only fetched when someone asks for them (`?done=1`)
+let clipFilter = 'active', doneClips = [], counts = { active: 0, done: 0 }, cutsKey = '', afterChosen = false;
 let v, tl, sel, hin, hout, ph;
 
 const short = b => { const p = (cfg.displayName || '').trim(); return p && b && b.toLowerCase().startsWith(p.toLowerCase()) ? b.slice(p.length).trim() : (b || ''); };
@@ -1950,7 +2003,20 @@ function initClips() {
     $('bH264').disabled = false;
   };
   $('bShareMenu').onclick = e => { e.stopPropagation(); buildShareMenu(); $('shareMenu').hidden = !$('shareMenu').hidden; };
-  document.addEventListener('click', e => { if (!$('shareMenu').hidden && !e.target.closest('.split')) $('shareMenu').hidden = true; });
+  document.addEventListener('click', e => {
+    if (!$('shareMenu').hidden && !e.target.closest('.split')) $('shareMenu').hidden = true;
+    // the render menus of the cut cards (since 3.0)
+    document.querySelectorAll('#cuts .menu').forEach(m => { if (!m.hidden && !e.target.closest('.split')) m.hidden = true; });
+  });
+  // since 3.0: save the range without rendering, and what happens afterwards
+  $('bCut').onclick = saveCut;
+  $('after').onchange = () => { afterChosen = true; try { sessionStorage.setItem('rc-after', $('after').value); } catch (e) {} };
+  $('clipFilter').querySelectorAll('button').forEach(b => b.onclick = () => {
+    if (clipFilter === b.dataset.filter) return;
+    clipFilter = b.dataset.filter;
+    $('clipFilter').querySelectorAll('button').forEach(x => x.dataset.filter === clipFilter ? x.setAttribute('aria-current', 'page') : x.removeAttribute('aria-current'));
+    listKey = ''; renderList(); poll.now();
+  });
   // share mode: remembered per browser (since 2.4)
   try { const m = localStorage.getItem('rc-mode'); if (m === 'copy' || m === 'h264') $('mode').value = m; } catch (e) {}
   $('mode').onchange = () => { try { localStorage.setItem('rc-mode', $('mode').value); } catch (e) {} render(); };
@@ -1965,13 +2031,29 @@ function initClips() {
     $('progCancel').disabled = false;
   };
   $('btnSave').onclick = $('btnSave2').onclick = sendF9;
+  // "Afterwards" starts at the setting and is remembered for this session (3.0)
+  try { const a = sessionStorage.getItem('rc-after'); if (a) { $('after').value = a; afterChosen = true; } } catch (e) {}
 
   // Title: Enter or leaving the field saves it (empty = remove title)
   $('title').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (!$('title').value.trim() && $('title').placeholder) $('title').value = $('title').placeholder; $('title').blur(); } else if (e.key === 'Escape') { $('title').value = cur ? (cur.title || '') : ''; $('title').blur(); } });
   $('title').addEventListener('blur', saveTitle);
 
   // Delete: dialog with the Nextcloud toggle, files go to the recycle bin
-  $('bDel').onclick = () => { if (!cur || busy) return; $('delName').textContent = (cur.title ? cur.title + ' - ' : '') + short(cur.base) + ' (' + fmt(cur.duration) + ')'; $('delNc').checked = !!cfg.nextcloud; $('delNcRow').hidden = !cfg.nextcloud; $('modal').hidden = false; $('delCancel').focus(); };
+  $('bDel').onclick = () => {
+    if (!cur || busy) return;
+    $('delName').textContent = (cur.title ? cur.title + ' - ' : '') + short(cur.base) + ' (' + fmt(cur.duration) + ')';
+    $('delNc').checked = !!cfg.nextcloud; $('delNcRow').hidden = !cfg.nextcloud;
+    // since 3.0: with cuts there is something worth keeping
+    const n = (cur.cuts || []).length;
+    $('delScopeRow').hidden = !n;
+    $('delCutCount').textContent = `${n} cut${n === 1 ? '' : 's'}`;
+    const scopeRows = document.querySelectorAll('input[name="delScope"]');
+    // nothing is published or unpublished while only the recording goes
+    const syncNc = () => { const all = $('delScopeRow').hidden || document.querySelector('input[name="delScope"]:checked').value === 'all'; $('delNcRow').hidden = !cfg.nextcloud || !all; };
+    scopeRows.forEach(r => { r.checked = r.value === (n ? 'clip' : 'all'); r.onchange = syncNc; });
+    syncNc();
+    $('modal').hidden = false; $('delCancel').focus();
+  };
   $('delCancel').onclick = () => { $('modal').hidden = true; };
   $('modal').addEventListener('click', e => { if (e.target === $('modal')) $('modal').hidden = true; });
   $('delOk').onclick = deleteClip;
@@ -1998,6 +2080,8 @@ function ticks(d) {
 }
 function render() {
   if (!cur) return;
+  // no recording, nothing to plan: the cut cards below are what acts (3.0)
+  if (cur.file === null) { $('selInfo').textContent = ''; $('planInfo').textContent = ''; return; }
   const d = cur.duration || v.duration || 1;
   sel.style.left = (tIn / d * 100) + '%'; sel.style.width = ((tOut - tIn) / d * 100) + '%';
   hin.style.left = (tIn / d * 100) + '%'; hout.style.left = (tOut / d * 100) + '%';
@@ -2046,11 +2130,23 @@ function h264Row(c) {
 }
 function load(c, keepSel) {
   cur = c; $('vidErr').hidden = true; $('editorBody').hidden = false; $('emptyEditor').hidden = true;
-  v.src = playerSource(c); v.poster = c.thumb || ''; v.load(); h264Row(c);
+  // since 3.0: the recording may be in the recycle bin while its cuts are not
+  const gone = c.file === null;
+  $('v').hidden = gone; $('goneOv').hidden = !gone;
+  if (gone) {
+    v.pause(); v.removeAttribute('src'); v.load();
+    $('goneOv').style.backgroundImage = c.thumb ? `url("${c.thumb}")` : '';
+    $('h264Row').hidden = true;
+  } else {
+    v.src = playerSource(c); v.poster = c.thumb || ''; v.load(); h264Row(c);
+  }
   if (!keepSel) { tIn = 0; tOut = c.duration; edited = false; if ($('frame').value !== 'wide') { $('frame').value = 'wide'; $('frame').onchange(); } }
   document.querySelectorAll('.clip').forEach(e => e.classList.toggle('active', e.dataset.base === c.base));
   $('title').value = c.title || ''; $('title').placeholder = suggestTitle(c); $('title').disabled = false; $('bDel').disabled = false;
-  ticks(c.duration); buildAudio(); render();
+  // nothing to cut from without the recording; the cuts below still render
+  ['bShare', 'bShareMenu', 'bCut', 'bIn', 'bOut', 'bAll', 'bPrev'].forEach(id => { $(id).disabled = gone; });
+  $('tl').style.display = gone ? 'none' : '';
+  ticks(c.duration); buildAudio(); render(); cutsKey = ''; renderCuts();
 }
 function unload() {
   cur = null; if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
@@ -2082,12 +2178,19 @@ function saveTitle() {
 }
 
 async function deleteClip() {
-  const c = cur, nc = !!cfg.nextcloud && $('delNc').checked; $('modal').hidden = true; if (!c) return;
+  const c = cur; $('modal').hidden = true; if (!c) return;
+  // since 3.0: the recording alone, or everything that hangs off the clip
+  const scope = $('delScopeRow').hidden ? 'all' : (document.querySelector('input[name="delScope"]:checked') || {}).value || 'all';
+  const nc = !!cfg.nextcloud && $('delNc').checked && scope === 'all';
   unload();   // release the stream, otherwise the browser keeps the preview open
   $('delOk').disabled = true;
   try {
-    const r = await api('/api/clips/' + encodeURIComponent(c.base) + (nc ? '?nextcloud=1' : ''), { method: 'DELETE' }, { retries: 0, timeout: 30000 });
-    if (r.ok) { toast(`Deleted: ${r.recycled} file(s) in the recycle bin` + (nc ? `, ${r.nextcloud} uploaded cop${r.nextcloud === 1 ? 'y' : 'ies'} removed` : ''), 'ok'); lastSeen = null; showResult(null); shownLast = null; }
+    const q = `?scope=${scope}` + (nc ? '&remote=1' : '');
+    const r = await api('/api/clips/' + encodeURIComponent(c.base) + q, { method: 'DELETE' }, { retries: 0, timeout: 30000 });
+    if (r.ok) {
+      toast(`Deleted: ${r.recycled} file(s) in the recycle bin` + (r.cuts ? `, ${r.cuts} cut${r.cuts === 1 ? '' : 's'} kept` : '') + (nc ? `, ${r.nextcloud} uploaded cop${r.nextcloud === 1 ? 'y' : 'ies'} removed` : ''), 'ok');
+      lastSeen = null; showResult(null); shownLast = null;
+    }
     else toast('Delete failed: ' + r.error, 'err');
   } catch (e) { toast('Delete failed: ' + e.message, 'err'); }
   $('delOk').disabled = false; poll.now();
@@ -2122,6 +2225,15 @@ function showResult(r) {
     box.innerHTML = `<div class="head"><svg class="icon"><use href="#i-close"/></svg> ${r.kind === 'preview' ? 'Preview' : 'Share'} cancelled</div>${when ? '<div>' + when + '</div>' : ''}`;
     return;
   }
+  // a cut renders nothing (since 3.0): the card says what was saved, the
+  // cut card below it is where it goes on
+  if (r.kind === 'cut') {
+    box.className = 'result' + (r.ok ? '' : ' err');
+    box.innerHTML = r.ok
+      ? `<div class="head"><svg class="icon"><use href="#i-check"/></svg> Cut saved - ${fmt(r.start)} - ${fmt(r.end)}, ${Number(r.seconds).toFixed(1)} s</div><div class="muted sm">Picture and every audio track, copied. Render it below whenever you like.</div>${when ? '<div>' + when + '</div>' : ''}`
+      : `<div class="head"><svg class="icon"><use href="#i-error"/></svg> Cut failed</div><div class="sm">${esc(r.error || 'unknown error')}</div>`;
+    return;
+  }
   if (r.kind === 'preview') {
     // the playable copy (since 2.6): the poll switches the player; here only the outcome
     box.className = 'result' + (r.ok ? '' : ' err');
@@ -2146,7 +2258,7 @@ function showResult(r) {
       <div class="row"><button class="btn" id="rOpen"><svg class="icon"><use href="#i-folder"/></svg> Open folder</button><button class="btn" id="rCopy"><svg class="icon"><use href="#i-copy"/></svg> Copy file</button>${downloadButton(r)}${publishButtons(r)}<span class="muted sm">Then Ctrl+V in Discord attaches it.</span></div>${when ? '<div>' + when + '</div>' : ''}`;
     $('rOpen').onclick = () => jobAction(r.id, 'open-folder', 'Folder opened on the PC');
     $('rCopy').onclick = () => jobAction(r.id, 'copy-file', 'File copied - paste it with Ctrl+V');
-    wirePublish(box, r.id);
+    wirePublish(box, r.id); afterLine(box, r);
     return;
   }
   const postFailed = r.discord && /post failed/i.test(r.discord);
@@ -2159,6 +2271,22 @@ function showResult(r) {
   $('cp').onclick = () => copyText(r.direct).then(() => toast('Direct link copied', 'ok'));
   $('cp2').onclick = () => copyText(r.link).then(() => toast('Page link copied', 'ok'));
   wirePublish(box, r.id); wirePost(box, r.id);
+  afterLine(box, r);
+}
+/// What "Afterwards" did, with a way back (since 3.0). The recycle bin is
+/// not emptied by us, so "Undo" only puts the clip back in the list.
+function afterLine(box, r) {
+  if (!r.ok || !r.after || r.after === 'keep' || !r.base) return;
+  const line = document.createElement('div'); line.className = 'line';
+  line.innerHTML = `<svg class="icon icon-sm"><use href="#i-check"/></svg> <span class="grow">${r.after === 'recycle' ? 'Clip marked done, the recording is in the recycle bin' : 'Clip marked done'}</span><button class="btn btn-sm" data-undo>Undo</button>`;
+  line.querySelector('[data-undo]').onclick = async () => {
+    try {
+      const res = await api('/api/clips/' + encodeURIComponent(r.base) + '/state', jsonOpts('PUT', { state: 'active' }), { retries: 0 });
+      if (res.ok) { toast(r.after === 'recycle' ? 'Clip is back in the list - the recording stays in the recycle bin' : 'Clip is back in the list', 'ok'); line.remove(); poll.now(); }
+      else toast(res.error, 'err');
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  box.appendChild(line);
 }
 // "Download" (since 2.6): the MP4 lands on the device the page is open on - the phone's gallery, the PC's downloads
 function downloadButton(j) {
@@ -2195,26 +2323,98 @@ async function jobAction(id, action, okText) {
   try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/' + action, { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(okText, 'ok') : toast(r.error, 'err'); }
   catch (e) { toast(e.message, 'err'); }
 }
-function renderHistory(h) {
-  const key = JSON.stringify((h || []).map(e => e.id + (e.discord ? '+' : ''))) + cfg.displayName + JSON.stringify(cfg.targets || null); if (key === histKey) return; histKey = key;
-  const box = $('hist'); box.innerHTML = (h && h.length) ? '' : '<div class="empty compact">Nothing shared yet.</div>';
-  (h || []).forEach(e => {
-    const d = document.createElement('div'); d.className = 'hist';
-    if (e.cancelled) {
-      d.innerHTML = `<b class="truncate muted"></b><div class="meta">${fmt(e.seconds)} · ${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · <span class="badge">cancelled</span></div>`;
-      d.querySelector('b').textContent = e.title || short(e.base);
-      box.appendChild(d); return;
-    }
-    const local = !e.direct;
-    const target = e.target && e.target !== 'file' ? `<span class="badge">${esc(targetLabel(e.target))}</span>` : (local ? '<span class="badge accent">file only</span>' : '');
-    d.innerHTML = `<b class="truncate"></b><div class="meta">${fmt(e.seconds)} · ${e.sizeMB} MB · ${esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16))} · ${esc(audioLabel(e.audio))} ${target}${e.vertical ? ' <span class="badge accent">9:16</span>' : ''}${e.source ? ' <span class="badge">republished</span>' : ''}</div>
-      <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(e.link)}" target="_blank" rel="noopener">Open</a>`}${downloadButton(Object.assign({ ok: true }, e))}${e.discord ? '' : postButtons(Object.assign({ ok: true }, e))}${publishButtons(Object.assign({ ok: true }, e))}</div>`;
+// ------------------------------------------------------------ Activity (3.0)
+// What is running, and everything that was ever rendered or sent somewhere.
+// This is where "what did I send where, and when" lives; the clip page shows
+// the same outputs under the cut they came from.
+let actEntries = [], actFilter = '', actKey = '', actAll = false;
+function outputRow(e) {
+  const d = document.createElement('div'); d.className = 'act';
+  const when = esc((e.finished || e.at || '').replace('T', ' ').slice(0, 16));
+  if (e.cancelled) {
+    d.innerHTML = `<b class="truncate muted"></b><div class="meta">${fmt(e.seconds)} · ${when} · <span class="badge">cancelled</span></div>`;
     d.querySelector('b').textContent = e.title || short(e.base);
-    d.querySelectorAll('button[data-c]').forEach(b => b.onclick = () => copyText(e[b.dataset.c]).then(() => toast(b.dataset.c === 'direct' ? 'Direct link copied' : 'Page link copied', 'ok')));
-    d.querySelectorAll('button[data-a]').forEach(b => b.onclick = () => jobAction(e.id, b.dataset.a, b.dataset.a === 'copy-file' ? 'File copied - paste it with Ctrl+V' : 'Folder opened on the PC'));
-    wirePublish(d, e.id); wirePost(d, e.id);
-    box.appendChild(d);
+    return d;
+  }
+  const local = !e.direct;
+  const target = e.target && e.target !== 'file' ? `<span class="badge">${esc(targetLabel(e.target))}</span>` : (local ? '<span class="badge accent">file only</span>' : '');
+  d.innerHTML = `<div class="row nowrap"><b class="truncate grow"></b><button class="btn btn-sm btn-ghost" data-goto title="Open this clip">Clip <svg class="icon icon-sm"><use href="#i-chevron"/></svg></button></div>
+    <div class="meta">${fmt(e.seconds)} · ${e.sizeMB} MB · ${when} · ${esc(audioLabel(e.audio))} ${target}${e.vertical ? ' <span class="badge accent">9:16</span>' : ''}${e.source ? ' <span class="badge">republished</span>' : ''}${e.kind === 'render' ? ' <span class="badge">from a cut</span>' : ''}</div>
+    <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(e.link)}" target="_blank" rel="noopener">Open</a>`}${downloadButton(Object.assign({ ok: true }, e))}${e.discord ? '' : postButtons(Object.assign({ ok: true }, e))}${publishButtons(Object.assign({ ok: true }, e))}</div>`;
+  d.querySelector('b').textContent = e.title || short(e.base);
+  d.querySelector('[data-goto]').onclick = () => { location.href = '/#' + encodeURIComponent(e.base); };
+  d.querySelectorAll('button[data-c]').forEach(b => b.onclick = () => copyText(e[b.dataset.c]).then(() => toast(b.dataset.c === 'direct' ? 'Direct link copied' : 'Page link copied', 'ok')));
+  d.querySelectorAll('button[data-a]').forEach(b => b.onclick = () => jobAction(e.id, b.dataset.a, b.dataset.a === 'copy-file' ? 'File copied - paste it with Ctrl+V' : 'Folder opened on the PC'));
+  wirePublish(d, e.id); wirePost(d, e.id);
+  return d;
+}
+/// The queue on top: the running job and what waits behind it. What a job is
+/// about only `/api/jobs/<id>` knows, so the rows fill in as the answers come.
+let queueJobs = {}, queueBusy = false;
+function renderQueue(d) {
+  const box = $('actQueue'), ids = [d.job].concat(d.queue || []).filter(Boolean);
+  $('actQueueCard').hidden = !ids.length;
+  if (!ids.length) { box.innerHTML = ''; queueJobs = {}; return; }
+  box.innerHTML = '';
+  ids.forEach((id, i) => {
+    const j = queueJobs[id] || {};
+    const what = j.base ? `${esc(j.title || short(j.base))} · ${fmt(j.seconds)}` : id;
+    const doing = i === 0
+      ? `${esc(STAGE_TEXT[j.stage] || j.stage || 'Running')}${j.stage === 'encode' ? ` ${j.percent || 0} %` : ''}`
+      : `Waiting - ${i} ahead`;
+    const row = document.createElement('div'); row.className = 'act';
+    row.innerHTML = `<div class="row nowrap"><b class="grow truncate">${what}</b><button class="btn btn-sm btn-ghost" data-cancel><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div>
+      <div class="meta">${doing}${j.target ? ' · ' + esc(targetLabel(j.target)) : ''}${j.kind && j.kind !== 'share' ? ` · <span class="badge">${esc(j.kind)}</span>` : ''}</div>
+      ${i === 0 && j.stage === 'encode' ? `<div class="bar"><i style="width:${j.percent || 0}%"></i></div>` : ''}`;
+    row.querySelector('[data-cancel]').onclick = async () => {
+      try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/cancel', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(r.stopped ? 'Removed from the queue' : 'Stopping …') : toast(r.error, 'err'); }
+      catch (e) { toast(e.message, 'err'); }
+      poll.now();
+    };
+    box.appendChild(row);
   });
+  // fetch what we do not know yet (and refresh the running one for its progress)
+  if (queueBusy) return;
+  queueBusy = true;
+  Promise.all(ids.slice(0, 6).map(async (id, i) => {
+    if (i > 0 && queueJobs[id]) return;
+    try { queueJobs[id] = await api('/api/jobs/' + encodeURIComponent(id), {}, { retries: 0 }); } catch (e) {}
+  })).then(() => { queueBusy = false; if (page === 'activity') renderQueue(d); });
+}
+function renderActivity(d) {
+  renderQueue(d);
+  const shown = actEntries.filter(e => !actFilter || (e.target || 'nextcloud') === actFilter);
+  const key = actFilter + JSON.stringify(shown.map(e => e.id + (e.discord ? '+' : ''))) + JSON.stringify(cfg.targets || null); if (key === actKey) return; actKey = key;
+  // one button per target that actually occurs, plus "all"
+  const seen = [];
+  actEntries.forEach(e => { const t = e.target || 'nextcloud'; if (!seen.includes(t)) seen.push(t); });
+  const f = $('actFilter'); f.innerHTML = '';
+  [['', 'All']].concat(seen.map(t => [t, targetLabel(t)])).forEach(([id, label]) => {
+    const b = document.createElement('button'); b.className = 'btn btn-sm' + (actFilter === id ? ' btn-primary' : '');
+    b.textContent = label; b.onclick = () => { actFilter = id; actKey = ''; renderActivity(d); };
+    f.appendChild(b);
+  });
+  const list = $('actList'); list.innerHTML = '';
+  $('actCount').textContent = shown.length;
+  if (!shown.length) { list.innerHTML = '<div class="empty compact">Nothing shared yet.</div>'; }
+  let day = null;
+  shown.forEach(e => {
+    const dd = (e.finished || e.at || '').slice(0, 10);
+    if (dd !== day) { day = dd; const h = document.createElement('div'); h.className = 'day'; h.textContent = dayLabel(dd); list.appendChild(h); }
+    list.appendChild(outputRow(e));
+  });
+  $('actMore').hidden = actAll || actEntries.length < ACT_PAGE;
+}
+const ACT_PAGE = 100;
+async function loadActivity(all) {
+  try {
+    const r = await api('/api/history?limit=' + (all ? 5000 : ACT_PAGE), {}, { retries: 0 });
+    actEntries = r.history || []; actAll = !!all; actKey = '';
+  } catch (e) { toast(e.message, 'err'); }
+}
+function initActivity() {
+  $('actMore').onclick = async () => { $('actMore').disabled = true; await loadActivity(true); $('actMore').disabled = false; poll.now(); };
+  loadActivity(false).then(() => poll());
 }
 // since 2.4 the Share button stays usable while a job runs: further shares queue up
 function setBusy(b) { busy = b; const s = $('bShare'); s.innerHTML = b ? '<span class="spinner"></span> Share (queue)' : '<svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd>'; s.classList.toggle('is-busy', b); setDot(b ? 'busy' : (cfg._lastFailed ? 'err' : ''), b ? 'Sharing' : (cfg._lastFailed ? 'Last share failed' : 'Service running')); }
@@ -2237,6 +2437,7 @@ async function share(target) {
   try {
     const body = { base: cur.base, start: tIn, end: tOut, audio: $('audio').value, mode: $('mode').value }; if (target) body.target = target;
     if ($('frame').value === 'vertical') { body.vertical = true; body.verticalPos = Number($('vpos').value) / 100; }
+    body.after = $('after').value;   // since 3.0: what happens to the clip afterwards
     const r = await api('/api/share', jsonOpts('POST', body), { retries: 0, timeout: 10000 });
     if (!r.ok) { if (r.job) { watchJob(r.job, true); toast(r.error, 'err'); } else { showResult(r); setBusy(false); } return; }
     if (r.position > 0) toast(`Queued - ${r.position} share${r.position === 1 ? '' : 's'} ahead`);
@@ -2277,18 +2478,152 @@ function showEmpty(kind) {
   }
 }
 
+// ------------------------------------------------------------ cuts (3.0)
+// A cut is the range as its own file: picture and every audio track, copied,
+// not re-encoded. Everything below it came out of it.
+function cutRange(c) { return `${fmt(c.start)} - ${fmt(c.end)}`; }
+function renderCuts() {
+  const box = $('cutsBox'), list = $('cuts');
+  const cuts = (cur && cur.cuts) || [];
+  box.hidden = !cur || !cuts.length;
+  if (box.hidden) { cutsKey = ''; return; }
+  const key = cur.base + JSON.stringify(cuts.map(c => [c.id, c.state, (c.outputs || []).map(o => o.id + (o.discord ? '+' : '')).join()])); if (key === cutsKey) return; cutsKey = key;
+  $('cutCount').textContent = cuts.length;
+  list.innerHTML = '';
+  cuts.forEach(c => {
+    const el = document.createElement('div');
+    const here = Math.abs(c.start - tIn) < 0.05 && Math.abs(c.end - tOut) < 0.05;
+    el.className = 'cut' + (here ? ' is-current' : '');
+    const state = c.state === 'ready' ? '' : `<span class="badge ${c.state === 'pending' ? '' : 'warn'}">${esc(c.state === 'pending' ? 'cutting …' : 'file missing')}</span>`;
+    el.innerHTML = `<div class="head">
+        <span class="range">${cutRange(c)}</span>
+        <span class="muted sm">${fmt(c.end - c.start)} · ${esc(audioLabel(c.audio))}${c.vertical ? ' · 9:16' : ''}</span>
+        ${state}
+        <span class="grow"></span>
+        <div class="split"><button class="btn btn-sm" data-render title="Encode this cut and send it to the default target">Render</button><button class="btn btn-sm btn-icon" data-render-menu title="Render to another target">▾</button><div class="menu" hidden></div></div>
+        <button class="btn btn-sm btn-ghost" data-marks title="Put the marks of the timeline on this range"><svg class="icon icon-sm"><use href="#i-cut-in"/></svg> Marks</button>
+        <button class="btn btn-sm btn-ghost btn-icon" data-del title="Delete this cut and everything it produced"><svg class="icon icon-sm"><use href="#i-trash"/></svg></button>
+      </div>`;
+    (c.outputs || []).forEach(o => {
+      const row = document.createElement('div'); row.className = 'out';
+      const local = !o.direct;
+      const target = o.target && o.target !== 'file' ? `<span class="badge">${esc(targetLabel(o.target))}</span>` : '<span class="badge accent">file only</span>';
+      row.innerHTML = `<div class="meta">${esc((o.finished || o.at || '').replace('T', ' ').slice(0, 16))} · ${o.sizeMB} MB · ${esc(audioLabel(o.audio))} ${target}${o.vertical ? ' <span class="badge accent">9:16</span>' : ''}${o.source ? ' <span class="badge">republished</span>' : ''}</div>
+        <div class="row">${local ? `<button class="btn btn-sm" data-a="open-folder"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open</button><button class="btn btn-sm" data-a="copy-file"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy file</button>` : `<button class="btn btn-sm" data-c="direct"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Direct</button><button class="btn btn-sm" data-c="link">Page</button><a class="btn btn-sm btn-ghost" href="${esc(o.link)}" target="_blank" rel="noopener">Open</a>`}${downloadButton(Object.assign({ ok: true }, o))}${o.discord ? '' : postButtons(Object.assign({ ok: true }, o))}${publishButtons(Object.assign({ ok: true }, o))}</div>`;
+      row.querySelectorAll('button[data-c]').forEach(b => b.onclick = () => copyText(o[b.dataset.c]).then(() => toast(b.dataset.c === 'direct' ? 'Direct link copied' : 'Page link copied', 'ok')));
+      row.querySelectorAll('button[data-a]').forEach(b => b.onclick = () => jobAction(o.id, b.dataset.a, b.dataset.a === 'copy-file' ? 'File copied - paste it with Ctrl+V' : 'Folder opened on the PC'));
+      wirePublish(row, o.id); wirePost(row, o.id);
+      el.appendChild(row);
+    });
+    if (!(c.outputs || []).length) {
+      const note = document.createElement('div'); note.className = 'muted sm';
+      note.textContent = c.state === 'missing' ? 'Nothing came out of this one, and its file is gone.' : 'Saved, not rendered yet.';
+      el.appendChild(note);
+    }
+    el.querySelector('[data-marks]').onclick = () => { if (!cur) return; tIn = c.start; tOut = Math.min(c.end, cur.duration || c.end); edited = true; if (v && v.src) seek(tIn); render(); renderCuts(); };
+    el.querySelector('[data-del]').onclick = () => deleteCut(c);
+    const menu = el.querySelector('.menu');
+    el.querySelector('[data-render]').onclick = () => renderCut(c, '');
+    el.querySelector('[data-render-menu]').onclick = e => {
+      e.stopPropagation();
+      menu.innerHTML = '';
+      storageTargets().forEach(t => { const b = document.createElement('button'); b.innerHTML = `<svg class="icon icon-sm"><use href="#i-share"/></svg> Render to ${esc(t.label)}`; b.onclick = () => { menu.hidden = true; renderCut(c, t.id); }; menu.appendChild(b); });
+      const f = document.createElement('button'); f.innerHTML = '<svg class="icon icon-sm"><use href="#i-folder"/></svg> File only'; f.onclick = () => { menu.hidden = true; renderCut(c, 'file'); }; menu.appendChild(f);
+      menu.hidden = !menu.hidden;
+    };
+    list.appendChild(el);
+  });
+}
+async function renderCut(c, target) {
+  const body = { audio: $('audio').value, mode: $('mode').value };
+  if (target) body.target = target;
+  if ($('frame').value === 'vertical') { body.vertical = true; body.verticalPos = Number($('vpos').value) / 100; }
+  body.after = $('after').value;
+  try {
+    const r = await api('/api/cuts/' + encodeURIComponent(c.id) + '/render', jsonOpts('POST', body), { retries: 0, timeout: 10000 });
+    if (!r.ok) { toast(r.error, 'err'); return; }
+    if (r.position > 0) toast(`Queued - ${r.position} job${r.position === 1 ? '' : 's'} ahead`);
+    setBusy(true); watchJob(r.job, true);
+  } catch (e) { toast(e.message, 'err'); }
+}
+async function deleteCut(c) {
+  const remote = (c.outputs || []).some(o => o.target && o.target !== 'file');
+  const what = `the cut ${cutRange(c)}` + ((c.outputs || []).length ? ` and its ${c.outputs.length} output${c.outputs.length === 1 ? '' : 's'}` : '');
+  if (!confirm(`Delete ${what}?\n\nThe files go to the recycle bin${remote ? ', and the uploaded copies are removed' : ''}.`)) return;
+  try {
+    const r = await api('/api/cuts/' + encodeURIComponent(c.id) + (remote ? '?remote=1' : ''), { method: 'DELETE' }, { retries: 0, timeout: 30000 });
+    r.ok ? toast(`Cut deleted: ${r.recycled} file(s) in the recycle bin`, 'ok') : toast(r.error, 'err');
+  } catch (e) { toast(e.message, 'err'); }
+  cutsKey = ''; poll.now();
+}
+/// Save the range as a cut and render nothing (since 3.0).
+async function saveCut() {
+  if (!cur || cur.file === null) return;
+  await saveTitle();
+  const body = { base: cur.base, start: tIn, end: tOut, audio: $('audio').value };
+  if ($('frame').value === 'vertical') { body.vertical = true; body.verticalPos = Number($('vpos').value) / 100; }
+  try {
+    const r = await api('/api/cuts', jsonOpts('POST', body), { retries: 0, timeout: 10000 });
+    if (!r.ok) { toast(r.cut ? 'This range is already a cut' : r.error, r.cut ? '' : 'err'); cutsKey = ''; poll.now(); return; }
+    toast(r.position > 0 ? `Queued - ${r.position} job${r.position === 1 ? '' : 's'} ahead` : 'Cutting …');
+    watchJob(r.job, true);
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+// ------------------------------------------------------------ the clip list (3.0)
+// One list with a filter: "Active" is what is still to do, "Done" what has
+// been put away. Days group it, because an evening of clips is a day's work.
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function localDay(back) { const d = new Date(); d.setDate(d.getDate() - (back || 0)); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function dayLabel(day) {
+  if (!day) return 'Earlier';
+  if (day === localDay(0)) return 'Today';
+  if (day === localDay(1)) return 'Yesterday';
+  const [y, m, d] = day.split('-').map(Number); const dt = new Date(y, m - 1, d);
+  return `${DAY_NAMES[dt.getDay()]} ${d} ${MONTH_NAMES[m - 1]}${y === new Date().getFullYear() ? '' : ' ' + y}`;
+}
+/// The clips the list shows right now: the filter decides, and a clip that is
+/// loaded stays visible whichever side it belongs to.
+function listedClips() { return clipFilter === 'done' ? doneClips : clips; }
+function allClips() { const seen = new Set(); return clips.concat(doneClips).filter(c => !seen.has(c.base) && seen.add(c.base)); }
+/// Where a clip's outputs went, for the badges in the list.
+function clipTargets(c) {
+  const out = [];
+  (c.cuts || []).forEach(cut => (cut.outputs || []).forEach(o => { const t = o.target || 'nextcloud'; if (!out.includes(t)) out.push(t); }));
+  return out;
+}
 function renderList() {
-  const key = JSON.stringify(clips.map(c => [c.base, c.title, c.tracks, c.thumb])) + (cur ? cur.base : ''); if (key === listKey) return; listKey = key;
-  const list = $('list'); list.innerHTML = clips.length ? '' : '<div class="empty compact"><div><b>No clips yet</b><br>Press <kbd>F9</kbd> in OBS while the replay buffer runs.</div></div>';
-  clips.forEach(c => {
-    const e = document.createElement('div'); e.className = 'clip' + (cur && cur.base === c.base ? ' active' : ''); e.dataset.base = c.base;
-    e.innerHTML = `${c.thumb ? `<img class="thumb" src="${esc(c.thumb)}" alt="" loading="lazy">` : '<div class="thumb none"><svg class="icon icon-sm"><use href="#i-film"/></svg></div>'}<div class="name"><span></span></div><div class="meta"><span>${fmt(c.duration)}</span><span>${(c.size / 1048576).toFixed(0)} MB</span>${c.tracks ? `<span>${c.tracks} track${c.tracks === 1 ? '' : 's'}</span>` : ''}<span>${esc((c.created || '').slice(11, 16))}</span></div>`;
+  const shown = listedClips();
+  const key = clipFilter + JSON.stringify(shown.map(c => [c.base, c.title, c.tracks, c.thumb, c.state, c.file === null, (c.cuts || []).length, clipTargets(c).join()])) + (cur ? cur.base : ''); if (key === listKey) return; listKey = key;
+  const list = $('list'); list.innerHTML = '';
+  if (!shown.length) {
+    list.innerHTML = clipFilter === 'done'
+      ? '<div class="empty compact"><div><b>Nothing done yet</b><br>A shared clip lands here and stays out of your way.</div></div>'
+      : (counts.done ? '<div class="empty compact"><div><b>All done</b><br>Everything is put away. The Done filter has them.</div></div>'
+        : '<div class="empty compact"><div><b>No clips yet</b><br>Press <kbd>F9</kbd> in OBS while the replay buffer runs.</div></div>');
+  }
+  let day = null;
+  shown.forEach(c => {
+    const d = (c.created || '').slice(0, 10);
+    if (d !== day) { day = d; const h = document.createElement('div'); h.className = 'day'; h.textContent = dayLabel(d); list.appendChild(h); }
+    const e = document.createElement('div'); e.className = 'clip' + (cur && cur.base === c.base ? ' active' : '') + (c.state === 'done' ? ' is-done' : ''); e.dataset.base = c.base;
+    const cuts = (c.cuts || []).length;
+    const tags = [
+      cuts ? `<span class="badge" title="${cuts} saved cut${cuts === 1 ? '' : 's'}">${cuts} cut${cuts === 1 ? '' : 's'}</span>` : '',
+      ...clipTargets(c).slice(0, 3).map(t => `<span class="badge" title="An output went to ${esc(targetLabel(t))}">${esc(targetLabel(t))}</span>`),
+      c.state === 'done' ? '<span class="badge ok" title="Marked done"><svg class="icon icon-sm"><use href="#i-check"/></svg> done</span>' : '',
+      c.file === null ? '<span class="badge warn" title="The recording is in the recycle bin; the cuts are still here">no recording</span>' : '',
+    ].filter(Boolean).join('');
+    e.innerHTML = `${c.thumb ? `<img class="thumb" src="${esc(c.thumb)}" alt="" loading="lazy">` : '<div class="thumb none"><svg class="icon icon-sm"><use href="#i-film"/></svg></div>'}<div class="name"><span></span></div><div class="meta"><span>${fmt(c.duration)}</span>${c.file === null ? '' : `<span>${(c.size / 1048576).toFixed(0)} MB</span>`}<span>${esc((c.created || '').slice(11, 16))}</span></div>${tags ? `<div class="tags">${tags}</div>` : ''}`;
     const n = e.querySelector('.name span'); if (c.title) { n.innerHTML = `<b></b>`; n.firstChild.textContent = c.title; n.title = short(c.base); } else n.textContent = short(c.base);
     e.onclick = () => { load(c); if (!matchMedia('(min-width: 1000px)').matches) $('cliplist').open = false; };
     list.appendChild(e);
   });
-  $('count').textContent = clips.length || '';
-  $('sumText').innerHTML = clips.length ? `<b>${clips.length} clip${clips.length === 1 ? '' : 's'}</b> · newest ${esc((clips[0].created || '').slice(11, 16))}` : '<b>No clips yet</b>';
+  $('count').textContent = shown.length || '';
+  $('cntActive').textContent = counts.active || 0;
+  $('cntDone').textContent = counts.done || 0;
+  $('sumText').innerHTML = shown.length ? `<b>${shown.length} clip${shown.length === 1 ? '' : 's'}</b> · newest ${esc((shown[0].created || '').slice(11, 16))}` : '<b>No clips yet</b>';
 }
 
 // ------------------------------------------------------------ update (since 2.3)
@@ -2411,8 +2746,10 @@ function startEvents() {
 async function poll() {
   clearTimeout(pollT);
   try {
-    const d = await api('/api/clips');
-    applyState(d, true);
+    // since 3.0: the clips that were put away are only fetched when the list
+    // shows them - the everyday document stays small
+    const d = await api(clipFilter === 'done' ? '/api/clips?done=1' : '/api/clips');
+    applyState(d, true, clipFilter === 'done');
     if (!es && Date.now() >= esRetryAt) { esFails = 0; startEvents(); }
   } catch (e) {
     if (e.message === 'login required') return;
@@ -2425,12 +2762,18 @@ async function poll() {
 }
 // `polled`: the document is fresh from /api/clips; a pushed one may carry an older scanAt, so
 // the "scan stuck" check only runs on polled documents (the safety poll every 30 s while live)
-function applyState(d, polled) {
+function applyState(d, polled, withDone) {
   {
     failures = 0; banner('b-unreachable', false);
     // devices waiting to sign in; only this PC and signed-in clients see them
     if (Array.isArray(d.pending)) { if (approveRender) approveRender(d.pending); else updatePendingModal(d.pending); }
-    cfg = Object.assign(cfg, d.config); clips = d.clips || [];
+    cfg = Object.assign(cfg, d.config);
+    // since 3.0: the document holds the done clips only when they were asked
+    // for; the two sides of the list are kept apart here
+    const all = d.clips || [];
+    counts = d.counts || counts;
+    if (withDone) { clips = all.filter(c => c.state !== 'done'); doneClips = all.filter(c => c.state === 'done'); }
+    else clips = all;
     applyTheme(cfg.theme);
     $('ver').textContent = cfg.version ? cfg.version : '';
     $('encoder').textContent = cfg.encoder || ''; $('encoder').hidden = !cfg.encoder;
@@ -2442,22 +2785,37 @@ function applyState(d, polled) {
     banner('b-open', cfg.network === 'lan' && !cfg.passwordSet && page !== 'setup');
     banner('b-replaystop', !!ob.connected && !ob.replayActive);
     banner('b-paused', !!(cfg.scanning && cfg.scanning.paused));
+    if (page === 'activity') { renderActivity(d); return; }
     if (page !== 'clips') return;
-    clips.forEach(c => { if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; if (document.activeElement !== $('title')) $('title').value = c.title || '';
+    // the "Afterwards" menu starts at the setting until someone picks (3.0)
+    if (!afterChosen && cfg.cleanup && cfg.cleanup.afterShare) $('after').value = cfg.cleanup.afterShare;
+    allClips().forEach(c => { if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; cur.cuts = c.cuts; if (document.activeElement !== $('title')) $('title').value = c.title || '';
+      // the recording went to the recycle bin while the page was open (3.0)
+      if (c.file === null && cur.file !== null) { load(c, true); toast('The recording is in the recycle bin - its cuts are still here'); }
       // the playable copy arrived: switch the player to it, keeping the position (since 2.6)
       if (c.previewH264 && !cur.previewH264) { cur.previewH264 = c.previewH264; const t = v.currentTime, src = playerSource(cur); if (v.getAttribute('src') !== src) { v.src = src; v.load(); v.addEventListener('loadedmetadata', () => { v.currentTime = t; }, { once: true }); $('vidErr').hidden = true; toast('Playable preview ready', 'ok'); } h264Row(cur); } } });
-    renderList();
-    if (clips.length) {
-      const newest = clips[0];
-      if (!cur) load(newest);
-      else if (!clips.some(c => c.base === cur.base)) { unload(); load(newest); toast('Clip is gone - loaded the next one'); }
-      else if (newest.base !== lastSeen && lastSeen !== null) {
+    renderList(); renderCuts();
+    // a clip asked for by address (the "Clip" button on the Activity page)
+    const wanted = wantedClip();
+    if (wanted) {
+      const c = allClips().find(x => x.base === wanted);
+      if (c) { history.replaceState(null, '', '/'); load(c); }
+      else if (clipFilter !== 'done' && counts.done) { clipFilter = 'done'; listKey = ''; $('clipFilter').querySelectorAll('button').forEach(x => x.dataset.filter === 'done' ? x.setAttribute('aria-current', 'page') : x.removeAttribute('aria-current')); poll.now(); return; }
+      else history.replaceState(null, '', '/');
+    }
+    const shown = listedClips();
+    if (shown.length || (cur && allClips().some(c => c.base === cur.base))) {
+      const newest = shown[0];
+      if (!cur && newest) load(newest);
+      // a clip that was put away stays loaded; only one that is really gone is replaced
+      else if (cur && !allClips().some(c => c.base === cur.base)) { unload(); if (newest) { load(newest); toast('Clip is gone - loaded the next one'); } else showEmpty(cfg.setupDone === false ? 'setup' : 'none'); }
+      else if (newest && newest.base !== lastSeen && lastSeen !== null && clipFilter === 'active') {
         if (!edited) { load(newest); toast('New clip loaded'); }
         else if (!pendingNew || pendingNew.base !== newest.base) { pendingNew = newest; $('b-newclip-text').textContent = `${short(newest.base)} (${fmt(newest.duration)}).`; banner('b-newclip', true); }
       }
-      lastSeen = newest.base;
+      if (newest) lastSeen = newest.base;
     } else { if (cur) unload(); showEmpty(cfg.setupDone === false ? 'setup' : 'none'); }
-    buildAudio(); histData = d.history || []; renderHistory(d.history);
+    buildAudio(); histData = d.history || [];
     if (d.job && watchingJob !== d.job) watchJob(d.job);                      // running job (e.g. after reload)
     else if (!d.job && !watchingJob && d.last && d.last.id !== shownLast) { showResult(d.last); shownLast = d.last.id; cfg._lastFailed = d.last.ok === false && !d.last.cancelled; cfg._lastFailedId = d.last.id; setBusy(false); }
     const failed = !watchingJob && d.last && d.last.ok === false && !d.last.cancelled && failedDismissed !== d.last.id;
@@ -2482,6 +2840,7 @@ poll.now = () => { clearTimeout(pollT); pollT = setTimeout(poll, 50); };
   if (page === 'settings') { initSettings(); poll(); return; }
   if (page === 'diagnostics') { initDiagnostics(); poll(); return; }
   if (page === 'obs') { initObs(); poll(); return; }
+  if (page === 'activity') { showPage('activity'); initActivity(); return; }
   if (page === 'soon') {
     const names = { '/setup': ['Setup', 'The browser setup arrives with the next release step. Until then, run "replaycut setup" in a terminal.'], '/settings': ['Settings', 'The settings page arrives with the next release step. Until then, edit settings.json (see docs/settings.md).'], '/diagnostics': ['Diagnostics', 'The diagnostics page arrives with the next release step. Until then, run "replaycut test" in a terminal.'], '/obs': ['OBS', 'The OBS page comes with the OBS integration.'] };
     const [t, x] = names[location.pathname] || ['Not here', 'Nothing at this address.'];
@@ -2489,6 +2848,10 @@ poll.now = () => { clearTimeout(pollT); pollT = setTimeout(poll, 50); };
   }
   showPage('clips'); initClips();
 })();
+
+// A clip named in the address (`/#<base>`, from the Activity page): load it
+// once the list arrives, and take the name out of the address again.
+function wantedClip() { try { return decodeURIComponent((location.hash || '').slice(1)); } catch (e) { return ''; } }
 </script>
 </body>
 </html>

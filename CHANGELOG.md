@@ -10,6 +10,25 @@ contract.
 
 ## [Unreleased]
 
+Cut, then decide. A clip used to be one dialog on a five-minute recording:
+pick a range, pick the audio, upload, and whatever you did not decide then
+was gone with the recording. 3.0 puts a **cut** in between - the range as its
+own file, the picture untouched and every audio track along - and renders
+everything from that. The same cut goes to Nextcloud today and to YouTube as
+a Short tomorrow, with another audio mix, long after the recording is in the
+recycle bin. **Save cut** saves a range while you play and renders nothing;
+the clips page shows what came out of every cut.
+
+The list keeps itself: a shared clip is done and out of the way, grouped by
+the evening it belongs to, one click back. **Activity** is the new page for
+"what did I send where".
+
+**Your state moves.** Titles, the seen list and the share history leave their
+three JSON files for `replaycut.db` beside the settings. The first start
+imports them and moves the old files to `backup-2.x\`, so an installation of
+2.x that is put back finds its state where it left it. The history is no
+longer capped at 200 entries.
+
 ### Added
 
 - **Every share keeps its cut.** The range you pick becomes a file of its
@@ -38,6 +57,19 @@ contract.
   many the service knows about - with a warning from 10 GB on.
 - The history keeps every entry now instead of the newest 200, and
   `GET /api/history` takes `limit` and `before` to walk back through it.
+- **The clips page was rebuilt.** One list with a filter (Active / Done) and
+  a heading per day, badges for the cuts and the targets a clip went to; the
+  clip itself shows its cuts underneath, each with what came out of it and a
+  "Render" of its own. "Save cut" and "Afterwards" sit next to Share, and a
+  clip whose recording is gone shows its thumbnail and keeps its cuts.
+- **New page: Activity.** What is running with a way to cancel it, and every
+  output ever made - newest first, filtered per target, one click to the clip
+  it came from. It replaces the "Shared" list on the clips page.
+
+### Removed
+
+- The "Shared" section of the clips page: its entries are on Activity now,
+  and under the cut they came from on the clip itself.
 
 ### Changed
 

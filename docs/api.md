@@ -303,7 +303,8 @@ and a device can be let in without the password at all (the device login).
 ### `GET /setup`, `/settings`, `/diagnostics`, `/login`, `/obs`
 
 The UI file, exactly as `GET /`; the page's script shows the page named by
-the path. Since 2.8 `/approve` and `/approve/<id>` join them.
+the path. Since 2.8 `/approve` and `/approve/<id>` join them, since 3.0
+`/activity`.
 
 ### `GET /api/settings`
 
