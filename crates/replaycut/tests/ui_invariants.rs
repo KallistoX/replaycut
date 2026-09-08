@@ -183,19 +183,9 @@ fn numeric_fields_are_read_as_numbers() {
     // `changes()` sends what `readField` returns, and the service rejects a
     // string where a number belongs. A numeric field therefore has to be an
     // <input type="number"> or match one of the hints above.
-    //
-    // Known gap (found 2026-09-08, not fixed here because ui/index.html
-    // belongs to another session right now): `integrations.s3.presignDays` is
-    // a <select> with numeric options, so saving a changed value PATCHes "3"
-    // and the service answers 400. One word in readField's regex fixes it
-    // (`expireDays` -> `expireDays|presignDays`); drop the entry with the fix.
-    const KNOWN_STRINGS: &[&str] = &["integrations.s3.presignDays"];
     let mut bad = Vec::new();
     for (at, field) in bound_fields(&html) {
         if !matches!(defaults.get(&field), Some(serde_json::Value::Number(_))) {
-            continue;
-        }
-        if KNOWN_STRINGS.contains(&field.as_str()) {
             continue;
         }
         let tag = tag_around(&html, at);

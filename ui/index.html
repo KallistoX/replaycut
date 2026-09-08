@@ -1584,7 +1584,7 @@ async function initSettings() {
   const fields = [...document.querySelectorAll('#page-settings [data-f]')];
   const tabs = () => { const t = location.hash === '#integrations' ? 'integrations' : 'general'; $('tabGeneral').hidden = t !== 'general'; $('tabIntegrations').hidden = t !== 'integrations'; document.querySelectorAll('#page-settings .tabs a').forEach(a => { if (a.dataset.tab === t) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }); if (location.hash === '#qr') setTimeout(() => $('sAddr').click(), 0); if (location.hash === '#access') setTimeout(() => $('sAccess').scrollIntoView({ block: 'start' }), 0); };
   window.addEventListener('hashchange', tabs); tabs();
-  function readField(el) { if (el.type === 'checkbox') return el.checked; if (el.type === 'number' || /Kbps|Threads|port|expireDays|Height/.test(el.dataset.f)) return Number(el.value); return el.value; }
+  function readField(el) { if (el.type === 'checkbox') return el.checked; if (el.type === 'number' || /Kbps|Threads|port|expireDays|presignDays|Height/.test(el.dataset.f)) return Number(el.value); return el.value; }
   function fill(s) {
     orig = s;
     const themeSel = document.querySelector('[data-f="theme"]'); themeSel.innerHTML = (s.themes || ['wardogs']).map(t => `<option value="${esc(t)}">${esc(t)}${t === 'wardogs' ? ' (default)' : ''}</option>`).join('');

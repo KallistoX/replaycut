@@ -10,6 +10,11 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- Settings: changing how long presigned S3 links stay valid can be saved
+  again - the value went out as text and the service refused it.
+
 ## [2.8.0] - 2026-09-07
 
 Secure by default. replaycut now listens on your PC only until you open it
