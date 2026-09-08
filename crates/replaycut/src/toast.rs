@@ -30,6 +30,7 @@ impl Toast {
     }
 
     /// "Check for updates" in the tray found a newer release.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn update_available(version: &str, ui_url: &str) -> Self {
         Self {
             title: format!("replaycut {version} is available"),
@@ -39,6 +40,7 @@ impl Toast {
     }
 
     /// "Check for updates" in the tray found nothing newer.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn up_to_date(version: &str) -> Self {
         Self {
             title: "replaycut is up to date".into(),
@@ -48,6 +50,7 @@ impl Toast {
     }
 
     /// "Check for updates" in the tray could not reach GitHub.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn update_check_failed(error: &str) -> Self {
         Self {
             title: "Update check failed".into(),
@@ -125,6 +128,7 @@ impl Toast {
     }
 
     /// The toast XML: generic template, two text lines, a click opens `url`.
+    #[cfg(windows)]
     pub fn xml(&self) -> String {
         let launch = match &self.url {
             Some(u) => format!(" activationType=\"protocol\" launch=\"{}\"", escape(u)),
@@ -138,6 +142,7 @@ impl Toast {
     }
 }
 
+#[cfg(windows)]
 fn escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -212,6 +217,7 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     #[test]
     fn xml_escapes_and_links() {
         let t = Toast {

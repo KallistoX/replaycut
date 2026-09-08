@@ -172,6 +172,8 @@ fn real_main(cli: Cli, console: bool) -> Result<()> {
         .settings
         .clone()
         .unwrap_or_else(|| data_dir.join("settings.json"));
+    // `replaycut install` tells the 1.x migration whether it starts fresh.
+    #[cfg(windows)]
     let settings_existed = settings_path.is_file();
     let mut settings = Settings::load_or_create(&settings_path)?;
     let overrides = Overrides {
