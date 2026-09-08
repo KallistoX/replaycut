@@ -33,10 +33,17 @@ pub fn recycle(path: &Path) -> Result<()> {
 }
 
 /// Put text into the clipboard (the direct link after a share).
+#[cfg(not(target_os = "linux"))]
 pub fn copy_text(text: &str) -> Result<()> {
     let mut clipboard = arboard::Clipboard::new()?;
     clipboard.set_text(text.to_string())?;
     Ok(())
+}
+
+/// Put text into the clipboard (the direct link after a share).
+#[cfg(target_os = "linux")]
+pub fn copy_text(text: &str) -> Result<()> {
+    linux::copy_text(text)
 }
 
 /// The IPv4 address other devices reach this machine at: the source
@@ -101,7 +108,20 @@ pub fn process_memory_mb() -> Option<u64> {
     let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, size) }.as_bool();
     ok.then_some(counters.WorkingSetSize as u64 / 1_048_576)
 }
-#[cfg(not(windows))]
+/// Resident set of this process in MB, from `/proc/self/status`.
+#[cfg(target_os = "linux")]
+pub fn process_memory_mb() -> Option<u64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let kb: u64 = status
+        .lines()
+        .find_map(|l| l.strip_prefix("VmRSS:"))?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    Some(kb / 1024)
+}
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn process_memory_mb() -> Option<u64> {
     None
 }
@@ -119,7 +139,13 @@ pub fn free_space(dir: &Path) -> Option<u64> {
     .is_ok();
     ok.then_some(free)
 }
-#[cfg(not(windows))]
+/// Free bytes on the file system of `dir`, as an unprivileged user sees them.
+#[cfg(target_os = "linux")]
+pub fn free_space(dir: &Path) -> Option<u64> {
+    let vfs = rustix::fs::statvfs(dir).ok()?;
+    Some(vfs.f_bavail.saturating_mul(vfs.f_frsize))
+}
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn free_space(_dir: &Path) -> Option<u64> {
     None
 }
@@ -483,9 +509,22 @@ pub fn open_folder_select(path: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(windows))]
+/// Ask the file manager to show the file selected (the freedesktop
+/// `FileManager1` interface every major file manager implements); when
+/// nothing answers, open the folder itself.
+#[cfg(target_os = "linux")]
+pub fn open_folder_select(path: &Path) -> Result<()> {
+    if let Err(e) = linux::show_in_file_manager(path) {
+        tracing::debug!("FileManager1.ShowItems failed: {e:#} - opening the folder instead");
+        let folder = path.parent().unwrap_or(path);
+        return open_url(&folder.to_string_lossy());
+    }
+    Ok(())
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn open_folder_select(_path: &Path) -> Result<()> {
-    anyhow::bail!("opening the folder is only supported on Windows")
+    anyhow::bail!("opening the folder is only supported on Windows and Linux")
 }
 
 // ------------------------------------------------------------------ Linux
@@ -496,7 +535,7 @@ pub fn open_folder_select(_path: &Path) -> Result<()> {
 /// SIGTERM, which `lifecycle::console_signals` turns into a shutdown. The
 /// kernel drops the lock with the process, so a crash leaves nothing stale.
 #[cfg(target_os = "linux")]
-mod linux {
+pub mod linux {
     use std::fs::{File, OpenOptions};
     use std::io::{Read, Write};
     use std::path::PathBuf;
@@ -598,10 +637,111 @@ mod linux {
             cmd.pre_exec(|| rustix::process::setsid().map(|_| ()).map_err(Into::into));
         }
     }
+
+    /// Run `f` on a thread of its own and wait for it. The D-Bus crates
+    /// (zbus and everything on it) drive their traffic on a runtime of
+    /// their own and refuse to block a tokio worker thread, and the
+    /// callers here are synchronous functions that async code calls
+    /// directly, so this is where the two are kept apart.
+    pub fn off_runtime<T: Send>(f: impl FnOnce() -> Result<T> + Send) -> Result<T> {
+        std::thread::scope(|s| {
+            s.spawn(f)
+                .join()
+                .map_err(|_| anyhow::anyhow!("the D-Bus call panicked"))?
+        })
+    }
+
+    /// The clipboard on X11 and Wayland is a promise: the owner serves the
+    /// content until another program takes the clipboard over. A thread
+    /// keeps serving this text, so a paste after the service moved on
+    /// still finds it.
+    pub fn copy_text(text: &str) -> Result<()> {
+        use arboard::SetExtLinux;
+        let mut clipboard = arboard::Clipboard::new()?;
+        let text = text.to_string();
+        std::thread::Builder::new()
+            .name("clipboard".into())
+            .spawn(move || {
+                if let Err(e) = clipboard.set().wait().text(text) {
+                    tracing::debug!("clipboard: {e}");
+                }
+            })
+            .context("cannot start the clipboard thread")?;
+        Ok(())
+    }
+
+    /// Put a file into the Wayland clipboard as `text/uri-list`, which file
+    /// managers paste as the file itself. Served from a thread like the
+    /// text. X11 sessions get an error; there is no Wayland to talk to.
+    pub fn copy_file(path: &std::path::Path) -> Result<()> {
+        use wl_clipboard_rs::copy::{MimeType, Options, Source};
+        let uri = format!("{}\r\n", file_uri(path));
+        let mut options = Options::new();
+        options.foreground(true);
+        let prepared = options
+            .prepare_copy(
+                Source::Bytes(uri.into_bytes().into_boxed_slice()),
+                MimeType::Specific("text/uri-list".into()),
+            )
+            .context("cannot offer the file to the Wayland clipboard")?;
+        std::thread::Builder::new()
+            .name("clipboard-file".into())
+            .spawn(move || {
+                if let Err(e) = prepared.serve() {
+                    tracing::debug!("clipboard (file): {e}");
+                }
+            })
+            .context("cannot start the clipboard thread")?;
+        Ok(())
+    }
+
+    /// `file://` URI of an absolute path, percent-encoded the way file
+    /// managers expect it.
+    pub fn file_uri(path: &std::path::Path) -> String {
+        use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
+        const KEEP: &AsciiSet = &NON_ALPHANUMERIC
+            .remove(b'/')
+            .remove(b'-')
+            .remove(b'.')
+            .remove(b'_')
+            .remove(b'~');
+        let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        format!(
+            "file://{}",
+            utf8_percent_encode(&absolute.to_string_lossy(), KEEP)
+        )
+    }
+
+    /// `org.freedesktop.FileManager1.ShowItems` on the session bus.
+    pub fn show_in_file_manager(path: &std::path::Path) -> Result<()> {
+        let uri = file_uri(path);
+        off_runtime(move || {
+            let conn = zbus::blocking::Connection::session().context("session bus")?;
+            let proxy = zbus::blocking::Proxy::new(
+                &conn,
+                "org.freedesktop.FileManager1",
+                "/org/freedesktop/FileManager1",
+                "org.freedesktop.FileManager1",
+            )?;
+            proxy.call_method("ShowItems", &(vec![uri.as_str()], ""))?;
+            Ok(())
+        })
+    }
+
+    /// A synthetic key press needs a way into the compositor that Wayland
+    /// does not offer to ordinary programs; obs-websocket is the way.
+    pub fn press_f9() -> Result<()> {
+        anyhow::bail!(
+            "sending a key press is not possible on Wayland - connect OBS through obs-websocket (Settings › OBS) so replaycut can save the replay directly"
+        )
+    }
 }
 
 #[cfg(target_os = "linux")]
-pub use linux::{attach_parent_console, claim_single_instance, instance_running, signal_stop};
+pub use linux::{
+    attach_parent_console, claim_single_instance, copy_file, instance_running, press_f9,
+    signal_stop,
+};
 
 // ------------------------------------------------------------ other platforms
 
@@ -611,12 +751,14 @@ pub use linux::{attach_parent_console, claim_single_instance, instance_running, 
 mod other {
     use anyhow::Result;
 
+    #[cfg(not(target_os = "linux"))]
     pub fn press_f9() -> Result<()> {
         anyhow::bail!("sending the replay hotkey is only supported on Windows")
     }
 
+    #[cfg(not(target_os = "linux"))]
     pub fn copy_file(_path: &std::path::Path) -> Result<()> {
-        anyhow::bail!("copying a file object is only supported on Windows")
+        anyhow::bail!("copying a file object is only supported on Windows and Linux")
     }
 
     pub fn set_app_id() {}
@@ -655,10 +797,13 @@ mod other {
 }
 
 #[cfg(not(windows))]
-pub use other::{copy_file, fatal_dialog, open_url, press_f9, set_app_id};
+pub use other::{fatal_dialog, open_url, set_app_id};
 
 #[cfg(not(any(windows, target_os = "linux")))]
-pub use other::{attach_parent_console, claim_single_instance, instance_running, signal_stop};
+pub use other::{
+    attach_parent_console, claim_single_instance, copy_file, instance_running, press_f9,
+    signal_stop,
+};
 
 /// Ask a running instance to stop and wait for it. `Ok(false)` when none ran.
 pub fn stop_instance(port: u16, timeout: std::time::Duration) -> Result<bool> {
@@ -685,5 +830,12 @@ mod tests {
         let h = super::hostname();
         assert!(!h.is_empty());
         assert_eq!(h, h.to_ascii_lowercase());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn file_uri_keeps_slashes_and_encodes_the_rest() {
+        let uri = super::linux::file_uri(std::path::Path::new("/home/you/Videos/Clip 1 & 2.mp4"));
+        assert_eq!(uri, "file:///home/you/Videos/Clip%201%20%26%202.mp4");
     }
 }
