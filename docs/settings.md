@@ -10,7 +10,8 @@ plain text.
 |---|---|
 | Data directory | `%LOCALAPPDATA%\replaycut` (override with `--data-dir`) |
 | Settings | `<data-dir>\settings.json` (override with `--settings`) |
-| State files | `<data-dir>\clip-names.json`, `clip-seen.json`, `clip-history.json` |
+| State | `<data-dir>\replaycut.db` (clips, cuts and jobs; since 3.0) |
+| State of 2.x | `<data-dir>\backup-2.x\clip-names.json`, `clip-seen.json`, `clip-history.json` - the first start of 3.0 imports these three files and moves them here |
 | Browser sessions | `<data-dir>\sessions.json` (hashes of the login cookies, 30 days; since 2.8 with the device's name, browser, address, when it was made and last seen, and how it got in) |
 | Themes | `<data-dir>\themes\<name>.css` (see `docs/themes.md`) |
 | Logs | `<data-dir>\logs\replaycut.<date>.log`, daily rotation, 7 files kept |

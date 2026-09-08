@@ -11,6 +11,7 @@ mod admin;
 mod auth;
 mod credentials;
 mod dav;
+mod db;
 mod diagnostics;
 mod http;
 #[cfg(windows)]

@@ -1,6 +1,7 @@
-//! In-memory state plus the persisted JSON files (titles, seen list, share
-//! history). File formats are those of the 1.4 service so that a migration
-//! only has to copy files.
+//! In-memory state plus the store it is read from and written to. Titles,
+//! the seen list and the share history lived in three JSON files of the 1.4
+//! format until 2.8; since 3.0 they are rows in `replaycut.db` (see `db.rs`),
+//! which the first start imports them into.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -15,6 +16,7 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use crate::auth::Sessions;
+use crate::db::Db;
 use crate::integrations::{Integrations, Storage, UserInfo};
 use crate::lifecycle::Shutdown;
 use crate::media::{Encoder, Media};
@@ -212,9 +214,6 @@ pub struct Paths {
     pub preview_dir: PathBuf,
     pub shared_dir: PathBuf,
     pub data_dir: PathBuf,
-    pub names_file: PathBuf,
-    pub seen_file: PathBuf,
-    pub history_file: PathBuf,
     pub ui_file: PathBuf,
 }
 
@@ -225,9 +224,6 @@ impl Paths {
             preview_dir: clip_dir.join(".preview"),
             shared_dir: clip_dir.join("shared"),
             data_dir: data_dir.to_path_buf(),
-            names_file: data_dir.join("clip-names.json"),
-            seen_file: data_dir.join("clip-seen.json"),
-            history_file: data_dir.join("clip-history.json"),
             ui_file,
         }
     }
@@ -350,6 +346,8 @@ pub struct AppState {
     pub settings_path: PathBuf,
     pub overrides: Overrides,
     pub data_dir: PathBuf,
+    /// Clips, cuts and jobs; the truth behind the maps in `inner` (since 3.0).
+    pub db: Db,
     paths: RwLock<Arc<Paths>>,
     /// ffmpeg as located, without resource limits.
     pub media_base: Media,
@@ -457,57 +455,42 @@ impl AppState {
         let paths = Paths::new(&settings.clip_dir, &data_dir, ui_file);
         create_dirs(&paths)?;
         let sessions = Sessions::load(&data_dir.join("sessions.json"));
-        let mut inner = Inner::default();
-        if paths.names_file.is_file() {
-            match read_json(&paths.names_file) {
-                Ok(Value::Object(map)) => {
-                    for (k, v) in map {
-                        if let Some(s) = v.as_str() {
-                            inner.names.insert(k, s.to_string());
-                        }
-                    }
-                }
-                Ok(_) => tracing::warn!(
-                    "{} has an unexpected shape - ignored",
-                    paths.names_file.display()
-                ),
-                Err(e) => tracing::warn!("{} unreadable: {e}", paths.names_file.display()),
-            }
+        let db = Db::open(&data_dir.join(crate::db::FILE))?;
+        match db.import_2x(&data_dir) {
+            Ok(Some(i)) => tracing::info!(
+                "state of 2.x imported: {} titles, {} clips announced, {} history entries under {} cuts; the files are now in {}",
+                i.titles,
+                i.seen,
+                i.jobs,
+                i.cuts,
+                i.backup.display()
+            ),
+            Ok(None) => {}
+            Err(e) => tracing::warn!("cannot import the state files of 2.x: {e:#}"),
         }
-        inner.seen_ready = paths.seen_file.is_file();
-        if inner.seen_ready {
-            match read_json(&paths.seen_file) {
-                Ok(Value::Array(items)) => {
-                    inner
-                        .seen
-                        .extend(items.iter().filter_map(|v| v.as_str().map(str::to_string)));
-                }
-                Ok(_) => tracing::warn!(
-                    "{} has an unexpected shape - ignored",
-                    paths.seen_file.display()
-                ),
-                Err(e) => {
-                    tracing::warn!("{} unreadable: {e}", paths.seen_file.display());
-                    inner.seen_ready = false;
-                }
-            }
-        }
-        if paths.history_file.is_file() {
-            match read_json(&paths.history_file) {
-                Ok(Value::Array(items)) => inner.history = items,
-                Ok(_) => tracing::warn!(
-                    "{} has an unexpected shape - ignored",
-                    paths.history_file.display()
-                ),
-                Err(e) => tracing::warn!("{} unreadable: {e}", paths.history_file.display()),
-            }
-        }
+        let inner = Inner {
+            names: db.titles().unwrap_or_else(|e| {
+                tracing::warn!("cannot read the titles: {e:#}");
+                BTreeMap::new()
+            }),
+            seen: db.seen().unwrap_or_else(|e| {
+                tracing::warn!("cannot read the seen list: {e:#}");
+                BTreeSet::new()
+            }),
+            seen_ready: db.seen_ready(),
+            history: db.recent_jobs(MAX_HISTORY).unwrap_or_else(|e| {
+                tracing::warn!("cannot read the history: {e:#}");
+                Vec::new()
+            }),
+            ..Inner::default()
+        };
         Ok(Self {
             boot_settings: settings.clone(),
             settings: RwLock::new(settings),
             settings_path,
             overrides,
             data_dir,
+            db,
             paths: RwLock::new(Arc::new(paths)),
             media_base,
             runtime: RwLock::new(Arc::new(runtime)),
@@ -702,39 +685,28 @@ impl AppState {
         self.events.send_modify(|v| *v = v.wrapping_add(1));
     }
 
-    // --- persistence (called with the lock held; the files are tiny) ---
+    // --- persistence (called with the lock held; the writes are tiny) ---
 
     pub fn save_names(&self, inner: &Inner) {
-        let v = Value::Object(
-            inner
-                .names
-                .iter()
-                .map(|(k, v)| (k.clone(), Value::String(v.clone())))
-                .collect(),
-        );
-        if let Err(e) = util::write_atomic(&self.paths().names_file, v.to_string().as_bytes()) {
-            tracing::warn!("cannot write {}: {e}", self.paths().names_file.display());
+        if let Err(e) = self.db.save_titles(&inner.names) {
+            tracing::warn!("cannot store the titles: {e:#}");
         }
     }
 
     pub fn save_seen(&self, inner: &Inner) {
-        let v = Value::Array(
-            inner
-                .seen
-                .iter()
-                .map(|s| Value::String(s.clone()))
-                .collect(),
-        );
-        if let Err(e) = util::write_atomic(&self.paths().seen_file, v.to_string().as_bytes()) {
-            tracing::warn!("cannot write {}: {e}", self.paths().seen_file.display());
+        if let Err(e) = self.db.save_seen(&inner.seen) {
+            tracing::warn!("cannot store the seen list: {e:#}");
         }
     }
 
-    pub fn save_history(&self, inner: &Inner) {
-        let text = serde_json::to_string_pretty(&inner.history).unwrap_or_else(|_| "[]".into());
-        if let Err(e) = util::write_atomic(&self.paths().history_file, text.as_bytes()) {
-            tracing::warn!("cannot write {}: {e}", self.paths().history_file.display());
+    /// Keep a finished job: in the store and at the front of the cache the
+    /// status document and `GET /api/history` are served from.
+    fn record_job(&self, inner: &mut Inner, entry: Value) {
+        if let Err(e) = self.db.put_job(&entry, None) {
+            tracing::warn!("cannot store the job: {e:#}");
         }
+        inner.history.insert(0, entry);
+        inner.history.truncate(MAX_HISTORY);
     }
 
     // --- queries and mutations used by the HTTP layer ---
@@ -861,16 +833,23 @@ impl AppState {
         if let Some(l) = inner.last.as_mut().filter(|l| l.id == id) {
             l.discord = Some(join(l.discord.as_deref()));
         }
-        let mut changed = false;
         for e in inner.history.iter_mut() {
             if e["id"] == id {
                 let cur = e["discord"].as_str().map(str::to_string);
                 e["discord"] = json!(join(cur.as_deref()));
-                changed = true;
             }
         }
-        if changed {
-            self.save_history(&inner);
+        // The store keeps every job, the cache only the newest ones.
+        match self.db.entry(id) {
+            Ok(Some(mut e)) => {
+                let cur = e["discord"].as_str().map(str::to_string);
+                e["discord"] = json!(join(cur.as_deref()));
+                if let Err(e) = self.db.update_entry(id, &e) {
+                    tracing::warn!("cannot store the post: {e:#}");
+                }
+            }
+            Ok(None) => {}
+            Err(e) => tracing::warn!("cannot read the job: {e:#}"),
         }
         drop(inner);
         self.tray_changed();
@@ -1035,9 +1014,8 @@ impl AppState {
         // a preview job is housekeeping: no history entry, not the "last share"
         if !job.is_preview() {
             if job.ok == Some(true) || job.cancelled {
-                inner.history.insert(0, job.history_entry());
-                inner.history.truncate(MAX_HISTORY);
-                self.save_history(&inner);
+                let entry = job.history_entry();
+                self.record_job(&mut inner, entry);
             }
             inner.last = Some(job);
         }
@@ -1077,9 +1055,8 @@ impl AppState {
                     j.position = None;
                     j.finished = Some(util::now_local());
                     let done = j.clone();
-                    inner.history.insert(0, done.history_entry());
-                    inner.history.truncate(MAX_HISTORY);
-                    self.save_history(&inner);
+                    let entry = done.history_entry();
+                    self.record_job(&mut inner, entry);
                     inner.last = Some(done);
                 }
                 drop(inner);
@@ -1131,18 +1108,11 @@ impl AppState {
     /// Drop a clip's history entries (after its remote copies were deleted).
     pub fn remove_history_for(&self, base: &str) {
         let mut inner = self.inner.lock();
-        let before = inner.history.len();
         inner.history.retain(|e| e["base"] != base);
-        if inner.history.len() != before {
-            self.save_history(&inner);
+        if let Err(e) = self.db.delete_jobs_for_base(base) {
+            tracing::warn!("cannot drop the jobs of {base}: {e:#}");
         }
     }
-}
-
-fn read_json(path: &Path) -> Result<Value> {
-    let text = std::fs::read_to_string(path)?;
-    let text = text.trim_start_matches('\u{feff}');
-    Ok(serde_json::from_str(text)?)
 }
 
 /// Background task: the quota five seconds after start, then every 15

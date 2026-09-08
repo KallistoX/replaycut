@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 use crate::credentials;
+use crate::db::STATE_FILES;
 use crate::settings::Settings;
 use crate::winshell;
 
@@ -21,7 +22,6 @@ const OLD_CREDENTIALS: [(&str, &str); 2] = [
     ("wardogs/nextcloud", credentials::NEXTCLOUD),
     ("wardogs/discord-webhook", credentials::DISCORD_WEBHOOK),
 ];
-const STATE_FILES: [&str; 3] = ["clip-names.json", "clip-seen.json", "clip-history.json"];
 
 /// Traces of the old service found on this machine.
 pub struct OldService {

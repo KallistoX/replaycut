@@ -10,6 +10,15 @@ contract.
 
 ## [Unreleased]
 
+### Changed
+
+- **replaycut keeps its state in one file.** Clip titles, which clips have
+  already been announced and the share history moved out of three JSON files
+  and into `replaycut.db` next to the settings. The first start of 3.0
+  imports the old files and moves them to `backup-2.x\`, so an installation
+  of 2.x put back later finds its state where it left it. Nothing changes in
+  the UI or in the API.
+
 ### Fixed
 
 - Settings: changing how long presigned S3 links stay valid can be saved

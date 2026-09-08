@@ -350,9 +350,20 @@ pub fn uninstall(purge: bool, port: u16, settings_path: &Path, data_dir: &Path) 
         )?
     {
         step("Removing settings and state");
-        for name in ["clip-names.json", "clip-seen.json", "clip-history.json"] {
+        for name in [
+            crate::db::FILE,
+            // SQLite's write-ahead log, when the store was not closed cleanly
+            "replaycut.db-wal",
+            "replaycut.db-shm",
+        ] {
             winshell::remove_file_if_present(&data_dir.join(name));
         }
+        // the state files of 2.x, still in the data directory or already in
+        // the backup the first start of 3.0 made
+        for name in crate::db::STATE_FILES {
+            winshell::remove_file_if_present(&data_dir.join(name));
+        }
+        let _ = std::fs::remove_dir_all(data_dir.join(crate::db::BACKUP_DIR));
         let _ = std::fs::remove_dir_all(data_dir.join("logs"));
         winshell::remove_file_if_present(settings_path);
         for target in [

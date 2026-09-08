@@ -28,6 +28,7 @@ parking_lot = "0.12.5"
 percent-encoding = "2.3.2"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 rpassword = "7.5.4"
+rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json.workspace = true
 sha2 = "0.10"
