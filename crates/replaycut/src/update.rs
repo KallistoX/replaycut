@@ -23,15 +23,38 @@ const INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const TIMEOUT: Duration = Duration::from_secs(10);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 const NOTES_LIMIT: usize = 16 * 1024;
+#[cfg(windows)]
 pub const EXE_NAME: &str = "replaycut.exe";
+#[cfg(not(windows))]
+pub const EXE_NAME: &str = "replaycut";
+#[cfg(windows)]
 pub const OLD_EXE_NAME: &str = "replaycut.old.exe";
+#[cfg(not(windows))]
+pub const OLD_EXE_NAME: &str = "replaycut.old";
+/// The release package for this platform: `replaycut-<version>-<suffix>.zip`.
+pub const PACKAGE_SUFFIX: &str = if cfg!(windows) {
+    "windows-x64"
+} else {
+    "linux-x64"
+};
+/// The wrapper that runs `replaycut install` from the unpacked package.
+pub const INSTALL_SCRIPT: &str = if cfg!(windows) {
+    "install.cmd"
+} else {
+    "install.sh"
+};
+const UNINSTALL_SCRIPT: &str = if cfg!(windows) {
+    "uninstall.cmd"
+} else {
+    "uninstall.sh"
+};
 const MARKER: &str = "installed.json";
 /// Everything the release ZIP carries; the first two are required.
 const PACKAGE_FILES: [&str; 7] = [
-    "replaycut.exe",
+    EXE_NAME,
     "ui/index.html",
-    "install.cmd",
-    "uninstall.cmd",
+    INSTALL_SCRIPT,
+    UNINSTALL_SCRIPT,
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
@@ -186,7 +209,7 @@ async fn fetch_latest_from(url: &str) -> Result<UpdateInfo> {
                 )
             })
     };
-    let asset_name = format!("replaycut-{version}-windows-x64.zip");
+    let asset_name = format!("replaycut-{version}-{PACKAGE_SUFFIX}.zip");
     let (asset_url, asset_size) = find(&asset_name).unwrap_or_default();
     let (sums_url, _) = find("SHA256SUMS").unwrap_or_default();
     let (minisig_url, _) = find("SHA256SUMS.minisig").unwrap_or_default();
@@ -340,10 +363,27 @@ pub fn unpack(zip_path: &Path, dir: &Path) -> Result<()> {
         }
         let mut out = std::fs::File::create(&target)?;
         std::io::copy(&mut entry, &mut out)?;
+        // the ZIP carries the mode of the executable; a ZIP made elsewhere
+        // may not, so the executable gets its bit below either way
+        #[cfg(unix)]
+        if let Some(mode) = entry.unix_mode() {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&target, std::fs::Permissions::from_mode(mode));
+        }
     }
     for required in &PACKAGE_FILES[..2] {
         if !dir.join(required).is_file() {
             bail!("the ZIP does not contain {required}");
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let exe = dir.join(EXE_NAME);
+        let mode = std::fs::metadata(&exe)?.permissions().mode();
+        if mode & 0o111 == 0 {
+            std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(mode | 0o755))
+                .context("cannot make the new executable runnable")?;
         }
     }
     Ok(())
@@ -357,12 +397,12 @@ async fn check_exe_version(exe: &Path, version: &str) -> Result<()> {
     cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     let out = tokio::time::timeout(Duration::from_secs(10), cmd.output())
         .await
-        .map_err(|_| anyhow!("the new replaycut.exe did not answer --version"))?
-        .context("cannot run the new replaycut.exe")?;
+        .map_err(|_| anyhow!("the new {EXE_NAME} did not answer --version"))?
+        .with_context(|| format!("cannot run the new {EXE_NAME}"))?;
     let text = String::from_utf8_lossy(&out.stdout);
     if !out.status.success() || !text.contains(version) {
         bail!(
-            "the new replaycut.exe reports '{}' instead of {version}",
+            "the new {EXE_NAME} reports '{}' instead of {version}",
             text.trim()
         );
     }
@@ -538,13 +578,22 @@ pub fn is_installed_copy() -> bool {
         _ => false,
     }
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn is_installed_copy() -> bool {
+    let app = crate::linuxshell::app_dir();
+    match (exe_dir(), std::fs::canonicalize(&app)) {
+        (Some(dir), Ok(app)) => std::fs::canonicalize(&dir).ok() == Some(app),
+        _ => false,
+    }
+}
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn is_installed_copy() -> bool {
     false
 }
 
-/// Put the unpacked package into `app`: the running EXE is renamed aside
-/// (Windows allows that), everything else copied over. No restart here.
+/// Put the unpacked package into `app`: the running executable is renamed
+/// aside (Windows allows that, Linux does not mind), everything else copied
+/// over. No restart here.
 pub fn install_files(unpacked: &Path, app: &Path) -> Result<()> {
     let exe = app.join(EXE_NAME);
     let old = app.join(OLD_EXE_NAME);
@@ -581,7 +630,7 @@ pub fn install(state: &AppState) -> Result<()> {
         }
     };
     if !is_installed_copy() {
-        bail!("this copy was not installed with install.cmd - update it by hand");
+        bail!("this copy was not installed with {INSTALL_SCRIPT} - update it by hand");
     }
     if state.inner.lock().current_job.is_some() {
         bail!("a share is running - update afterwards");
@@ -804,7 +853,7 @@ mod tests {
         let file = std::fs::File::create(path).unwrap();
         let mut zip = zip::ZipWriter::new(file);
         let opts = zip::write::SimpleFileOptions::default();
-        zip.start_file("replaycut.exe", opts).unwrap();
+        zip.start_file(EXE_NAME, opts).unwrap();
         zip.write_all(format!("fake replaycut {version}").as_bytes())
             .unwrap();
         zip.add_directory("ui", opts).unwrap();
@@ -825,7 +874,7 @@ mod tests {
         make_zip(&zip_path, "9.9.0");
         let out = dir.join("unpacked");
         unpack(&zip_path, &out).unwrap();
-        assert!(out.join("replaycut.exe").is_file());
+        assert!(out.join(EXE_NAME).is_file());
         assert!(out.join("ui").join("index.html").is_file());
         assert_eq!(sha256_hex(&zip_path).unwrap().len(), 64);
 
@@ -834,7 +883,7 @@ mod tests {
         {
             use std::io::Write;
             let mut zip = zip::ZipWriter::new(std::fs::File::create(&bad).unwrap());
-            zip.start_file("replaycut.exe", zip::write::SimpleFileOptions::default())
+            zip.start_file(EXE_NAME, zip::write::SimpleFileOptions::default())
                 .unwrap();
             zip.write_all(b"x").unwrap();
             zip.finish().unwrap();
@@ -882,7 +931,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rc-release-{}-{tamper}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let asset_name = format!("replaycut-{version}-windows-x64.zip");
+        let asset_name = format!("replaycut-{version}-{PACKAGE_SUFFIX}.zip");
         let zip_path = dir.join(&asset_name);
         make_zip(&zip_path, version);
         let zip_bytes = std::fs::read(&zip_path).unwrap();
@@ -969,12 +1018,12 @@ mod tests {
         let version = std::env::var("RC_FAKE_VERSION").unwrap_or_else(|_| "9.9.0".into());
         let base = std::env::var("RC_FAKE_BASE").unwrap_or_else(|_| "http://127.0.0.1:8481".into());
         std::fs::create_dir_all(&dir).unwrap();
-        let asset_name = format!("replaycut-{version}-windows-x64.zip");
+        let asset_name = format!("replaycut-{version}-{PACKAGE_SUFFIX}.zip");
         let zip_path = dir.join(&asset_name);
         {
             let mut zip = zip::ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
             let opts = zip::write::SimpleFileOptions::default();
-            zip.start_file("replaycut.exe", opts).unwrap();
+            zip.start_file(EXE_NAME, opts).unwrap();
             zip.write_all(&std::fs::read(&exe).unwrap()).unwrap();
             zip.add_directory("ui", opts).unwrap();
             zip.start_file("ui/index.html", opts).unwrap();
@@ -1055,7 +1104,10 @@ replaycut --version
         let info = fetch_latest_from(&rel.url).await.unwrap();
         assert_eq!(info.version, "9.9.0");
         assert!(is_newer(&info.version, VERSION));
-        assert_eq!(info.asset_name, "replaycut-9.9.0-windows-x64.zip");
+        assert_eq!(
+            info.asset_name,
+            format!("replaycut-9.9.0-{PACKAGE_SUFFIX}.zip")
+        );
         assert!(info.asset_size > 0);
         assert!(info.notes.contains("one-click update"));
         assert!(info.minisig_url.ends_with("SHA256SUMS.minisig"));
@@ -1071,7 +1123,7 @@ replaycut --version
         let err = download_package(&info, &work.join("exe"), &keys, true, |_| {})
             .await
             .unwrap_err();
-        assert!(format!("{err:#}").contains("replaycut.exe"), "{err:#}");
+        assert!(format!("{err:#}").contains(EXE_NAME), "{err:#}");
 
         // a wrong hash
         let rel = fake_release("9.9.0", &key, "hash").await;
