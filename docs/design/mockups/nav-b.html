@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<title>replaycut - Navigation B: one bar with a menu (mockup)</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" id="theme" href="" disabled>
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="mock.css">
+<link rel="stylesheet" href="nav-frames.css">
+<style>
+  /* Proposal B: one bar for every width. Three pages stay in it, everything
+   * else moves into the menu behind the "..." button. The `@container` rule
+   * is `@media (max-width: 600px)` in index.html, and the `.frame` prefix
+   * only out-ranks base.css's own media query here. */
+
+  /* The menu is the component index.html already has for the share targets;
+   * it is not in base.css yet and would move there with this proposal. */
+  .menu-wrap { position: relative; display: flex; }
+  .menu { position: absolute; right: 0; top: calc(100% + 4px); min-width: 240px; padding: var(--space-1); display: none; flex-direction: column; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px var(--scrim); z-index: 5; }
+  .is-menu .menu { display: flex; }
+  .menu a, .menu button { display: flex; align-items: center; gap: var(--space-2); min-height: var(--touch); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-sm); background: none; color: var(--fg); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+  .menu a:hover, .menu button:hover { background: var(--surface-2); text-decoration: none; }
+  .menu hr { margin: var(--space-1) 0; }
+  .menu .meta { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); color: var(--fg-muted); font-size: var(--text-sm); }
+  .menu .meta div { display: flex; align-items: center; gap: var(--space-2); }
+  .morebtn { position: relative; }
+  .morebtn .dot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; }
+
+  /* Encoder, storage, help and version are not in the bar at all any more:
+   * the markup puts them in the menu, at every width. */
+  .nav a { display: inline-flex; align-items: center; gap: var(--space-2); }
+  .nav .icon { color: var(--fg-faint); }
+  .nav a[aria-current="page"] .icon, .nav a:hover .icon { color: var(--accent); }
+
+  @container (max-width: 600px) {
+    /* Only the icons are left of the three tabs; they grow to touch size. */
+    .nav a span { display: none; }
+    .nav a { min-width: var(--touch); min-height: 36px; justify-content: center; padding: var(--space-1) var(--space-2); }
+    .nav .icon { width: 22px; height: 22px; }
+    .frame .topbar { gap: var(--space-2); padding: 0 var(--space-3); }
+  }
+</style>
+</head>
+<body data-states="b:Proposal B">
+
+<!-- The icons these frames use, lifted from the sprite in components.html. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 20 20"><path d="M4 3.5v13l11-6.5z"/><path d="M2 7h4M2 13h4" /></symbol>
+  <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12M2.5 8h3.5M14 8h3.5M2.5 12h3.5M14 12h3.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5l3 2"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
+  <symbol id="i-obs" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v5M4 14l4-2.5M16 14l-4-2.5"/></symbol>
+  <symbol id="i-diagnostics" viewBox="0 0 20 20"><path d="M2.5 10h4l2-5 3 10 2-5h4"/></symbol>
+  <symbol id="i-more" viewBox="0 0 20 20"><circle cx="4.5" cy="10" r="1.25"/><circle cx="10" cy="10" r="1.25"/><circle cx="15.5" cy="10" r="1.25"/></symbol>
+  <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/></symbol>
+  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4v12l10-6z"/></symbol>
+  <symbol id="i-share" viewBox="0 0 20 20"><path d="M10 12V3M6.5 6.5 10 3l3.5 3.5M4 11v5h12v-5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 20 20"><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5 5.5l1 11h8l1-11M8.5 9v5M11.5 9v5"/></symbol>
+</svg>
+
+<div class="sheet">
+  <header class="sheet-head">
+    <h1>Navigation B - one bar with a menu, at every width</h1>
+    <p>The top bar carries the wordmark, the three pages that see daily use - <b>Clips</b>,
+      <b>Activity</b>, <b>Settings</b> - as an icon with a label, and on the right the status dot and
+      a <b>"..."</b> button. OBS, Diagnostics, the keyboard shortcuts, the encoder, the storage and the
+      version live in that menu. Below 600 px the three labels fall away and the icons grow to touch
+      size; nothing else changes.</p>
+    <ul>
+      <li>One layout for phone, laptop and the window beside the game - one set of rules to keep.</li>
+      <li>The bar gets quiet: three items instead of six, and the numbers stop competing with them.</li>
+      <li>The storage warning sits on the "..." button as an amber dot, so a full Nextcloud is still
+        visible while the badge itself is a click away.</li>
+    </ul>
+  </header>
+
+  <section class="shot">
+    <h2>Desktop, 1280 px - the menu open</h2>
+    <div class="fit fit-wide">
+      <div class="frame frame-desktop is-menu">
+        <header class="topbar">
+          <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+          <nav class="nav" aria-label="Pages">
+            <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+            <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+            <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+          </nav>
+          <div class="right">
+            <span class="status" title="Service running"><i class="dot"></i></span>
+            <div class="menu-wrap">
+              <button class="btn btn-ghost btn-icon morebtn" title="More"><svg class="icon"><use href="#i-more"/></svg><i class="dot warn" title="Nextcloud: 84 % used"></i></button>
+              <div class="menu">
+                <a href="#"><svg class="icon"><use href="#i-obs"/></svg>OBS</a>
+                <a href="#"><svg class="icon"><use href="#i-diagnostics"/></svg>Diagnostics</a>
+                <button type="button"><svg class="icon"><use href="#i-info"/></svg>Keyboard shortcuts</button>
+                <hr>
+                <div class="meta">
+                  <div><span class="badge">h264_amf</span><span class="badge warn">Nextcloud 84%</span></div>
+                  <div><i class="dot"></i>Service running &middot; replaycut 3.2.0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+        <div class="clips">
+          <aside class="cliplist">
+            <h2>Clips</h2>
+            <div class="clip active"><div class="name"><span>Sniper from the roof</span></div><div class="meta"><span>21:14</span><span>0:34</span></div></div>
+            <div class="clip"><div class="name"><span>Replay 20:58</span></div><div class="meta"><span>20:58</span><span>1:02</span></div></div>
+            <div class="clip"><div class="name"><span>Replay 20:41</span></div><div class="meta"><span>20:41</span><span>0:48</span></div></div>
+          </aside>
+          <main class="editor">
+            <div class="video"><svg class="icon"><use href="#i-play"/></svg></div>
+            <div class="timeline">
+              <div class="ticks"><span>0:00</span><span>1:00</span><span>2:00</span><span>3:00</span><span>4:00</span><span>5:00</span></div>
+              <div class="range" style="left:22%;width:34%"></div>
+              <div class="handle" style="left:22%"></div>
+              <div class="handle" style="left:56%"></div>
+            </div>
+            <div class="row">
+              <button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Share</button>
+              <button class="btn"><svg class="icon"><use href="#i-copy"/></svg> Copy file</button>
+              <button class="btn btn-ghost btn-icon" title="Delete"><svg class="icon"><use href="#i-trash"/></svg></button>
+              <span class="right muted sm">1:06 - 2:48 &middot; 1:42</span>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="shots">
+    <section class="shot">
+      <h2>Phone, 375 px</h2>
+      <div class="fit fit-phone">
+        <div class="frame frame-phone">
+          <header class="topbar">
+            <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+            <nav class="nav" aria-label="Pages">
+              <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+              <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+              <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+            </nav>
+            <div class="right">
+              <span class="status" title="Service running"><i class="dot"></i></span>
+              <div class="menu-wrap">
+                <button class="btn btn-ghost btn-icon morebtn" title="More"><svg class="icon"><use href="#i-more"/></svg><i class="dot warn" title="Nextcloud: 84 % used"></i></button>
+                <div class="menu">
+                  <a href="#"><svg class="icon"><use href="#i-obs"/></svg>OBS</a>
+                  <a href="#"><svg class="icon"><use href="#i-diagnostics"/></svg>Diagnostics</a>
+                  <button type="button"><svg class="icon"><use href="#i-info"/></svg>Keyboard shortcuts</button>
+                  <hr>
+                  <div class="meta">
+                    <div><span class="badge">h264_amf</span><span class="badge warn">Nextcloud 84%</span></div>
+                    <div><i class="dot"></i>Service running &middot; replaycut 3.2.0</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </header>
+          <div class="clips">
+            <main class="editor">
+              <div class="video"><svg class="icon"><use href="#i-play"/></svg></div>
+              <div class="timeline">
+                <div class="ticks"><span>0:00</span><span>2:00</span><span>4:00</span></div>
+                <div class="range" style="left:22%;width:34%"></div>
+                <div class="handle" style="left:22%"></div>
+                <div class="handle" style="left:56%"></div>
+              </div>
+              <div class="row">
+                <button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Share</button>
+                <button class="btn"><svg class="icon"><use href="#i-copy"/></svg> Copy</button>
+                <button class="btn btn-ghost btn-icon" title="Delete"><svg class="icon"><use href="#i-trash"/></svg></button>
+              </div>
+              <p class="muted sm">Sniper from the roof &middot; 1:42 of 5:00</p>
+            </main>
+          </div>
+        </div>
+      </div>
+      <p class="note muted sm">Three icons, the status dot, the menu. The whole bar is 44 px tall as
+        it is today.</p>
+    </section>
+
+    <section class="shot">
+      <h2>Phone, the menu open</h2>
+      <div class="fit fit-phone">
+        <div class="frame frame-phone is-menu">
+          <header class="topbar">
+            <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+            <nav class="nav" aria-label="Pages">
+              <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+              <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+              <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+            </nav>
+            <div class="right">
+              <span class="status" title="Service running"><i class="dot"></i></span>
+              <div class="menu-wrap">
+                <button class="btn btn-ghost btn-icon morebtn" title="More"><svg class="icon"><use href="#i-more"/></svg><i class="dot warn" title="Nextcloud: 84 % used"></i></button>
+                <div class="menu">
+                  <a href="#"><svg class="icon"><use href="#i-obs"/></svg>OBS</a>
+                  <a href="#"><svg class="icon"><use href="#i-diagnostics"/></svg>Diagnostics</a>
+                  <button type="button"><svg class="icon"><use href="#i-info"/></svg>Keyboard shortcuts</button>
+                  <hr>
+                  <div class="meta">
+                    <div><span class="badge">h264_amf</span><span class="badge warn">Nextcloud 84%</span></div>
+                    <div><i class="dot"></i>Service running &middot; replaycut 3.2.0</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </header>
+          <div class="clips">
+            <main class="editor">
+              <div class="video"><svg class="icon"><use href="#i-play"/></svg></div>
+              <div class="timeline">
+                <div class="ticks"><span>0:00</span><span>2:00</span><span>4:00</span></div>
+                <div class="range" style="left:22%;width:34%"></div>
+                <div class="handle" style="left:22%"></div>
+                <div class="handle" style="left:56%"></div>
+              </div>
+              <div class="row">
+                <button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Share</button>
+                <button class="btn"><svg class="icon"><use href="#i-copy"/></svg> Copy</button>
+                <button class="btn btn-ghost btn-icon" title="Delete"><svg class="icon"><use href="#i-trash"/></svg></button>
+              </div>
+              <p class="muted sm">Sniper from the roof &middot; 1:42 of 5:00</p>
+            </main>
+          </div>
+        </div>
+      </div>
+      <p class="note muted sm">The menu drops from the top right - the far corner for a thumb, which
+        is the price of one layout for every width.</p>
+    </section>
+  </div>
+</div>
+
+<script src="mock.js"></script>
+<script src="nav-frames.js"></script>
+</body>
+</html>

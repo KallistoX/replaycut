@@ -1,0 +1,61 @@
+/* Frames for the three navigation proposals (nav-a.html, nav-b.html,
+ * nav-c.html). Not part of the UI.
+ *
+ * A proposal has to show a desktop view and a phone view on one sheet, so
+ * every view sits in a `.frame`: a fixed-width box with
+ * `container-type: inline-size`. The proposals are therefore written as
+ * `@container` rules and show their phone layout even while the sheet is
+ * open on a wide screen; in `ui/index.html` the same rules are `@media`
+ * rules on the viewport. Layout containment comes with the container, so a
+ * frame is also the containing block for `position: fixed` - a bottom bar
+ * in a phone frame sits on that frame, not on the window.
+ *
+ * `nav-frames.js` scales a frame down when the sheet is narrower than the
+ * frame is wide. The layout width does not change with it, so the container
+ * queries inside keep seeing 1280 px or 375 px.
+ */
+
+/* ---- the sheet ---- */
+.sheet { max-width: 1400px; margin: 0 auto; padding: var(--space-5) var(--space-4) var(--space-6); display: flex; flex-direction: column; gap: var(--space-5); }
+.sheet-head h1 { font-size: var(--text-xl); margin: 0 0 var(--space-2); }
+.sheet-head p { margin: 0 0 var(--space-2); color: var(--fg-muted); max-width: 80ch; }
+.sheet-head ul { margin: 0; padding-left: 18px; color: var(--fg-muted); max-width: 80ch; display: flex; flex-direction: column; gap: var(--space-1); }
+.sheet-head b { color: var(--fg); font-weight: var(--weight-strong); }
+.shots { display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start; }
+.shot { display: flex; flex-direction: column; gap: var(--space-2); }
+.shots > .shot { flex: 0 1 375px; min-width: 0; }
+.shot > h2 { margin: 0; font-size: var(--text-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); }
+.shot > .note { margin: 0; max-width: 375px; }
+
+/* ---- the frames ---- */
+.fit { overflow: hidden; }
+.fit-wide { width: 100%; }
+.fit-phone { width: 100%; }
+/* `contain: layout` is what makes a frame the containing block for the
+ * `position: fixed` bars inside it; `container-type` alone does not do it
+ * in Chromium. index.html needs neither. */
+.frame { position: relative; overflow: hidden; container-type: inline-size; contain: layout; transform-origin: top left; background: var(--bg); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); }
+.frame-desktop { width: 1280px; height: 600px; }
+.frame-phone { width: 375px; height: 667px; }
+
+/* base.css hides the wordmark text, the badges and the version below 480 px.
+ * That is about the window, not about a frame, so it must not reach into
+ * one; each proposal decides per container instead. The `.frame` prefix is
+ * only here to out-rank that media query - index.html needs none of it. */
+.frame .wordmark span { display: inline; }
+.frame .topbar .version { display: inline; }
+.frame .topbar .badge { display: inline-flex; }
+.frame .topbar { gap: var(--space-4); padding: 0 var(--space-4); }
+.frame .nav a { padding: var(--space-1) var(--space-3); }
+
+/* ---- what the frames show: the clips page, cut down ----
+ * The classes are the real ones from base.css. Two things need help: a
+ * frame is 600 or 667 px tall instead of a window, and base.css switches
+ * the clips page to one column below 1000 px - a window width, which must
+ * not reach into a frame. */
+.frame .clips { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); height: calc(100% - var(--topbar-h)); min-height: 0; }
+.frame .cliplist { border-right: 1px solid var(--line); border-bottom: 0; padding: var(--space-3); overflow: hidden; }
+.frame .cliplist h2 { margin-top: var(--space-1); }
+.frame .editor { min-height: 0; }
+.frame .video { flex: 1 1 auto; min-height: 0; aspect-ratio: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.frame-phone .clips { grid-template-columns: minmax(0, 1fr); }
