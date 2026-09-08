@@ -92,6 +92,10 @@ pub struct UpdateInfo {
     pub published_at: String,
     pub asset_name: String,
     pub asset_size: u64,
+    /// Whether the release carries the package for this platform (since
+    /// 3.2). A release published before a platform got its package shows
+    /// up as available but cannot be installed from here.
+    pub packaged: bool,
     #[serde(skip)]
     pub asset_url: String,
     #[serde(skip)]
@@ -231,6 +235,7 @@ async fn fetch_latest_from(url: &str) -> Result<UpdateInfo> {
         published_at: v["published_at"].as_str().unwrap_or_default().to_string(),
         asset_name,
         asset_size,
+        packaged: !asset_url.is_empty(),
         asset_url,
         sums_url,
         minisig_url,
@@ -469,10 +474,12 @@ pub async fn download(state: Arc<AppState>, verify_exe: bool) -> Result<()> {
         // A release published but not yet signed is the common case here;
         // the status must say so, or the UI waits for a download that never
         // started.
-        let missing = if info.minisig_url.is_empty() {
+        let missing = if !info.packaged {
+            Some("this release has no package for this platform yet - see the release page")
+        } else if info.minisig_url.is_empty() {
             Some("the release is not signed yet (no SHA256SUMS.minisig) - try again later")
-        } else if info.asset_url.is_empty() || info.sums_url.is_empty() {
-            Some("the release is missing the ZIP or SHA256SUMS")
+        } else if info.sums_url.is_empty() {
+            Some("the release is missing SHA256SUMS")
         } else {
             None
         };
@@ -958,6 +965,9 @@ mod tests {
         if tamper == "unsigned" {
             assets.pop();
         }
+        if tamper == "nopackage" {
+            assets.remove(0);
+        }
         let doc = serde_json::json!({
             "tag_name": format!("v{version}"),
             "html_url": format!("{base}/releases/v{version}"),
@@ -1109,6 +1119,7 @@ replaycut --version
             format!("replaycut-9.9.0-{PACKAGE_SUFFIX}.zip")
         );
         assert!(info.asset_size > 0);
+        assert!(info.packaged);
         assert!(info.notes.contains("one-click update"));
         assert!(info.minisig_url.ends_with("SHA256SUMS.minisig"));
         let mut seen = Vec::new();
@@ -1148,6 +1159,13 @@ replaycut --version
         let rel = fake_release("9.9.0", &key, "unsigned").await;
         let info = fetch_latest_from(&rel.url).await.unwrap();
         assert!(info.minisig_url.is_empty());
+
+        // a release without the package for this platform: known, not installable
+        let rel = fake_release("9.9.0", &key, "nopackage").await;
+        let info = fetch_latest_from(&rel.url).await.unwrap();
+        assert!(!info.packaged);
+        assert!(info.asset_url.is_empty());
+        assert_eq!(info.asset_size, 0);
 
         let _ = std::fs::remove_dir_all(&work);
     }

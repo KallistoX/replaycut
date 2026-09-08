@@ -2885,15 +2885,18 @@ function updateBanner() {
   else {
     const b = $('b-update'); b.className = 'banner' + (u.phase === 'error' ? ' warn' : '');
     const show = (id, on) => { $(id).hidden = !on; };
-    show('b-update-now', u.installed && ['available', 'idle', 'checking', 'error', 'ready'].includes(u.phase));
+    // since 3.2: a release without the package for this platform is shown, not offered
+    const packaged = l.packaged !== false;
+    show('b-update-now', u.installed && packaged && ['available', 'idle', 'checking', 'error', 'ready'].includes(u.phase));
     show('b-update-notes', u.phase !== 'installing');
-    show('b-update-link', !u.installed); $('b-update-link').href = l.url || '#';
+    show('b-update-link', !u.installed || !packaged); $('b-update-link').href = l.url || '#'; $('b-update-link').textContent = packaged ? 'Download' : 'Release page';
     show('b-update-bar', u.phase === 'downloading'); show('b-update-pct', u.phase === 'downloading');
     $('b-update-now').disabled = updBusy;
     if (u.phase === 'downloading') { $('b-update-text').textContent = `Downloading replaycut ${l.version} …`; $('b-update-hint').textContent = ''; $('b-update-bar').firstElementChild.style.width = (u.percent || 0) + '%'; $('b-update-pct').textContent = (u.percent || 0) + ' %'; }
     else if (u.phase === 'ready') { $('b-update-text').textContent = `replaycut ${l.version} is downloaded and verified.`; $('b-update-hint').textContent = u.error || 'The service restarts on the new version; this page reloads.'; $('b-update-now').textContent = 'Restart to update'; }
     else if (u.phase === 'installing') { $('b-update-text').textContent = `Installing replaycut ${l.version} …`; $('b-update-hint').textContent = 'The page reloads when the service is back.'; }
     else if (u.phase === 'error') { $('b-update-text').textContent = `Update to replaycut ${l.version} failed.`; $('b-update-hint').textContent = u.error || ''; $('b-update-now').textContent = 'Try again'; }
+    else if (!packaged) { $('b-update-text').textContent = `replaycut ${l.version} is available, but that release has no package for this platform yet.`; $('b-update-hint').textContent = 'The update installs itself once a release carries one.'; }
     else { $('b-update-text').textContent = `replaycut ${l.version} is available.`; $('b-update-hint').textContent = u.installed ? '' : 'This copy was not installed with install.cmd - update it by hand.'; $('b-update-now').textContent = 'Update now'; }
     banner('b-update', true);
   }
