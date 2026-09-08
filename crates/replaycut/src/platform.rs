@@ -1,8 +1,9 @@
-//! Windows integrations that need no installer: recycle bin, the replay
+//! Platform integrations that need no installer: recycle bin, the replay
 //! hotkey, the clipboard, the parent console for a windowless executable,
-//! the single-instance mutex, the stop event, the browser. Other platforms
-//! get honest errors or no-ops so the service still builds and runs there
-//! for development.
+//! the single-instance guard, `replaycut stop`, the browser. Windows and
+//! Linux have real implementations (`win`, `linux`); other platforms get
+//! honest errors or no-ops so the service still builds and runs there for
+//! development.
 
 use std::path::Path;
 
@@ -63,18 +64,27 @@ pub fn spawn_self_for_restart() -> Result<()> {
         }
     }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    spawn_detached(&exe, &refs)
+}
+
+/// Start `exe` so that it outlives this process and its terminal: without a
+/// console on Windows, in a session of its own on Linux.
+pub fn spawn_detached(exe: &Path, args: &[&str]) -> Result<()> {
     #[cfg(windows)]
     {
-        crate::winshell::spawn_detached(&exe, &refs)
+        crate::winshell::spawn_detached(exe, args)
     }
     #[cfg(not(windows))]
     {
-        std::process::Command::new(&exe)
-            .args(&refs)
+        use anyhow::Context as _;
+        let mut cmd = std::process::Command::new(exe);
+        cmd.args(args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
+            .stderr(std::process::Stdio::null());
+        #[cfg(target_os = "linux")]
+        linux::own_session(&mut cmd);
+        cmd.spawn()
             .with_context(|| format!("cannot start {}", exe.display()))?;
         Ok(())
     }
@@ -140,8 +150,14 @@ pub fn firewall_rule_present() -> Option<bool> {
     None
 }
 
-/// Lower-case computer name for the address other devices use.
+/// Lower-case computer name for the address other devices use. Windows
+/// exports it as `COMPUTERNAME`; Linux shells do not export `HOSTNAME`, so
+/// the kernel is asked first there.
 pub fn hostname() -> String {
+    #[cfg(target_os = "linux")]
+    if let Some(name) = linux::hostname() {
+        return name;
+    }
     std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
         .ok()
@@ -472,8 +488,125 @@ pub fn open_folder_select(_path: &Path) -> Result<()> {
     anyhow::bail!("opening the folder is only supported on Windows")
 }
 
+// ------------------------------------------------------------------ Linux
+
+/// The single-instance guard and `replaycut stop` share one lock file:
+/// the service holds an exclusive `flock` on it with its PID inside, a
+/// second start sees the lock taken, and `stop` reads the PID and sends
+/// SIGTERM, which `lifecycle::console_signals` turns into a shutdown. The
+/// kernel drops the lock with the process, so a crash leaves nothing stale.
+#[cfg(target_os = "linux")]
+mod linux {
+    use std::fs::{File, OpenOptions};
+    use std::io::{Read, Write};
+    use std::path::PathBuf;
+
+    use anyhow::{Context, Result};
+    use rustix::fs::{flock, FlockOperation};
+    use rustix::process::{kill_process, Pid, Signal};
+
+    /// `$XDG_RUNTIME_DIR/replaycut-<port>.lock`, else the temp dir; the port
+    /// keeps a test instance apart from the installed one.
+    fn lock_path(port: u16) -> PathBuf {
+        let dir = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .filter(|d| d.is_dir())
+            .unwrap_or_else(std::env::temp_dir);
+        dir.join(format!("replaycut-{port}.lock"))
+    }
+
+    fn open_lock(port: u16) -> Result<File> {
+        let path = lock_path(port);
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&path)
+            .with_context(|| format!("cannot open {}", path.display()))
+    }
+
+    /// Take the lock without waiting; `false` while another process holds it.
+    fn try_lock(file: &File) -> bool {
+        flock(file, FlockOperation::NonBlockingLockExclusive).is_ok()
+    }
+
+    /// Held by the running service; closing the file releases the lock.
+    pub struct SingleInstance(#[allow(dead_code)] File);
+
+    pub fn claim_single_instance(port: u16) -> Result<Option<SingleInstance>> {
+        let mut file = open_lock(port)?;
+        if !try_lock(&file) {
+            return Ok(None);
+        }
+        file.set_len(0).context("cannot truncate the lock file")?;
+        write!(file, "{}", std::process::id()).context("cannot write the lock file")?;
+        Ok(Some(SingleInstance(file)))
+    }
+
+    /// True while a service process holds the lock.
+    pub fn instance_running(port: u16) -> bool {
+        match open_lock(port) {
+            Ok(file) => !try_lock(&file),
+            Err(_) => false,
+        }
+    }
+
+    /// Send SIGTERM to the process that holds the lock. `Ok(false)` when
+    /// none does.
+    pub fn signal_stop(port: u16) -> Result<bool> {
+        let mut file = open_lock(port)?;
+        if try_lock(&file) {
+            return Ok(false);
+        }
+        let mut text = String::new();
+        file.read_to_string(&mut text)
+            .with_context(|| format!("cannot read {}", lock_path(port).display()))?;
+        let pid = text
+            .trim()
+            .parse::<i32>()
+            .ok()
+            .and_then(Pid::from_raw)
+            .with_context(|| format!("no pid in {}", lock_path(port).display()))?;
+        kill_process(pid, Signal::TERM)
+            .with_context(|| format!("cannot signal process {}", pid.as_raw_nonzero()))?;
+        Ok(true)
+    }
+
+    /// Whether a terminal is attached: the counterpart of the Windows parent
+    /// console. Started from a desktop entry or systemd there is none, and
+    /// the service then opens the browser like the Windows shortcut does.
+    pub fn attach_parent_console() -> bool {
+        use std::io::IsTerminal;
+        std::io::stdout().is_terminal() || std::io::stderr().is_terminal()
+    }
+
+    /// The kernel's node name, lower-cased; `None` when it is empty.
+    pub fn hostname() -> Option<String> {
+        let uname = rustix::system::uname();
+        let name = uname.nodename().to_str().ok()?.trim();
+        (!name.is_empty()).then(|| name.to_ascii_lowercase())
+    }
+
+    /// Put the child into a session of its own so that a closing terminal
+    /// (SIGHUP) or the parent's exit does not take it along.
+    pub fn own_session(cmd: &mut std::process::Command) {
+        use std::os::unix::process::CommandExt;
+        // SAFETY: setsid is async-signal-safe and touches no memory shared
+        // with the parent, which is all pre_exec asks for.
+        unsafe {
+            cmd.pre_exec(|| rustix::process::setsid().map(|_| ()).map_err(Into::into));
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub use linux::{attach_parent_console, claim_single_instance, instance_running, signal_stop};
+
 // ------------------------------------------------------------ other platforms
 
+/// What every non-Windows platform shares, plus the stubs for platforms
+/// without an implementation of their own.
 #[cfg(not(windows))]
 mod other {
     use anyhow::Result;
@@ -486,38 +619,7 @@ mod other {
         anyhow::bail!("copying a file object is only supported on Windows")
     }
 
-    pub fn attach_parent_console() -> bool {
-        true
-    }
-
     pub fn set_app_id() {}
-
-    pub struct SingleInstance;
-
-    pub fn claim_single_instance(_port: u16) -> Result<Option<SingleInstance>> {
-        Ok(Some(SingleInstance))
-    }
-
-    pub fn instance_running(_port: u16) -> bool {
-        false
-    }
-
-    pub struct StopEvent;
-
-    impl StopEvent {
-        pub fn create(_port: u16) -> Result<Self> {
-            Ok(Self)
-        }
-        pub fn wait(&self) {
-            loop {
-                std::thread::park();
-            }
-        }
-    }
-
-    pub fn signal_stop(_port: u16) -> Result<bool> {
-        anyhow::bail!("`replaycut stop` is only supported on Windows")
-    }
 
     pub fn open_url(url: &str) -> Result<()> {
         std::process::Command::new("xdg-open").arg(url).spawn()?;
@@ -527,13 +629,36 @@ mod other {
     pub fn fatal_dialog(text: &str) {
         eprintln!("{text}");
     }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn attach_parent_console() -> bool {
+        true
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub struct SingleInstance;
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn claim_single_instance(_port: u16) -> Result<Option<SingleInstance>> {
+        Ok(Some(SingleInstance))
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn instance_running(_port: u16) -> bool {
+        false
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn signal_stop(_port: u16) -> Result<bool> {
+        anyhow::bail!("`replaycut stop` is only supported on Windows and Linux")
+    }
 }
 
 #[cfg(not(windows))]
-pub use other::{
-    attach_parent_console, claim_single_instance, copy_file, fatal_dialog, instance_running,
-    open_url, press_f9, set_app_id, signal_stop, StopEvent,
-};
+pub use other::{copy_file, fatal_dialog, open_url, press_f9, set_app_id};
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub use other::{attach_parent_console, claim_single_instance, instance_running, signal_stop};
 
 /// Ask a running instance to stop and wait for it. `Ok(false)` when none ran.
 pub fn stop_instance(port: u16, timeout: std::time::Duration) -> Result<bool> {

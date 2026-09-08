@@ -354,9 +354,11 @@ fn run_service(
     ))?;
     let _ = state.shutdown.set(shutdown.clone());
 
-    // `replaycut stop` sets this event; a plain thread waits on it.
-    let stop_event = platform::StopEvent::create(port)?;
+    // `replaycut stop` sets this event; a plain thread waits on it. On Linux
+    // `stop` sends SIGTERM instead, which `console_signals` handles.
+    #[cfg(windows)]
     {
+        let stop_event = platform::StopEvent::create(port)?;
         let shutdown = shutdown.clone();
         std::thread::Builder::new()
             .name("stop-event".into())

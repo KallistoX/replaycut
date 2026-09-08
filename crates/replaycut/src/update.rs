@@ -619,18 +619,7 @@ fn spawn_new(exe: &Path) -> Result<()> {
         }
     }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    #[cfg(windows)]
-    {
-        crate::winshell::spawn_detached(exe, &refs)
-    }
-    #[cfg(not(windows))]
-    {
-        std::process::Command::new(exe)
-            .args(&refs)
-            .spawn()
-            .with_context(|| format!("cannot start {}", exe.display()))?;
-        Ok(())
-    }
+    crate::platform::spawn_detached(exe, &refs)
 }
 
 /// What the marker of a just-installed update says.
