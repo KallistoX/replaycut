@@ -10,6 +10,19 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- **Linux, first stage.** The service builds, passes its tests and runs on
+  Linux, and CI checks that next to Windows. The single-instance guard and
+  `replaycut stop` work there (a lock file under `$XDG_RUNTIME_DIR` and
+  SIGTERM), the address for other devices carries the real host name, a
+  start without a terminal opens the browser like the Windows shortcut,
+  the OBS profiles are read from `~/.config/obs-studio` (or the Flatpak's
+  copy) and the default clip folder is the XDG videos directory. Secrets,
+  notifications, the clipboard under Wayland, GPU encoding through VAAPI,
+  autostart, the installer and the tray follow in the next stages; until
+  then those report that they are not available on this platform.
+
 ### Changed
 
 - **The clips page carries less.** A cut is one row now - its range, how

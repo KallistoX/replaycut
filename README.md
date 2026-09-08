@@ -101,7 +101,9 @@ Windows SmartScreen may warn about an unsigned download the first time: click
 ## Requirements
 
 - Windows 10 or 11 (the service uses the recycle bin, toast notifications and
-  the Credential Manager; other platforms are not a goal for 2.0).
+  the Credential Manager). Linux support is being built in stages: the
+  service builds, runs and is tested there, but secrets, notifications, the
+  installer and the tray are not available yet (see `CHANGELOG.md`).
 - [OBS Studio](https://obsproject.com/) with the replay buffer enabled,
   recording to MKV. Multiple audio tracks are optional; the recommended
   layout is track 1 = mix, 2 = microphone, 3 = game, 4 = voice chat.
@@ -297,7 +299,8 @@ limits because nothing looked.
 `.github/workflows/ci.yml` runs `fmt`, `clippy`, the build and those tests in
 the `check` job. A second job, `contract`, installs ffmpeg, starts the service
 with `--dry-run` on port 8423 and runs the contract suite against it; the
-service log is uploaded as an artifact when the job fails.
+service log is uploaded as an artifact when the job fails. Both jobs run on
+Windows and on Linux.
 
 #### API contract tests
 
