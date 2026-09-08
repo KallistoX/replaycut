@@ -1,0 +1,31 @@
+/* replaycut theme "catppuccin-mocha" - Catppuccin Mocha: mauve accent, the palette's greens, yellows and reds for the states.
+ * Colours: catppuccin.com palette. Layout, spacing and typography tokens are inherited from wardogs.
+ * Format: docs/themes.md. */
+:root {
+  --bg: #1e1e2e;
+  --surface: #313244;
+  --surface-2: #11111b;
+  --line: #45475a;
+  --line-strong: #585b70;
+
+  --fg: #cdd6f4;
+  --fg-muted: #a6adc8;
+  --fg-faint: #7f849c;
+
+  --accent: #cba6f7;
+  --accent-hover: #b4befe;
+  --accent-fg: #11111b;
+  --accent-soft: rgba(203, 166, 247, 0.22);
+
+  --ok: #a6e3a1;
+  --ok-soft: rgba(166, 227, 161, 0.14);
+  --warn: #f9e2af;
+  --warn-soft: rgba(249, 226, 175, 0.14);
+  --err: #f38ba8;
+  --err-soft: rgba(243, 139, 168, 0.14);
+  --info: #89b4fa;
+  --info-soft: rgba(137, 180, 250, 0.14);
+
+  --focus: #74c7ec;
+  --scrim: rgba(0, 0, 0, 0.6);
+}

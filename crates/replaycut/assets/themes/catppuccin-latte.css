@@ -1,0 +1,31 @@
+/* replaycut theme "catppuccin-latte" - Catppuccin Latte: the light flavour, mauve accent.
+ * Colours: catppuccin.com palette. Layout, spacing and typography tokens are inherited from wardogs.
+ * Format: docs/themes.md. */
+:root {
+  --bg: #e6e9ef;
+  --surface: #eff1f5;
+  --surface-2: #dce0e8;
+  --line: #ccd0da;
+  --line-strong: #acb0be;
+
+  --fg: #4c4f69;
+  --fg-muted: #6c6f85;
+  --fg-faint: #74778c;
+
+  --accent: #8839ef;
+  --accent-hover: #7287fd;
+  --accent-fg: #eff1f5;
+  --accent-soft: rgba(136, 57, 239, 0.16);
+
+  --ok: #2f7d1f;
+  --ok-soft: rgba(47, 125, 31, 0.14);
+  --warn: #a86b00;
+  --warn-soft: rgba(168, 107, 0, 0.14);
+  --err: #d20f39;
+  --err-soft: rgba(210, 15, 57, 0.14);
+  --info: #1e66f5;
+  --info-soft: rgba(30, 102, 245, 0.14);
+
+  --focus: #4c4f69;
+  --scrim: rgba(76, 79, 105, 0.45);
+}

@@ -83,7 +83,6 @@
     <label class="row nowrap sm" style="gap:6px">Theme
       <select class="select" id="themeSel" style="min-height:28px;padding:2px 28px 2px 8px;width:auto">
         <option value="">wardogs (default)</option>
-        <option value="themes/plain.css">plain (light)</option>
       </select>
     </label>
     <span class="version" id="vw"></span>
@@ -420,8 +419,11 @@ update    ok   2.0.0 is the latest release</div>
 <script>
 // Theme switch (the only script the mockups need) plus the sheet's helpers.
 (function () {
+  // The themes the service ships, in the order of crates/replaycut/src/themes.rs.
+  const THEMES = ['catppuccin-frappe', 'catppuccin-latte', 'catppuccin-macchiato', 'catppuccin-mocha', 'dracula', 'gruvbox-dark', 'material-dark', 'material-light', 'nord', 'plain', 'solarized-dark', 'tokyo-night'];
   const link = document.getElementById('theme'), sel = document.getElementById('themeSel');
-  const apply = v => { link.href = v || ''; link.disabled = !v; sel.value = v; try { localStorage.setItem('rc-theme', v); } catch (e) {} setTimeout(refresh, 60); };
+  sel.insertAdjacentHTML('beforeend', THEMES.map(n => `<option value="${n}">${n}</option>`).join(''));
+  const apply = v => { link.href = v ? '../../crates/replaycut/assets/themes/' + v + '.css' : ''; link.disabled = !v; sel.value = v; try { localStorage.setItem('rc-theme', v); } catch (e) {} setTimeout(refresh, 60); };
   sel.onchange = () => apply(sel.value);
   let saved = ''; try { saved = localStorage.getItem('rc-theme') || ''; } catch (e) {}
   apply(saved);

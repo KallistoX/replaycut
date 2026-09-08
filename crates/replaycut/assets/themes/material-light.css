@@ -1,0 +1,31 @@
+/* replaycut theme "material-light" - Material Design, light: the Material 3 baseline light scheme (purple primary).
+ * Colours: m3.material.io baseline scheme. Layout, spacing and typography tokens are inherited from wardogs.
+ * Format: docs/themes.md. */
+:root {
+  --bg: #fef7ff;
+  --surface: #ffffff;
+  --surface-2: #f3edf7;
+  --line: #cac4d0;
+  --line-strong: #938f99;
+
+  --fg: #1d1b20;
+  --fg-muted: #49454f;
+  --fg-faint: #6e6a74;
+
+  --accent: #6750a4;
+  --accent-hover: #56418f;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(103, 80, 164, 0.16);
+
+  --ok: #1b7f4d;
+  --ok-soft: rgba(27, 127, 77, 0.14);
+  --warn: #a35b00;
+  --warn-soft: rgba(163, 91, 0, 0.14);
+  --err: #b3261e;
+  --err-soft: rgba(179, 38, 30, 0.14);
+  --info: #2b63c2;
+  --info-soft: rgba(43, 99, 194, 0.14);
+
+  --focus: #1d1b20;
+  --scrim: rgba(29, 27, 32, 0.45);
+}

@@ -1,0 +1,31 @@
+/* replaycut theme "solarized-dark" - Solarized dark: blue accent, the palette's green, yellow, red and cyan for the states.
+ * Colours: ethanschoonover.com/solarized. Layout, spacing and typography tokens are inherited from wardogs.
+ * Format: docs/themes.md. */
+:root {
+  --bg: #002b36;
+  --surface: #073642;
+  --surface-2: #00212b;
+  --line: #154a58;
+  --line-strong: #586e75;
+
+  --fg: #eee8d5;
+  --fg-muted: #93a1a1;
+  --fg-faint: #728a92;
+
+  --accent: #3a9ee0;
+  --accent-hover: #4facf0;
+  --accent-fg: #002b36;
+  --accent-soft: rgba(58, 158, 224, 0.22);
+
+  --ok: #859900;
+  --ok-soft: rgba(133, 153, 0, 0.14);
+  --warn: #b58900;
+  --warn-soft: rgba(181, 137, 0, 0.14);
+  --err: #e35d5b;
+  --err-soft: rgba(227, 93, 91, 0.14);
+  --info: #2aa198;
+  --info-soft: rgba(42, 161, 152, 0.14);
+
+  --focus: #e8743f;
+  --scrim: rgba(0, 0, 0, 0.6);
+}

@@ -1,0 +1,31 @@
+/* replaycut theme "catppuccin-frappe" - Catppuccin Frappe: mauve accent, the palette's greens, yellows and reds for the states.
+ * Colours: catppuccin.com palette. Layout, spacing and typography tokens are inherited from wardogs.
+ * Format: docs/themes.md. */
+:root {
+  --bg: #303446;
+  --surface: #414559;
+  --surface-2: #232634;
+  --line: #51576d;
+  --line-strong: #626880;
+
+  --fg: #c6d0f5;
+  --fg-muted: #a5adce;
+  --fg-faint: #838ba7;
+
+  --accent: #ca9ee6;
+  --accent-hover: #babbf1;
+  --accent-fg: #232634;
+  --accent-soft: rgba(202, 158, 230, 0.22);
+
+  --ok: #a6d189;
+  --ok-soft: rgba(166, 209, 137, 0.14);
+  --warn: #e5c890;
+  --warn-soft: rgba(229, 200, 144, 0.14);
+  --err: #e78284;
+  --err-soft: rgba(231, 130, 132, 0.14);
+  --info: #8caaee;
+  --info-soft: rgba(140, 170, 238, 0.14);
+
+  --focus: #85c1dc;
+  --scrim: rgba(0, 0, 0, 0.6);
+}

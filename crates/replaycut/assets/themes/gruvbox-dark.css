@@ -1,0 +1,31 @@
+/* replaycut theme "gruvbox-dark" - Gruvbox dark (medium): warm greys, yellow accent, orange warnings.
+ * Colours: github.com/morhetz/gruvbox. Layout, spacing and typography tokens are inherited from wardogs.
+ * Format: docs/themes.md. */
+:root {
+  --bg: #282828;
+  --surface: #32302f;
+  --surface-2: #1d2021;
+  --line: #504945;
+  --line-strong: #665c54;
+
+  --fg: #ebdbb2;
+  --fg-muted: #bdae93;
+  --fg-faint: #928374;
+
+  --accent: #fabd2f;
+  --accent-hover: #fcd06d;
+  --accent-fg: #282828;
+  --accent-soft: rgba(250, 189, 47, 0.22);
+
+  --ok: #b8bb26;
+  --ok-soft: rgba(184, 187, 38, 0.14);
+  --warn: #fe8019;
+  --warn-soft: rgba(254, 128, 25, 0.14);
+  --err: #fb4934;
+  --err-soft: rgba(251, 73, 52, 0.14);
+  --info: #83a598;
+  --info-soft: rgba(131, 165, 152, 0.14);
+
+  --focus: #8ec07c;
+  --scrim: rgba(0, 0, 0, 0.6);
+}

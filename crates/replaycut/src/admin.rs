@@ -20,10 +20,9 @@ use crate::integrations::{Discord, Nextcloud};
 use crate::platform;
 use crate::settings::{is_theme_name, Settings};
 use crate::state::{AppState, VERSION};
+use crate::themes::{self, BUILT_IN_THEME};
 
 type App = Arc<AppState>;
-
-const BUILT_IN_THEME: &str = "wardogs";
 
 fn parse_json(headers: &HeaderMap, body: &Bytes) -> Result<Value, ApiError> {
     auth::require_json(headers)?;
@@ -31,8 +30,10 @@ fn parse_json(headers: &HeaderMap, body: &Bytes) -> Result<Value, ApiError> {
         .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, format!("invalid JSON: {e}")))
 }
 
+/// The built-in themes plus every readable file in `<data-dir>/themes/`.
 fn theme_names(app: &AppState) -> Vec<String> {
     let mut names = vec![BUILT_IN_THEME.to_string()];
+    names.extend(themes::BUILT_IN_THEMES.iter().map(|(n, _)| n.to_string()));
     if let Ok(entries) = std::fs::read_dir(app.data_dir.join("themes")) {
         for e in entries.flatten() {
             let file = e.file_name().to_string_lossy().to_string();
@@ -497,7 +498,8 @@ pub async fn addresses(
     }))
 }
 
-/// `GET /themes/<name>.css`
+/// `GET /themes/<name>.css`: the file in `<data-dir>/themes/` if there is
+/// one, else the built-in theme of that name, so a copy in the folder wins.
 pub async fn theme(State(app): State<App>, Path(file): Path<String>) -> Response {
     let Some(name) = file.strip_suffix(".css") else {
         return ApiError::new(StatusCode::NOT_FOUND, "not found").into_response();
@@ -506,17 +508,21 @@ pub async fn theme(State(app): State<App>, Path(file): Path<String>) -> Response
         return ApiError::new(StatusCode::NOT_FOUND, "not found").into_response();
     }
     let path = app.data_dir.join("themes").join(&file);
-    match tokio::fs::read(&path).await {
-        Ok(bytes) => (
-            [
-                (CONTENT_TYPE, "text/css; charset=utf-8"),
-                (CACHE_CONTROL, "no-store"),
-            ],
-            bytes,
-        )
-            .into_response(),
-        Err(_) => ApiError::new(StatusCode::NOT_FOUND, "not found").into_response(),
-    }
+    let css = match tokio::fs::read(&path).await {
+        Ok(bytes) => bytes,
+        Err(_) => match themes::built_in(name) {
+            Some(css) => css.as_bytes().to_vec(),
+            None => return ApiError::new(StatusCode::NOT_FOUND, "not found").into_response(),
+        },
+    };
+    (
+        [
+            (CONTENT_TYPE, "text/css; charset=utf-8"),
+            (CACHE_CONTROL, "no-store"),
+        ],
+        css,
+    )
+        .into_response()
 }
 
 /// `GET /api/session`

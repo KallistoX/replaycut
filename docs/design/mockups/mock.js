@@ -8,7 +8,9 @@
   // floating bar, top right
   const bar = document.createElement('div');
   bar.className = 'mockbar';
-  bar.innerHTML = '<label>State <select id="mockState"></select></label><label>Theme <select id="mockTheme"><option value="">wardogs</option><option value="../themes/plain.css">plain</option></select></label><a href="../components.html">components</a>';
+  // The themes the service ships, in the order of crates/replaycut/src/themes.rs.
+  const THEMES = ['catppuccin-frappe', 'catppuccin-latte', 'catppuccin-macchiato', 'catppuccin-mocha', 'dracula', 'gruvbox-dark', 'material-dark', 'material-light', 'nord', 'plain', 'solarized-dark', 'tokyo-night'];
+  bar.innerHTML = '<label>State <select id="mockState"></select></label><label>Theme <select id="mockTheme"><option value="">wardogs</option>' + THEMES.map(n => `<option value="${n}">${n}</option>`).join('') + '</select></label><a href="../components.html">components</a>';
   document.body.appendChild(bar);
   const stateSel = bar.querySelector('#mockState'), themeSel = bar.querySelector('#mockTheme');
   states.forEach(s => { const [id, label] = s.split(':'); const o = document.createElement('option'); o.value = id; o.textContent = label || id; stateSel.appendChild(o); });
@@ -29,10 +31,10 @@
 
   // theme, shared with the component sheet via localStorage
   const link = document.getElementById('theme');
-  const applyTheme = v => { link.href = v; link.disabled = !v; themeSel.value = v; try { localStorage.setItem('rc-theme', v ? 'themes/plain.css' : ''); } catch (e) {} };
+  const applyTheme = v => { link.href = v ? '../../../crates/replaycut/assets/themes/' + v + '.css' : ''; link.disabled = !v; themeSel.value = v; try { localStorage.setItem('rc-theme', v); } catch (e) {} };
   themeSel.onchange = () => applyTheme(themeSel.value);
   let saved = ''; try { saved = localStorage.getItem('rc-theme') || ''; } catch (e) {}
-  applyTheme(saved ? '../' + saved : '');
+  applyTheme(saved);
 
   // Clip list: open on wide screens, collapsed below 1000 px (decision 2).
   const list = document.querySelector('details.cliplist');

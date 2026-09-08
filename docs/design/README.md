@@ -7,9 +7,9 @@ grows; nothing is generated at build time.
 | File | What it is |
 |---|---|
 | `tokens.css` | The design tokens and, at the same time, the default theme `wardogs`. See [docs/themes.md](../themes.md). |
-| `themes/plain.css` | A light theme that proves the token contract: it overrides values only. |
+| [`../../crates/replaycut/assets/themes/`](../../crates/replaycut/assets/themes) | The twelve themes the service ships, `plain` among them. They set token values and nothing else; the switcher of the sheet and of the mockups loads them from there. |
 | `base.css` | Every component. No colour literal in here; each one is a token. |
-| `components.html` | The component sheet: every component in every state, both themes, a live contrast table, the UI icon sprite. |
+| `components.html` | The component sheet: every component in every state, every theme, a live contrast table, the UI icon sprite. |
 | `mockups/*.html` | One mockup per page with a state switcher (bottom left) and a theme switcher. Widths come from the window: 1000 px and up is two columns on the clips page, 700 px is "the window beside the game", 375 px is a phone. |
 | `mockups/mock.js`, `mock.css` | The switchers. Not part of the UI, except the three `matchMedia` lines that open the clip list on wide screens. |
 | `mockups/nav-a.html`, `nav-b.html`, `nav-c.html` | Three proposals for the navigation, up for a decision: a tab bar at the bottom on a phone (A), one bar with a "..." menu at every width (B), four pages with Diagnostics as a Settings tab (C). Every proposal shows a desktop view and a phone view on one sheet. |
@@ -155,9 +155,10 @@ successful one.
 
 ## Acceptance checks
 
-- No colour literal outside `tokens.css`, `themes/*.css` and `icons/`:
+- No colour literal outside `tokens.css`, the shipped themes and `icons/`:
   `grep -rEn '#[0-9a-fA-F]{3,8}\b|rgba?\([0-9]' docs/design/mockups docs/design/base.css docs/design/components.html`
   finds only anchors (`href="#..."`).
-- The contrast table in `components.html` shows "pass" in both themes.
+- The contrast table in `components.html` shows "pass" for every theme in
+  the switcher; `cargo test -p replaycut themes` checks the same pairs.
 - Every mockup renders at 375, 700 and 1400 px without a horizontal scroll bar.
 - The `.ico` files come out of `mkico`, not an editor.

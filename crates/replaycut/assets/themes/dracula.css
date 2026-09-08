@@ -1,0 +1,31 @@
+/* replaycut theme "dracula" - Dracula: purple accent, the palette's green, orange, red and cyan for the states.
+ * Colours: draculatheme.com. Layout, spacing and typography tokens are inherited from wardogs.
+ * Format: docs/themes.md. */
+:root {
+  --bg: #282a36;
+  --surface: #313442;
+  --surface-2: #21222c;
+  --line: #44475a;
+  --line-strong: #6272a4;
+
+  --fg: #f8f8f2;
+  --fg-muted: #b9bfd9;
+  --fg-faint: #8a91b8;
+
+  --accent: #bd93f9;
+  --accent-hover: #caa9fa;
+  --accent-fg: #282a36;
+  --accent-soft: rgba(189, 147, 249, 0.22);
+
+  --ok: #50fa7b;
+  --ok-soft: rgba(80, 250, 123, 0.14);
+  --warn: #ffb86c;
+  --warn-soft: rgba(255, 184, 108, 0.14);
+  --err: #ff5555;
+  --err-soft: rgba(255, 85, 85, 0.14);
+  --info: #8be9fd;
+  --info-soft: rgba(139, 233, 253, 0.14);
+
+  --focus: #f1fa8c;
+  --scrim: rgba(0, 0, 0, 0.6);
+}

@@ -40,6 +40,7 @@ mod settings;
 mod setup;
 mod share;
 mod state;
+mod themes;
 mod toast;
 mod tray;
 mod update;

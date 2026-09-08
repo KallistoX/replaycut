@@ -1,0 +1,31 @@
+/* replaycut theme "material-dark" - Material Design, dark: the Material 3 baseline dark scheme (lavender primary).
+ * Colours: m3.material.io baseline scheme. Layout, spacing and typography tokens are inherited from wardogs.
+ * Format: docs/themes.md. */
+:root {
+  --bg: #121212;
+  --surface: #1e1e1e;
+  --surface-2: #0a0a0a;
+  --line: #3a3a3a;
+  --line-strong: #5a5a5a;
+
+  --fg: #e6e1e5;
+  --fg-muted: #b0aab4;
+  --fg-faint: #8e8894;
+
+  --accent: #d0bcff;
+  --accent-hover: #e0d0ff;
+  --accent-fg: #381e72;
+  --accent-soft: rgba(208, 188, 255, 0.22);
+
+  --ok: #7fd8a0;
+  --ok-soft: rgba(127, 216, 160, 0.14);
+  --warn: #ffb74d;
+  --warn-soft: rgba(255, 183, 77, 0.14);
+  --err: #f2b8b5;
+  --err-soft: rgba(242, 184, 181, 0.14);
+  --info: #9ecaff;
+  --info-soft: rgba(158, 202, 255, 0.14);
+
+  --focus: #ffd54f;
+  --scrim: rgba(0, 0, 0, 0.6);
+}

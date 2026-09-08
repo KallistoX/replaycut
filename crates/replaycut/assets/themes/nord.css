@@ -1,0 +1,31 @@
+/* replaycut theme "nord" - Nord: polar night surfaces, snow storm text, frost accent, aurora states.
+ * Colours: nordtheme.com. Layout, spacing and typography tokens are inherited from wardogs.
+ * Format: docs/themes.md. */
+:root {
+  --bg: #2e3440;
+  --surface: #3b4252;
+  --surface-2: #242933;
+  --line: #4c566a;
+  --line-strong: #616e88;
+
+  --fg: #eceff4;
+  --fg-muted: #b6bfd0;
+  --fg-faint: #8b95aa;
+
+  --accent: #88c0d0;
+  --accent-hover: #8fbcbb;
+  --accent-fg: #2e3440;
+  --accent-soft: rgba(136, 192, 208, 0.22);
+
+  --ok: #a3be8c;
+  --ok-soft: rgba(163, 190, 140, 0.14);
+  --warn: #ebcb8b;
+  --warn-soft: rgba(235, 203, 139, 0.14);
+  --err: #d47b83;
+  --err-soft: rgba(212, 123, 131, 0.14);
+  --info: #81a1c1;
+  --info-soft: rgba(129, 161, 193, 0.14);
+
+  --focus: #ebcb8b;
+  --scrim: rgba(0, 0, 0, 0.6);
+}

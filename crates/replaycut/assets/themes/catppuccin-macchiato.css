@@ -1,0 +1,31 @@
+/* replaycut theme "catppuccin-macchiato" - Catppuccin Macchiato: mauve accent, the palette's greens, yellows and reds for the states.
+ * Colours: catppuccin.com palette. Layout, spacing and typography tokens are inherited from wardogs.
+ * Format: docs/themes.md. */
+:root {
+  --bg: #24273a;
+  --surface: #363a4f;
+  --surface-2: #181926;
+  --line: #494d64;
+  --line-strong: #5b6078;
+
+  --fg: #cad3f5;
+  --fg-muted: #a5adcb;
+  --fg-faint: #8087a2;
+
+  --accent: #c6a0f6;
+  --accent-hover: #b7bdf8;
+  --accent-fg: #181926;
+  --accent-soft: rgba(198, 160, 246, 0.22);
+
+  --ok: #a6da95;
+  --ok-soft: rgba(166, 218, 149, 0.14);
+  --warn: #eed49f;
+  --warn-soft: rgba(238, 212, 159, 0.14);
+  --err: #ed8796;
+  --err-soft: rgba(237, 135, 150, 0.14);
+  --info: #8aadf4;
+  --info-soft: rgba(138, 173, 244, 0.14);
+
+  --focus: #7dc4e4;
+  --scrim: rgba(0, 0, 0, 0.6);
+}

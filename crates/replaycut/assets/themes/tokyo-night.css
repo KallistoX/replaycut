@@ -1,0 +1,31 @@
+/* replaycut theme "tokyo-night" - Tokyo Night: blue accent, the palette's green, yellow, red and cyan for the states.
+ * Colours: github.com/folke/tokyonight.nvim. Layout, spacing and typography tokens are inherited from wardogs.
+ * Format: docs/themes.md. */
+:root {
+  --bg: #1a1b26;
+  --surface: #1f2335;
+  --surface-2: #16161e;
+  --line: #3b4261;
+  --line-strong: #545c7e;
+
+  --fg: #c0caf5;
+  --fg-muted: #9aa5ce;
+  --fg-faint: #737aa2;
+
+  --accent: #7aa2f7;
+  --accent-hover: #89b4fa;
+  --accent-fg: #1a1b26;
+  --accent-soft: rgba(122, 162, 247, 0.22);
+
+  --ok: #9ece6a;
+  --ok-soft: rgba(158, 206, 106, 0.14);
+  --warn: #e0af68;
+  --warn-soft: rgba(224, 175, 104, 0.14);
+  --err: #f7768e;
+  --err-soft: rgba(247, 118, 142, 0.14);
+  --info: #7dcfff;
+  --info-soft: rgba(125, 207, 255, 0.14);
+
+  --focus: #ff9e64;
+  --scrim: rgba(0, 0, 0, 0.6);
+}
