@@ -42,6 +42,9 @@ your phone, link in Discord.](docs/design/icons/social.png)
   rights and without a service; every release is signed.
 - **Made for the phone in your hand.** The finished MP4 downloads into the
   gallery, and a recording your browser cannot play gets a playable preview.
+- **Thirteen themes on board.** Dark by default, and Material, Catppuccin,
+  Nord, Dracula, Gruvbox, Solarized and Tokyo Night a click away in Settings;
+  your own is one CSS file in a folder.
 
 ## How it works
 

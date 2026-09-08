@@ -6,29 +6,39 @@ It never contains selectors or markup, so a theme cannot break a page; it
 can only recolour it.
 
 The default theme is `wardogs`: dark, amber accent. It is built into the UI.
-A second theme, `plain` (light, blue accent), ships as an example in
-`docs/design/themes/plain.css`.
+Twelve more themes are built into the service and need no file: `plain`
+(light, blue accent) and, contributed by almighty-atlas, `material-dark`,
+`material-light`, `catppuccin-latte`, `catppuccin-frappe`,
+`catppuccin-macchiato`, `catppuccin-mocha`, `nord`, `dracula`,
+`gruvbox-dark`, `solarized-dark` and `tokyo-night`.
 
 ## Where themes live and how they are chosen
 
 | Item | Location |
 |---|---|
 | Built-in default | `docs/design/tokens.css` in the repository, embedded in `ui/index.html` |
+| The themes that ship | `crates/replaycut/assets/themes/<name>.css` in the repository, embedded in the executable |
 | Your themes | `%LOCALAPPDATA%\replaycut\themes\<name>.css` (`<data-dir>\themes\`) |
 | Selection | Settings › General › Theme, or `"theme": "<name>"` in `settings.json` |
 
-The service serves `GET /themes/<name>.css` from that folder and the UI
-loads it after the built-in tokens. Loading order is the contract: `wardogs`
-is always loaded first, the chosen theme second, so a theme may set only the
-tokens it wants to change and inherits the rest. A missing or unreadable
-theme file falls back to `wardogs` with a warning in the log.
+The service serves `GET /themes/<name>.css` from that folder and falls back
+to the theme of that name in the executable; the UI loads the answer after
+the built-in tokens. The folder wins, so a shipped theme is changed by
+saving it under the same name in `<data-dir>\themes\` and editing that copy.
+Settings offers both lists together, sorted and without duplicates.
+
+Loading order is the contract: `wardogs` is always loaded first, the chosen
+theme second, so a theme may set only the tokens it wants to change and
+inherits the rest. A missing or unreadable theme file falls back to
+`wardogs` with a warning in the log.
 
 Theme selection and the `/themes/` route arrive with the settings page; until
 then the built-in theme is used.
 
 ## Writing a theme
 
-Copy `docs/design/themes/plain.css`, rename it, change values. Rules:
+Save a shipped theme out of the running service - `/themes/plain.css` is the
+light one - into `<data-dir>\themes\`, rename it, change values. Rules:
 
 - Only `:root { --token: value; }`. Nothing else is read.
 - Colours can be any CSS colour. The `-soft` tokens are translucent tints
@@ -101,8 +111,10 @@ Copy `docs/design/themes/plain.css`, rename it, change values. Rules:
 ## Contrast targets
 
 Measured as WCAG contrast ratios. Text needs 4.5:1, secondary text and UI
-parts 3:1. The table shows the two shipped themes; the component sheet
-recomputes it for any theme.
+parts 3:1. The table shows the default and the light reference theme; the
+component sheet recomputes it for any theme, and `cargo test -p replaycut
+themes` checks these pairs for every theme in the executable, so a shipped
+theme cannot fall below them unnoticed.
 
 | Pair | Needs | wardogs | plain |
 |---|---|---|---|

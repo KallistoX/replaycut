@@ -12,6 +12,15 @@ contract.
 
 ### Added
 
+- **Twelve themes on board.** A fresh installation no longer offers the
+  dark default alone: Material Design dark and light, the four Catppuccin
+  flavours, Nord, Dracula, Gruvbox dark, Solarized dark, Tokyo Night and
+  the light `plain` are built into the executable and appear in Settings ›
+  General › Theme, switching without a restart. Every one of them meets
+  the contrast targets of `docs/themes.md`. A theme file of the same name
+  in the `themes` folder of the data directory still wins, so a shipped
+  theme can be copied and changed. Contributed by almighty-atlas,
+  issue #11.
 - **Linux, second stage: the platform services.** Secrets go to the
   keyring behind the freedesktop Secret Service (gnome-keyring, KWallet,
   KeePassXC), so every integration and the obs-websocket password can be
