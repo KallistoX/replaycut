@@ -33,6 +33,14 @@ jobs:
         run: cargo test -p replaycut
       - name: Compile the contract suite (the contract job runs it)
         run: cargo test -p replaycut-api-tests --no-run
+      # The release ships a static executable; make sure it still links.
+      - name: Build for the release target (static musl)
+        if: runner.os == 'Linux'
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+          cargo build -p replaycut --target x86_64-unknown-linux-musl
 
   contract:
     name: API contract suite (${{ matrix.os }})
