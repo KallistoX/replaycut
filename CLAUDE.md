@@ -8,8 +8,11 @@ replaycut is a clip manager for the OBS replay buffer: a small self-hosted
 service that watches the folder OBS writes replays to, serves a browser UI for
 trimming, encodes the selected range with ffmpeg and, through optional
 integrations, uploads the result and posts a link. Target platform for 2.0 is
-Windows; the browser is the remote control and may be a phone or laptop in the
-same network.
+Windows; Linux is being brought up to the same level in stages (build, CI
+and the single-instance guard first, then secrets, notifications and the
+rest of `platform.rs`, then install and autostart, the release package and
+the tray). The browser is the remote control and may be a phone or laptop in
+the same network.
 
 2.0 is a Rust rewrite of a PowerShell service (1.x) that is in use but was
 never published. The rewrite is API-identical to 1.4; the UI (`ui/index.html`,
@@ -62,7 +65,12 @@ docs/design/            design system: tokens, component sheet, page mockups,
   `CHANGELOG.md` follows Keep a Changelog; add an entry under Unreleased with
   user-visible changes.
 - `cargo fmt` and `cargo clippy --workspace --all-targets -- -D warnings`
-  must be clean; CI enforces both.
+  must be clean on Windows and on Linux; CI enforces both on both.
+- **Platform code**: Windows under `#[cfg(windows)]`, Linux under
+  `#[cfg(target_os = "linux")]`, and a stub that fails honestly under
+  `#[cfg(not(any(windows, target_os = "linux")))]` so the service still
+  builds elsewhere. Keep the Windows paths untouched when adding a Linux
+  one; a shared function selects per platform (`platform.rs` is the model).
 - Keep the service frugal: it runs next to a game. Idle CPU and RAM matter,
   and ffmpeg must not take all cores at normal priority.
 - Roadmap and design notes live outside this repository. Ask before assuming
