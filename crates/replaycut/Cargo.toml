@@ -45,7 +45,12 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "chrono"] }
 trash = "5.2.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-rustix = { version = "1.1", features = ["fs", "process", "system"] }
+arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
+notify-rust = { version = "4.18", default-features = false, features = ["z-with-tokio"] }
+rustix = { version = "1.1", features = ["fs", "param", "process", "system"] }
+secret-service = { version = "5.2", default-features = false, features = ["rt-tokio-crypto-rust"] }
+wl-clipboard-rs = "0.9"
+zbus = { version = "5.19", default-features = false, features = ["tokio"] }
 
 [target."cfg(windows)".dependencies]
 muda = { version = "0.19", default-features = false }
