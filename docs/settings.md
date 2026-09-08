@@ -1,8 +1,9 @@
 # Settings and command line
 
 replaycut keeps its configuration in one JSON file and its secrets in the
-Windows Credential Manager. Nothing sensitive is ever written to disk in
-plain text.
+platform's credential store: the Windows Credential Manager, or on Linux the
+freedesktop Secret Service (gnome-keyring, KWallet, KeePassXC). Nothing
+sensitive is ever written to disk in plain text.
 
 ## Where things live
 
@@ -91,9 +92,9 @@ fine.
 | `requireLoginOnLoopback` | Since 2.8: `true` asks for the password on this PC as well, for a Windows account other people use. It applies to answering sign-in requests too. Default `false`. |
 | `uiFile` | The UI file. A relative path is looked up next to the executable first, then in the working directory. |
 | `displayName` | Prefix of the Discord post (`**<displayName>** ...`) and the webhook user name. Clip names that start with this word are shortened in the post. |
-| `encoder` | `auto` tries `h264_amf`, `h264_nvenc`, `h264_qsv`, `libx264` in that order with a real test encode and uses the first that works. An encoder name forces that encoder. |
-| `hwaccel` | `auto` (or empty, the default since 2.4): the encoder profile decides, GPU decoding where the test encode proves it works; `none`: software decoding; `cuda`, `d3d11va` or `qsv`: passed to ffmpeg as `-hwaccel` with CPU scaling. |
-| `ffmpegPriority` | Windows priority class of every ffmpeg process: `normal`, `belowNormal` (default) or `idle`. Keeps the game responsive while a clip is encoded. |
+| `encoder` | `auto` tries `h264_amf`, `h264_nvenc`, `h264_qsv`, `libx264` in that order (on Linux `h264_vaapi` comes between NVENC and Quick Sync) with a real test encode and uses the first that works. An encoder name forces that encoder. |
+| `hwaccel` | `auto` (or empty, the default since 2.4): the encoder profile decides, GPU decoding where the test encode proves it works; `none`: software decoding; `cuda`, `d3d11va`, `qsv` or `vaapi`: passed to ffmpeg as `-hwaccel` with CPU scaling. |
+| `ffmpegPriority` | Priority of every ffmpeg process: `normal`, `belowNormal` (default) or `idle`. Keeps the game responsive while a clip is encoded. On Windows the priority class of the process, on Linux its nice level (0, 10 or 19). |
 | `ffmpegThreads` | `-threads` for decoder and encoder. `0` (default) means half of the logical cores, at least 2. Set it to the core count and `ffmpegPriority` to `normal` for maximum speed when nothing else is running. |
 | `logLevel` | `error`, `warn`, `info`, `debug` or `trace`. The `RUST_LOG` environment variable overrides it. |
 | `checkUpdates` | `true` asks GitHub once a day (a minute after start, then every 24 h) whether a newer release exists and shows a banner in the UI; nothing is downloaded. Set to `false` if the service must not contact GitHub. |
@@ -139,7 +140,13 @@ in the log; the service still starts.
 | `replaycut/telegram` | `bot` | The bot token from @BotFather (since 2.6) |
 | `replaycut/webhook-secret` | `secret` | The HMAC secret of the generic webhook (since 2.6, optional) |
 
-`replaycut setup` writes them; `cmdkey /list` shows them; `cmdkey /delete:replaycut/nextcloud` removes one by hand.
+`replaycut setup` writes them. On Windows `cmdkey /list` shows them and
+`cmdkey /delete:replaycut/nextcloud` removes one by hand. On Linux each is an
+item in the default keyring with the attributes `application=replaycut` and
+`target=<target>` (the user name as `user`): `secret-tool lookup application
+replaycut target replaycut/nextcloud` shows one, `secret-tool clear` with the
+same attributes removes it. A keyring daemon has to run in the session;
+without one the settings page reports that the secret cannot be stored.
 
 ## Command line
 
@@ -188,9 +195,16 @@ software decoding; the diagnostics count such fallbacks.
 | `amf` | software | CPU | `h264_amf` |
 | `nvenc-cuda` | `-hwaccel cuda -hwaccel_output_format cuda` | `scale_cuda` | `h264_nvenc` |
 | `nvenc` | software | CPU | `h264_nvenc` |
+| `vaapi-full/<node>` (Linux) | `-hwaccel vaapi -hwaccel_output_format vaapi` | `scale_vaapi` | `h264_vaapi` |
+| `vaapi/<node>` (Linux) | software, `format=nv12,hwupload` before the encoder | CPU | `h264_vaapi` |
 | `qsv-full` | `-hwaccel qsv -hwaccel_output_format qsv` | `scale_qsv` | `h264_qsv` |
 | `qsv` | software | CPU | `h264_qsv` |
 | `libx264` | software | CPU | `libx264 -preset veryfast` |
+
+On Linux the VAAPI pair exists once per render node (`/dev/dri/renderD128`,
+`renderD129`, ...), tried in that order and between the NVIDIA and the Intel
+profiles: VAAPI is what AMD and Intel GPUs offer there, and a machine with
+two GPUs (a processor's own and a card) has two nodes.
 
 `replaycut bench [--seconds N]` encodes N seconds (default 30) of the newest
 clip with every profile the ffmpeg build knows and prints wall time, CPU
@@ -214,13 +228,15 @@ Encoding runs on the gaming PC, next to the game. Two settings keep it
 polite:
 
 - `ffmpegPriority: belowNormal` hands the CPU to the game whenever both
-  want it. This is a Windows priority class, set when the process starts.
+  want it. On Windows this is the process's priority class, on Linux its
+  nice level (`belowNormal` = 10, `idle` = 19), set when the process starts.
 - `ffmpegThreads` caps how many cores ffmpeg uses. Software AV1 decoding
   (dav1d) otherwise spreads across every core at full load, which is what
   makes a game stutter during a share.
 
-Hardware encoders (`h264_amf`, `h264_nvenc`, `h264_qsv`) do the encoding on
-the GPU; the thread cap then mostly limits decoding and scaling.
+Hardware encoders (`h264_amf`, `h264_nvenc`, `h264_qsv`, `h264_vaapi`) do
+the encoding on the GPU; the thread cap then mostly limits decoding and
+scaling.
 
 ## Starting and stopping
 

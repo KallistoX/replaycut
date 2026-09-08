@@ -346,8 +346,8 @@ Body: a partial object with any of the fields above except `secrets`,
 | Key | Effect |
 |---|---|
 | `password` | sets the password (at least 6 characters); `""` removes it and ends every session |
-| `nextcloudUser`, `nextcloudPassword` | together: stored in the Credential Manager |
-| `discordWebhook` | stored in the Credential Manager; must look like a Discord webhook URL |
+| `nextcloudUser`, `nextcloudPassword` | together: stored in the credential store (the Credential Manager; the Secret Service on Linux) |
+| `discordWebhook` | stored in the credential store; must look like a Discord webhook URL |
 | `autostart` | `true`/`false`: the sign-in entry (Windows) |
 
 Response `200 { ok: true, restartNeeded: ["port"], settings: <GET document> }`.
@@ -419,9 +419,9 @@ What the setup wizard's OBS step shows. Read only; nothing in OBS changes.
 }
 ```
 
-`profiles` comes from `%APPDATA%\obs-studio` (`basic\profiles\*\basic.ini`,
-current one from `user.ini` or `global.ini`), empty when OBS is not
-installed for this user. `newest` is the youngest clip the scanner knows
+`profiles` comes from `%APPDATA%\obs-studio` (`~/.config/obs-studio` or the
+Flatpak's copy on Linux; `basic\profiles\*\basic.ini`, current one from
+`user.ini` or `global.ini`), empty when OBS is not installed for this user. `newest` is the youngest clip the scanner knows
 or `null`; `otherFiles` lists up to three non-MKV recordings in the folder
 (an MP4 there means OBS records in the wrong container).
 
@@ -465,7 +465,10 @@ storage and notify integrations, 2.8 `firewall` and `pairing`);
 The local mode's way out of the browser: for a finished job with a file in
 `shared\`, `open-folder` opens Explorer with that file selected and
 `copy-file` puts the file itself (a file object, `CF_HDROP`) into the
-clipboard, so Ctrl+V in Discord attaches it. Response `{ ok: true }`
+clipboard, so Ctrl+V in Discord attaches it. On Linux `open-folder` asks the
+file manager over D-Bus (`org.freedesktop.FileManager1.ShowItems`) and falls
+back to opening the folder, and `copy-file` offers the file as
+`text/uri-list` on the Wayland clipboard. Response `{ ok: true }`
 (`copy-file` adds `file`), `404` for an unknown job or a file that is gone,
 `409` for a job without a finished file. In dry run both only log.
 
@@ -1372,8 +1375,9 @@ its outputs still hang under their clip. None of this is visible in the API.
    partially produced file (if any) stays in `shared/`.
 
 Encoder detection happens at startup: `h264_amf`, `h264_nvenc`, `h264_qsv`,
-`libx264` are tried in that order with a real two-frame encode; the first
-that works wins and is reported as `config.encoder`.
+`libx264` are tried in that order (Linux adds `h264_vaapi` between NVENC and
+Quick Sync) with a real two-frame encode; the first that works wins and is
+reported as `config.encoder`.
 
 ### Delete
 
