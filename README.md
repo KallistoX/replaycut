@@ -98,14 +98,33 @@ running, that opens the page.
 Windows SmartScreen may warn about an unsigned download the first time: click
 "More info", then "Run anyway".
 
+### Linux
+
+Linux support is being built in stages (see `CHANGELOG.md`); a release
+package follows. Until then build from source (`cargo build --release -p
+replaycut`), put `replaycut` and `ui/index.html` (in a `ui` folder) next to
+each other and run `replaycut install`, or `dist/install.sh` from the same
+folder. It copies the files to `~/.local/share/replaycut/app`, links
+`~/.local/bin/replaycut` for the command line, adds a desktop entry and an
+icon, asks whether replaycut should start with your desktop session (a
+systemd user unit, default: no), then starts the service and opens the page.
+No root, no firewall step: if a firewall runs on your PC, allow the port
+there when you open replaycut to other devices.
+
+Secrets go to the keyring behind the Secret Service (gnome-keyring, KWallet,
+KeePassXC), notifications to the desktop's notification service, and the
+clipboard is served over Wayland. ffmpeg comes from your distribution;
+hardware encoding uses VAAPI (AMD, Intel) or NVENC. The tray icon is not
+there yet; the page and `replaycut stop` do what the menu does.
+
 ## Requirements
 
 - Windows 10 or 11 (the service uses the recycle bin, toast notifications and
   the Credential Manager). Linux support is being built in stages: the
-  service runs there with secrets in the keyring (Secret Service),
-  desktop notifications, the Wayland clipboard and VAAPI encoding, but the
-  installer, autostart and the tray are not available yet (see
-  `CHANGELOG.md`).
+  service runs there with secrets in the keyring (Secret Service), desktop
+  notifications, the Wayland clipboard, VAAPI encoding, `replaycut install`
+  and autostart as a systemd user unit; the release package and the tray
+  are not there yet (see [Linux](#linux) and `CHANGELOG.md`).
 - [OBS Studio](https://obsproject.com/) with the replay buffer enabled,
   recording to MKV. Multiple audio tracks are optional; the recommended
   layout is track 1 = mix, 2 = microphone, 3 = game, 4 = voice chat.
@@ -150,10 +169,11 @@ installed.
 ## Uninstall
 
 Run `uninstall.cmd` from the unpacked ZIP (or `replaycut uninstall` from a
-terminal). It stops the service and removes the files, shortcuts, autostart
-entry and, after asking, the firewall rule. Settings, titles, history and
-credentials stay unless you use `replaycut uninstall --purge`. Your clips
-are never touched.
+terminal; `uninstall.sh` on Linux). It stops the service and removes the
+files, shortcuts (the desktop entry and the systemd unit on Linux),
+autostart entry and, on Windows after asking, the firewall rule. Settings,
+titles, history and credentials stay unless you use `replaycut uninstall
+--purge`. Your clips are never touched.
 
 ## Security
 
