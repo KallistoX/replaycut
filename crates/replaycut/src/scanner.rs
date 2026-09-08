@@ -424,6 +424,10 @@ fn file_ready(path: &Path) -> bool {
         .is_ok()
 }
 
+/// Unix has no exclusive open that a writer would block, so this only says
+/// the file can be read at all; the age rule (`MIN_AGE` since the last
+/// write) is what keeps a replay OBS is still flushing out of the list, and
+/// the `ReplayBufferSaved` event from obs-websocket is the definite word.
 #[cfg(not(windows))]
 fn file_ready(path: &Path) -> bool {
     std::fs::File::open(path).is_ok()
