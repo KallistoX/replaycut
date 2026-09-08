@@ -106,13 +106,21 @@ pub fn codec_of_encoder(encoder: &str) -> &'static str {
     }
 }
 
+/// OBS reports its recording folder as a string; compare it with ours the
+/// way the file system does: Windows ignores case and slash direction,
+/// Linux does neither (symlinks are resolved where the folders exist).
 fn same_folder(a: &str, b: &Path) -> bool {
-    let norm = |s: &str| {
-        s.replace('/', "\\")
-            .trim_end_matches('\\')
-            .to_ascii_lowercase()
-    };
-    norm(a) == norm(&b.to_string_lossy())
+    if cfg!(windows) {
+        let norm = |s: &str| {
+            s.replace('/', "\\")
+                .trim_end_matches('\\')
+                .to_ascii_lowercase()
+        };
+        norm(a) == norm(&b.to_string_lossy())
+    } else {
+        let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        real(Path::new(a)) == real(b)
+    }
 }
 
 async fn param(handle: &ObsHandle, category: &str, name: &str) -> Option<String> {
@@ -556,6 +564,7 @@ mod tests {
         assert!(t.detail.contains("Simple output mode"));
     }
 
+    #[cfg(windows)]
     #[test]
     fn folder_comparison_ignores_case_and_slashes() {
         assert!(same_folder(
@@ -565,6 +574,19 @@ mod tests {
         assert!(!same_folder(
             "C:\\Other",
             Path::new("C:\\Users\\you\\Videos")
+        ));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn folder_comparison_is_exact_but_forgives_a_trailing_slash() {
+        assert!(same_folder(
+            "/home/you/Videos/Clips/",
+            Path::new("/home/you/Videos/Clips")
+        ));
+        assert!(!same_folder(
+            "/home/You/Videos/Clips",
+            Path::new("/home/you/Videos/Clips")
         ));
     }
 }
