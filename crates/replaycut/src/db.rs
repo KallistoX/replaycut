@@ -315,37 +315,43 @@ impl Db {
         if let Some(Value::Array(items)) = read_json_file(&files[2]) {
             // The file is newest first; inserting the other way round leaves
             // the rowids in the order the shares happened.
+            // Every share of 2.x was a range of its clip: one cut per range,
+            // without a file, so that its outputs hang under it. A cancelled
+            // share produced nothing and makes no cut of its own; it joins the
+            // one of its range when another share used it.
             let mut cuts: BTreeMap<String, String> = BTreeMap::new();
+            for entry in items.iter().rev() {
+                let base = text(entry, "base").unwrap_or_default();
+                let cancelled = entry.get("cancelled").and_then(Value::as_bool) == Some(true);
+                if base.is_empty() || cancelled {
+                    continue;
+                }
+                let key = range_key(entry, &base);
+                if cuts.contains_key(&key) {
+                    continue;
+                }
+                let row = CutRow {
+                    id: crate::auth::random_hex(4),
+                    base,
+                    start: number(entry, "start"),
+                    end: number(entry, "end"),
+                    audio: text(entry, "audio").unwrap_or_default(),
+                    file: None,
+                    state: "missing".into(),
+                    created: text(entry, "at").unwrap_or_default(),
+                };
+                insert_cut(&tx, &row)?;
+                import.cuts += 1;
+                cuts.insert(key, row.id);
+            }
             for entry in items.iter().rev() {
                 let Some(id) = text(entry, "id") else {
                     continue;
                 };
                 let base = text(entry, "base").unwrap_or_default();
-                // Every share of 2.x was a range of its clip: one cut per
-                // range, without a file, so that its outputs hang under it.
-                let mut cut = None;
-                if !base.is_empty() {
-                    let start = number(entry, "start");
-                    let end = number(entry, "end");
-                    let audio = text(entry, "audio").unwrap_or_default();
-                    let key = format!("{base}|{start}|{end}|{audio}");
-                    if !cuts.contains_key(&key) {
-                        let row = CutRow {
-                            id: crate::auth::random_hex(4),
-                            base: base.clone(),
-                            start,
-                            end,
-                            audio,
-                            file: None,
-                            state: "missing".into(),
-                            created: text(entry, "at").unwrap_or_default(),
-                        };
-                        insert_cut(&tx, &row)?;
-                        import.cuts += 1;
-                        cuts.insert(key.clone(), row.id);
-                    }
-                    cut = cuts.get(&key).cloned();
-                }
+                let cut = (!base.is_empty())
+                    .then(|| cuts.get(&range_key(entry, &base)))
+                    .flatten();
                 tx.execute(
                     "INSERT INTO jobs (id, base, cut, kind, target, at, finished, file, link, nc_path, entry)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
@@ -453,6 +459,17 @@ fn prune_clips(tx: &rusqlite::Transaction<'_>) -> rusqlite::Result<()> {
         [],
     )?;
     Ok(())
+}
+
+/// What makes a range of a clip one cut: where it starts and ends and which
+/// audio mode it was shared with.
+fn range_key(entry: &Value, base: &str) -> String {
+    format!(
+        "{base}|{}|{}|{}",
+        number(entry, "start"),
+        number(entry, "end"),
+        text(entry, "audio").unwrap_or_default()
+    )
 }
 
 fn text(v: &Value, key: &str) -> Option<String> {
@@ -633,6 +650,84 @@ mod tests {
         assert_eq!(again.titles().unwrap().len(), 2);
         drop(again);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The shapes a real 2.x history holds, with placeholders for the URLs:
+    /// entries from before 2.5 without `target` and `mode`, a 9:16 cut, a
+    /// publish that re-used the file of the share above it, a render to
+    /// `file` without a link, and cancelled jobs without a file at all.
+    #[test]
+    fn a_history_as_2_x_wrote_it_lands_under_its_clips() {
+        let dir = scratch("shapes");
+        let history = json!([
+            { "at": "2026-09-07T16:06:44", "audio": "mix", "base": "Replay B",
+              "direct": "https://example.com/v/2", "end": 147.315528,
+              "file": "Replay_B_131-147_Title_9x16.mp4", "finished": "2026-09-07T16:07:03",
+              "id": "27740515", "kbps": 0, "link": "https://example.com/v/2", "mode": "h264",
+              "ncPath": "v2", "seconds": 16.47, "sizeMB": 223.49, "start": 130.848216,
+              "target": "youtube", "title": "Title", "vertical": true, "verticalPos": 0.5 },
+            { "at": "2026-09-07T16:02:09", "audio": "mix", "base": "Replay B",
+              "end": 33.29179270462634, "file": "Replay_B_0-33_Title.mp4",
+              "finished": "2026-09-07T16:02:24", "id": "e859d2a0", "kbps": 0, "mode": "h264",
+              "seconds": 33.29, "sizeMB": 450.33, "start": 0.0, "target": "file",
+              "title": "Title" },
+            { "at": "2026-09-07T16:01:46", "audio": "mix", "base": "Replay B",
+              "cancelled": true, "end": 33.29179270462634, "finished": "2026-09-07T16:01:50",
+              "id": "b6396571", "kbps": 0, "mode": "h264", "seconds": 33.29, "start": 0.0,
+              "target": "nextcloud", "title": "Title" },
+            { "at": "2026-09-06T15:26:23", "audio": "mix", "base": "Replay B",
+              "direct": "https://example.com/v/1", "discord": "Link posted", "end": 147.885318,
+              "file": "Replay_B_130-148_Title.mp4", "finished": "2026-09-06T15:26:26",
+              "id": "76023924", "kbps": 6000, "link": "https://example.com/v/1", "mode": "h264",
+              "ncPath": "v1", "seconds": 17.65, "sizeMB": 13.79, "source": "22c9e63e",
+              "start": 130.231572, "target": "youtube", "title": "Title" },
+            { "at": "2026-09-06T15:24:02", "audio": "mix", "base": "Replay B",
+              "direct": "https://example.com/s/1/download", "discord": "Link posted",
+              "end": 147.885318, "file": "Replay_B_130-148_Title.mp4",
+              "finished": "2026-09-06T15:24:41", "id": "22c9e63e", "kbps": 6000,
+              "link": "https://example.com/s/1", "mode": "h264",
+              "ncPath": "/Clips/2026-09/Replay_B_130-148_Title.mp4", "seconds": 17.65,
+              "sizeMB": 13.79, "start": 130.231572, "target": "nextcloud", "title": "Title" },
+            // before 2.5: no target, no mode - it went to Nextcloud
+            { "at": "2026-09-04T18:00:00", "audio": "game", "base": "Replay A", "end": 12.5,
+              "file": "Replay_A_5-12.mp4", "finished": "2026-09-04T18:00:31", "id": "0f1e2d3c",
+              "kbps": 6000, "link": "https://example.com/s/0", "ncPath": "/Clips/Replay_A_5-12.mp4",
+              "seconds": 7.5, "sizeMB": 9.2, "start": 5.0, "title": "" }
+        ]);
+        std::fs::write(dir.join(STATE_FILES[2]), history.to_string()).unwrap();
+
+        let db = Db::open(&dir.join(FILE)).unwrap();
+        let import = db.import_2x(&dir).unwrap().expect("something to import");
+        assert_eq!(import.jobs, 6);
+        // Replay A one range; Replay B three (9:16, the full clip, the range
+        // that was shared and published). The cancelled job joins the range it
+        // belongs to instead of making a cut of its own.
+        assert_eq!(import.cuts, 4);
+        // the publish and its source hang under the same cut
+        assert_eq!(cut_of(&db, "76023924"), cut_of(&db, "22c9e63e"));
+        assert_ne!(cut_of(&db, "76023924"), cut_of(&db, "27740515"));
+        assert_eq!(cut_of(&db, "b6396571"), cut_of(&db, "e859d2a0"));
+        // the 9:16 window and a pre-2.5 entry come back as they were
+        let vertical = db.entry("27740515").unwrap().unwrap();
+        assert_eq!(vertical["verticalPos"], 0.5);
+        assert_eq!(vertical["vertical"], true);
+        let old = db.entry("0f1e2d3c").unwrap().unwrap();
+        assert!(
+            old.get("target").is_none(),
+            "an entry of 1.4 keeps its shape"
+        );
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The cut a job hangs under, for the tests above.
+    fn cut_of(db: &Db, id: &str) -> Option<String> {
+        db.conn
+            .lock()
+            .query_row("SELECT cut FROM jobs WHERE id = ?1", params![id], |r| {
+                r.get::<_, Option<String>>(0)
+            })
+            .unwrap()
     }
 
     #[test]
