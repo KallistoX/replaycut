@@ -69,6 +69,13 @@ cd docs/design/icons/mkico
 cargo run --release -- ../../../../crates/replaycut/assets
 ```
 
+The same run writes the Linux tray icons next to the `.ico` files:
+`tray-<normal|busy|error>-<22|48>.argb`, raw ARGB32 in network byte order
+as the StatusNotifierItem protocol carries it, so the service embeds them
+without an image decoder. 22 px is what panels show (the `-small` variant),
+48 px lets a bigger tray scale down. The app icon for the desktop entry is
+`assets/replaycut.svg`, a copy of `icon.svg`.
+
 Without an argument the output lands in `icons/out/` together with a PNG
 per size and `sheet.png`, the small sizes on a dark and a light bar for a
 quick look. Each `.ico` has 16, 20, 24, 32, 48 and 256 px (Windows uses 20

@@ -281,10 +281,13 @@ service. Without either they are skipped and a hint is logged once.
 The log records why the service stopped (Ctrl+C, the console closing, the
 stop event, Quit in the tray menu, sign-out) and any panic with a backtrace.
 
-On Linux there is no tray yet; a start without a terminal (the desktop
-entry, the systemd unit) opens the browser like the Windows shortcut unless
-`--no-browser` is given, and the lock file `$XDG_RUNTIME_DIR/replaycut-
-<port>.lock` is what keeps a second instance out.
+On Linux the tray icon is a StatusNotifierItem on the session bus with the
+same menu; it appears wherever a tray host runs (KDE, Waybar's `tray`
+module, GNOME with the AppIndicator extension) and the service runs without
+it otherwise. A start without a terminal (the desktop entry, the systemd
+unit) opens the browser like the Windows shortcut unless `--no-browser` is
+given, and the lock file `$XDG_RUNTIME_DIR/replaycut-<port>.lock` is what
+keeps a second instance out.
 
 ## Installation layout
 
