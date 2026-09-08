@@ -66,7 +66,8 @@ laptop or a phone in the same network - is only the remote control
 ## Install
 
 [**Download the latest release**](https://github.com/KallistoX/replaycut/releases/latest)
-(`replaycut-<version>-windows-x64.zip`, Windows x64).
+(`replaycut-<version>-windows-x64.zip` for Windows x64,
+`replaycut-<version>-linux-x64.zip` for Linux x64; see [Linux](#linux)).
 
 1. Unpack the ZIP anywhere and run `install.cmd`. It copies replaycut to
    `%LOCALAPPDATA%\replaycut\app`, adds a start menu and a desktop shortcut,
@@ -100,11 +101,10 @@ Windows SmartScreen may warn about an unsigned download the first time: click
 
 ### Linux
 
-Linux support is being built in stages (see `CHANGELOG.md`); a release
-package follows. Until then build from source (`cargo build --release -p
-replaycut`), put `replaycut` and `ui/index.html` (in a `ui` folder) next to
-each other and run `replaycut install`, or `dist/install.sh` from the same
-folder. It copies the files to `~/.local/share/replaycut/app`, links
+Linux support is being built in stages (see `CHANGELOG.md`). The release
+ZIP for Linux carries one static executable that runs on any x64
+distribution. Unpack it anywhere and run `install.sh` (or `replaycut
+install` from that folder). It copies the files to `~/.local/share/replaycut/app`, links
 `~/.local/bin/replaycut` for the command line, adds a desktop entry and an
 icon, asks whether replaycut should start with your desktop session (a
 systemd user unit, default: no), then starts the service and opens the page.
@@ -162,7 +162,8 @@ there yet; the page and `replaycut stop` do what the menu does.
 replaycut checks GitHub once a day and shows a banner when a newer release
 exists. "Update now" downloads the ZIP, verifies its signature and hash and
 restarts on the new version; settings, titles, history and credentials are
-kept. By hand: unpack the new ZIP and run its `install.cmd`. The public
+kept. By hand: unpack the new ZIP and run its `install.cmd` (`install.sh`
+on Linux). The public
 minisign key is built into replaycut; an unsigned or foreign release is never
 installed.
 

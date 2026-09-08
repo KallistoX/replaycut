@@ -34,6 +34,12 @@ contract.
   platform the service runs on (`config.platform`), and the page words
   things for it: keyring instead of Credential Manager, trash instead of
   recycle bin, the app menu instead of the Start menu.
+- **Linux, fourth stage: the release package.** Every release now carries
+  `replaycut-<version>-linux-x64.zip` next to the Windows ZIP - one static
+  executable that runs on any x64 distribution - and one `SHA256SUMS` for
+  both, so the maintainer's signature covers both. The one-click update
+  works on Linux: it fetches the package for its platform, keeps the
+  executable runnable and installs into what `install.sh` set up.
 
 ## [3.1.0] - 2026-09-08
 

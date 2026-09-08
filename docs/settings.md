@@ -339,6 +339,12 @@ Settings, state and credentials are not touched. When anything fails before
 the copy, nothing has changed; when the new executable does not start, the
 previous one is still there as `replaycut.old.exe`.
 
+On Linux the same happens with `replaycut-<version>-linux-x64.zip`,
+`replaycut` and `replaycut.old`; the ZIP's file modes are kept and the
+executable gets its bit either way. Both ZIPs share one `SHA256SUMS`, so one
+signature covers both platforms. The updater only installs into a copy that
+`install.sh` put in place; a build run from elsewhere is updated by hand.
+
 The public key is `dist/minisign.pub` in the repository (minisign key
 `48259F89A10BFB0C`). To check a download by hand:
 
