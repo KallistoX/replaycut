@@ -582,7 +582,8 @@ shown as available but the download ends in `error`.
     "version": "2.3.1", "url": "https://github.com/.../releases/tag/v2.3.1",
     "notes": "## Fixed
 - ...", "publishedAt": "2026-09-04T11:00:00Z",
-    "assetName": "replaycut-2.3.1-windows-x64.zip", "assetSize": 4200000
+    "assetName": "replaycut-2.3.1-windows-x64.zip", "assetSize": 4200000,
+    "packaged": true
   },
   "error": null
 }
@@ -592,7 +593,10 @@ shown as available but the download ends in `error`.
 `downloading` (`percent` 0-99), `ready` (downloaded and verified),
 `installing`, `error` (`error` says why; `latest` stays). `latest` is absent
 when nothing newer is known; `notes` is the release body as Markdown, cut at
-16 KB. `installed` is false when this executable does not run from the app
+16 KB. `latest.packaged` (since 3.2) says whether the release carries the ZIP for
+this platform; without it the release is shown as available, `download`
+ends in `error` and the page offers the release page instead of "Update
+now". `installed` is false when this executable does not run from the app
 folder (a development build or a copy run from the ZIP): then `install`
 refuses and the UI offers the download link instead. `justUpdated` is true
 on the first start after a one-click update until `POST /api/update/seen`;

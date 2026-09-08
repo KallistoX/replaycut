@@ -95,6 +95,11 @@ contract.
   code, the diagnostics) used the bare host name, which only resolves on
   the PC itself. It is now `<host>.local` when the machine announces itself
   over mDNS (Avahi, systemd-resolved), else the IPv4 address. (#8)
+- The update banner no longer offers "Update now" for a release that has no
+  package for this platform (a Linux build looking at a release from before
+  the Linux package): it says so, offers the release page, and `download`
+  explains it instead of "missing the ZIP". `latest.packaged` in
+  `GET /api/update` carries the fact. (#10)
 
 ## [3.1.0] - 2026-09-08
 
