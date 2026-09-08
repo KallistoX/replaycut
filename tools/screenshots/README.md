@@ -37,15 +37,16 @@ fades into each other.
 
 ## About the demo clip
 
-It is a recording of the maintainer's own, cut to six seconds, scaled to 720p
-and encoded with a keyframe every two seconds - the way OBS writes a replay,
-which the cut step relies on. The nameplates of other players are blurred and
-the segment ends before the team chat appears, so no one else's name is in the
-repository.
+It is a recording of the maintainer's own, cut to 8.6 seconds around the shot
+that makes the moment worth a clip, scaled to 720p and encoded with a keyframe
+every two seconds - the way OBS writes a replay, which the cut step relies on.
+The team chat and the nameplates of other players are blurred, so no one
+else's name is in the repository.
 
-The four audio tracks are the same track four times. A real replay carries a
-mix, a microphone, the game and the voice chat; the screenshots only need the
-audio row to have something true to show.
+The four audio tracks are silent. A real replay carries a mix, a microphone,
+the game and the voice chat; the screenshots only need the audio row to have a
+true number of tracks to show, and silence keeps other people's voices out of
+the repository as well.
 
 ## When a picture looks wrong
 

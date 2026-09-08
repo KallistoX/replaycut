@@ -31,8 +31,11 @@ const tmp = join(here, '.shots');
 // default, two dark classics, one warm, one cold, one light.
 const THEMES = ['wardogs', 'nord', 'catppuccin-mocha', 'dracula', 'gruvbox-dark', 'catppuccin-latte'];
 
-const IN_AT = 1.4;
-const OUT_AT = 4.6;
+// The marks bracket the shot, which the demo clip carries 5.2 s in, and that
+// frame is what the player shows.
+const IN_AT = 3.8;
+const OUT_AT = 6.4;
+const FRAME_AT = 5.2;
 
 mkdirSync(tmp, { recursive: true });
 mkdirSync(join(outDir, 'themes'), { recursive: true });
@@ -72,17 +75,36 @@ async function prepare(page) {
     }
   }
 
-  // The poster over the video, and no blinking caret in any field.
-  await page.evaluate(() => {
+  // A still over the video: the frame with the shot when the browser can
+  // decode it, the poster the service made otherwise. Either way the picture
+  // shows something instead of the black a composited video leaves behind.
+  await page.evaluate(async ({ at, plays }) => {
     const video = document.querySelector('video');
-    if (video && video.getAttribute('poster')) {
+    if (!video) return;
+    let source = video.getAttribute('poster');
+    if (plays) {
+      await new Promise((done) => {
+        if (Math.abs(video.currentTime - at) < 0.05) return done();
+        video.addEventListener('seeked', () => done(), { once: true });
+        video.currentTime = at;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      source = canvas.toDataURL('image/png');
+    }
+    if (source) {
       const frame = document.createElement('img');
-      frame.src = video.getAttribute('poster');
+      frame.src = source;
       frame.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;'
         + 'object-fit:contain;background:#000;z-index:1';
       video.parentElement.style.position = 'relative';
       video.parentElement.appendChild(frame);
     }
+  }, { at: FRAME_AT, plays });
+
+  await page.evaluate(() => {
     document.activeElement?.blur();
     const style = document.createElement('style');
     style.textContent = '*{caret-color:transparent!important}';

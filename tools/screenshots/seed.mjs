@@ -33,14 +33,16 @@ if (!clipDir) {
 // demo clip, so the thumbnails differ; `minutesAgo` keeps the list looking
 // like it was recorded tonight, whenever the pipeline runs.
 const PLAN = [
-  { from: 0.0, seconds: 6.0, minutesAgo: 14, title: 'Scope on the smokestack' },
-  { from: 4.0, seconds: 2.0, minutesAgo: 37, title: 'Last man standing' },
+  // The newest one opens by default and is the clip the pictures show, so it
+  // is the whole demo clip - the shot lands 5.2 s in.
+  { from: 0.0, seconds: 8.6, minutesAgo: 14, title: 'Headshot at 243 m' },
+  { from: 6.4, seconds: 2.2, minutesAgo: 37, title: 'Last man standing' },
   { from: 2.0, seconds: 4.0, minutesAgo: 58, title: 'Squad wipe at the bridge', cuts: true },
-  { from: 1.5, seconds: 4.5, minutesAgo: 82 },
-  { from: 2.4, seconds: 3.6, minutesAgo: 111, title: 'Bolt action, 240 m' },
-  { from: 4.5, seconds: 1.5, minutesAgo: 1381, done: true },
+  { from: 1.0, seconds: 5.0, minutesAgo: 82 },
+  { from: 3.0, seconds: 3.6, minutesAgo: 111, title: 'Bolt action, 240 m' },
+  { from: 5.0, seconds: 1.5, minutesAgo: 1381, done: true },
   { from: 0.8, seconds: 5.2, minutesAgo: 1426, title: 'Tank rush into the spawn' },
-  { from: 3.6, seconds: 2.4, minutesAgo: 1471, done: true },
+  { from: 4.0, seconds: 2.4, minutesAgo: 1471, done: true },
 ];
 
 const pad = (n) => String(n).padStart(2, '0');
