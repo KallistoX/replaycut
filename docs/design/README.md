@@ -11,6 +11,7 @@ grows; nothing is generated at build time.
 | `base.css` | Every component. No colour literal in here; each one is a token. |
 | `components.html` | The component sheet: every component in every state, both themes, a live contrast table, the UI icon sprite. |
 | `mockups/*.html` | One mockup per page with a state switcher (bottom left) and a theme switcher. Widths come from the window: 1000 px and up is two columns on the clips page, 700 px is "the window beside the game", 375 px is a phone. |
+| `mockups/clips-cleanup.html` | A proposal, not the built state: the clips page of 3.0 tidied up - one visible action per row, a cut as a row instead of a card, the share row's selects behind "Change …", Activity as a table. Four frames on one page, no switchers. |
 | `mockups/mock.js`, `mock.css` | The switchers. Not part of the UI, except the three `matchMedia` lines that open the clip list on wide screens. |
 | `icons/` | SVG sources of the app icon and the two tray states, `mkico`, the tool that renders them to `.ico`, and `social.svg`, the 1280x640 social preview for the GitHub repository (rendered to `social.png`). |
 

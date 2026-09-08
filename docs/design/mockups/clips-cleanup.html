@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<title>replaycut - Clips, tidied up (proposal)</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../base.css">
+<style>
+  /* The proposal: one visible action per row, everything else behind "...".
+   * Only the rules a cut row and the activity table need; everything else
+   * is base.css as it stands. */
+  body { background: var(--bg); color: var(--fg); font-family: var(--font); font-size: var(--text-base); line-height: var(--leading); margin: 0; }
+  .sheet { max-width: 1320px; margin: 0 auto; padding: var(--space-6) var(--space-4) var(--space-6); display: flex; flex-direction: column; gap: var(--space-6); }
+  .sheet > header h1 { margin: 0 0 var(--space-2); font-size: var(--text-xl); }
+  .sheet > header p { margin: 0; color: var(--fg-muted); max-width: 70ch; }
+  section > h2 { font-size: var(--text-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); margin: 0 0 var(--space-1); }
+  section > .why { color: var(--fg-muted); font-size: var(--text-sm); margin: 0 0 var(--space-3); max-width: 80ch; }
+  .frame { border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg); }
+  .frame.phone { width: 390px; }
+
+  /* new: a cut is a row, not a card */
+  .cut-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--line); }
+  .cut-row .range { font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
+  .cut-row .chev { color: var(--fg-faint); transition: transform var(--duration); }
+  .cut-row.is-open { border-color: var(--line-strong); background: var(--surface); }
+  .cut-row.is-open .chev { transform: rotate(90deg); color: var(--fg-muted); }
+  .cut-row.is-running { border-color: var(--accent); }
+  .cut-out { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-3) var(--space-1) 40px; border-top: 1px solid var(--line); font-size: var(--text-sm); }
+  .cut-out .muted { color: var(--fg-muted); }
+  .cut-group { display: flex; flex-direction: column; border-radius: var(--radius-md); border: 1px solid var(--line-strong); background: var(--surface); }
+  .cut-group > .cut-row { border: 0; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* new: the activity table */
+  .act { border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+  .act .head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); background: var(--surface); }
+  .act .cols, .act .r { display: grid; grid-template-columns: 56px minmax(0, 1fr) 116px 112px 88px 104px; align-items: center; gap: var(--space-3); padding: 7px var(--space-4); }
+  .act .cols { font-size: var(--text-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-faint); background: var(--surface-2); }
+  .act .r { border-top: 1px solid var(--line); font-size: 13px; }
+  .act .r:hover { background: var(--surface); }
+  .act .r .end { display: flex; gap: var(--space-1); justify-content: flex-end; }
+  .act .day { padding: var(--space-3) var(--space-4) var(--space-1); font-size: var(--text-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); }
+  .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stub { height: 300px; background: linear-gradient(160deg, #26303a 0%, #151a20 60%, #10141a 100%); border-radius: var(--radius-md); border: 1px solid var(--line); position: relative; }
+  .stub.short { height: 196px; }
+  .stub .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; background: rgba(11,14,18,0.75); display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-3); font-size: var(--text-sm); }
+  .tl { height: 40px; border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--line); position: relative; }
+  .tl i { position: absolute; left: 8%; width: 24%; top: 0; bottom: 0; background: var(--accent-soft); border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+  .menucol { display: flex; gap: var(--space-5); flex-wrap: wrap; align-items: flex-start; }
+  .menu { position: static; flex-direction: column; }
+  .cap { font-size: var(--text-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); margin-bottom: var(--space-2); }
+  .thumb-stub { width: 64px; height: 36px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface-2); display: flex; align-items: center; justify-content: center; color: var(--fg-faint); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 20 20"><path d="M4 3.5 16.5 10 4 16.5z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 20 20"><path d="m4 10.5 4 4 8-9"/></symbol>
+  <symbol id="i-share" viewBox="0 0 20 20"><path d="M10 13V3M6.5 6.5 10 3l3.5 3.5M4 12v4.5h12V12"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 20 20"><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5 5.5l1 11h8l1-11M8.5 9v5M11.5 9v5"/></symbol>
+  <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4H5.5A1.5 1.5 0 0 0 4 5.5v6A1.5 1.5 0 0 0 5.5 13H7"/></symbol>
+  <symbol id="i-external" viewBox="0 0 20 20"><path d="M11 3h6v6M17 3l-8 8M15 11v5H4V5h5"/></symbol>
+  <symbol id="i-download" viewBox="0 0 20 20"><path d="M10 3v9M6.5 8.5 10 12l3.5-3.5M4 16h12"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2.5 6.5h5l1.5 2h8.5v8h-15z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4.5 15 10l-9 5.5z"/></symbol>
+  <symbol id="i-cut-in" viewBox="0 0 20 20"><path d="M4 4v12M8 10h8M13 6l3 4-3 4"/></symbol>
+  <symbol id="i-cut-out" viewBox="0 0 20 20"><path d="M16 4v12M12 10H4M7 6l-3 4 3 4"/></symbol>
+  <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.6"/></symbol>
+</svg>
+
+<div class="sheet">
+  <header>
+    <h1>Clips, tidied up</h1>
+    <p>A proposal for 3.0.1, in the design system as it stands (<code>tokens.css</code> and <code>base.css</code> are
+    linked, not copied). One rule carries it: <b>one visible action per row, everything rarer behind &hellip;</b> - and
+    a cut is a <b>row</b>, not a card. Numbers and names are the real ones from the test bench.</p>
+  </header>
+
+  <!-- ============================================ clip page -->
+  <section>
+    <h2>1 &middot; The clip page</h2>
+    <p class="why">The share row loses its four selects: what is set stands beside the button as text, changing it is
+    one click. The result is one line instead of a card. Below it the cuts, one row each, the open one showing what
+    came out of it.</p>
+
+    <div class="frame">
+      <header class="topbar">
+        <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+        <nav class="nav"><a href="#" aria-current="page">Clips</a><a href="#">Activity</a><a href="#">Settings</a><a href="#">OBS</a><a href="#">Diagnostics</a></nav>
+        <div class="right"><span class="badge">h264_amf</span><span class="status"><i class="dot"></i></span><span class="version">3.0.1</span></div>
+      </header>
+
+      <div class="clips" style="min-height: 0;">
+        <details class="cliplist" open>
+          <summary><svg class="icon"><use href="#i-chevron"/></svg><span><b>3 clips</b></span></summary>
+          <div class="list-body">
+            <div class="list-head"><h2 style="margin:0">Clips</h2><span class="count">3</span><button class="btn btn-sm right">Save replay <kbd>F9</kbd></button></div>
+            <div class="tabs" style="margin-bottom: var(--space-2)">
+              <button aria-current="page">Active <span class="count">3</span></button><button>Done <span class="count">10</span></button>
+            </div>
+
+            <div style="font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-muted); margin: var(--space-3) var(--space-2) var(--space-1)">Today</div>
+
+            <div class="clip active">
+              <div class="thumb none"><svg class="icon icon-sm"><use href="#i-film"/></svg></div>
+              <div class="name"><span><b>Alles Gute kommt von oben</b></span></div>
+              <div class="meta"><span>2:43.1</span><span>23:17</span><span style="color: var(--fg-faint)">4 cuts</span></div>
+            </div>
+            <div class="clip">
+              <div class="thumb none"><svg class="icon icon-sm"><use href="#i-film"/></svg></div>
+              <div class="name"><span><b>Das hat geschmeckt</b></span></div>
+              <div class="meta"><span>1:56.1</span><span>18:56</span><span style="color: var(--fg-faint)">1 cut</span></div>
+            </div>
+            <div class="clip">
+              <div class="thumb none"><svg class="icon icon-sm"><use href="#i-film"/></svg></div>
+              <div class="name"><span>Ich kann schon wieder nen clip machen</span></div>
+              <div class="meta"><span>4:59.4</span><span>15:09</span></div>
+            </div>
+
+            <div style="font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-muted); margin: var(--space-3) var(--space-2) var(--space-1)">Sat 5 Sep</div>
+            <div class="clip" style="opacity: .75">
+              <div class="thumb none"><svg class="icon icon-sm"><use href="#i-film"/></svg></div>
+              <div class="name"><span><b>Explosionen sehen nicht so geil aus</b></span></div>
+              <div class="meta"><span>21:19</span><span style="color: var(--fg-faint)">1 cut</span><span style="color: var(--fg-faint)">no recording</span></div>
+            </div>
+          </div>
+        </details>
+
+        <main class="editor">
+          <div class="title-row" style="display: flex; gap: var(--space-2); align-items: center;">
+            <input class="input" style="flex: 1" value="Alles Gute kommt von oben">
+            <button class="btn btn-danger"><svg class="icon"><use href="#i-trash"/></svg> Delete</button>
+          </div>
+
+          <div class="stub"><div class="bar"><svg class="icon icon-sm"><use href="#i-play"/></svg><span class="num">0:00 / 2:43</span><div class="bar" style="position: static; height: 3px; background: var(--line); border-radius: var(--radius-pill); flex: 1"><i style="display: block; width: 18%; height: 3px; background: var(--fg); border-radius: var(--radius-pill)"></i></div></div></div>
+          <div class="tl"><i></i></div>
+
+          <div class="row">
+            <button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg> Set in <kbd>I</kbd></button>
+            <button class="btn"><svg class="icon"><use href="#i-cut-out"/></svg> Set out <kbd>O</kbd></button>
+            <button class="btn">Whole clip</button>
+            <button class="btn"><svg class="icon"><use href="#i-play"/></svg> Play selection <kbd>P</kbd></button>
+            <span class="muted sm num">0:13.0 - 0:49.5 &middot; <b style="color: var(--fg)">36.5 s</b></span>
+          </div>
+
+          <div class="row">
+            <div class="split"><button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd></button><button class="btn btn-primary btn-icon">&#9662;</button></div>
+            <button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg> Save cut</button>
+            <span class="grow"></span>
+            <span class="muted sm">Mix (all) &middot; H.264 &middot; 16:9 &middot; afterwards: mark done</span>
+            <button class="btn btn-sm btn-ghost">Change &hellip;</button>
+          </div>
+          <div class="muted sm">about <b style="color: var(--fg)">5036 MB</b> H.264, 1440p at best quality &middot; to <b style="color: var(--fg)">Nextcloud</b>, link never expires + post</div>
+
+          <div class="result" style="flex-direction: row; align-items: center;">
+            <svg class="icon icon-sm" style="color: var(--ok)"><use href="#i-check"/></svg>
+            <span><b>Shared to Nextcloud</b> <span class="muted">&middot; 16.5 s &middot; 223 MB &middot; link copied</span></span>
+            <span class="grow"></span>
+            <span class="muted sm">Clip marked done</span>
+            <button class="btn btn-sm">Undo</button>
+            <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy link</button>
+            <button class="btn btn-sm btn-icon">&hellip;</button>
+          </div>
+
+          <div class="list-head" style="padding: var(--space-2) 0 0"><h2 style="margin:0; font-size: var(--text-sm); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-muted)">Cuts</h2><span class="count">4</span></div>
+
+          <div style="display: flex; flex-direction: column; gap: var(--space-1)">
+            <div class="cut-row">
+              <svg class="icon icon-sm chev"><use href="#i-chevron"/></svg>
+              <span class="range">0:13.0 - 0:49.5</span>
+              <span class="muted sm">36.5 s &middot; Mix (all)</span>
+              <span class="grow"></span>
+              <span class="badge">Nextcloud</span><span class="badge">YouTube</span>
+              <button class="btn btn-sm">Render</button><button class="btn btn-sm btn-icon">&hellip;</button>
+            </div>
+
+            <div class="cut-group">
+              <div class="cut-row is-open">
+                <svg class="icon icon-sm chev"><use href="#i-chevron"/></svg>
+                <span class="range">2:10.2 - 2:27.9</span>
+                <span class="muted sm">17.7 s &middot; Mix (all) &middot; 9:16</span>
+                <span class="grow"></span>
+                <span class="badge">YouTube</span>
+                <button class="btn btn-sm">Render</button><button class="btn btn-sm btn-icon">&hellip;</button>
+              </div>
+              <div class="cut-out">
+                <span class="muted num">07 Sep 16:07</span><span class="badge">YouTube</span>
+                <span class="muted">223 MB &middot; Mix (all) &middot; 9:16</span>
+                <span class="grow"></span>
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy link</button><button class="btn btn-sm btn-icon">&hellip;</button>
+              </div>
+              <div class="cut-out">
+                <span class="muted num">06 Sep 16:53</span><span class="badge">Nextcloud</span>
+                <span class="muted">706 MB &middot; Mix (all)</span>
+                <span class="grow"></span>
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy link</button><button class="btn btn-sm btn-icon">&hellip;</button>
+              </div>
+            </div>
+
+            <div class="cut-row">
+              <svg class="icon icon-sm chev"><use href="#i-chevron"/></svg>
+              <span class="range" style="color: var(--fg-muted)">0:00.0 - 0:33.3</span>
+              <span class="muted sm">33.3 s &middot; Mix (all)</span>
+              <span class="badge warn">no cut file</span>
+              <span class="grow"></span>
+              <span class="badge">file only</span>
+              <button class="btn btn-sm">Marks</button><button class="btn btn-sm btn-icon">&hellip;</button>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ cut states and menus -->
+  <section>
+    <h2>2 &middot; A cut in every state, and what moved into the menus</h2>
+    <p class="why">Every action of today is still there - the ones you use once a share are buttons, the rest is one
+    click away. Nothing is hidden that has no home.</p>
+
+    <div style="display: flex; flex-direction: column; gap: var(--space-1); margin-bottom: var(--space-4)">
+      <div class="cut-row">
+        <svg class="icon icon-sm chev"><use href="#i-chevron"/></svg>
+        <span class="range">0:13.0 - 0:49.5</span><span class="muted sm">36.5 s &middot; Mix (all)</span>
+        <span class="grow"></span><span class="badge">Nextcloud</span><span class="badge">YouTube</span>
+        <button class="btn btn-sm">Render</button><button class="btn btn-sm btn-icon">&hellip;</button>
+      </div>
+      <div class="cut-row">
+        <svg class="icon icon-sm chev"><use href="#i-chevron"/></svg>
+        <span class="range">1:02.4 - 1:22.0</span><span class="muted sm">19.6 s &middot; Game only</span>
+        <span class="grow"></span><span class="muted sm">not rendered yet</span>
+        <button class="btn btn-sm">Render</button><button class="btn btn-sm btn-icon">&hellip;</button>
+      </div>
+      <div class="cut-row is-running">
+        <i class="dot busy" style="margin: 0 3px"></i>
+        <span class="range">0:04.0 - 0:21.5</span><span class="muted sm">17.5 s &middot; Mix (all)</span>
+        <span class="grow"></span><span class="muted sm">cutting &hellip;</span>
+      </div>
+      <div class="cut-row">
+        <svg class="icon icon-sm chev"><use href="#i-chevron"/></svg>
+        <span class="range" style="color: var(--fg-muted)">0:00.0 - 0:33.3</span><span class="muted sm">33.3 s &middot; Mix (all)</span>
+        <span class="badge warn">no cut file</span>
+        <span class="grow"></span><span class="badge">file only</span>
+        <button class="btn btn-sm">Marks</button><button class="btn btn-sm btn-icon">&hellip;</button>
+      </div>
+    </div>
+
+    <div class="menucol">
+      <div>
+        <div class="cap">&hellip; on an output</div>
+        <div class="menu">
+          <button><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy the page link</button>
+          <button><svg class="icon icon-sm"><use href="#i-external"/></svg> Open in the browser</button>
+          <button><svg class="icon icon-sm"><use href="#i-download"/></svg> Download to this device</button>
+          <button><svg class="icon icon-sm"><use href="#i-info"/></svg> Post to Discord</button>
+          <button><svg class="icon icon-sm"><use href="#i-share"/></svg> Publish to OneDrive</button>
+          <button><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open the folder</button>
+        </div>
+      </div>
+      <div>
+        <div class="cap">&hellip; on a cut</div>
+        <div class="menu">
+          <button><svg class="icon icon-sm"><use href="#i-cut-in"/></svg> Put its range on the timeline</button>
+          <button><svg class="icon icon-sm"><use href="#i-share"/></svg> Render to another target &hellip;</button>
+          <button style="color: var(--err)"><svg class="icon icon-sm"><use href="#i-trash"/></svg> Delete this cut</button>
+        </div>
+      </div>
+      <div>
+        <div class="cap">"Change &hellip;" in the share row</div>
+        <div class="menu" style="min-width: 260px; padding: var(--space-3); gap: var(--space-3)">
+          <div class="field"><label>Audio</label><select class="select"><option>Mix (all)</option></select></div>
+          <div class="field"><label>Quality</label><select class="select"><option>H.264 (best quality)</option></select></div>
+          <div class="field"><label>Frame</label><select class="select"><option>Landscape 16:9</option></select></div>
+          <div class="field"><label>Afterwards</label><select class="select"><option>Mark done</option></select></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ activity -->
+  <section>
+    <h2>3 &middot; Activity as a table</h2>
+    <p class="why">One line per output, columns that line up, the filter as chips. What is running sits above it with
+    its clip and its progress.</p>
+
+    <div class="frame" style="padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3)">
+      <div class="result" style="flex-direction: row; align-items: center; border-color: var(--accent)">
+        <i class="dot busy"></i>
+        <b>Encoding 36.5 s</b>
+        <span class="muted sm">Alles Gute kommt von oben &middot; to Nextcloud</span>
+        <span class="grow"></span>
+        <div class="bar" style="width: 240px"><i style="width: 46%"></i></div>
+        <span class="muted sm num">46 %</span>
+        <button class="btn btn-sm">Cancel</button>
+      </div>
+
+      <div class="act">
+        <div class="head">
+          <button class="btn btn-sm btn-primary">All <span class="muted">21</span></button>
+          <button class="btn btn-sm">Nextcloud <span class="muted">14</span></button>
+          <button class="btn btn-sm">YouTube <span class="muted">4</span></button>
+          <button class="btn btn-sm">file only <span class="muted">3</span></button>
+        </div>
+        <div class="cols"><span>Time</span><span>Clip</span><span>Range</span><span>Target</span><span>Size</span><span></span></div>
+
+        <div class="day">Today</div>
+        <div class="r"><span class="muted num">17:00</span><span class="ell">Das hat geschmeckt</span><span class="muted num">0:34 - 1:04</span><span><span class="badge">Nextcloud</span></span><span class="muted num">1070 MB</span><span class="end"><button class="btn btn-sm">Copy</button><button class="btn btn-sm btn-icon">&hellip;</button></span></div>
+
+        <div class="day">Yesterday</div>
+        <div class="r"><span class="muted num">16:07</span><span class="ell">Alles Gute kommt von oben <span class="badge accent">9:16</span></span><span class="muted num">2:10 - 2:28</span><span><span class="badge">YouTube</span></span><span class="muted num">223 MB</span><span class="end"><button class="btn btn-sm">Copy</button><button class="btn btn-sm btn-icon">&hellip;</button></span></div>
+        <div class="r"><span class="muted num">16:02</span><span class="ell">Alles Gute kommt von oben</span><span class="muted num">0:00 - 0:33</span><span><span class="badge accent">file only</span></span><span class="muted num">450 MB</span><span class="end"><button class="btn btn-sm">Open</button><button class="btn btn-sm btn-icon">&hellip;</button></span></div>
+        <div class="r" style="opacity:.55"><span class="muted num">16:01</span><span class="ell">Alles Gute kommt von oben</span><span class="muted num">0:00 - 0:33</span><span><span class="badge">cancelled</span></span><span class="muted num">&ndash;</span><span></span></div>
+
+        <div class="day">Sun 6 Sep</div>
+        <div class="r"><span class="muted num">16:53</span><span class="ell">Alles Gute kommt von oben</span><span class="muted num">2:06 - 2:28</span><span><span class="badge">YouTube</span></span><span class="muted num">706 MB</span><span class="end"><button class="btn btn-sm">Copy</button><button class="btn btn-sm btn-icon">&hellip;</button></span></div>
+        <div class="r"><span class="muted num">15:26</span><span class="ell">Alles Gute kommt von oben <span class="badge">again</span></span><span class="muted num">2:10 - 2:28</span><span><span class="badge">YouTube</span></span><span class="muted num">13.8 MB</span><span class="end"><button class="btn btn-sm">Copy</button><button class="btn btn-sm btn-icon">&hellip;</button></span></div>
+
+        <div class="day">Sat 5 Sep</div>
+        <div class="r"><span class="muted num">23:19</span><span class="ell">Alles Gute kommt von oben</span><span class="muted num">2:10 - 2:28</span><span><span class="badge">Nextcloud</span></span><span class="muted num">13.8 MB</span><span class="end"><button class="btn btn-sm">Copy</button><button class="btn btn-sm btn-icon">&hellip;</button></span></div>
+        <div class="r"><span class="muted num">21:21</span><span class="ell">Explosionen sehen nicht so geil aus</span><span class="muted num">1:02 - 1:22</span><span><span class="badge">Nextcloud</span></span><span class="muted num">15.5 MB</span><span class="end"><button class="btn btn-sm">Copy</button><button class="btn btn-sm btn-icon">&hellip;</button></span></div>
+        <div class="r"><span class="muted num">18:57</span><span class="ell">Das hat geschmeckt</span><span class="muted num">0:22 - 0:33</span><span><span class="badge">Nextcloud</span></span><span class="muted num">8.2 MB</span><span class="end"><button class="btn btn-sm">Copy</button><button class="btn btn-sm btn-icon">&hellip;</button></span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ phone -->
+  <section>
+    <h2>4 &middot; The phone (390 px)</h2>
+    <p class="why">The same rows, one under the other. Share and Save cut stay reachable with a thumb; the settings
+    behind "Change &hellip;" are what makes room for that.</p>
+
+    <div class="frame phone" style="padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3)">
+      <div class="row nowrap"><input class="input" style="flex:1" value="Alles Gute kommt von oben"><button class="btn btn-icon btn-danger"><svg class="icon"><use href="#i-trash"/></svg></button></div>
+      <div class="stub short"><div class="bar"><svg class="icon icon-sm"><use href="#i-play"/></svg><span class="num">0:00 / 2:43</span></div></div>
+      <div class="tl"><i></i></div>
+      <div class="row"><button class="btn grow"><svg class="icon"><use href="#i-cut-in"/></svg> Set in</button><button class="btn grow"><svg class="icon"><use href="#i-cut-out"/></svg> Set out</button></div>
+      <div class="row nowrap"><div class="split grow"><button class="btn btn-primary grow"><svg class="icon"><use href="#i-share"/></svg> Share</button><button class="btn btn-primary btn-icon">&#9662;</button></div><button class="btn">Save cut</button></div>
+      <div class="row nowrap"><span class="muted sm grow">Mix (all) &middot; H.264 &middot; 16:9 &middot; mark done</span><button class="btn btn-sm">Change &hellip;</button></div>
+      <div class="list-head" style="padding: var(--space-1) 0 0"><h2 style="margin:0; font-size: var(--text-sm); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-muted)">Cuts</h2><span class="count">4</span></div>
+      <div style="display:flex; flex-direction: column; gap: var(--space-1)">
+        <div class="cut-row" style="gap: var(--space-2)">
+          <svg class="icon icon-sm chev"><use href="#i-chevron"/></svg>
+          <div style="display:flex; flex-direction: column; min-width: 0; flex: 1">
+            <span class="range">0:13.0 - 0:49.5</span>
+            <span class="muted sm">36.5 s &middot; Nextcloud, YouTube</span>
+          </div>
+          <button class="btn btn-sm">Render</button><button class="btn btn-sm btn-icon">&hellip;</button>
+        </div>
+        <div class="cut-row" style="gap: var(--space-2)">
+          <svg class="icon icon-sm chev"><use href="#i-chevron"/></svg>
+          <div style="display:flex; flex-direction: column; min-width: 0; flex: 1">
+            <span class="range">2:10.2 - 2:27.9</span>
+            <span class="muted sm">17.7 s &middot; YouTube</span>
+          </div>
+          <button class="btn btn-sm">Render</button><button class="btn btn-sm btn-icon">&hellip;</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

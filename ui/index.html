@@ -2547,7 +2547,9 @@ async function renderCut(c, target) {
   const body = { audio: $('audio').value, mode: $('mode').value };
   if (target) body.target = target;
   if ($('frame').value === 'vertical') { body.vertical = true; body.verticalPos = Number($('vpos').value) / 100; }
-  body.after = $('after').value;
+  // Rendering an existing cut says nothing about the clip: "Afterwards"
+  // belongs to the share row, and a render often happens days later.
+  body.after = 'keep';
   try {
     const r = await api('/api/cuts/' + encodeURIComponent(c.id) + '/render', jsonOpts('POST', body), { retries: 0, timeout: 10000 });
     if (!r.ok) { toast(r.error, 'err'); return; }
