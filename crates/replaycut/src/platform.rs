@@ -215,7 +215,9 @@ pub fn lan_host() -> String {
 }
 
 /// The name to advertise, from what is known: `<host>.local` when mDNS
-/// resolves it, else the IPv4 address, else the bare name.
+/// resolves it, else the IPv4 address, else the bare name. Platform-neutral
+/// and tested everywhere; only the Linux `lan_host` calls it so far.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn advertised_host(
     hostname: &str,
     mdns_resolves: bool,
