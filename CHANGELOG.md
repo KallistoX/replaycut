@@ -40,6 +40,12 @@ contract.
   both, so the maintainer's signature covers both. The one-click update
   works on Linux: it fetches the package for its platform, keeps the
   executable runnable and installs into what `install.sh` set up.
+- **Linux, fifth stage: the tray icon.** A StatusNotifierItem on the
+  session bus - what KDE, Waybar and GNOME with the AppIndicator extension
+  show - with the menu of the Windows tray: Open, Copy address, Show QR
+  code, the sign-in requests, Pause scanning, Check for updates, Open log
+  folder, Quit; the tooltip and the busy and error badges follow the state
+  as on Windows. Without a tray host the service runs without the icon.
 
 ## [3.1.0] - 2026-09-08
 

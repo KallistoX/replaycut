@@ -114,17 +114,20 @@ there when you open replaycut to other devices.
 Secrets go to the keyring behind the Secret Service (gnome-keyring, KWallet,
 KeePassXC), notifications to the desktop's notification service, and the
 clipboard is served over Wayland. ffmpeg comes from your distribution;
-hardware encoding uses VAAPI (AMD, Intel) or NVENC. The tray icon is not
-there yet; the page and `replaycut stop` do what the menu does.
+hardware encoding uses VAAPI (AMD, Intel) or NVENC. The tray icon is a
+StatusNotifierItem, which KDE, Waybar (its `tray` module), swaync-style
+bars and GNOME with the AppIndicator extension show; without a tray host
+the service runs without the icon, and the page and `replaycut stop` do
+what the menu does.
 
 ## Requirements
 
 - Windows 10 or 11 (the service uses the recycle bin, toast notifications and
   the Credential Manager). Linux support is being built in stages: the
   service runs there with secrets in the keyring (Secret Service), desktop
-  notifications, the Wayland clipboard, VAAPI encoding, `replaycut install`
-  and autostart as a systemd user unit; the release package and the tray
-  are not there yet (see [Linux](#linux) and `CHANGELOG.md`).
+  notifications, the Wayland clipboard, VAAPI encoding, `replaycut install`,
+  autostart as a systemd user unit, the tray icon and the one-click update
+  from the Linux release package (see [Linux](#linux) and `CHANGELOG.md`).
 - [OBS Studio](https://obsproject.com/) with the replay buffer enabled,
   recording to MKV. Multiple audio tracks are optional; the recommended
   layout is track 1 = mix, 2 = microphone, 3 = game, 4 = voice chat.
