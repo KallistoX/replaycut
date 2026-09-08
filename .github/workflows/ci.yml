@@ -1,5 +1,6 @@
-# CI skeleton. Builds and lints the workspace; the API contract tests need a
-# running service and are therefore only compiled here, not executed.
+# CI. `check` lints and builds the workspace and runs the tests that need
+# nothing but the source; `contract` starts a real service and runs the API
+# contract suite against it.
 # The release workflow (release.yml) runs on tags v*.
 name: CI
 
@@ -13,7 +14,7 @@ env:
 
 jobs:
   check:
-    name: fmt, clippy, build
+    name: fmt, clippy, build, unit tests
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -24,5 +25,76 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo build --workspace
-      - name: Compile API tests (not run - they need a live service)
-        run: cargo test --workspace --no-run
+      - name: Unit tests and UI invariants
+        run: cargo test -p replaycut
+      - name: Compile the contract suite (the contract job runs it)
+        run: cargo test -p replaycut-api-tests --no-run
+
+  contract:
+    name: API contract suite
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # The suite generates its clip with ffmpeg and the service encodes with
+      # it, so the runner needs both ffmpeg and ffprobe on the PATH.
+      - name: Install ffmpeg
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP\ffmpeg.zip"
+          Invoke-WebRequest -UseBasicParsing `
+            -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\ffmpeg" -Force
+          $bin = (Get-ChildItem "$env:RUNNER_TEMP\ffmpeg" -Directory | Select-Object -First 1).FullName + "\bin"
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+          & "$bin\ffmpeg.exe" -hide_banner -version | Select-Object -First 1
+          & "$bin\ffprobe.exe" -hide_banner -version | Select-Object -First 1
+
+      - run: cargo build -p replaycut
+
+      # Encodes for real, uploads and posts nowhere, and listens on this
+      # runner only. Port 8423 keeps it out of the way of a developer machine.
+      - name: Start the service
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\rc-data" | Out-Null
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\rc-clips" | Out-Null
+          Start-Process -FilePath "$env:GITHUB_WORKSPACE\target\debug\replaycut.exe" -ArgumentList `
+            '--dry-run','--port','8423','--no-browser', `
+            '--data-dir',"$env:RUNNER_TEMP\rc-data",'--clip-dir',"$env:RUNNER_TEMP\rc-clips"
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Get-Date) -lt $deadline) {
+            try {
+              if ((Invoke-WebRequest -UseBasicParsing http://localhost:8423/api/session).StatusCode -eq 200) {
+                Write-Host "the service answers on 8423"
+                exit 0
+              }
+            } catch { Start-Sleep -Milliseconds 500 }
+          }
+          Write-Host "the service did not answer within 60 s"
+          exit 1
+
+      # One share slot, one clip folder: the suite is serial by design
+      # (`.cargo/config.toml` sets the same thing for a local run).
+      - name: Contract suite
+        shell: pwsh
+        env:
+          BASE_URL: http://localhost:8423
+        run: |
+          $env:CLIP_DIR = "$env:RUNNER_TEMP\rc-clips"
+          cargo test -p replaycut-api-tests -- --test-threads=1
+
+      - name: Stop the service
+        if: always()
+        shell: pwsh
+        run: target\debug\replaycut.exe stop --port 8423
+
+      - name: Service log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-log
+          path: ${{ runner.temp }}/rc-data/logs
+          if-no-files-found: warn

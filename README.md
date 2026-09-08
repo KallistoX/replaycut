@@ -217,7 +217,34 @@ started without a console.
 While a clip is shared, ffmpeg runs at below-normal priority with a thread
 cap (see `ffmpegPriority` and `ffmpegThreads`), so the game keeps the CPU.
 
-### API contract tests
+### Tests
+
+Three layers, all in Rust and all run by CI:
+
+| Layer          | Where                                     | Needs                          |
+|----------------|-------------------------------------------|--------------------------------|
+| Unit tests     | `#[cfg(test)]` in `crates/replaycut/src`  | nothing                        |
+| UI invariants  | `crates/replaycut/tests/ui_invariants.rs` | nothing                        |
+| API contract   | `tests/api`                               | a running service and ffmpeg   |
+
+```bash
+cargo test -p replaycut
+```
+
+runs the first two. The UI invariants read `ui/index.html` as text and check
+what the rest of the program relies on: the viewport meta tag, that every
+`data-f` binding is a path in `Settings::default()` and that numeric fields
+are read as numbers, that every id the script looks up exists in the markup,
+and that every icon reference has a `<symbol>`. The UI has no build step and
+no tests of its own; 2.7.0 shipped a broken viewport tag and text-instead-of-number
+limits because nothing looked.
+
+`.github/workflows/ci.yml` runs `fmt`, `clippy`, the build and those tests in
+the `check` job. A second job, `contract`, installs ffmpeg, starts the service
+with `--dry-run` on port 8423 and runs the contract suite against it; the
+service log is uploaded as an artifact when the job fails.
+
+#### API contract tests
 
 The tests in `tests/api` are black-box tests against a running service. They
 place a generated test clip into the folder the service scans, drive the API,
