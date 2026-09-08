@@ -93,8 +93,10 @@ docs/design/            design system: tokens, component sheet, page mockups,
 1. Set the workspace version in `Cargo.toml`, turn the `Unreleased` section
    of `CHANGELOG.md` into `## [<version>] - <date>`, commit.
 2. `git tag v<version>` and `git push origin v<version>`: `release.yml` builds
-   the EXE, packs `replaycut-<version>-windows-x64.zip` plus `SHA256SUMS`
-   and publishes the GitHub release with that version's CHANGELOG section.
+   the Windows EXE and the static Linux executable (musl), packs
+   `replaycut-<version>-windows-x64.zip` and `replaycut-<version>-linux-x64.zip`,
+   writes one `SHA256SUMS` for both and publishes the GitHub release with
+   that version's CHANGELOG section.
    That section is what the UI shows as "What's new": headings, lists,
    paragraphs, `code`, bold and links render; keep it in that shape.
 3. Sign it: on the machine with the minisign secret key (never in CI), run
