@@ -10,6 +10,13 @@ contract.
 
 ## [Unreleased]
 
+## [3.4.2] - 2026-09-09
+
+3.4.1 made the HTTPS switch saveable; this one makes it usable. Restarting
+into HTTPS left the page waiting on the address it came from, so the switch
+ended in "the service did not come back" while replaycut was already
+answering - one scheme over.
+
 ### Fixed
 
 - **Turning HTTPS on gets you back to the page.** "Restart now" built the
