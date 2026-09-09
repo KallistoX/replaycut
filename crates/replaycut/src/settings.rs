@@ -601,9 +601,54 @@ impl Settings {
         Ok(())
     }
 }
-pub const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
-pub const CLEANUP_KEYS: [&str; 2] = ["afterShare", "recycleDoneAfterDays"];
-pub const HTTPS_KEYS: [&str; 3] = ["enabled", "cert", "key"];
+const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
+const CLEANUP_KEYS: [&str; 2] = ["afterShare", "recycleDoneAfterDays"];
+const HTTPS_KEYS: [&str; 3] = ["enabled", "cert", "key"];
+
+/// Whether `PUT /api/settings` would accept a field at this dotted path
+/// (`https.enabled`, `integrations.s3.bucket`, `port`). It answers from the
+/// same lists `with_patch` refuses by, so the two cannot disagree about a
+/// name; the `ui_invariants` test walks every `data-f` in the page through
+/// it and fails the build for a field the page binds but cannot save.
+pub fn patch_accepts(path: &str) -> bool {
+    let mut parts = path.split('.');
+    let Some(top) = parts.next() else {
+        return false;
+    };
+    if !PATCH_KEYS.contains(&top) {
+        return false;
+    }
+    let Some(second) = parts.next() else {
+        return true;
+    };
+    match top {
+        "obs" => OBS_KEYS.contains(&second),
+        "cleanup" => CLEANUP_KEYS.contains(&second),
+        "https" => HTTPS_KEYS.contains(&second),
+        "integrations" => {
+            let allowed: &[&str] = match second {
+                "nextcloud" => &NEXTCLOUD_KEYS,
+                "discord" => &DISCORD_KEYS,
+                "onedrive" => &ONEDRIVE_KEYS,
+                "s3" => &S3_KEYS,
+                "webdav" => &WEBDAV_KEYS,
+                "youtube" => &YOUTUBE_KEYS,
+                "telegram" => &TELEGRAM_KEYS,
+                "webhook" => &WEBHOOK_KEYS,
+                _ => return false,
+            };
+            match parts.next() {
+                None => true,
+                Some(field) => {
+                    allowed.contains(&field)
+                        || (STORAGE_GROUPS.contains(&second) && LIMIT_KEYS.contains(&field))
+                }
+            }
+        }
+        // A plain field has no sub-fields to bind.
+        _ => false,
+    }
+}
 
 impl Settings {
     /// Apply a partial JSON object (the body of `PUT /api/settings`) and

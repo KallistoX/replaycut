@@ -158,44 +158,20 @@ fn every_bound_field_is_a_settings_path() {
 /// one feature of the release could not be turned on from the UI at all.
 #[test]
 fn every_bound_field_can_be_saved() {
-    use settings::{CLEANUP_KEYS, HTTPS_KEYS, OBS_KEYS, PATCH_KEYS};
     let html = ui();
     let mut missing = Vec::new();
     for (at, field) in bound_fields(&html) {
         if NOT_IN_SETTINGS.iter().any(|p| field.starts_with(p)) {
             continue;
         }
-        let (top, rest) = match field.split_once('.') {
-            Some((top, rest)) => (top, Some(rest)),
-            None => (field.as_str(), None),
-        };
-        if !PATCH_KEYS.contains(&top) {
-            missing.push(format!(
-                "line {}: data-f=\"{field}\" - \"{top}\" is not in PATCH_KEYS",
-                line_of(&html, at)
-            ));
-            continue;
-        }
-        // The groups that check their own fields one by one; `integrations`
-        // has its own per-target lists and is covered by its own test.
-        let allowed: &[&str] = match top {
-            "obs" => &OBS_KEYS,
-            "cleanup" => &CLEANUP_KEYS,
-            "https" => &HTTPS_KEYS,
-            _ => continue,
-        };
-        if let Some(sub) = rest {
-            if !allowed.contains(&sub) {
-                missing.push(format!(
-                    "line {}: data-f=\"{field}\" - \"{sub}\" is not accepted inside \"{top}\"",
-                    line_of(&html, at)
-                ));
-            }
+        if !settings::patch_accepts(&field) {
+            missing.push(format!("line {}: data-f=\"{field}\"", line_of(&html, at)));
         }
     }
     assert!(
         missing.is_empty(),
-        "these fields are bound in the page but PUT /api/settings would refuse them:\n  {}",
+        "these fields are bound in the page but PUT /api/settings would refuse \
+         them - add the name to PATCH_KEYS, or to the field list of its group:\n  {}",
         missing.join("\n  ")
     );
 }
