@@ -610,6 +610,10 @@ const HTTPS_KEYS: [&str; 3] = ["enabled", "cert", "key"];
 /// same lists `with_patch` refuses by, so the two cannot disagree about a
 /// name; the `ui_invariants` test walks every `data-f` in the page through
 /// it and fails the build for a field the page binds but cannot save.
+// Only the `ui_invariants` test calls this, and it pulls this file in with
+// `#[path]` rather than through the crate - so from the binary's side the
+// function looks unused.
+#[allow(dead_code)]
 pub fn patch_accepts(path: &str) -> bool {
     let mut parts = path.split('.');
     let Some(top) = parts.next() else {
