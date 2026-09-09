@@ -46,6 +46,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
 /* ---------- icons ---------- */
 .icon { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; vertical-align: -5px; }
 .icon-sm { width: 16px; height: 16px; vertical-align: -3px; }
+/* The marks of the services replaycut talks to: filled shapes on a 24 grid,
+   not the stroked 20 grid of the UI icons. They still take currentColor. */
+.icon-brand { fill: currentColor; stroke: none; }
 .spinner { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

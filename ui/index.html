@@ -125,6 +125,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
 
 .icon { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; vertical-align: -5px; }
 .icon-sm { width: 16px; height: 16px; vertical-align: -3px; }
+/* The marks of the services replaycut talks to: filled shapes on a 24 grid,
+   not the stroked 20 grid of the UI icons. They still take currentColor. */
+.icon-brand { fill: currentColor; stroke: none; }
 .spinner { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -261,6 +264,25 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 .card.is-disabled .card-body { display: none; }
 .card.is-disabled .card-head { opacity: 0.6; }
 .card.is-disabled .card-head .switch { opacity: 1; }
+/* Integrations (since 3.3): the cards start closed, so the page is eight
+   heads instead of every field of every one of them. */
+#tabIntegrations .card { gap: var(--space-2); }
+#tabIntegrations .card.is-open { gap: var(--space-3); }
+#tabIntegrations .card:not(.is-open) .card-body { display: none; }
+.card-toggle .icon { transition: transform var(--duration); }
+.card.is-open .card-toggle .icon { transform: rotate(90deg); }
+/* A closed integration that is off says what it would do, instead of
+   nothing at all. Opening it still shows the fields, switched on or not. */
+.whatyouget { margin: 0; color: var(--fg-muted); font-size: var(--text-sm); }
+.card.is-open .whatyouget, .card:not(.is-off) .whatyouget { display: none; }
+#tabIntegrations .card.is-off:not(.is-open) .card-head h2 { color: var(--fg-muted); }
+/* The quick-share target is chosen once, in the summary at the top; the
+   bound checkbox stays where it is so the save logic does not change. */
+.quick-row { display: none; }
+.int-summary { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.int-summary p { margin: 0; }
+.int-summary .row { flex-wrap: wrap; gap: var(--space-2); }
+.int-summary select { max-width: 320px; }
 
 .banner { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--line); background: var(--info-soft); color: var(--fg); }
 .banner .icon { color: var(--info); margin-top: 1px; }
@@ -577,6 +599,14 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <symbol id="i-more" viewBox="0 0 20 20"><circle cx="4.5" cy="10" r="1.25"/><circle cx="10" cy="10" r="1.25"/><circle cx="15.5" cy="10" r="1.25"/></symbol>
   <symbol id="i-send" viewBox="0 0 20 20"><path d="M17 3 3 9l6 2 2 6z"/><path d="m9 11 8-8"/></symbol>
   <symbol id="i-undo" viewBox="0 0 20 20"><path d="M4 8h8a4 4 0 0 1 0 8H8"/><path d="M7 5 4 8l3 3"/></symbol>
+  <symbol id="i-b-nextcloud" viewBox="0 0 24 24"><path d="M12.018 6.537c-2.5 0-4.6 1.712-5.241 4.015-.56-1.232-1.793-2.105-3.225-2.105A3.569 3.569 0 0 0 0 12a3.569 3.569 0 0 0 3.552 3.553c1.432 0 2.664-.874 3.224-2.106.641 2.304 2.742 4.016 5.242 4.016 2.487 0 4.576-1.693 5.231-3.977.569 1.21 1.783 2.067 3.198 2.067A3.568 3.568 0 0 0 24 12a3.569 3.569 0 0 0-3.553-3.553c-1.416 0-2.63.858-3.199 2.067-.654-2.284-2.743-3.978-5.23-3.977zm0 2.085c1.878 0 3.378 1.5 3.378 3.378 0 1.878-1.5 3.378-3.378 3.378A3.362 3.362 0 0 1 8.641 12c0-1.878 1.5-3.378 3.377-3.378zm-8.466 1.91c.822 0 1.467.645 1.467 1.468s-.644 1.467-1.467 1.468A1.452 1.452 0 0 1 2.085 12c0-.823.644-1.467 1.467-1.467zm16.895 0c.823 0 1.468.645 1.468 1.468s-.645 1.468-1.468 1.468A1.452 1.452 0 0 1 18.98 12c0-.823.644-1.467 1.467-1.467z"/></symbol>
+  <symbol id="i-b-onedrive" viewBox="0 0 24 24"><path d="M19.453 9.95q.961.058 1.787.468.826.41 1.442 1.066.615.657.966 1.512.352.856.352 1.816 0 1.008-.387 1.893-.386.885-1.049 1.547-.662.662-1.546 1.049-.885.387-1.893.387H6q-1.242 0-2.332-.475-1.09-.475-1.904-1.29-.815-.814-1.29-1.903Q0 14.93 0 13.688q0-.985.31-1.887.311-.903.862-1.658.55-.756 1.324-1.325.774-.568 1.711-.861.434-.129.85-.187.416-.06.861-.082h.012q.515-.786 1.207-1.413.691-.627 1.5-1.066.808-.44 1.705-.668.896-.229 1.845-.229 1.278 0 2.456.417 1.177.416 2.144 1.16.967.744 1.658 1.78.692 1.038 1.008 2.28zm-7.265-4.137q-1.325 0-2.52.544-1.195.545-2.04 1.565.446.117.85.299.405.181.792.416l4.78 2.86 2.731-1.15q.27-.117.545-.204.276-.088.58-.147-.293-.937-.855-1.705-.563-.768-1.319-1.318-.755-.551-1.658-.856-.902-.304-1.886-.304zM2.414 16.395l9.914-4.184-3.832-2.297q-.586-.351-1.23-.539-.645-.188-1.325-.188-.914 0-1.722.364-.809.363-1.412.978-.604.616-.955 1.436-.352.82-.352 1.723 0 .703.234 1.423.235.721.68 1.284zm16.711 1.793q.563 0 1.078-.176.516-.176.961-.516l-7.23-4.324-10.301 4.336q.527.328 1.13.504.604.175 1.237.175zm3.012-1.852q.363-.727.363-1.523 0-.774-.293-1.407t-.791-1.072q-.498-.44-1.166-.68-.668-.24-1.406-.24-.422 0-.838.1t-.815.252q-.398.152-.785.334-.386.181-.761.345Z"/></symbol>
+  <symbol id="i-b-youtube" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></symbol>
+  <symbol id="i-b-discord" viewBox="0 0 24 24"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></symbol>
+  <symbol id="i-b-telegram" viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></symbol>
+  <symbol id="i-bucket" viewBox="0 0 20 20"><path d="M3.5 5.5h13l-1.5 11h-10z"/><path d="M3.5 5.5c0-1.1 2.9-2 6.5-2s6.5.9 6.5 2"/></symbol>
+  <symbol id="i-server" viewBox="0 0 20 20"><rect x="3" y="3.5" width="14" height="5.5" rx="1.5"/><rect x="3" y="11" width="14" height="5.5" rx="1.5"/><path d="M6 6.25h.01M6 13.75h.01"/></symbol>
+  <symbol id="i-webhook" viewBox="0 0 20 20"><path d="M7.5 8.5 5 13a3 3 0 1 0 2.7 4.3"/><path d="M12.5 8.5 15 13a3 3 0 1 1-2.7 4.3"/><path d="M10 6.5a3 3 0 1 0-3-3"/><path d="M7.5 17.3h5"/></symbol>
 </svg>
 
 <header class="topbar">
@@ -793,7 +823,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
     <div class="page-head"><h1>Integrations</h1><span class="muted">Optional. Each one can be switched on later in Settings.</span></div>
     <div class="local-note" id="wLocalNote"><svg class="icon"><use href="#i-info"/></svg><div><b>Without integrations replaycut is a local clip manager.</b> "Share" cuts and encodes the clip into <code>shared\</code> and offers "Open folder" and "Copy file", so Ctrl+V in Discord attaches it. Nothing leaves this PC.</div></div>
     <div class="card" id="wNcCard">
-      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>Nextcloud</h2><span class="badge" id="wNcBadge">off</span><label class="switch"><input type="checkbox" id="wNcOn"><span class="track"></span></label></div>
+      <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-nextcloud"/></svg><h2>Nextcloud</h2><span class="badge" id="wNcBadge">off</span><label class="switch"><input type="checkbox" id="wNcOn"><span class="track"></span></label></div>
       <div class="card-body stack-3">
         <p class="muted sm">Uploads the shared file to <code>&lt;folder&gt;/&lt;YYYY-MM&gt;/</code> and creates a public link. The link goes to the clipboard and, if Discord is on, into the post.</p>
         <div class="field"><label>Server</label><input class="input" id="wNcUrl" placeholder="https://cloud.example.com"></div>
@@ -809,7 +839,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       </div>
     </div>
     <div class="card" id="wDcCard">
-      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge" id="wDcBadge">off</span><label class="switch"><input type="checkbox" id="wDcOn"><span class="track"></span></label></div>
+      <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-discord"/></svg><h2>Discord</h2><span class="badge" id="wDcBadge">off</span><label class="switch"><input type="checkbox" id="wDcOn"><span class="track"></span></label></div>
       <div class="card-body stack-3">
         <p class="muted sm">Posts <code>**&lt;name&gt;** &lt;title&gt; (&lt;s&gt; s) - &lt;link&gt;</code> into one channel through a webhook. Needs a storage integration for the link.</p>
         <div class="field"><label>Webhook URL</label><div class="input-group"><input class="input mono" id="wDcHook" type="password" autocomplete="off" placeholder="https://discord.com/api/webhooks/..."><button class="btn btn-icon" type="button" data-eye="wDcHook" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Discord: Server settings › Integrations › Webhooks › Copy Webhook URL. Stored in the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span>.</span></div>
@@ -917,10 +947,15 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   </div>
 
   <div class="stack-4" id="tabIntegrations" hidden>
-    <p class="muted">Each integration has its own switch, its own settings and its own test. <b>Storage</b> integrations produce the link; the one marked as quick share is what the Share button uses, the others sit in its menu. <b>Notify</b> integrations post the link; with "post automatically" they do so for every share.</p>
+    <div class="int-summary">
+      <p id="sIntSummary"></p>
+      <div class="row"><label for="sQuickTarget">The <b>Share</b> button uploads to</label><select class="select" id="sQuickTarget"></select></div>
+      <p class="muted sm">Every other storage you switched on sits in the Share button's menu. <b>Notify</b> integrations post the link; with "post automatically" they do so for every share.</p>
+    </div>
     <h2 class="group-title">Storage</h2>
     <div class="card" id="sNcCard">
-      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>Nextcloud</h2><span class="badge">storage</span><span class="badge" id="sNcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.nextcloud.enabled"><span class="track"></span></label></div>
+      <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-nextcloud"/></svg><h2>Nextcloud</h2><span class="badge">storage</span><span class="badge" id="sNcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.nextcloud.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Nextcloud"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <p class="whatyouget">Uploads to a folder of your Nextcloud and shares it as a public link.</p>
       <div class="card-body stack-3">
         <div class="field"><label>Server</label><input class="input" data-f="integrations.nextcloud.url"></div>
         <div class="fields-2">
@@ -931,23 +966,25 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="field"><label>Folder</label><input class="input" data-f="integrations.nextcloud.folder"></div>
           <div class="field"><label>Link expiry</label><select class="select" data-f="integrations.nextcloud.expireDays"><option value="0">never</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></div>
         </div>
-        <label class="switch"><input type="checkbox" data-f="integrations.nextcloud.quickShare"><span class="track"></span> Quick share target <span class="muted sm">(the Share button uploads here; off = the button keeps the file local and Nextcloud stays in the menu)</span></label>
+        <label class="switch quick-row"><input type="checkbox" data-f="integrations.nextcloud.quickShare"><span class="track"></span> Quick share target <span class="muted sm">(the Share button uploads here; off = the button keeps the file local and Nextcloud stays in the menu)</span></label>
         <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.nextcloud.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.nextcloud.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
         <div class="row"><button class="btn" id="sNcTest">Test connection</button><span class="test-msg" id="sNcMsg"></span></div>
       </div>
     </div>
     <div class="card" id="sOdCard">
-      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>OneDrive</h2><span class="badge">storage</span><span class="badge" id="sOdBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.onedrive.enabled"><span class="track"></span></label></div>
+      <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-onedrive"/></svg><h2>OneDrive</h2><span class="badge">storage</span><span class="badge" id="sOdBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.onedrive.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of OneDrive"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <p class="whatyouget">Uploads to your OneDrive and gets a link anyone can open. Signing in works from a phone, with a code.</p>
       <div class="card-body stack-3">
         <p class="muted sm">Uploads go to <code>Apps/replaycut/&lt;month&gt;/</code> in your OneDrive and get a link anyone can open. Connecting signs you in at Microsoft with a code; it works from a phone, too.</p>
         <div class="row" id="sOdRow"><button class="btn btn-primary" id="sOdConnect">Connect OneDrive</button><button class="btn" id="sOdDisconnect" hidden>Disconnect</button><span class="muted sm" id="sOdStatus"></span></div>
         <div class="check-row" id="sOdCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label">Enter this code at Microsoft</div><div class="detail">Open <a id="sOdUri" href="#" target="_blank" rel="noopener"></a> and type <b class="mono" id="sOdUserCode" style="font-size:1.2em;letter-spacing:0.08em"></b>. The card updates when you are done.</div></div></div>
-        <label class="switch"><input type="checkbox" data-f="integrations.onedrive.quickShare"><span class="track"></span> Quick share target <span class="muted sm">(only one storage can be; switching it on takes it from the other)</span></label>
+        <label class="switch quick-row"><input type="checkbox" data-f="integrations.onedrive.quickShare"><span class="track"></span> Quick share target <span class="muted sm">(only one storage can be; switching it on takes it from the other)</span></label>
         <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.onedrive.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.onedrive.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
       </div>
     </div>
     <div class="card" id="sS3Card">
-      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>S3</h2><span class="badge">storage</span><span class="badge" id="sS3Badge"></span><label class="switch"><input type="checkbox" data-f="integrations.s3.enabled"><span class="track"></span></label></div>
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-bucket"/></svg><h2>S3</h2><span class="badge">storage</span><span class="badge" id="sS3Badge"></span><label class="switch"><input type="checkbox" data-f="integrations.s3.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of S3"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <p class="whatyouget">Any S3-compatible bucket: AWS S3, Cloudflare R2, Backblaze B2, MinIO, Wasabi.</p>
       <div class="card-body stack-3">
         <p class="muted sm">Any S3-compatible bucket: AWS S3, Cloudflare R2, Backblaze B2, MinIO, Wasabi. Files go to <code>&lt;prefix&gt;/&lt;month&gt;/</code>. Links come from a public URL for the bucket (custom domain, public bucket) or, without one, as presigned links that expire.</p>
         <div class="fields-2">
@@ -960,13 +997,14 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="field"><label>Public URL</label><input class="input mono" data-f="integrations.s3.publicBase" placeholder="https://clips.example.com"><span class="hint">Serves the bucket publicly; the link is this URL plus the key. Leave empty for presigned links.</span></div>
           <div class="field"><label>Presigned links expire after</label><select class="select" data-f="integrations.s3.presignDays"><option value="1">1 day</option><option value="3">3 days</option><option value="7">7 days (maximum)</option></select></div>
         </div>
-        <label class="switch"><input type="checkbox" data-f="integrations.s3.quickShare"><span class="track"></span> Quick share target</label>
+        <label class="switch quick-row"><input type="checkbox" data-f="integrations.s3.quickShare"><span class="track"></span> Quick share target</label>
         <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.s3.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.s3.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
         <div class="row"><button class="btn" id="sS3Test">Test connection</button><span class="test-msg" id="sS3Msg"></span></div>
       </div>
     </div>
     <div class="card" id="sDavCard">
-      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg><h2>WebDAV</h2><span class="badge">storage</span><span class="badge" id="sDavBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.webdav.enabled"><span class="track"></span></label></div>
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-server"/></svg><h2>WebDAV</h2><span class="badge">storage</span><span class="badge" id="sDavBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.webdav.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of WebDAV"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <p class="whatyouget">A Storage Box, nginx or rclone: replaycut writes the file, a public URL of yours turns it into a link.</p>
       <div class="card-body stack-3">
         <p class="muted sm">Any WebDAV server (a Storage Box, nginx, rclone). A plain DAV server has no public links of its own, so the same folder must also be reachable under a public URL: that is what the link points to.</p>
         <div class="fields-2">
@@ -976,13 +1014,14 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="field"><label>Password</label><div class="input-group"><input class="input" id="sDavPw" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sDavPw" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span> as <code>replaycut/webdav</code>.</span></div>
           <div class="field"><label>Public URL of the folder</label><input class="input mono" data-f="integrations.webdav.publicBase" placeholder="https://files.example.com/clips"><span class="hint">The link is this URL plus <code>&lt;month&gt;/&lt;file&gt;</code>.</span></div>
         </div>
-        <label class="switch"><input type="checkbox" data-f="integrations.webdav.quickShare"><span class="track"></span> Quick share target</label>
+        <label class="switch quick-row"><input type="checkbox" data-f="integrations.webdav.quickShare"><span class="track"></span> Quick share target</label>
         <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.webdav.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.webdav.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
         <div class="row"><button class="btn" id="sDavTest">Test connection</button><span class="test-msg" id="sDavMsg"></span></div>
       </div>
     </div>
     <div class="card" id="sYtCard">
-      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-play"/></svg><h2>YouTube</h2><span class="badge">storage</span><span class="badge" id="sYtBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.youtube.enabled"><span class="track"></span></label></div>
+      <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-youtube"/></svg><h2>YouTube</h2><span class="badge">storage</span><span class="badge" id="sYtBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.youtube.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of YouTube"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <p class="whatyouget">Every share becomes its own video on your channel, unlisted unless you choose otherwise.</p>
       <div class="card-body stack-3">
         <p class="muted sm">Every share becomes its own video on your channel, unlisted unless you choose otherwise; the link is <code>youtu.be/…</code>. A vertical cut (9:16 in the share row) is uploaded as a Short.</p>
         <div class="fields-2">
@@ -999,13 +1038,14 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="field"><label>Privacy</label><select class="select" data-f="integrations.youtube.privacy"><option value="unlisted">unlisted - anyone with the link</option><option value="private">private - only you</option><option value="public">public</option></select></div>
           <div class="field"><label>Description</label><textarea class="input" data-f="integrations.youtube.description" rows="3"></textarea><span class="hint"><code>{title}</code>, <code>{clip}</code> and <code>{date}</code> are filled in. The video title is the clip's title (or its name), plus <code>#Shorts</code> for a vertical cut.</span></div>
         </div>
-        <label class="switch"><input type="checkbox" data-f="integrations.youtube.quickShare"><span class="track"></span> Quick share target</label>
+        <label class="switch quick-row"><input type="checkbox" data-f="integrations.youtube.quickShare"><span class="track"></span> Quick share target</label>
         <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.youtube.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.youtube.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
       </div>
     </div>
     <h2 class="group-title">Notify</h2>
     <div class="card" id="sDcCard">
-      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Discord</h2><span class="badge">notify</span><span class="badge" id="sDcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.discord.enabled"><span class="track"></span></label></div>
+      <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-discord"/></svg><h2>Discord</h2><span class="badge">notify</span><span class="badge" id="sDcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.discord.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Discord"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <p class="whatyouget">Posts the link into a Discord channel through a webhook.</p>
       <div class="card-body stack-3">
         <div class="field"><label>Webhook URL</label><div class="input-group"><input class="input mono" id="sDcHook" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sDcHook" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint" id="sDcHookHint"></span></div>
         <div class="field"><label>Display name</label><input class="input" data-f="displayName" data-mirror="displayName"><span class="hint">Same field as in General.</span></div>
@@ -1014,7 +1054,8 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       </div>
     </div>
     <div class="card" id="sTgCard">
-      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Telegram</h2><span class="badge">notify</span><span class="badge" id="sTgBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.telegram.enabled"><span class="track"></span></label></div>
+      <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-telegram"/></svg><h2>Telegram</h2><span class="badge">notify</span><span class="badge" id="sTgBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.telegram.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Telegram"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <p class="whatyouget">A bot posts the link into a chat, group or channel.</p>
       <div class="card-body stack-3">
         <p class="muted sm">A bot posts the link into a chat, group or channel. Create the bot with <b>@BotFather</b> (<code>/newbot</code>), add it to the chat or as a channel admin, and find the chat id with <b>@userinfobot</b> or from the channel's <code>@name</code>.</p>
         <div class="fields-2">
@@ -1026,7 +1067,8 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       </div>
     </div>
     <div class="card" id="sWhCard">
-      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-info"/></svg><h2>Webhook</h2><span class="badge">notify</span><span class="badge" id="sWhBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.webhook.enabled"><span class="track"></span></label></div>
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-webhook"/></svg><h2>Webhook</h2><span class="badge">notify</span><span class="badge" id="sWhBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.webhook.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Webhook"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <p class="whatyouget">A JSON POST per share to any URL: n8n, Home Assistant, Zapier, a Matrix bridge.</p>
       <div class="card-body stack-3">
         <p class="muted sm">A JSON <code>POST</code> per share to any URL - n8n, Home Assistant, Zapier, a Matrix bridge: <code>{ event: "shared", title, clip, seconds, target, link, direct, at, job, displayName }</code>. With a secret, the header <code>X-Replaycut-Signature: sha256=&lt;HMAC of the body&gt;</code> lets the receiver check it.</p>
         <div class="fields-2">
@@ -1750,6 +1792,7 @@ async function initSettings() {
     $('sWhBadge').textContent = s.integrations.webhook.enabled ? (s.integrations.webhook.url ? 'on' : 'on, no URL') : 'off'; $('sWhBadge').className = 'badge' + (s.integrations.webhook.enabled && !s.integrations.webhook.url ? ' warn' : '');
     $('sYtIdHint').textContent = s.secrets && s.secrets.youtubeClient ? 'A client is stored; fill both fields to replace it (that disconnects the channel).' : 'No client stored yet - paste the client id and secret of your Google project.';
     ytClientUi();
+    intSync();
     Object.values(oauthCards).forEach(c => c.poll());
     $('sS3KeyHint').textContent = s.secrets && s.secrets.s3 ? 'Keys are stored; fill both fields to replace them.' : 'No keys stored yet.';
     $('sDavUserHint').textContent = s.secrets && s.secrets.webdav ? 'A login is stored; fill both fields to replace it.' : 'No login stored yet.';
@@ -1771,6 +1814,44 @@ async function initSettings() {
       ? 'A project of your own: the quota of 10 000 units a day, about six uploads, is yours alone.'
       : "replaycut's own client - nothing to create. Its quota is shared by everyone who uses it, so it is meant for the occasional clip; take your own for more.";
   }
+  // Integrations (since 3.3): the cards start closed, and the quick-share
+  // target is chosen once at the top. The per-card checkbox stays bound and
+  // stays the thing that is saved; the select only drives it.
+  const intCards = () => [...document.querySelectorAll('#tabIntegrations .card')];
+  const intOf = card => {
+    const on = card.querySelector('[data-f$=".enabled"]');
+    const quick = card.querySelector('[data-f$=".quickShare"]');
+    const auto = card.querySelector('[data-f$=".autoPost"]');
+    return { card, on, quick, auto, label: card.querySelector('.card-head h2').textContent };
+  };
+  function intSync() {
+    const all = intCards().map(intOf);
+    all.forEach(i => i.card.classList.toggle('is-off', !(i.on && i.on.checked)));
+    const storages = all.filter(i => i.quick), target = storages.find(i => i.quick.checked && i.on.checked);
+    const sel = $('sQuickTarget');
+    const want = target ? target.label : '';
+    sel.innerHTML = '<option value="">a file in the shared folder - no upload</option>'
+      + storages.filter(i => i.on.checked).map(i => `<option${i === target ? ' selected' : ''}>${esc(i.label)}</option>`).join('');
+    sel.value = want;
+    const posts = all.filter(i => i.auto && i.auto.checked && i.on.checked).map(i => i.label);
+    const where = target ? `uploads to <b>${esc(target.label)}</b>` : 'keeps the file in the shared folder';
+    $('sIntSummary').innerHTML = `<b>Share</b> ${where}`
+      + (posts.length ? ` and posts the link to <b>${posts.map(esc).join('</b>, <b>')}</b>.` : ', and posts it nowhere.');
+  }
+  $('sQuickTarget').onchange = () => {
+    const want = $('sQuickTarget').value;
+    intCards().map(intOf).filter(i => i.quick).forEach(i => { i.quick.checked = i.label === want; });
+    intSync(); dirty();
+  };
+  document.querySelectorAll('#tabIntegrations .card-toggle').forEach(b => {
+    b.onclick = () => {
+      const card = b.closest('.card'), open = card.classList.toggle('is-open');
+      b.setAttribute('aria-expanded', String(open));
+      b.title = (open ? 'Hide the settings of ' : 'Show the settings of ') + card.querySelector('.card-head h2').textContent;
+    };
+  });
+  document.querySelectorAll('#tabIntegrations [data-f$=".enabled"], #tabIntegrations [data-f$=".autoPost"]').forEach(el => el.addEventListener('change', intSync));
+
   function changes() {
     const c = {};
     fields.forEach(el => { if (el.dataset.mirror) return; const v = readField(el), o = getPath(orig, el.dataset.f); if (String(v) !== String(o == null ? '' : o)) setPath(c, el.dataset.f, v); });

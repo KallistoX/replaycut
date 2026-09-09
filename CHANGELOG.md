@@ -25,6 +25,21 @@ contract.
   Changing the client, or the client type, disconnects the channel: a
   refresh token belongs to the client that issued it.
 
+### Changed
+
+- **Settings › Integrations is a page again, not a scroll.** Eight
+  integrations with every field of every one of them open at once made the
+  page a screen and a half on a laptop and endless on a phone. The cards now
+  start closed: a head with the service's own mark, the badge with its live
+  state and the switch, and one click opens the fields it always had. An
+  integration that is off says in one line what it would do instead of
+  showing an empty form. Above them, one sentence says what the Share button
+  actually does right now - and the quick-share target is chosen there, once,
+  instead of hunting for the right switch among eight cards. Nextcloud,
+  OneDrive, YouTube, Discord and Telegram carry their own marks; S3, WebDAV
+  and the webhook keep drawn icons, because those are a protocol or a family
+  of providers rather than one product.
+
 ### Fixed
 
 - **YouTube errors say what is wrong.** Google answers a failed upload with

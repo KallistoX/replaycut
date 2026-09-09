@@ -13,7 +13,7 @@ grows; nothing is generated at build time.
 | `mockups/*.html` | One mockup per page with a state switcher (bottom left) and a theme switcher. Widths come from the window: 1000 px and up is two columns on the clips page, 700 px is "the window beside the game", 375 px is a phone. |
 | `mockups/mock.js`, `mock.css` | The switchers. Not part of the UI, except the three `matchMedia` lines that open the clip list on wide screens. |
 | `mockups/nav-a.html`, `nav-b.html`, `nav-c.html` | The three proposals the navigation of 3.2 was decided from: a tab bar at the bottom on a phone (A), one bar with a "..." menu at every width (B), four pages with Diagnostics as a Settings tab (C). Every proposal shows a desktop view and a phone view on one sheet. `nav-b-active.html` puts the ways to mark the page you are on next to each other, for the same decision. B with the accent-only mark is what the bar does now; A and C are kept as the record. |
-| `mockups/integrations-a.html`, `-b.html`, `-c.html` | The three proposals for Settings › Integrations of 3.3, after the page had grown to eight cards: a list with a detail pane beside it (A), the same cards but collapsed (B), and only what is configured plus a guided "Add integration" dialog (C). Each sheet shows the desktop view and the phone view, built from the same frames as the navigation proposals. |
+| `mockups/integrations-a.html`, `-b.html`, `-c.html` | The three proposals for Settings › Integrations of 3.3, after the page had grown to eight cards: a list with a detail pane beside it (A), the same cards but collapsed (B), and only what is configured plus a guided "Add integration" dialog (C). Each sheet shows the desktop view and the phone view, built from the same frames as the navigation proposals. **B is what the page does now**, with the quick-share chooser taken from A; A and C are kept as the record. |
 | `mockups/nav-frames.css`, `nav-frames.js` | The frames those sheets are built from. A frame is a container query box, so a proposal is written as `@container` where `index.html` would say `@media`, and a phone view keeps its phone layout on a wide screen. |
 | `icons/` | SVG sources of the app icon and the two tray states, `mkico`, the tool that renders them to `.ico`, and `social.svg`, the 1280x640 social preview for the GitHub repository (rendered to `social.png`). |
 
@@ -114,8 +114,22 @@ Inline in the HTML head, no extra file:
 ### UI icons
 
 An inline SVG sprite at the top of the body (`components.html` has the
-reference copy): 20 px grid, stroke 1.75, `currentColor`, 25 symbols. No
+reference copy): 20 px grid, stroke 1.75, `currentColor`, 33 symbols. No
 icon font, no external file.
+
+Eight of them are the exception, added in 3.3 so an integration is
+recognised before its name is read. The five `i-b-*` symbols are the marks
+of the services themselves - Nextcloud, OneDrive, YouTube, Discord,
+Telegram - taken from [Simple Icons](https://simpleicons.org/) (the icon
+files are CC0; the marks belong to their owners and are used only to name
+the service they identify). They are filled shapes on a 24 grid, so they
+carry `.icon icon-brand`, which swaps the stroke for a fill; `currentColor`
+still applies, so they take the accent like every other icon and work in
+all twelve themes. S3, WebDAV and the generic webhook get drawn icons in
+the usual style instead (`i-bucket`, `i-server`, `i-webhook`): those
+integrations are a protocol or a family of providers, and an AWS logo on a
+card that also serves Cloudflare R2, Backblaze B2 and MinIO would be
+wrong.
 
 ## Toasts
 
