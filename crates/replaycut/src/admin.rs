@@ -302,10 +302,16 @@ pub async fn put_settings(
     if yt_before.client != yt_after.client || yt_before.client_type != yt_after.client_type {
         youtube_client_changed = true;
     }
-    // a new Google client invalidates the channel connected with the old one
+    // a new Google client invalidates the channel connected with the old one.
+    // Best effort: a settings change must not fail because the credential
+    // store is out of reach - the connection is stale either way.
     if youtube_client_changed {
-        if credentials::delete(credentials::YOUTUBE).map_err(ApiError::internal)? {
-            tracing::info!("YouTube: the channel was disconnected because the client changed");
+        match credentials::delete(credentials::YOUTUBE) {
+            Ok(true) => {
+                tracing::info!("YouTube: the channel was disconnected because the client changed")
+            }
+            Ok(false) => {}
+            Err(e) => tracing::warn!("YouTube: cannot remove the channel token: {e:#}"),
         }
         app.oauth.lock().remove("youtube");
     }
