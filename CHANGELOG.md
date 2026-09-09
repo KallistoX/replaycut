@@ -10,6 +10,20 @@ contract.
 
 ## [Unreleased]
 
+### Changed
+
+- **A release is offered once it can be installed, not before.** Publishing
+  and signing are two separate steps, and between them the release exists on
+  GitHub without its `SHA256SUMS.minisig`. Until now the banner appeared the
+  moment the release was published, and clicking it answered "the release is
+  not signed yet - try again later"; the same answer then stuck around,
+  because the check that found it only runs once a day. Such a release is no
+  longer announced at all, and while one is waiting for its missing piece
+  replaycut looks again every 15 minutes instead of every 24 hours, so the
+  update turns up shortly after it is signed rather than the next day. The
+  refusal on install stays as a second line of defence, for a release that
+  loses a piece between the check and the click.
+
 ## [3.4.2] - 2026-09-09
 
 3.4.1 made the HTTPS switch saveable; this one makes it usable. Restarting

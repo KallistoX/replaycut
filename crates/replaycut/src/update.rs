@@ -20,6 +20,11 @@ use crate::state::{AppState, VERSION};
 const RELEASES_URL: &str = "https://api.github.com/repos/KallistoX/replaycut/releases/latest";
 const FIRST_CHECK: Duration = Duration::from_secs(60);
 const INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+/// While a newer release exists but is not installable yet - published and
+/// not signed, which is the ordinary state for the first minutes of a
+/// release - look again this often instead of waiting out [`INTERVAL`].
+/// Without it, an update would stay invisible for a day after being signed.
+const UNFINISHED_INTERVAL: Duration = Duration::from_secs(15 * 60);
 const TIMEOUT: Duration = Duration::from_secs(10);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 const NOTES_LIMIT: usize = 16 * 1024;
@@ -83,7 +88,7 @@ fn public_keys() -> Vec<String> {
 }
 
 /// A release that is newer than the running build.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
     pub version: String,
@@ -102,6 +107,27 @@ pub struct UpdateInfo {
     pub sums_url: String,
     #[serde(skip)]
     pub minisig_url: String,
+}
+
+impl UpdateInfo {
+    /// Which piece a release is still missing, if any. Publishing and
+    /// signing are two steps: between them the release exists but cannot be
+    /// installed, and a release that is never signed is never installed.
+    pub fn missing_piece(&self) -> Option<&'static str> {
+        if !self.packaged {
+            Some("no package for this platform yet")
+        } else if self.minisig_url.is_empty() {
+            Some("not signed yet (no SHA256SUMS.minisig)")
+        } else if self.sums_url.is_empty() {
+            Some("no SHA256SUMS")
+        } else {
+            None
+        }
+    }
+
+    pub fn installable(&self) -> bool {
+        self.missing_piece().is_none()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
@@ -132,6 +158,11 @@ pub struct UpdateStatus {
     /// The unpacked package, once verified.
     #[serde(skip)]
     pub ready_dir: Option<PathBuf>,
+    /// A newer release exists but cannot be installed yet (published and not
+    /// signed, usually). It is not offered, and the next check comes sooner
+    /// than the daily one - see [`UNFINISHED_INTERVAL`].
+    #[serde(skip)]
+    pub unfinished: bool,
     /// True on the first start after a one-click update, until the UI saw it.
     pub just_updated: bool,
     /// The release notes and page of the version just installed.
@@ -257,7 +288,25 @@ pub async fn check(state: &AppState) -> Result<Option<UpdateInfo>> {
         let mut u = state.update.lock();
         u.checked_at = Some(crate::util::now_local());
         match result {
+            // A release is announced only once it can actually be installed.
+            // Publishing and signing are two steps, and between them the
+            // assets are incomplete: offering the update there means a
+            // banner that leads to "not signed yet" when it is clicked.
+            Ok(info) if is_newer(&info.version, VERSION) && !info.installable() => {
+                tracing::info!(
+                    "replaycut {} is published but not ready to install yet ({}) - looking again in {} min",
+                    info.version,
+                    info.missing_piece().unwrap_or("incomplete"),
+                    UNFINISHED_INTERVAL.as_secs() / 60
+                );
+                u.phase = Phase::Idle;
+                u.latest = None;
+                u.error = None;
+                u.unfinished = true;
+                Ok(None)
+            }
             Ok(info) if is_newer(&info.version, VERSION) => {
+                u.unfinished = false;
                 let same_ready = u.phase == Phase::Ready
                     && u.latest.as_ref().map(|l| &l.version) == Some(&info.version);
                 if !same_ready {
@@ -280,6 +329,7 @@ pub async fn check(state: &AppState) -> Result<Option<UpdateInfo>> {
                 u.phase = Phase::Idle;
                 u.latest = None;
                 u.error = None;
+                u.unfinished = false;
                 Ok(None)
             }
             Err(e) => {
@@ -304,7 +354,14 @@ pub async fn run(state: Arc<AppState>) {
     tokio::time::sleep(FIRST_CHECK).await;
     loop {
         let _ = check(&state).await;
-        tokio::time::sleep(INTERVAL).await;
+        // A release that is waiting for its signature is worth coming back
+        // to soon; anything else can wait a day.
+        let wait = if state.update.lock().unfinished {
+            UNFINISHED_INTERVAL
+        } else {
+            INTERVAL
+        };
+        tokio::time::sleep(wait).await;
     }
 }
 
@@ -471,21 +528,14 @@ pub async fn download(state: Arc<AppState>, verify_exe: bool) -> Result<()> {
         let Some(info) = u.latest.clone() else {
             bail!("no update is available");
         };
-        // A release published but not yet signed is the common case here;
-        // the status must say so, or the UI waits for a download that never
-        // started.
-        let missing = if !info.packaged {
-            Some("this release has no package for this platform yet - see the release page")
-        } else if info.minisig_url.is_empty() {
-            Some("the release is not signed yet (no SHA256SUMS.minisig) - try again later")
-        } else if info.sums_url.is_empty() {
-            Some("the release is missing SHA256SUMS")
-        } else {
-            None
-        };
-        if let Some(msg) = missing {
+        // Since 3.4.3 such a release is not offered in the first place, so
+        // this only catches one that lost a piece between the check and the
+        // click. The status must still say so, or the UI waits for a
+        // download that never started.
+        if let Some(missing) = info.missing_piece() {
+            let msg = format!("this release cannot be installed: {missing}");
             u.phase = Phase::Error;
-            u.error = Some(msg.to_string());
+            u.error = Some(msg.clone());
             bail!("{msg}");
         }
         u.phase = Phase::Downloading;
@@ -738,6 +788,52 @@ pub fn cleanup_after_start(data_dir: &Path) -> Option<JustUpdated> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn release(packaged: bool, sums: &str, minisig: &str) -> UpdateInfo {
+        UpdateInfo {
+            version: "9.9.9".into(),
+            packaged,
+            sums_url: sums.into(),
+            minisig_url: minisig.into(),
+            ..UpdateInfo::default()
+        }
+    }
+
+    #[test]
+    fn a_release_counts_only_once_every_piece_is_there() {
+        let ready = release(
+            true,
+            "https://example.com/SHA256SUMS",
+            "https://example.com/sig",
+        );
+        assert!(ready.installable());
+        assert_eq!(ready.missing_piece(), None);
+
+        // Publishing and signing are two steps; in between the release is
+        // real but must not be offered - clicking it would only say "not
+        // signed yet".
+        let unsigned = release(true, "https://example.com/SHA256SUMS", "");
+        assert!(!unsigned.installable());
+        assert!(unsigned
+            .missing_piece()
+            .is_some_and(|m| m.contains("signed")));
+
+        let no_package = release(
+            false,
+            "https://example.com/SHA256SUMS",
+            "https://example.com/sig",
+        );
+        assert!(!no_package.installable());
+        assert!(no_package
+            .missing_piece()
+            .is_some_and(|m| m.contains("platform")));
+
+        let no_sums = release(true, "", "https://example.com/sig");
+        assert!(!no_sums.installable());
+        assert!(no_sums
+            .missing_piece()
+            .is_some_and(|m| m.contains("SHA256SUMS")));
+    }
 
     #[test]
     fn versions_parse() {
