@@ -80,12 +80,9 @@ fn copy_package(source_dir: &Path, app: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn wait_for_service(port: u16) -> bool {
-    let url = format!("http://localhost:{port}/api/clips");
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build();
-    let Ok(client) = client else { return false };
+async fn wait_for_service(settings: &Settings, data_dir: &Path) -> bool {
+    let url = format!("{}/api/clips", crate::tls::local_base(settings));
+    let client = crate::tls::local_client(data_dir, settings, Duration::from_secs(2));
     for _ in 0..16 {
         tokio::time::sleep(Duration::from_millis(500)).await;
         if client
@@ -181,8 +178,8 @@ pub fn install(
     } else {
         platform::spawn_detached(&app_exe, &["--no-browser"])?;
     }
-    let up = runtime.block_on(wait_for_service(settings.port));
-    let ui_url = format!("http://localhost:{}/", settings.port);
+    let up = runtime.block_on(wait_for_service(settings, data_dir));
+    let ui_url = format!("{}/", crate::tls::local_base(settings));
     // A fresh installation lands in the browser setup; an updated one on the clips.
     let open_url = if settings.setup_done {
         ui_url.clone()

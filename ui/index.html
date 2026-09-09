@@ -882,6 +882,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         </div>
       </div>
     </div>
+    <p class="muted sm">Connections are not encrypted. In a home network that is usually fine; if you would rather they were, turn on HTTPS later in <a href="/settings#access">Settings › Access</a>.</p>
     <div class="wizard-foot">
       <button class="btn btn-ghost left" id="wBack3">Back</button>
       <button class="btn btn-primary" id="wFinish">Finish setup</button>
@@ -944,6 +945,16 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <div class="row" id="sPwGenRow"><button class="btn" type="button" id="sPwGen">Generate one for me</button><span class="muted sm" id="sPwGenHint" hidden>Write it down now - it is shown only here.</span></div>
       <label class="switch"><input type="checkbox" data-f="requireLoginOnLoopback"><span class="track"></span> Ask for the password on this PC as well <span class="muted sm">(for a Windows account other people use)</span></label>
       <div class="row"><button class="btn" id="sAddr"><svg class="icon"><use href="#i-qr"/></svg> Show address and QR code</button><span class="muted sm" id="sAddrText"></span></div>
+    </div>
+    <div class="group">
+      <h2>Encrypted connection (HTTPS)</h2>
+      <p class="muted sm">Off by default. With it on, the password and the session cookie no longer cross the network in the clear, and the browser hands the page its clipboard without a fallback.</p>
+      <label class="switch"><input type="checkbox" data-f="https.enabled"><span class="track"></span> Speak HTTPS on this port <span class="muted sm">(needs a restart, like the port)</span></label>
+      <p class="muted sm" id="sTlsWarn">replaycut makes its own certificate, and no browser knows it yet: expect one warning per browser until you import the file below. A certificate of your own - from Tailscale, a reverse proxy or a real domain - avoids that; put its two PEM files in <code>https.cert</code> and <code>https.key</code>.</p>
+      <div class="stack-2" id="sTlsInfo" hidden>
+        <div class="field"><label>Certificate authority</label><div class="input-group"><input class="input" id="sTlsCa" readonly><button class="btn btn-icon" type="button" id="sTlsShow" title="Show in folder"><svg class="icon"><use href="#i-folder"/></svg></button></div><span class="hint">Import this file into a browser to be trusted on this PC.</span></div>
+        <div class="field"><label>Fingerprint (SHA-256)</label><input class="input" id="sTlsFp" readonly><span class="hint" id="sTlsExp"></span></div>
+      </div>
     </div>
     <div class="group">
       <h2>Signed-in devices</h2>
@@ -1809,9 +1820,27 @@ async function initSettings() {
     $('sDcHookHint').textContent = s.secrets && s.secrets.discord ? 'A webhook is stored; paste a new one to replace it.' : 'No webhook stored yet. Discord: Server settings › Integrations › Webhooks › Copy Webhook URL.';
     $('sNcBadge').textContent = s.integrations.nextcloud.enabled ? (s.secrets.nextcloud ? 'on' : 'on, no credentials') : 'off'; $('sNcBadge').className = 'badge' + (s.integrations.nextcloud.enabled && !s.secrets.nextcloud ? ' warn' : '');
     $('sDcBadge').textContent = s.integrations.discord.enabled ? (s.secrets.discord ? 'on' : 'on, no webhook') : 'off'; $('sDcBadge').className = 'badge' + (s.integrations.discord.enabled && !s.secrets.discord ? ' warn' : '');
+    tlsUi(s.tls || {});
     restartPending = s.restartNeeded || []; showRestart();
     dirty();
   }
+  // The HTTPS card (since 3.4). The file and the fingerprint only exist once
+  // TLS actually runs with a certificate we made: an own PEM pair is trusted
+  // already and has nothing to import.
+  function tlsUi(t) {
+    const ours = !!t.active && !t.own;
+    $('sTlsInfo').hidden = !ours;
+    if (ours) {
+      $('sTlsCa').value = t.caFile || '';
+      $('sTlsFp').value = t.fingerprint || '';
+      $('sTlsExp').textContent = t.expires ? `The certificate is valid until ${t.expires}; replaycut renews it in time on its own.` : '';
+    }
+    $('sTlsWarn').hidden = !!t.active && !!t.own;
+  }
+  $('sTlsShow').onclick = async () => {
+    try { const r = await api('/api/tls/show', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast('Folder opened on the PC', 'ok') : toast(r.error, 'err'); }
+    catch (e) { toast(e.message, 'err'); }
+  };
   // the YouTube client is either the one this build carries or one of your
   // own; only the second needs the two fields (since 3.3)
   const ytOwn = () => document.querySelector('[data-f="integrations.youtube.client"]').value === 'own';

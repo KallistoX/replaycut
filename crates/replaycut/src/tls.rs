@@ -423,6 +423,37 @@ fn protect(path: &Path) {
 }
 
 // ---------------------------------------------------------------------------
+// Talking to our own service from the command line
+
+/// Where `replaycut install` and `replaycut test` reach the running service.
+pub fn local_base(settings: &Settings) -> String {
+    let scheme = if settings.https.enabled {
+        "https"
+    } else {
+        "http"
+    };
+    format!("{scheme}://localhost:{}", settings.port)
+}
+
+/// A client for that address. With our own certificate authority nothing on
+/// this machine knows it yet, so the client is told about it here - the same
+/// way the test suite is told through `TLS_CA`. An own PEM pair needs no help.
+pub fn local_client(data_dir: &Path, settings: &Settings, timeout: Duration) -> reqwest::Client {
+    let mut builder = reqwest::Client::builder().timeout(timeout);
+    if settings.https.enabled && settings.https.own_pair().is_none() {
+        let ca = data_dir.join("tls").join("ca.crt");
+        match std::fs::read(&ca)
+            .map_err(|e| e.to_string())
+            .and_then(|pem| reqwest::Certificate::from_pem(&pem).map_err(|e| e.to_string()))
+        {
+            Ok(cert) => builder = builder.add_root_certificate(cert),
+            Err(e) => tracing::debug!("cannot read {} for the local client: {e}", ca.display()),
+        }
+    }
+    builder.build().unwrap_or_else(|_| reqwest::Client::new())
+}
+
+// ---------------------------------------------------------------------------
 // The listener
 
 /// A listener that hands axum finished TLS connections.

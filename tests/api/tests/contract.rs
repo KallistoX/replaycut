@@ -696,9 +696,14 @@ fn t19_addresses_carry_a_qr_code() {
     assert!(a["port"].is_number());
     let urls = a["urls"].as_array().cloned().unwrap_or_default();
     assert!(!urls.is_empty(), "{a}");
-    assert!(urls
-        .iter()
-        .all(|u| u.as_str().is_some_and(|s| s.starts_with("http://"))));
+    // The addresses carry the scheme the service speaks. Before 3.4 there is
+    // no `scheme` field and no TLS, so `http` is the answer for those too.
+    let scheme = format!("{}://", a["scheme"].as_str().unwrap_or("http"));
+    assert!(
+        urls.iter()
+            .all(|u| u.as_str().is_some_and(|s| s.starts_with(&scheme))),
+        "{a}"
+    );
     // since 2.3 a loopback-only service sends no code (it would lead a phone
     // to itself) and says so with `local`
     if a["local"] == true {
@@ -3015,4 +3020,95 @@ fn t56_youtube_connects_with_the_built_in_client_or_your_own() {
         &json!({ "integrations": { "youtube": { "client": before["client"] } } }),
     );
     assert_eq!(status, 200, "{v}");
+}
+
+// ---------------------------------------------------------------------------
+// Since 3.4
+
+fn since_34() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (3, 4)
+}
+
+/// Whether the service under test is actually speaking TLS. The suite runs
+/// against both, so every case here has to say which one it is looking at
+/// rather than assume the one it was written for.
+fn on_https() -> bool {
+    env().base_url.starts_with("https://")
+}
+
+/// The addresses carry the scheme the service speaks, and with a certificate
+/// authority of our own they carry its fingerprint too - the value a client
+/// pins so that a re-issued certificate does not cost it its trust.
+#[test]
+fn t57_the_addresses_say_which_scheme_and_what_to_pin() {
+    let _g = serial();
+    if !since_34() {
+        return;
+    }
+    let (status, a) = get_json("/api/addresses");
+    assert_eq!(status, 200, "{a}");
+    let scheme = a["scheme"].as_str().unwrap_or_default();
+    let https = on_https();
+    assert_eq!(scheme, if https { "https" } else { "http" }, "{a}");
+    for url in a["urls"].as_array().expect("urls is a list") {
+        let url = url.as_str().unwrap_or_default();
+        assert!(
+            url.starts_with(&format!("{scheme}://")),
+            "every address uses the scheme the service speaks: {url}"
+        );
+    }
+    assert_eq!(state()["config"]["https"], json!(https), "config.https");
+
+    let fp = a["fingerprint"].as_str().unwrap_or_default();
+    if !https {
+        assert!(fp.is_empty(), "nothing to pin without TLS: {a}");
+        return;
+    }
+    // An own PEM pair is trusted the ordinary way and has no fingerprint; a
+    // certificate authority of ours has one, and it belongs in the QR code.
+    let (_, s) = get_json("/api/settings");
+    if s["tls"]["own"].as_bool().unwrap_or(false) {
+        assert!(fp.is_empty(), "an own certificate needs no pinning: {a}");
+        return;
+    }
+    assert_eq!(fp.len(), 43, "SHA-256 as base64url without padding: {fp}");
+    assert!(
+        fp.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'),
+        "base64url only: {fp}"
+    );
+    assert_eq!(s["tls"]["fingerprint"], json!(fp), "the settings agree");
+}
+
+/// A plaintext request to the TLS port is answered, not dropped: an old
+/// bookmark or a link from a session that predates the switch has to say
+/// what to do instead of "connection reset".
+#[test]
+fn t58_plaintext_on_the_tls_port_is_answered() {
+    let _g = serial();
+    if !since_34() || !on_https() {
+        return;
+    }
+    let plain = env().base_url.replacen("https://", "http://", 1);
+    // A fresh client: the shared one knows the CA, which is beside the point
+    // here - this request never gets as far as a handshake.
+    let resp = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .unwrap()
+        .get(format!("{plain}/api/clips"))
+        .send()
+        .expect("the TLS port has to answer plaintext, not drop it");
+    assert_eq!(resp.status().as_u16(), 400);
+    let body = resp.text().unwrap_or_default();
+    assert!(
+        body.contains("https://"),
+        "the page has to name the address that works: {body}"
+    );
 }

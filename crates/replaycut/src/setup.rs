@@ -147,19 +147,15 @@ pub async fn run(settings_path: &Path, settings: &mut Settings) -> Result<()> {
 
 /// `replaycut test`: the diagnostics of the running service as text, or -
 /// when no service runs - the integration checks alone.
-pub async fn test(settings: &Settings) -> Result<()> {
-    let url = format!("http://localhost:{}/api/diagnostics", settings.port);
-    if let Ok(client) = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-    {
-        if let Ok(res) = client.get(&url).send().await {
-            if res.status().is_success() {
-                let body: serde_json::Value = res.json().await.unwrap_or_default();
-                if let Some(text) = body["text"].as_str() {
-                    print!("{text}");
-                    return Ok(());
-                }
+pub async fn test(settings: &Settings, data_dir: &Path) -> Result<()> {
+    let url = format!("{}/api/diagnostics", crate::tls::local_base(settings));
+    let client = crate::tls::local_client(data_dir, settings, std::time::Duration::from_secs(20));
+    if let Ok(res) = client.get(&url).send().await {
+        if res.status().is_success() {
+            let body: serde_json::Value = res.json().await.unwrap_or_default();
+            if let Some(text) = body["text"].as_str() {
+                print!("{text}");
+                return Ok(());
             }
         }
     }

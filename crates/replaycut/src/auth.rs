@@ -460,15 +460,22 @@ pub fn cookie_token(headers: &HeaderMap) -> Option<String> {
     })
 }
 
-pub fn set_cookie_value(token: &str) -> String {
+/// `secure` is added once TLS is running (since 3.4) and never before: a
+/// `Secure` cookie handed out over plain HTTP is thrown away by the browser,
+/// which would lock everyone out of an installation without HTTPS.
+pub fn set_cookie_value(token: &str, secure: bool) -> String {
     format!(
-        "{COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}",
+        "{COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Strict{}; Max-Age={}",
+        if secure { "; Secure" } else { "" },
         SESSION_DAYS * 86_400
     )
 }
 
-pub fn clear_cookie_value() -> String {
-    format!("{COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0")
+pub fn clear_cookie_value(secure: bool) -> String {
+    format!(
+        "{COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict{}; Max-Age=0",
+        if secure { "; Secure" } else { "" }
+    )
 }
 
 /// The host part of an Origin header (`http://host:port` -> `host:port`).
@@ -691,6 +698,22 @@ mod tests {
         assert!(is_loopback(&"[::1]:1".parse().unwrap()));
         assert!(is_loopback(&"[::ffff:127.0.0.1]:1".parse().unwrap()));
         assert!(!is_loopback(&"192.0.2.20:1".parse().unwrap()));
+    }
+
+    #[test]
+    fn the_cookie_is_secure_only_when_tls_is_running() {
+        // A `Secure` cookie over plain HTTP is dropped by the browser, which
+        // would lock everyone out of an installation without HTTPS.
+        let plain = set_cookie_value("t", false);
+        assert!(!plain.contains("Secure"), "{plain}");
+        assert!(plain.contains("HttpOnly") && plain.contains("SameSite=Strict"));
+        let secure = set_cookie_value("t", true);
+        assert!(secure.contains("; Secure"), "{secure}");
+        assert!(secure.contains("HttpOnly") && secure.contains("SameSite=Strict"));
+        // The cookie that clears the session has to match the one that set
+        // it, or the browser keeps the old one alongside.
+        assert!(!clear_cookie_value(false).contains("Secure"));
+        assert!(clear_cookie_value(true).contains("; Secure"));
     }
 
     #[test]

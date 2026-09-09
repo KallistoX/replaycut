@@ -30,6 +30,15 @@ contract.
   cannot be read leaves the service running on plain HTTP with the reason in
   the log: on a gaming PC without a console, unreachable is worse than
   unencrypted.
+
+  Settings › Access has the switch and, once it runs, the path of the
+  certificate to import and its fingerprint to compare. Every address the
+  service hands out follows the switch - the toasts, the tray, the QR code -
+  and the session cookie gains `Secure` while TLS runs, and only then. The
+  QR code carries the fingerprint as a fragment, which browsers never send
+  and logs never see, so a client can pin the authority before its first
+  request. The OAuth login keeps its plain-HTTP callback on a port of its
+  own, because Google's rules for a loopback redirect say `http`.
 - **The UI is found next to a system-wide executable.** A distribution
   package puts the executable into `/usr/bin` and the UI into
   `/usr/share/replaycut/ui/index.html`; a relative `uiFile` is now also

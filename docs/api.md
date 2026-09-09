@@ -1375,6 +1375,60 @@ a package (AUR, deb, rpm), and the package manager updates it.
   unit the package installed instead of writing a second one, and
   `autostart status` names the unit that is enabled.
 
+### HTTPS on the port
+
+Off by default; nothing below changes for a service that stays on HTTP.
+
+`https` in the settings is `{ enabled: false, cert: "", key: "" }`.
+`enabled` takes effect after a restart, so it appears in `restartNeeded`
+beside `port`, `bind` and `uiFile`. `cert` and `key` are the paths of an own
+PEM pair and belong together: a `PUT /api/settings` that sets one and leaves
+the other empty is a `400`.
+
+With both empty the service is its own certificate authority in
+`<data-dir>/tls`:
+
+- `ca.crt` and `ca.key` are made once and never replaced. That authority is
+  the identity of this service - a device that trusts it keeps trusting it.
+- `server.crt` and `server.key` are signed by it and carry `localhost`, this
+  machine's name (also with `.local`), every name in `allowedHosts`,
+  `127.0.0.1`, `::1` and this machine's IPv4 address. The certificate is
+  issued again when that list changes or less than 30 days are left; the
+  authority stays as it is.
+
+A certificate that cannot be read - a wrong path, a broken file - does not
+stop the service: it starts on plain HTTP, says why in the log and reports
+it in the diagnostics.
+
+**One port.** With HTTPS on, the port speaks TLS. A plaintext request to it
+is answered with `400` and an HTML page naming the `https://` address, not
+dropped, so an old bookmark says what to do. HTTP/2 is not offered (ALPN
+advertises `http/1.1` only), and no HSTS header is sent: with a certificate
+of one's own, HSTS would lock out anyone who turns HTTPS off again.
+
+Changes elsewhere:
+
+| Where | What |
+| --- | --- |
+| `GET /api/clips` | `config.https`: whether the page runs in a secure context. |
+| `GET /api/addresses` | `scheme` (`http` or `https`) - the `urls` and the QR code carry it - and `fingerprint`: SHA-256 of the CA certificate (DER) as base64url without padding, 43 characters. Empty without HTTPS and empty with an own PEM pair, which needs no pinning. |
+| The QR code | `#fp=<fingerprint>` is appended when there is one. As a fragment: a browser never sends it, so it stays out of every log, while a client reads the code itself and can pin the authority before the first request. The `urls` never carry it, and the `?pair=` token of 2.8 is unchanged. |
+| `rc_session` | gains `Secure` while TLS runs, and only then: a `Secure` cookie sent over plain HTTP is discarded by the browser. |
+| `GET /api/settings` | `tls: { active, own, caFile, fingerprint, expires }` for the HTTPS card. `caFile` is the file to import by hand and `expires` the date the served certificate runs out (`YYYY-MM-DD`, null when unknown); both are empty for an own PEM pair. |
+| `POST /api/tls/show` | `200 { ok: true }`: opens the certificate folder with `ca.crt` selected. `409` when HTTPS is off or the certificate is the user's own. |
+| The sign-in toast | opens `https://localhost:<port>/approve/<id>` - the name, not `127.0.0.1`, because the certificate carries it. |
+
+The host check, the origin check, the device login and QR pairing are
+unchanged. The origin check compares host and port and ignores the scheme,
+as it always has, so a page served over HTTPS may send an `http` origin.
+
+`replaycut install` and `replaycut test` talk to the service over the same
+scheme and, with an authority of ours, trust `<data-dir>/tls/ca.crt`. The
+contract suite does the same through the `TLS_CA` environment variable.
+
+Not part of this: ACME/Let's Encrypt, mTLS, and any page or installer step
+that imports the authority into a certificate store for the user.
+
 ## Behaviour
 
 ### Folder scan

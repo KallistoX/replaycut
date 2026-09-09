@@ -105,6 +105,16 @@ fn settings_document(app: &AppState) -> Value {
     doc["autostart"] = json!(autostart_enabled());
     doc["themes"] = json!(theme_names(app));
     doc["restartNeeded"] = json!(*app.pending_restart.lock());
+    // since 3.4: what the HTTPS card shows about the certificate in use.
+    // `caFile` is the file to import into a browser by hand, `fingerprint`
+    // the value to compare it against; both are empty with an own PEM pair.
+    doc["tls"] = json!({
+        "active": app.tls.active,
+        "own": app.tls.own,
+        "caFile": app.tls.ca_file.as_ref().map(|p| p.display().to_string()).unwrap_or_default(),
+        "fingerprint": app.tls.fingerprint,
+        "expires": app.tls.not_after.map(|t| t.format("%Y-%m-%d").to_string()),
+    });
     doc["version"] = json!(VERSION);
     doc["overrides"] = json!({
         "clipDir": app.overrides.clip_dir.is_some(),
@@ -472,24 +482,34 @@ pub async fn addresses(
 ) -> Json<Value> {
     let settings = app.settings();
     let port = settings.port;
+    let scheme = app.scheme();
     let mut urls = Vec::new();
     let local = settings.bind == "127.0.0.1" || settings.bind == "::1";
     if !local {
-        urls.push(format!("http://{}:{port}/", platform::lan_host()));
+        urls.push(format!("{scheme}://{}:{port}/", platform::lan_host()));
         if let Some(ip) = platform::primary_ipv4() {
-            urls.push(format!("http://{ip}:{port}/"));
+            urls.push(format!("{scheme}://{ip}:{port}/"));
         }
     }
-    urls.push(format!("http://localhost:{port}/"));
+    urls.push(format!("{scheme}://localhost:{port}/"));
     let signs_in = !local && auth::is_authenticated(&app, &addr, &headers);
     // A QR code for localhost would only lead a phone to itself.
     let qr_svg = if local {
         String::new()
     } else {
         let target = if signs_in {
-            format!("{}?pair={}", urls[0], app.pairing.qr_token())
+            // The fingerprint rides along as a fragment (since 3.4): a
+            // browser never sends it, so it stays out of every log, while a
+            // client of ours reads the code itself and can pin the authority
+            // before it trusts anything - the first contact included.
+            format!(
+                "{}?pair={}{}",
+                urls[0],
+                app.pairing.qr_token(),
+                fingerprint_fragment(&app)
+            )
         } else {
-            urls[0].clone()
+            format!("{}{}", urls[0], fingerprint_fragment(&app))
         };
         qrcode::QrCode::new(target.as_bytes())
             .map(|code| {
@@ -509,7 +529,20 @@ pub async fn addresses(
         "qrSvg": qr_svg,
         // since 2.8: whether scanning the code signs the phone in
         "qrSignsIn": signs_in,
+        // since 3.4
+        "scheme": scheme,
+        "fingerprint": app.tls.fingerprint,
     }))
+}
+
+/// `#fp=<fingerprint>` for the QR code, empty when there is nothing to pin:
+/// without HTTPS, and with an own PEM pair, where the certificate is trusted
+/// by everyone anyway and a client validates it the ordinary way.
+fn fingerprint_fragment(app: &AppState) -> String {
+    match app.tls.fingerprint.as_str() {
+        "" => String::new(),
+        fp => format!("#fp={fp}"),
+    }
 }
 
 /// `GET /themes/<name>.css`: the file in `<data-dir>/themes/` if there is
@@ -595,7 +628,10 @@ pub async fn pair_request(
     match app.pairing.ask(&name, agent, addr.ip()) {
         Ok((id, code, expires)) => {
             crate::pairing::watch(&app);
-            let url = format!("http://127.0.0.1:{}/approve/{id}", app.settings().port);
+            // `localhost`, not `127.0.0.1`: with HTTPS on, the certificate
+            // carries the name, and browsers are happier with a name than
+            // with an address SAN. Loopback either way.
+            let url = format!("{}approve/{id}", app.ui_url());
             crate::toast::show(
                 &app,
                 crate::toast::Toast::sign_in_request(&name, &addr.ip().to_string(), &code, &url),
@@ -630,7 +666,7 @@ pub async fn pair_poll(
     let (status, token) = app.pairing.poll(&id, addr.ip());
     let mut res = Json(json!({ "ok": true, "status": status })).into_response();
     if let Some(token) = token {
-        if let Ok(v) = auth::set_cookie_value(&token).parse() {
+        if let Ok(v) = auth::set_cookie_value(&token, app.tls.active).parse() {
             res.headers_mut().insert(SET_COOKIE, v);
         }
     }
@@ -885,7 +921,7 @@ pub async fn login(
     tracing::info!("login from {} ({})", addr.ip(), new.name);
     let token = app.sessions.create(new);
     let mut res = Json(json!({ "ok": true })).into_response();
-    if let Ok(v) = auth::set_cookie_value(&token).parse() {
+    if let Ok(v) = auth::set_cookie_value(&token, app.tls.active).parse() {
         res.headers_mut().insert(SET_COOKIE, v);
     }
     Ok(res)
@@ -897,7 +933,7 @@ pub async fn logout(State(app): State<App>, headers: HeaderMap) -> Response {
         app.sessions.remove(&token);
     }
     let mut res = Json(json!({ "ok": true })).into_response();
-    if let Ok(v) = auth::clear_cookie_value().parse() {
+    if let Ok(v) = auth::clear_cookie_value(app.tls.active).parse() {
         res.headers_mut().insert(SET_COOKIE, v);
     }
     res

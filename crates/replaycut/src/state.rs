@@ -969,6 +969,9 @@ impl AppState {
                 "displayName": settings.display_name,
                 // since 2.2
                 "obs": { "connected": obs.connected, "replayActive": obs.replay_active, "enabled": obs.enabled },
+                // since 3.4: whether the page runs in a secure context, so it
+                // can drop the clipboard fallback
+                "https": self.tls.active,
                 // since 2.3
                 "scanning": { "paused": self.scanning_paused() },
                 // since 2.4

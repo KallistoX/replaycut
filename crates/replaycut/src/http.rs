@@ -53,6 +53,7 @@ pub fn router(state: App) -> Router {
         .route("/api/history", get(history))
         .route("/api/jobs/{id}", get(job))
         .route("/api/jobs/{id}/open-folder", post(job_open_folder))
+        .route("/api/tls/show", post(tls_show))
         .route("/api/jobs/{id}/copy-file", post(job_copy_file))
         .route("/api/jobs/{id}/cancel", post(job_cancel))
         .route("/api/jobs/{id}/publish", post(job_publish))
@@ -217,7 +218,7 @@ async fn entry(
         .unwrap_or("");
     let session = auth::NewSession::from_agent(agent, addr.ip(), auth::Via::Qr);
     tracing::info!("QR sign-in from {} ({})", addr.ip(), session.name);
-    let cookie = auth::set_cookie_value(&app.sessions.create(session));
+    let cookie = auth::set_cookie_value(&app.sessions.create(session), app.tls.active);
     Ok(redirect("/", Some(&cookie)))
 }
 
@@ -421,6 +422,28 @@ async fn job_open_folder(
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     let path = shared_file_of(&app, &id)?;
+    if app.dry_run {
+        tracing::info!("dry run: would open the folder of {}", path.display());
+    } else {
+        tokio::task::spawn_blocking(move || platform::open_folder_select(&path))
+            .await
+            .map_err(ApiError::internal)?
+            .map_err(ApiError::internal)?;
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `POST /api/tls/show` (since 3.4): the certificate folder with `ca.crt`
+/// selected, so the file can be dragged into a browser's certificate store.
+/// Only for a certificate we made - an own PEM pair needs no importing, and
+/// its files are wherever the user put them.
+async fn tls_show(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    let path = app.tls.ca_file.clone().ok_or_else(|| {
+        ApiError::new(
+            StatusCode::CONFLICT,
+            "there is no certificate authority to show: HTTPS is off, or you brought your own certificate",
+        )
+    })?;
     if app.dry_run {
         tracing::info!("dry run: would open the folder of {}", path.display());
     } else {

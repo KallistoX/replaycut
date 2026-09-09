@@ -197,7 +197,7 @@ fn real_main(cli: Cli, console: bool) -> Result<()> {
 
     match cli.command {
         Some(Command::Setup) => runtime()?.block_on(setup::run(&settings_path, &mut settings)),
-        Some(Command::Test) => runtime()?.block_on(setup::test(&settings)),
+        Some(Command::Test) => runtime()?.block_on(setup::test(&settings, &data_dir)),
         Some(Command::Bench { seconds }) => runtime()?.block_on(bench(&settings, seconds)),
         Some(Command::Stop) => stop(settings.port),
         #[cfg(windows)]
