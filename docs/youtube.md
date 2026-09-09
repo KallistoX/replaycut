@@ -6,6 +6,12 @@ as a Short. Since 3.3 it brings its own Google client: switch the YouTube
 card on, click **Connect YouTube**, done. This page is for the one case
 where that is not enough.
 
+> **While Google is reviewing the built-in client**, connecting shows the
+> screen "Google hasn't verified this app" once. That is expected: open
+> *Advanced* and continue. Until the review is through, at most 100 Google
+> accounts can connect it at all. Both go away when the review ends; a
+> client of your own has neither.
+
 ## Why you might want your own
 
 YouTube's quota belongs to the **Google project behind the client**, not to

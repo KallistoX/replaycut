@@ -24,6 +24,11 @@ contract.
   is now the guide for that case and says plainly when it is worth it.
   Changing the client, or the client type, disconnects the channel: a
   refresh token belongs to the client that issued it.
+  Two things to know while Google reviews the client, which takes weeks:
+  connecting shows "Google hasn't verified this app" once - open *Advanced*
+  and continue - and at most 100 Google accounts can connect it until the
+  review is through. Both are gone once it is, and a client of your own has
+  neither.
 
 ### Changed
 
