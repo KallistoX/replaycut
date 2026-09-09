@@ -10,6 +10,20 @@ contract.
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-09-09
+
+This release is about the integrations: the one that was hardest to set up
+now needs no setup at all, the page that lists them got its length back,
+and the one that could never work is gone.
+
+YouTube used to ask every user for a Google project of their own before the
+card did anything. replaycut brings its own client now - switch on, connect,
+done - and the old way stays for anyone who outgrows the shared quota.
+Settings › Integrations shows eight closed cards instead of eight open
+forms, each with the mark of the service behind it, and one sentence at the
+top saying where a share actually goes. X leaves: its API has had no free
+tier since February 2026, so there is no honest way to offer it.
+
 ### Added
 
 - **YouTube works without a Google project of your own.** Until now every
@@ -43,7 +57,13 @@ contract.
   instead of hunting for the right switch among eight cards. Nextcloud,
   OneDrive, YouTube, Discord and Telegram carry their own marks; S3, WebDAV
   and the webhook keep drawn icons, because those are a protocol or a family
-  of providers rather than one product.
+  of providers rather than one product. A card opens when its head is
+  clicked, not only its arrow.
+- **The code of a device login is a code, not a word in a sentence.** When
+  OneDrive or YouTube ask you to type a short code at the provider, that
+  code is what the eye is looking for: it now stands in a display of its
+  own, monospace and spaced out, with the link under it saying that any
+  device will do - a phone is the point of that way in.
 
 ### Fixed
 
@@ -55,6 +75,10 @@ contract.
   ("create one at youtube.com, then connect again") and an exhausted daily
   quota ("resets at midnight Pacific time"). The diagnostics row for a
   missing channel used to suggest reconnecting, which never helped.
+- **A device code no longer slips away while you read it.** The card polls
+  the login every two seconds and used to rewrite the line with the code
+  each time, which cancelled any selection of it and flickered. It now
+  writes only what has changed, and one click selects the whole code.
 
 ### Removed
 
