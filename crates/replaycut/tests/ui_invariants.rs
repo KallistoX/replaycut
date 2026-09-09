@@ -151,6 +151,55 @@ fn every_bound_field_is_a_settings_path() {
     );
 }
 
+/// Existing in `Settings` is not enough: the page also has to be able to save
+/// the field, and `PUT /api/settings` refuses every name that is not in
+/// `PATCH_KEYS`. 3.4.0 shipped `https` in the struct and in the page but not
+/// in that list, so the HTTPS switch answered "unknown field: https" and the
+/// one feature of the release could not be turned on from the UI at all.
+#[test]
+fn every_bound_field_can_be_saved() {
+    use settings::{CLEANUP_KEYS, HTTPS_KEYS, OBS_KEYS, PATCH_KEYS};
+    let html = ui();
+    let mut missing = Vec::new();
+    for (at, field) in bound_fields(&html) {
+        if NOT_IN_SETTINGS.iter().any(|p| field.starts_with(p)) {
+            continue;
+        }
+        let (top, rest) = match field.split_once('.') {
+            Some((top, rest)) => (top, Some(rest)),
+            None => (field.as_str(), None),
+        };
+        if !PATCH_KEYS.contains(&top) {
+            missing.push(format!(
+                "line {}: data-f=\"{field}\" - \"{top}\" is not in PATCH_KEYS",
+                line_of(&html, at)
+            ));
+            continue;
+        }
+        // The groups that check their own fields one by one; `integrations`
+        // has its own per-target lists and is covered by its own test.
+        let allowed: &[&str] = match top {
+            "obs" => &OBS_KEYS,
+            "cleanup" => &CLEANUP_KEYS,
+            "https" => &HTTPS_KEYS,
+            _ => continue,
+        };
+        if let Some(sub) = rest {
+            if !allowed.contains(&sub) {
+                missing.push(format!(
+                    "line {}: data-f=\"{field}\" - \"{sub}\" is not accepted inside \"{top}\"",
+                    line_of(&html, at)
+                ));
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "these fields are bound in the page but PUT /api/settings would refuse them:\n  {}",
+        missing.join("\n  ")
+    );
+}
+
 /// The alternatives of the regex `readField` uses to decide "this is a number".
 /// Reading it out of the file keeps the test honest when the list grows.
 fn read_field_number_hints(html: &str) -> Vec<String> {

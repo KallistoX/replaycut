@@ -505,9 +505,15 @@ pub fn is_theme_name(name: &str) -> bool {
 
 /// Top-level keys `PUT /api/settings` accepts, and the nested ones below
 /// `integrations`. Anything else is a 400 with the offending name.
-const PATCH_KEYS: [&str; 19] = [
+/// The top-level fields `PUT /api/settings` accepts. Anything else is a 400
+/// rather than a silent no-op - which means a new settings field is only
+/// half added until its name is in here (3.4.0 shipped `https` without it and
+/// the switch in the UI could not be saved). `ui_invariants` checks that
+/// every field the page binds is reachable through this list.
+pub const PATCH_KEYS: [&str; 20] = [
     "obs",
     "cleanup",
+    "https",
     "allowedHosts",
     "requireLoginOnLoopback",
     "previewH264",
@@ -595,8 +601,9 @@ impl Settings {
         Ok(())
     }
 }
-const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
-const CLEANUP_KEYS: [&str; 2] = ["afterShare", "recycleDoneAfterDays"];
+pub const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
+pub const CLEANUP_KEYS: [&str; 2] = ["afterShare", "recycleDoneAfterDays"];
+pub const HTTPS_KEYS: [&str; 3] = ["enabled", "cert", "key"];
 
 impl Settings {
     /// Apply a partial JSON object (the body of `PUT /api/settings`) and
@@ -622,6 +629,16 @@ impl Settings {
                         return Err(format!("unknown field: obs.{field}"));
                     }
                     current["obs"][field] = v.clone();
+                }
+            } else if key == "https" {
+                let Some(fields) = value.as_object() else {
+                    return Err("https must be an object".into());
+                };
+                for (field, v) in fields {
+                    if !HTTPS_KEYS.contains(&field.as_str()) {
+                        return Err(format!("unknown field: https.{field}"));
+                    }
+                    current["https"][field] = v.clone();
                 }
             } else if key == "cleanup" {
                 let Some(fields) = value.as_object() else {

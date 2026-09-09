@@ -10,6 +10,19 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The HTTPS switch can be saved.** 3.4.0 carried `https` in the settings
+  file and bound it in the settings page, but `PUT /api/settings` refuses
+  every field name it does not know and that list was never told about the
+  new one: saving answered "unknown field: https" and the one feature of
+  the release could not be turned on from the UI at all. Editing
+  `settings.json` by hand worked, which is why it went unnoticed. The field
+  is accepted now, `https.cert` and `https.key` with it, and a typo inside
+  the block is still a `400` rather than a field that quietly does nothing.
+  A new check over `ui/index.html` fails the build if a field the page
+  binds cannot be saved, so this cannot happen again to the next one.
+
 ## [3.4.0] - 2026-09-09
 
 This release is about the two things replaycut had left open at the edges:

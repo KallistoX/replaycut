@@ -3183,3 +3183,40 @@ fn t59_a_native_client_gets_a_token_instead_of_a_cookie() {
         "the revoked session is gone: {s}"
     );
 }
+
+/// The switch in the settings has to survive being saved. 3.4.0 accepted
+/// `https` in `settings.json` and bound it in the page, but `PUT
+/// /api/settings` refused the name - so the one feature of that release
+/// could not be turned on from the UI at all.
+#[test]
+fn t60_the_https_switch_can_be_saved() {
+    let _g = serial();
+    if !since_34() {
+        return;
+    }
+    let (_, before) = get_json("/api/settings");
+    let was = before["https"].clone();
+    assert!(was.is_object(), "settings carry an https block: {before}");
+
+    // Writing the value it already has changes nothing and must be accepted.
+    let (status, v) = put_json("/api/settings", &json!({ "https": was.clone() }));
+    assert_eq!(status, 200, "the https block has to be settable: {v}");
+    let (_, after) = get_json("/api/settings");
+    assert_eq!(after["https"], was, "{after}");
+
+    // A typo inside the block is a 400, not a silently ignored field.
+    let (status, v) = put_json("/api/settings", &json!({ "https": { "enable": true } }));
+    assert_eq!(status, 400, "{v}");
+
+    // cert and key belong together (docs/api.md "Since 3.4").
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "https": { "cert": "/tmp/only-one.pem" } }),
+    );
+    assert_eq!(status, 400, "one of the pair alone is a 400: {v}");
+    let (_, after) = get_json("/api/settings");
+    assert_eq!(
+        after["https"], was,
+        "a refused write changes nothing: {after}"
+    );
+}
