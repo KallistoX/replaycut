@@ -44,7 +44,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           rustup target add x86_64-unknown-linux-musl
-          sudo apt-get update
+          # The runner image carries third-party sources (Chrome, ...) whose index
+          # breaks now and then; a stale one costs us nothing, the install below is
+          # what has to work.
+          sudo apt-get update || sudo apt-get update || true
           sudo apt-get install -y --no-install-recommends musl-tools
           cargo build -p replaycut --target x86_64-unknown-linux-musl
 
@@ -87,7 +90,10 @@ jobs:
       - name: Install ffmpeg
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
+          # The runner image carries third-party sources (Chrome, ...) whose index
+          # breaks now and then; a stale one costs us nothing, the install below is
+          # what has to work.
+          sudo apt-get update || sudo apt-get update || true
           sudo apt-get install -y --no-install-recommends ffmpeg
           ffmpeg -hide_banner -version | head -n 1
           ffprobe -hide_banner -version | head -n 1
