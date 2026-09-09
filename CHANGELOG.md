@@ -10,6 +10,8 @@ contract.
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-09-09
+
 This release is about the two things replaycut had left open at the edges:
 the connection, and the copies that a package manager keeps.
 
