@@ -10,6 +10,15 @@ contract.
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-09-09
+
+3.4.0's one new feature could not be switched on. Everything that carries
+HTTPS was in it - the certificate authority, the listener, the settings
+page - except the one line that lets the settings API accept the field, so
+saving the switch answered "unknown field: https". Editing `settings.json`
+by hand worked, which is how it got through development and the release
+without anyone noticing.
+
 ### Fixed
 
 - **The HTTPS switch can be saved.** 3.4.0 carried `https` in the settings
