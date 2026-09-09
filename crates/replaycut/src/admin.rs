@@ -293,6 +293,15 @@ pub async fn put_settings(
             credentials_changed = true;
         }
     }
+    // A refresh token belongs to the client that issued it, so switching
+    // between the built-in client and one's own, or between the TV and the
+    // desktop client, ends the connection just as storing a new client does
+    // (since 3.3).
+    let yt_before = &current.integrations.youtube;
+    let yt_after = &next.integrations.youtube;
+    if yt_before.client != yt_after.client || yt_before.client_type != yt_after.client_type {
+        youtube_client_changed = true;
+    }
     // a new Google client invalidates the channel connected with the old one
     if youtube_client_changed {
         if credentials::delete(credentials::YOUTUBE).map_err(ApiError::internal)? {
@@ -1176,6 +1185,9 @@ fn oauth_document(app: &AppState, p: &crate::oauth::Provider) -> Value {
         "account": cred.map(|c| c.user),
         // since 2.6: the provider connects through the browser on this PC
         "loopback": p.loopback,
+        // since 3.3: this build carries a client of its own for the provider,
+        // whether or not it is the one in use
+        "builtIn": p.built_in,
         "flow": flow.map(|f| {
             let mut v = serde_json::to_value(&f).unwrap_or(Value::Null);
             v["expiresIn"] = json!(f.expires_at.saturating_duration_since(std::time::Instant::now()).as_secs());

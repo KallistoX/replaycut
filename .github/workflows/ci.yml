@@ -11,6 +11,12 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Same built-in Google clients as the release (see release.yml); a build
+  # without them has no built-in client, which is a state the suite covers.
+  REPLAYCUT_YOUTUBE_TV_CLIENT_ID: ${{ vars.REPLAYCUT_YOUTUBE_TV_CLIENT_ID }}
+  REPLAYCUT_YOUTUBE_TV_CLIENT_SECRET: ${{ vars.REPLAYCUT_YOUTUBE_TV_CLIENT_SECRET }}
+  REPLAYCUT_YOUTUBE_DESKTOP_CLIENT_ID: ${{ vars.REPLAYCUT_YOUTUBE_DESKTOP_CLIENT_ID }}
+  REPLAYCUT_YOUTUBE_DESKTOP_CLIENT_SECRET: ${{ vars.REPLAYCUT_YOUTUBE_DESKTOP_CLIENT_SECRET }}
 
 jobs:
   check:

@@ -10,6 +10,21 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- **YouTube works without a Google project of your own.** Until now every
+  user had to create an OAuth client in the Google console before the
+  YouTube card did anything - five clicks of console work that stopped most
+  people right there. A release now carries replaycut's own client, so the
+  card is switch on, *Connect YouTube*, done. The old way stays as "Own
+  Google client" on the same card, because YouTube's quota belongs to the
+  project and not to the user: 1 600 units per upload out of 10 000 a day
+  means the built-in client is good for about six uploads a day across
+  everyone who uses it, until Google grants the extension. `docs/youtube.md`
+  is now the guide for that case and says plainly when it is worth it.
+  Changing the client, or the client type, disconnects the channel: a
+  refresh token belongs to the client that issued it.
+
 ### Removed
 
 - **X is no longer a share target.** X's API has had no free tier since

@@ -4,6 +4,16 @@
 
 fn main() {
     println!("cargo:rerun-if-changed=assets");
+    // The built-in OAuth clients are compiled in with `option_env!`, so a
+    // cached build would otherwise keep the values of the run before.
+    for var in [
+        "REPLAYCUT_YOUTUBE_TV_CLIENT_ID",
+        "REPLAYCUT_YOUTUBE_TV_CLIENT_SECRET",
+        "REPLAYCUT_YOUTUBE_DESKTOP_CLIENT_ID",
+        "REPLAYCUT_YOUTUBE_DESKTOP_CLIENT_SECRET",
+    ] {
+        println!("cargo:rerun-if-env-changed={var}");
+    }
     #[cfg(windows)]
     {
         let mut res = winresource::WindowsResource::new();

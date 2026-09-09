@@ -1314,6 +1314,32 @@ its outputs still hang under their clip. None of this is visible in the API.
 
 ## Since 3.3
 
+### The YouTube client comes with the build
+
+Until 3.2 every user had to create a Google OAuth client of their own
+before YouTube worked at all. A release now carries one, compiled in from
+the repository variables of the workflows, and the settings say which one
+to use.
+
+- `integrations.youtube.client` is `builtin` (default) or `own`; anything
+  else is a 400. `own` keeps the behaviour of 2.6: the client is the
+  write-only pair `youtubeClientId` / `youtubeClientSecret` in
+  `PUT /api/settings` (credential `replaycut/youtube-client`).
+- `integrations.youtube.clientType` (`tv` or `desktop`) chooses the flow for
+  both, and the build carries a client of each type.
+- `GET /api/oauth/youtube` gains `builtIn`: this build was compiled with a
+  client for the chosen `clientType`. A fork, or a local `cargo build`
+  without the variables, has none, so `builtIn` is false, `configured` is
+  false while `client` is `builtin`, and `POST /api/oauth/youtube/start`
+  answers 409 as it does without a stored client. Every provider document
+  carries the field; for OneDrive it is the build's client id.
+- A refresh token belongs to the client that issued it, so changing
+  `client` or `clientType` disconnects the channel, exactly as storing a
+  new client of one's own already did.
+- The quota is per Google project, not per user: 1600 units per upload out
+  of 10 000 a day, so the built-in client is good for about six uploads a
+  day across everyone who uses it. `own` is the way out and stays.
+
 ### X is gone
 
 The X target of 2.6 is removed. X's API has had no free tier since

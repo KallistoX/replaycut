@@ -1,9 +1,11 @@
 //! YouTube through the Data API v3 (since 2.6): every share becomes its own
 //! video, uploaded through a resumable session in chunks, unlisted unless
 //! the settings say otherwise. The link is `https://youtu.be/<id>`. The
-//! account is the user's own Google client (quota: 1600 units per upload
-//! out of 10 000 a day per project, so a shared client would be dead after
-//! six uploads) plus the refresh token of the connected channel.
+//! account is an OAuth client - the one built into this release since 3.3,
+//! or the user's own - plus the refresh token of the connected channel. The
+//! quota (1600 units per upload out of 10 000 a day) hangs on the client's
+//! project, so the built-in one is good for about six uploads a day across
+//! everyone using it until Google grants an extension.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -418,6 +420,7 @@ pub(crate) mod tests {
             device_path: "device/code",
             auth_url: format!("{base}/auth"),
             loopback: false,
+            built_in: true,
             client_id: "gid.apps".into(),
             client_secret: Some("gsecret".into()),
             scope: "https://www.googleapis.com/auth/youtube",

@@ -14,6 +14,16 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # The Google clients the release carries for YouTube (see
+  # wardogs/infra/google). Repository variables, not secrets: a client of an
+  # installed application is public by design, it only stays out of the
+  # source so that a fork does not upload under this app. A fork - or this
+  # repository before the variables are set - simply builds without a
+  # built-in client, and the card says so.
+  REPLAYCUT_YOUTUBE_TV_CLIENT_ID: ${{ vars.REPLAYCUT_YOUTUBE_TV_CLIENT_ID }}
+  REPLAYCUT_YOUTUBE_TV_CLIENT_SECRET: ${{ vars.REPLAYCUT_YOUTUBE_TV_CLIENT_SECRET }}
+  REPLAYCUT_YOUTUBE_DESKTOP_CLIENT_ID: ${{ vars.REPLAYCUT_YOUTUBE_DESKTOP_CLIENT_ID }}
+  REPLAYCUT_YOUTUBE_DESKTOP_CLIENT_SECRET: ${{ vars.REPLAYCUT_YOUTUBE_DESKTOP_CLIENT_SECRET }}
 
 jobs:
   build:

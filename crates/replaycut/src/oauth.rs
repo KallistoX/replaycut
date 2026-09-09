@@ -33,6 +33,29 @@ const GOOGLE_LOGIN_BASE: &str = "https://oauth2.googleapis.com";
 const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TIMEOUT: Duration = Duration::from_secs(20);
 
+/// The built-in Google clients of this build (since 3.3): the maintainer's
+/// project, compiled in from the repository variables of the workflows so
+/// that a user has nothing to set up. A build without them - every fork,
+/// every local `cargo build` - has none, and the card says so. The same
+/// names override at run time, which is how the tests point them at a fake.
+/// The "secret" of a client of an installed application is not confidential
+/// (Google says so itself); it stays out of the source all the same.
+const YOUTUBE_TV_CLIENT_ID: Option<&str> = option_env!("REPLAYCUT_YOUTUBE_TV_CLIENT_ID");
+const YOUTUBE_TV_CLIENT_SECRET: Option<&str> = option_env!("REPLAYCUT_YOUTUBE_TV_CLIENT_SECRET");
+const YOUTUBE_DESKTOP_CLIENT_ID: Option<&str> = option_env!("REPLAYCUT_YOUTUBE_DESKTOP_CLIENT_ID");
+const YOUTUBE_DESKTOP_CLIENT_SECRET: Option<&str> =
+    option_env!("REPLAYCUT_YOUTUBE_DESKTOP_CLIENT_SECRET");
+
+/// A built-in value: the environment at run time first (tests), then what
+/// the build was compiled with. Empty counts as absent.
+fn built_in(name: &str, compiled: Option<&'static str>) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .or_else(|| compiled.map(str::to_string))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 /// An OAuth provider: the device-code flow (the default) or, since 2.6, the
 /// loopback flow with PKCE (the browser on this PC is sent to the provider
 /// and comes back to `http://127.0.0.1:<port>/oauth/<provider>/callback`).
@@ -48,6 +71,9 @@ pub struct Provider {
     pub auth_url: String,
     /// Connect through the browser redirect instead of a code.
     pub loopback: bool,
+    /// This build carries a client of its own for this provider (since 3.3),
+    /// whether or not the user picked it. A fork has none.
+    pub built_in: bool,
     pub client_id: String,
     /// Sent with the token requests when the provider wants it (Google).
     pub client_secret: Option<String>,
@@ -59,9 +85,10 @@ pub struct Provider {
 }
 
 /// The provider behind a target id, if it has one. OneDrive uses the
-/// replaycut app registration; YouTube the user's own Google client from
-/// the Credential Manager (since 2.6), so `client_id` is empty until one is
-/// stored, and its `clientType` setting decides the flow.
+/// replaycut app registration; YouTube uses the built-in Google client of
+/// this build (since 3.3) or, with `client: "own"`, the one from the
+/// Credential Manager - `client_id` is then empty until it is stored. The
+/// `clientType` setting decides the flow for both.
 pub fn provider(id: &str, settings: &crate::settings::Settings) -> Option<Provider> {
     match id {
         "onedrive" => Some(Provider {
@@ -72,6 +99,7 @@ pub fn provider(id: &str, settings: &crate::settings::Settings) -> Option<Provid
             device_path: "devicecode",
             auth_url: format!("{MS_LOGIN_BASE}/authorize"),
             loopback: false,
+            built_in: !ONEDRIVE_CLIENT_ID.is_empty(),
             client_id: std::env::var("REPLAYCUT_ONEDRIVE_CLIENT_ID")
                 .ok()
                 .filter(|s| !s.trim().is_empty())
@@ -82,10 +110,28 @@ pub fn provider(id: &str, settings: &crate::settings::Settings) -> Option<Provid
             missing_client: "this build has no OneDrive client id",
         }),
         "youtube" => {
-            let client = credentials::read(credentials::YOUTUBE_CLIENT)
+            let yt = &settings.integrations.youtube;
+            let loopback = yt.client_type == "desktop";
+            // the built-in pair of the chosen client type, if this build has one
+            let (id, secret) = if loopback {
+                (YOUTUBE_DESKTOP_CLIENT_ID, YOUTUBE_DESKTOP_CLIENT_SECRET)
+            } else {
+                (YOUTUBE_TV_CLIENT_ID, YOUTUBE_TV_CLIENT_SECRET)
+            };
+            let prefix = if loopback {
+                "REPLAYCUT_YOUTUBE_DESKTOP_CLIENT"
+            } else {
+                "REPLAYCUT_YOUTUBE_TV_CLIENT"
+            };
+            let built = built_in(&format!("{prefix}_ID"), id)
+                .zip(built_in(&format!("{prefix}_SECRET"), secret));
+            let own = yt.client == "own";
+            let stored = credentials::read(credentials::YOUTUBE_CLIENT)
                 .ok()
                 .flatten()
-                .filter(|c| !c.user.trim().is_empty() && !c.secret.trim().is_empty());
+                .filter(|c| !c.user.trim().is_empty() && !c.secret.trim().is_empty())
+                .map(|c| (c.user.trim().to_string(), c.secret.trim().to_string()));
+            let client = if own { stored } else { built.clone() };
             Some(Provider {
                 id: "youtube",
                 label: "YouTube",
@@ -94,15 +140,17 @@ pub fn provider(id: &str, settings: &crate::settings::Settings) -> Option<Provid
                 device_path: "device/code",
                 auth_url: std::env::var("REPLAYCUT_GOOGLE_AUTH_URL")
                     .unwrap_or_else(|_| GOOGLE_AUTH_URL.to_string()),
-                loopback: settings.integrations.youtube.client_type == "desktop",
-                client_id: client
-                    .as_ref()
-                    .map(|c| c.user.trim().to_string())
-                    .unwrap_or_default(),
-                client_secret: client.map(|c| c.secret.trim().to_string()),
+                loopback,
+                built_in: built.is_some(),
+                client_id: client.as_ref().map(|c| c.0.clone()).unwrap_or_default(),
+                client_secret: client.map(|c| c.1),
                 scope: "https://www.googleapis.com/auth/youtube",
                 credential: credentials::YOUTUBE,
-                missing_client: "no Google client stored - enter client id and client secret under Settings > Integrations > YouTube",
+                missing_client: if own {
+                    "no Google client stored - enter client id and client secret under Settings > Integrations > YouTube"
+                } else {
+                    "this build has no built-in Google client - pick \"Own Google client\" under Settings > Integrations > YouTube"
+                },
             })
         }
         _ => None,
@@ -628,6 +676,7 @@ pub(crate) mod tests {
             device_path: "devicecode",
             auth_url: format!("{base}/authorize"),
             loopback: false,
+            built_in: true,
             client_id: "test-client".into(),
             client_secret: None,
             scope: "Files.ReadWrite.AppFolder offline_access",

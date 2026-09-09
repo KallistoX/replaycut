@@ -984,11 +984,14 @@ ol.steps b { color: var(--fg); font-weight: normal; }
     <div class="card" id="sYtCard">
       <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-play"/></svg><h2>YouTube</h2><span class="badge">storage</span><span class="badge" id="sYtBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.youtube.enabled"><span class="track"></span></label></div>
       <div class="card-body stack-3">
-        <p class="muted sm">Every share becomes its own video on your channel, unlisted unless you choose otherwise; the link is <code>youtu.be/…</code>. A vertical cut (9:16 in the share row) is uploaded as a Short. YouTube's quota allows about six uploads a day per Google project, so replaycut uses <b>your own</b> Google client: <a href="https://github.com/KallistoX/replaycut/blob/main/docs/youtube.md" target="_blank" rel="noopener">how to create it in five minutes</a>.</p>
+        <p class="muted sm">Every share becomes its own video on your channel, unlisted unless you choose otherwise; the link is <code>youtu.be/…</code>. A vertical cut (9:16 in the share row) is uploaded as a Short.</p>
         <div class="fields-2">
-          <div class="field"><label>Client type</label><select class="select" data-f="integrations.youtube.clientType"><option value="tv">TVs and Limited Input devices - connect with a code, from any device</option><option value="desktop">Desktop app - connect in the browser on this PC</option></select><span class="hint">The application type you chose when creating the client in the Google console.</span></div>
+          <div class="field"><label>Google client</label><select class="select" data-f="integrations.youtube.client"><option value="builtin">Built into replaycut - nothing to set up</option><option value="own">Own Google client - your project, your quota</option></select><span class="hint" id="sYtClientHint"></span></div>
+          <div class="field"><label>Client type</label><select class="select" data-f="integrations.youtube.clientType"><option value="tv">TVs and Limited Input devices - connect with a code, from any device</option><option value="desktop">Desktop app - connect in the browser on this PC</option></select><span class="hint">How you sign in. Changing it, or the client above, ends the current connection.</span></div>
+        </div>
+        <div class="fields-2" id="sYtOwn" hidden>
           <div class="field"><label>Client ID</label><input class="input mono" id="sYtId" autocomplete="off" placeholder="1234-abcd.apps.googleusercontent.com"><span class="hint" id="sYtIdHint"></span></div>
-          <div class="field"><label>Client secret</label><div class="input-group"><input class="input mono" id="sYtSecret" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sYtSecret" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span> as <code>replaycut/youtube-client</code>. Save, then connect.</span></div>
+          <div class="field"><label>Client secret</label><div class="input-group"><input class="input mono" id="sYtSecret" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sYtSecret" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span> as <code>replaycut/youtube-client</code>. Save, then connect. <a href="https://github.com/KallistoX/replaycut/blob/main/docs/youtube.md" target="_blank" rel="noopener">How to create one</a>.</span></div>
         </div>
         <div class="row" id="sYtRow"><button class="btn btn-primary" id="sYtConnect">Connect YouTube</button><button class="btn" id="sYtDisconnect" hidden>Disconnect</button><span class="muted sm" id="sYtStatus"></span></div>
         <div class="check-row" id="sYtCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label" id="sYtCodeLabel">Enter this code at Google</div><div class="detail" id="sYtCodeDetail">Open <a id="sYtUri" href="#" target="_blank" rel="noopener"></a> and type <b class="mono" id="sYtUserCode" style="font-size:1.2em;letter-spacing:0.08em"></b>, then pick the channel. The card updates when you are done.</div></div></div>
@@ -1746,6 +1749,7 @@ async function initSettings() {
     $('sTgBadge').textContent = s.integrations.telegram.enabled ? (s.secrets.telegram ? 'on' : 'on, no token') : 'off'; $('sTgBadge').className = 'badge' + (s.integrations.telegram.enabled && !s.secrets.telegram ? ' warn' : '');
     $('sWhBadge').textContent = s.integrations.webhook.enabled ? (s.integrations.webhook.url ? 'on' : 'on, no URL') : 'off'; $('sWhBadge').className = 'badge' + (s.integrations.webhook.enabled && !s.integrations.webhook.url ? ' warn' : '');
     $('sYtIdHint').textContent = s.secrets && s.secrets.youtubeClient ? 'A client is stored; fill both fields to replace it (that disconnects the channel).' : 'No client stored yet - paste the client id and secret of your Google project.';
+    ytClientUi();
     Object.values(oauthCards).forEach(c => c.poll());
     $('sS3KeyHint').textContent = s.secrets && s.secrets.s3 ? 'Keys are stored; fill both fields to replace them.' : 'No keys stored yet.';
     $('sDavUserHint').textContent = s.secrets && s.secrets.webdav ? 'A login is stored; fill both fields to replace it.' : 'No login stored yet.';
@@ -1757,6 +1761,15 @@ async function initSettings() {
     $('sDcBadge').textContent = s.integrations.discord.enabled ? (s.secrets.discord ? 'on' : 'on, no webhook') : 'off'; $('sDcBadge').className = 'badge' + (s.integrations.discord.enabled && !s.secrets.discord ? ' warn' : '');
     restartPending = s.restartNeeded || []; showRestart();
     dirty();
+  }
+  // the YouTube client is either the one this build carries or one of your
+  // own; only the second needs the two fields (since 3.3)
+  const ytOwn = () => document.querySelector('[data-f="integrations.youtube.client"]').value === 'own';
+  function ytClientUi() {
+    $('sYtOwn').hidden = !ytOwn();
+    $('sYtClientHint').textContent = ytOwn()
+      ? 'A project of your own: the quota of 10 000 units a day, about six uploads, is yours alone.'
+      : "replaycut's own client - nothing to create. Its quota is shared by everyone who uses it, so it is meant for the occasional clip; take your own for more.";
   }
   function changes() {
     const c = {};
@@ -1783,6 +1796,7 @@ async function initSettings() {
     b.hidden = !restartPending.length; $('b-restart-text').textContent = restartPending.length ? `Changed: ${restartPending.join(', ')}. They take effect after a restart.` : '';
   }
   fields.forEach(el => { el.addEventListener('input', () => { if (el.dataset.f === 'displayName') fields.filter(o => o !== el && o.dataset.f === 'displayName').forEach(o => o.value = el.value); dirty(); }); el.addEventListener('change', dirty); });
+  document.querySelector('[data-f="integrations.youtube.client"]').addEventListener('change', ytClientUi);
   ['sPw1', 'sPw2', 'sNcUser', 'sNcPw', 'sDcHook', 'sS3Key', 'sS3Secret', 'sDavUser', 'sDavPw', 'sYtId', 'sYtSecret', 'sTgToken', 'sWhSecret'].forEach(id => $(id).addEventListener('input', dirty));
   $('sPwOn').onchange = () => { $('sPwFields').hidden = !$('sPwOn').checked; $('sPwGenRow').hidden = !$('sPwOn').checked; dirty(); };
   $('sPwGen').onclick = async () => { if (await suggestPassword('sPw1', 'sPw2', 'sPwGenHint')) dirty(); };
@@ -1870,7 +1884,7 @@ async function initSettings() {
       $(p + 'Connect').textContent = d.loopback ? `Connect ${label} in this browser` : `Connect ${label}`;
       const f = d.flow, lbl = $(p + 'CodeLabel'), det = $(p + 'CodeDetail');
       if (d.connected) { s.textContent = `Connected as ${d.account || label}.`; code.hidden = true; }
-      else if (!d.configured) { s.textContent = noClient; code.hidden = true; }
+      else if (!d.configured) { s.textContent = typeof noClient === 'function' ? noClient(d) : noClient; code.hidden = true; }
       else if (f && f.status === 'pending' && d.loopback) { s.textContent = ''; code.hidden = false; if (lbl) lbl.textContent = 'Finish the login in the tab that opened'; if (det) det.innerHTML = `Nothing opened? <a href="${esc(f.verificationUri)}" target="_blank" rel="noopener">Open the Google login</a>. The card updates when you are done.`; }
       else if (f && f.status === 'pending') { s.textContent = ''; code.hidden = false; if (lbl) lbl.textContent = 'Enter this code at ' + (provider === 'youtube' ? 'Google' : 'Microsoft'); if (det) det.innerHTML = `Open <a id="${p}Uri" href="${esc(f.verificationUri)}" target="_blank" rel="noopener">${esc(f.verificationUri)}</a> and type <b class="mono" style="font-size:1.2em;letter-spacing:0.08em">${esc(f.userCode)}</b>, then pick the account. The card updates when you are done.`; else { $(p + 'Uri').textContent = f.verificationUri; $(p + 'Uri').href = f.verificationUri; $(p + 'UserCode').textContent = f.userCode; } }
       else if (f && f.status === 'failed') { s.textContent = 'Connecting failed: ' + f.error; code.hidden = true; }
@@ -1896,7 +1910,9 @@ async function initSettings() {
     return { poll };
   }
   oauthCards.onedrive = oauthCard('onedrive', 'OneDrive', 'sOd', 'This build has no OneDrive client id yet.');
-  oauthCards.youtube = oauthCard('youtube', 'YouTube', 'sYt', 'Enter and save the client id and secret of your Google project first.');
+  oauthCards.youtube = oauthCard('youtube', 'YouTube', 'sYt', () => ytOwn()
+    ? 'Enter and save the client id and secret of your Google project first.'
+    : 'This build carries no Google client of its own - choose "Own Google client" and enter one.');
   // update check on demand (since 2.3)
   function updText(u) {
     if (!u) return '';

@@ -186,9 +186,15 @@ pub struct YouTube {
     /// scaled to at most this height and capped at this bitrate.
     pub max_height: u32,
     pub max_kbps: u32,
+    /// Which OAuth client to connect with (since 3.3): `builtin` (the one
+    /// this build was compiled with, nothing to set up) or `own` (a client
+    /// from the user's own Google project, credential
+    /// `replaycut/youtube-client`, with a quota of its own).
+    pub client: String,
     /// `tv` (a "TVs and Limited Input devices" client, connected with a
     /// code from any device) or `desktop` (a "Desktop app" client, connected
-    /// in the browser on this PC through the loopback redirect).
+    /// in the browser on this PC through the loopback redirect). Applies to
+    /// the built-in client and to the user's own alike.
     pub client_type: String,
     /// `unlisted` (default), `private` or `public`.
     pub privacy: String,
@@ -198,6 +204,7 @@ pub struct YouTube {
 
 pub const YOUTUBE_PRIVACY: [&str; 3] = ["unlisted", "private", "public"];
 pub const YOUTUBE_CLIENT_TYPES: [&str; 2] = ["tv", "desktop"];
+pub const YOUTUBE_CLIENTS: [&str; 2] = ["builtin", "own"];
 
 impl Default for YouTube {
     fn default() -> Self {
@@ -206,6 +213,7 @@ impl Default for YouTube {
             quick_share: false,
             max_height: 0,
             max_kbps: 0,
+            client: "builtin".into(),
             client_type: "tv".into(),
             privacy: "unlisted".into(),
             description: "{title}\n\nClip from {date}, shared with replaycut.".into(),
@@ -492,9 +500,10 @@ const S3_KEYS: [&str; 8] = [
     "presignDays",
 ];
 const WEBDAV_KEYS: [&str; 5] = ["enabled", "quickShare", "url", "folder", "publicBase"];
-const YOUTUBE_KEYS: [&str; 5] = [
+const YOUTUBE_KEYS: [&str; 6] = [
     "enabled",
     "quickShare",
+    "client",
     "clientType",
     "privacy",
     "description",
@@ -768,6 +777,10 @@ impl Settings {
         anyhow::ensure!(
             YOUTUBE_CLIENT_TYPES.contains(&self.integrations.youtube.client_type.as_str()),
             "integrations.youtube.clientType must be tv or desktop"
+        );
+        anyhow::ensure!(
+            YOUTUBE_CLIENTS.contains(&self.integrations.youtube.client.as_str()),
+            "integrations.youtube.client must be builtin or own"
         );
         anyhow::ensure!(
             self.integrations.youtube.description.chars().count() <= 4000,

@@ -2958,3 +2958,57 @@ fn t55_x_is_gone() {
         "the diagnostics still check X: {d}"
     );
 }
+
+/// The YouTube client (3.3): the one this build carries, or the user's own.
+/// A release build has a built-in client, a fork has none - so the test
+/// pins the rule, not the value: with `client: "builtin"` the provider is
+/// configured exactly when the build carries one.
+#[test]
+fn t56_youtube_connects_with_the_built_in_client_or_your_own() {
+    let _g = serial();
+    if !since_33() {
+        eprintln!("skipped: needs replaycut 3.3");
+        return;
+    }
+    let (_, s) = get_json("/api/settings");
+    let before = s["integrations"]["youtube"].clone();
+    assert!(before["client"].is_string(), "{s}");
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "youtube": { "client": "nonsense" } } }),
+    );
+    assert_eq!(status, 400, "{v}");
+
+    // the built-in client: configured exactly when this build has one
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "youtube": { "client": "builtin" } } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    let (status, d) = get_json("/api/oauth/youtube");
+    assert_eq!(status, 200, "{d}");
+    assert!(d["builtIn"].is_boolean(), "{d}");
+    assert_eq!(d["configured"], d["builtIn"], "{d}");
+
+    // one's own client: configured only once a client is stored
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "youtube": { "client": "own" } } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    let (_, s) = get_json("/api/settings");
+    let stored = s["secrets"]["youtubeClient"].as_bool().unwrap_or(false);
+    let (_, d) = get_json("/api/oauth/youtube");
+    assert_eq!(d["configured"], json!(stored), "{d}");
+    if !stored {
+        let (status, v) = post_json("/api/oauth/youtube/start", &json!({}));
+        assert_eq!(status, 409, "{v}");
+    }
+
+    // put the card back the way it was
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "youtube": { "client": before["client"] } } }),
+    );
+    assert_eq!(status, 200, "{v}");
+}

@@ -1,12 +1,29 @@
-# YouTube: your own Google client
+# YouTube: a Google client of your own
 
-replaycut can upload a share as a video of its own to your YouTube channel
-(unlisted by default) and, with the "Vertical 9:16" option in the share
-row, as a Short. YouTube's API gives every Google project 10 000 quota
-units a day and charges 1 600 per upload: about six uploads a day. A client
-built into replaycut would share that budget between everyone who uses it,
-so replaycut uses a client from **your own** Google project. Creating one
-takes about five minutes and costs nothing.
+replaycut uploads a share as a video of its own to your YouTube channel
+(unlisted by default) and, with the "Vertical 9:16" option in the share row,
+as a Short. Since 3.3 it brings its own Google client: switch the YouTube
+card on, click **Connect YouTube**, done. This page is for the one case
+where that is not enough.
+
+## Why you might want your own
+
+YouTube's quota belongs to the **Google project behind the client**, not to
+the user: 10 000 units a day, 1 600 per upload. The client built into
+replaycut is therefore good for about **six uploads a day for everyone who
+uses it together**, until Google grants the extension that is being applied
+for. Your own project has those 10 000 units for you alone.
+
+Signs that you want your own client:
+
+- Uploads fail with `quotaExceeded` although you only shared a clip or two.
+- You upload several clips a day, every day.
+- You would rather not depend on somebody else's app registration at all.
+
+Creating one takes about fifteen minutes and costs nothing. What you need
+besides a Google account is **a web page of your own**: Google only lets an
+app go into production with a home page and a privacy policy on a domain you
+can prove you own. A GitHub Pages site (`yourname.github.io`) does the job.
 
 ## 1. Create the project and enable the API
 
@@ -16,40 +33,38 @@ takes about five minutes and costs nothing.
 2. **APIs & Services › Library**: search for *YouTube Data API v3* and click
    **Enable**.
 
-Newer consoles then offer a guided **Create credentials** wizard on the
-API's page. It asks the same things as sections 2 and 3 in one go: choose
-**User data** (that creates an OAuth client), fill in the consent screen,
-leave the scopes empty or add `.../auth/youtube`, and pick the client type
-in the last step. Publishing the app (section 2, step 3) is still a separate
-click afterwards.
-
 ## 2. Set up the consent screen
 
-1. **APIs & Services › OAuth consent screen** (Google calls it "Google Auth
-   Platform" in newer consoles): user type **External**, app name
-   `replaycut`, your e-mail as support and developer contact. Nothing else is
-   required.
-2. Scopes: none need to be added here; replaycut asks for
-   `https://www.googleapis.com/auth/youtube` when you connect.
-3. **Publishing status**: click **Publish app** (Google Auth Platform ›
-   Audience) so the app is *In production*. Google then shows an
-   "unverified app" warning once when you connect (click *Advanced › Go to
-   replaycut*); that is expected and fine for your own use. Do not leave
-   the app in *Testing*: in that state Google expires the connection after
-   seven days and replaycut would ask you to connect again every week.
-   Publishing an external app needs, under **Branding**, an application
-   home page and a privacy policy URL (`localhost` is refused):
-   - Application home page: `https://replaycut.de/`
-   - Privacy policy: `https://replaycut.de/privacy/`
-   - Authorized domains: `replaycut.de`
+In **APIs & Services › OAuth consent screen**, which newer consoles call
+*Google Auth Platform*:
 
-   Leave the logo empty: an app with a logo must pass Google's review
-   before it can be published.
+1. **Branding**: app name (`replaycut` is fine), your e-mail as support and
+   developer contact.
+2. **Audience**: user type **External**.
+3. Back under **Branding**, fill in the three things Google needs before it
+   lets the app go live. They must be **yours**, on a domain you can verify
+   in the [Search Console](https://search.google.com/search-console) with
+   this same Google account:
+   - Application home page, for example `https://yourname.github.io/`
+   - Privacy policy, for example `https://yourname.github.io/privacy/`
+   - Authorized domain, here `yourname.github.io`
+
+   replaycut's own URLs do not work here: Google accepts an authorized
+   domain only from the account that proved it owns it, and `replaycut.de`
+   belongs to this project. Leave the logo empty - an app with a logo has to
+   pass Google's review before it can be published.
+4. **Data access**: nothing to add, replaycut asks for
+   `https://www.googleapis.com/auth/youtube` when you connect.
+5. **Audience › Publish app**, so the app is *In production*. Google then
+   shows an "unverified app" warning once when you connect (click *Advanced
+   › Go to replaycut*); that is expected and fine for your own use. Do not
+   leave the app in *Testing*: in that state Google expires the connection
+   after seven days and replaycut would ask you to connect again every week.
 
 ## 3. Create the client
 
 1. **APIs & Services › Credentials › Create credentials › OAuth client ID**.
-2. Application type, one of two:
+2. Application type, one of two - the same choice the card offers:
    - **TVs and Limited Input devices** (recommended): replaycut shows a
      short code, you type it at <https://www.google.com/device> from any
      device, the phone included.
@@ -66,10 +81,11 @@ deleting a video from replaycut's delete dialog need this one.
 
 ## 4. Connect replaycut
 
-1. Settings › Integrations › **YouTube**: choose the client type you
-   created, paste client ID and client secret, click **Save**. They go to
-   the credential store (`replaycut/youtube-client` in the Windows
-   Credential Manager or the Linux keyring); nothing is written to a file.
+1. Settings › Integrations › **YouTube**: set **Google client** to *Own
+   Google client*, pick the client type you created, paste client ID and
+   client secret, click **Save**. They go to the credential store
+   (`replaycut/youtube-client` in the Windows Credential Manager or the
+   Linux keyring); nothing is written to a file.
 2. Switch the card on and click **Connect YouTube**. With a TV client: open
    the link shown, enter the code, pick the channel, allow the access. With
    a Desktop client: a tab with Google's login opens; sign in, pick the
@@ -80,6 +96,12 @@ deleting a video from replaycut's delete dialog need this one.
    template if you like: `{title}`, `{clip}` and `{date}` are filled in.
 4. Optionally make YouTube the quick-share target; otherwise it sits in the
    Share button's menu and in "Publish to YouTube" on finished shares.
+
+Switching back to the built-in client is the same card: set **Google client**
+to *Built into replaycut* and connect again. A refresh token belongs to the
+client that issued it, so every change of the client or of the client type
+ends the current connection - the card asks you to connect once more, and
+nothing else is lost.
 
 ## Shorts
 
@@ -95,7 +117,8 @@ file is then ready for TikTok, Instagram Reels or WhatsApp.
 - 1 600 units per upload, 10 000 units a day per project, reset at midnight
   Pacific time. Deleting a video from the delete dialog costs 50.
 - The connection check in the diagnostics costs 1 unit.
-- Unverified apps may have at most 100 users; you are the only one.
+- Unverified apps may have at most 100 users; with your own client you are
+  the only one.
 - If uploads fail with `quotaExceeded`, wait for the reset or request a
   higher quota in the Google console (APIs & Services › YouTube Data API v3
   › Quotas).
