@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<title>replaycut - Integrations C: only what is set up (mockup)</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" id="theme" href="" disabled>
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="mock.css">
+<link rel="stylesheet" href="nav-frames.css">
+<style>
+  /* Proposal C: the page shows what is configured, one row each. Adding one
+   * is a guided dialog with the steps of its own instructions - the same
+   * stepper the setup wizard uses.
+   *
+   * New in base.css: `.introw` (shared with proposal A) and nothing else -
+   * the dialog is `.modal`/`.dialog`/`.stepper`, all of which exist. */
+
+  .introw { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto auto; gap: var(--space-3); align-items: center; width: 100%; min-height: var(--touch); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); color: var(--fg); font: inherit; text-align: left; }
+  .introw + .introw { margin-top: var(--space-2); }
+  .introw .name { display: flex; flex-direction: column; min-width: 0; }
+  .introw .name b { font-weight: var(--weight-strong); }
+  .introw .name span { color: var(--fg-muted); font-size: var(--text-xs); }
+  .introw > .icon { color: var(--accent); }
+  .introw .actions { display: flex; gap: var(--space-1); align-items: center; }
+
+  .addrow { display: flex; justify-content: flex-start; margin-top: var(--space-3); }
+  .none { padding: var(--space-4); border: 1px dashed var(--line-strong); border-radius: var(--radius-md); color: var(--fg-muted); }
+
+  .dialog .stepper { margin-bottom: var(--space-2); }
+  .dialog .pick { display: flex; flex-direction: column; gap: var(--space-1); }
+
+  @container (max-width: 700px) {
+    .introw { grid-template-columns: 20px minmax(0, 1fr) auto; }
+    .introw .actions { grid-column: 1 / -1; justify-content: flex-end; }
+  }
+
+  .frame .page { height: calc(100% - var(--topbar-h)); overflow: auto; }
+  .frame .modal { position: absolute; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 20 20"><path d="M4 3.5v13l11-6.5z"/><path d="M2 7h4M2 13h4"/></symbol>
+  <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12M2.5 8h3.5M14 8h3.5M2.5 12h3.5M14 12h3.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5l3 2"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
+  <symbol id="i-more" viewBox="0 0 20 20"><circle cx="4.5" cy="10" r="1.25"/><circle cx="10" cy="10" r="1.25"/><circle cx="15.5" cy="10" r="1.25"/></symbol>
+  <symbol id="i-share" viewBox="0 0 20 20"><path d="M10 12V3M6.5 6.5 10 3l3.5 3.5M4 11v5h12v-5"/></symbol>
+  <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/></symbol>
+  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4v12l10-6z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 20 20"><path d="m4 10.5 4 4 8-9"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 20 20"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 20 20"><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5 5.5l1 11h8l1-11M8.5 9v5M11.5 9v5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></symbol>
+</svg>
+
+<div class="sheet">
+  <header class="sheet-head">
+    <h1>Integrations C - only what is set up, plus "Add integration"</h1>
+    <p>The page lists the integrations that are actually configured, one row each with the live
+      diagnostics result and a test button. What is not set up is not on the page at all - it lives
+      behind <b>Add integration</b>, a dialog that walks through the steps of that integration's own
+      instructions: pick it, enter the server or sign in, test, decide whether Share should use it.</p>
+    <ul>
+      <li>A fresh installation shows one button instead of eight cards of things it does not have.
+        The page grows with what you use.</li>
+      <li>The setup wizard already asks these questions this way, with the same stepper - a second
+        integration is set up like the first one was.</li>
+      <li>Turning something off is "Remove", which asks whether the credential should go too. That is
+        clearer than a switch that leaves a password behind in the credential store.</li>
+      <li>The most work of the three, and the one that hides things: an integration you set up months
+        ago is a row, but the reason it is not in the list is only visible inside the dialog.</li>
+    </ul>
+  </header>
+
+  <section class="shot">
+    <h2>Desktop, 1280 px - five configured</h2>
+    <div class="fit fit-wide">
+      <div class="frame frame-desktop">
+        <header class="topbar">
+          <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+          <nav class="nav" aria-label="Pages">
+            <a href="#"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+            <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+            <a href="#" aria-current="page"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+          </nav>
+          <div class="right">
+            <span class="status" title="Service running"><i class="dot"></i></span>
+            <button class="btn btn-ghost btn-icon" title="More"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+        </header>
+
+        <main class="page">
+          <div class="page-head"><h1>Settings</h1></div>
+          <div class="tabs"><a href="#">General</a><a href="#" class="is-current">Integrations</a></div>
+
+          <h2 class="section-title">Storage - makes the link</h2>
+          <div class="introw">
+            <svg class="icon"><use href="#i-share"/></svg>
+            <span class="name"><b>Nextcloud</b><span>cloud.example.com &middot; folder Clips &middot; links expire after 30 days</span></span>
+            <span class="badge accent">quick share</span>
+            <span class="actions"><i class="dot" title="Diagnostics: ok"></i><button class="btn btn-ghost">Test</button><button class="btn btn-ghost">Edit</button></span>
+          </div>
+          <div class="introw">
+            <svg class="icon"><use href="#i-share"/></svg>
+            <span class="name"><b>OneDrive</b><span>connected as dominic &middot; Apps/replaycut</span></span>
+            <span class="badge">in the Share menu</span>
+            <span class="actions"><i class="dot" title="Diagnostics: ok"></i><button class="btn btn-ghost">Test</button><button class="btn btn-ghost">Edit</button></span>
+          </div>
+          <div class="introw">
+            <svg class="icon"><use href="#i-play"/></svg>
+            <span class="name"><b>YouTube</b><span>connected as WARDOGS &middot; unlisted &middot; built-in Google client</span></span>
+            <span class="badge">in the Share menu</span>
+            <span class="actions"><i class="dot" title="Diagnostics: ok"></i><button class="btn btn-ghost">Test</button><button class="btn btn-ghost">Edit</button></span>
+          </div>
+
+          <h2 class="section-title">Notify - posts the link</h2>
+          <div class="introw">
+            <svg class="icon"><use href="#i-info"/></svg>
+            <span class="name"><b>Discord</b><span>posts every share as WARDOGS</span></span>
+            <span class="badge ok">posting</span>
+            <span class="actions"><i class="dot" title="Diagnostics: ok"></i><button class="btn btn-ghost">Test</button><button class="btn btn-ghost">Edit</button></span>
+          </div>
+          <div class="introw">
+            <svg class="icon"><use href="#i-info"/></svg>
+            <span class="name"><b>Webhook</b><span>n8n.example.com &middot; last post: 404 Not Found (21:20)</span></span>
+            <span class="badge err">failing</span>
+            <span class="actions"><i class="dot err" title="Diagnostics: failed"></i><button class="btn btn-ghost">Test</button><button class="btn btn-ghost">Edit</button></span>
+          </div>
+
+          <div class="addrow"><button class="btn btn-primary"><svg class="icon"><use href="#i-plus"/></svg> Add integration</button></div>
+        </main>
+      </div>
+    </div>
+  </section>
+
+  <section class="shot">
+    <h2>Desktop, 1280 px - "Add integration", step 2 of 4</h2>
+    <div class="fit fit-wide">
+      <div class="frame frame-desktop">
+        <header class="topbar">
+          <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+          <nav class="nav" aria-label="Pages">
+            <a href="#"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+            <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+            <a href="#" aria-current="page"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+          </nav>
+          <div class="right">
+            <span class="status"><i class="dot"></i></span>
+            <button class="btn btn-ghost btn-icon" title="More"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+        </header>
+        <main class="page">
+          <div class="page-head"><h1>Settings</h1></div>
+          <div class="tabs"><a href="#">General</a><a href="#" class="is-current">Integrations</a></div>
+          <div class="introw"><svg class="icon"><use href="#i-share"/></svg><span class="name"><b>Nextcloud</b><span>cloud.example.com &middot; folder Clips</span></span><span class="badge accent">quick share</span><span class="actions"><i class="dot"></i><button class="btn btn-ghost">Edit</button></span></div>
+        </main>
+        <div class="modal">
+          <div class="dialog">
+            <div class="stepper">
+              <span class="step done"><span class="num"><svg class="icon icon-sm"><use href="#i-check"/></svg></span>Which one</span>
+              <span class="line"></span>
+              <span class="step current"><span class="num">2</span>Bot and chat</span>
+              <span class="line"></span>
+              <span class="step"><span class="num">3</span>Test</span>
+              <span class="line"></span>
+              <span class="step"><span class="num">4</span>When to post</span>
+            </div>
+            <h2>Telegram</h2>
+            <p class="muted sm">A bot posts the link into a chat, group or channel. Create the bot with <b>@BotFather</b> (<code>/newbot</code>), add it to the chat or as a channel admin, and find the chat id with <b>@userinfobot</b>.</p>
+            <div class="field"><label>Bot token</label><div class="input-group"><input class="input mono" type="password" placeholder="123456:ABC-DEF..."><button class="btn btn-icon" type="button" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Goes to the credential store as <code>replaycut/telegram</code>; never written to a file.</span></div>
+            <div class="field"><label>Chat id</label><input class="input mono" placeholder="-1001234567890 or @channelname"></div>
+            <div class="actions"><button class="btn btn-ghost">Cancel</button><button class="btn">Back</button><button class="btn btn-primary">Test and continue</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="shots">
+    <section class="shot">
+      <h2>Phone, 375 px - the rows</h2>
+      <p class="note muted sm">Five rows instead of eight cards. Test and Edit wrap under the name; the diagnostics dot stays on the first line.</p>
+      <div class="fit fit-phone">
+        <div class="frame frame-phone">
+          <header class="topbar">
+            <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg></a>
+            <nav class="nav" aria-label="Pages">
+              <a href="#"><svg class="icon"><use href="#i-film"/></svg></a>
+              <a href="#"><svg class="icon"><use href="#i-clock"/></svg></a>
+              <a href="#" aria-current="page"><svg class="icon"><use href="#i-settings"/></svg></a>
+            </nav>
+            <div class="right">
+              <span class="status"><i class="dot"></i></span>
+              <button class="btn btn-ghost btn-icon" title="More"><svg class="icon"><use href="#i-more"/></svg></button>
+            </div>
+          </header>
+          <main class="page">
+            <div class="tabs"><a href="#">General</a><a href="#" class="is-current">Integrations</a></div>
+            <h2 class="section-title">Storage</h2>
+            <div class="introw"><svg class="icon"><use href="#i-share"/></svg><span class="name"><b>Nextcloud</b><span>cloud.example.com &middot; Clips</span></span><i class="dot"></i><span class="actions"><span class="badge accent">quick share</span><button class="btn btn-ghost">Test</button><button class="btn btn-ghost">Edit</button></span></div>
+            <div class="introw"><svg class="icon"><use href="#i-share"/></svg><span class="name"><b>OneDrive</b><span>connected as dominic</span></span><i class="dot"></i><span class="actions"><button class="btn btn-ghost">Test</button><button class="btn btn-ghost">Edit</button></span></div>
+            <div class="introw"><svg class="icon"><use href="#i-play"/></svg><span class="name"><b>YouTube</b><span>connected as WARDOGS</span></span><i class="dot"></i><span class="actions"><button class="btn btn-ghost">Test</button><button class="btn btn-ghost">Edit</button></span></div>
+            <h2 class="section-title">Notify</h2>
+            <div class="introw"><svg class="icon"><use href="#i-info"/></svg><span class="name"><b>Discord</b><span>posts every share</span></span><i class="dot"></i><span class="actions"><button class="btn btn-ghost">Test</button><button class="btn btn-ghost">Edit</button></span></div>
+            <div class="introw"><svg class="icon"><use href="#i-info"/></svg><span class="name"><b>Webhook</b><span>last post: 404 Not Found</span></span><i class="dot err"></i><span class="actions"><button class="btn btn-ghost">Test</button><button class="btn btn-ghost">Edit</button></span></div>
+            <div class="addrow"><button class="btn btn-primary"><svg class="icon"><use href="#i-plus"/></svg> Add integration</button></div>
+          </main>
+        </div>
+      </div>
+    </section>
+
+    <section class="shot">
+      <h2>Phone, 375 px - step 1, which one</h2>
+      <p class="note muted sm">The dialog fills the screen on a phone. Everything not set up lives here, with one line each saying what it is good for.</p>
+      <div class="fit fit-phone">
+        <div class="frame frame-phone">
+          <header class="topbar">
+            <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg></a>
+            <nav class="nav" aria-label="Pages">
+              <a href="#"><svg class="icon"><use href="#i-film"/></svg></a>
+              <a href="#"><svg class="icon"><use href="#i-clock"/></svg></a>
+              <a href="#" aria-current="page"><svg class="icon"><use href="#i-settings"/></svg></a>
+            </nav>
+            <div class="right">
+              <span class="status"><i class="dot"></i></span>
+              <button class="btn btn-ghost btn-icon"><svg class="icon"><use href="#i-more"/></svg></button>
+            </div>
+          </header>
+          <main class="page"></main>
+          <div class="modal">
+            <div class="dialog">
+              <div class="stepper"><span class="step current"><span class="num">1</span>Which one</span><span class="line"></span><span class="step"><span class="num">2</span>Details</span><span class="line"></span><span class="step"><span class="num">3</span>Test</span></div>
+              <h2>Add integration</h2>
+              <div class="pick">
+                <button class="introw"><svg class="icon"><use href="#i-share"/></svg><span class="name"><b>S3</b><span>Any S3 bucket - AWS, R2, B2, MinIO</span></span><svg class="icon"><use href="#i-chevron"/></svg></button>
+                <button class="introw"><svg class="icon"><use href="#i-share"/></svg><span class="name"><b>WebDAV</b><span>A Storage Box, nginx or rclone</span></span><svg class="icon"><use href="#i-chevron"/></svg></button>
+                <button class="introw"><svg class="icon"><use href="#i-info"/></svg><span class="name"><b>Telegram</b><span>A bot posts into a chat or channel</span></span><svg class="icon"><use href="#i-chevron"/></svg></button>
+              </div>
+              <div class="actions"><button class="btn btn-ghost">Cancel</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="mock.js"></script>
+<script src="nav-frames.js"></script>
+</body>
+</html>

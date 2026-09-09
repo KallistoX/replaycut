@@ -1,5 +1,6 @@
-/* Frames for the three navigation proposals (nav-a.html, nav-b.html,
- * nav-c.html). Not part of the UI.
+/* Frames for the proposal sheets: the navigation of 3.2 (nav-a.html,
+ * nav-b.html, nav-c.html) and the integrations page of 3.3
+ * (integrations-a.html, -b.html, -c.html). Not part of the UI.
  *
  * A proposal has to show a desktop view and a phone view on one sheet, so
  * every view sits in a `.frame`: a fixed-width box with

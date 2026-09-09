@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e12'/%3E%3Cpath d='M22 16v32l26-16z' fill='%23f2b632'/%3E%3Cpath d='M12 24h7M12 40h7' stroke='%23f2b632' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<title>replaycut - Integrations A: list and detail (mockup)</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" id="theme" href="" disabled>
+<link rel="stylesheet" href="../base.css">
+<link rel="stylesheet" href="mock.css">
+<link rel="stylesheet" href="nav-frames.css">
+<style>
+  /* Proposal A: the page is a list of every integration with a detail pane
+   * next to it. `@container` here is `@media` in index.html.
+   *
+   * New components this proposal would add to base.css:
+   *   .intlist / .introw   one line per integration, selectable
+   *   .intdetail           the pane that shows the selected one
+   * Everything else - card, field, switch, badge, dot, btn - exists. */
+
+  /* A list beside a form does not fit in the 720 px column every other page
+   * uses: the detail pane would be 330 px wide and its `fields-2` would fall
+   * back to one column. This proposal therefore widens the Integrations tab
+   * - the only page in the UI that would be wider than `--max-w`. */
+  .page:has(.intpage) { --max-w: 1040px; }
+  .intpage { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+
+  .intlist { display: flex; flex-direction: column; gap: var(--space-1); }
+  .intlist .section-title { margin: var(--space-3) 0 var(--space-1); }
+  .intlist .section-title:first-child { margin-top: 0; }
+  .intlist .lead { margin: 0 0 var(--space-2); color: var(--fg-muted); font-size: var(--text-sm); }
+
+  .introw { display: grid; grid-template-columns: 20px 20px minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; width: 100%; min-height: var(--touch); padding: var(--space-2) var(--space-3); border: 1px solid transparent; border-radius: var(--radius-md); background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+  .introw:hover { background: var(--surface-2); }
+  .introw[aria-current="true"] { background: var(--surface-2); border-color: var(--line-strong); }
+  .introw .name { display: flex; flex-direction: column; min-width: 0; }
+  .introw .name b { font-weight: var(--weight-strong); }
+  .introw .name span { color: var(--fg-muted); font-size: var(--text-xs); }
+  .introw[aria-current="true"] .name b { color: var(--accent); }
+  .introw > .icon { color: var(--fg-faint); }
+  .introw[aria-current="true"] > .icon { color: var(--accent); }
+  .introw input[type="radio"] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+  .introw.is-off .name b, .introw.is-off > .icon { color: var(--fg-muted); }
+
+  .intdetail { display: flex; flex-direction: column; gap: var(--space-3); }
+  .intdetail .head { display: flex; align-items: center; gap: var(--space-3); }
+  .intdetail .head h2 { flex: 1; min-width: 0; font-size: var(--text-lg); }
+  .backlink { display: none; align-items: center; gap: var(--space-2); min-height: var(--touch); color: var(--fg-muted); }
+
+  /* Phone: the list is the page, the detail is a subpage of its own. */
+  @container (max-width: 700px) {
+    .intpage { grid-template-columns: minmax(0, 1fr); }
+    .frame-phone .intpage.show-detail .intlist { display: none; }
+    .frame-phone .intpage.show-list .intdetail { display: none; }
+    .frame-phone .backlink { display: flex; }
+  }
+
+  /* Only for the sheet: the frames scroll their own content. */
+  .frame .page { height: calc(100% - var(--topbar-h)); overflow: auto; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 20 20"><path d="M4 3.5v13l11-6.5z"/><path d="M2 7h4M2 13h4"/></symbol>
+  <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12M2.5 8h3.5M14 8h3.5M2.5 12h3.5M14 12h3.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5l3 2"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
+  <symbol id="i-more" viewBox="0 0 20 20"><circle cx="4.5" cy="10" r="1.25"/><circle cx="10" cy="10" r="1.25"/><circle cx="15.5" cy="10" r="1.25"/></symbol>
+  <symbol id="i-share" viewBox="0 0 20 20"><path d="M10 12V3M6.5 6.5 10 3l3.5 3.5M4 11v5h12v-5"/></symbol>
+  <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/></symbol>
+  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4v12l10-6z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 20 20"><path d="m4 10.5 4 4 8-9"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 20 20"><path d="M10 3 2.5 16.5h15z"/><path d="M10 8v4M10 14.2v.3"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 20 20"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></symbol>
+  <symbol id="i-back" viewBox="0 0 20 20"><path d="m12.5 4.5-5.5 5.5 5.5 5.5"/></symbol>
+</svg>
+
+<div class="sheet">
+  <header class="sheet-head">
+    <h1>Integrations A - a list, and one detail beside it</h1>
+    <p>Every integration is one line: the icon, the name, what it is doing right now, and the live
+      result of its diagnostics check. Only the line you pick opens its fields, in the pane on the
+      right; on a phone that pane is a subpage of its own. <b>Quick share is a radio column</b> over
+      the storage list instead of eight switches that have to talk each other out of it.</p>
+    <ul>
+      <li>The page is as long as the list, not as long as every field of every integration - eight
+        lines instead of a screen and a half of scrolling.</li>
+      <li>"Which one does the Share button use?" is answered by a column of radio buttons, and the
+        rule that only one can win is the control itself, not a hidden reaction.</li>
+      <li>The <b>diagnostics dot</b> sits in the line: green, amber or red per integration, with the
+        reason under the name. What is broken is visible without opening anything.</li>
+      <li>Costs a click before the first field, and needs a second view on a phone - the only
+        proposal here that has two screens instead of one.</li>
+      <li>It also needs room: a list beside a form does not fit in the 720 px column the other
+        pages use, so the Integrations tab would be 1040 px wide - the only page in the UI that
+        breaks out of it.</li>
+    </ul>
+  </header>
+
+  <section class="shot">
+    <h2>Desktop, 1280 px - Nextcloud selected</h2>
+    <div class="fit fit-wide">
+      <div class="frame frame-desktop">
+        <header class="topbar">
+          <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+          <nav class="nav" aria-label="Pages">
+            <a href="#"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+            <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+            <a href="#" aria-current="page"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+          </nav>
+          <div class="right">
+            <span class="status" title="Service running"><i class="dot"></i></span>
+            <button class="btn btn-ghost btn-icon" title="More"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+        </header>
+
+        <main class="page">
+          <div class="page-head"><h1>Settings</h1></div>
+          <div class="tabs"><a href="#">General</a><a href="#" class="is-current">Integrations</a></div>
+
+          <div class="intpage">
+            <div class="intlist">
+              <h2 class="section-title">Storage - makes the link</h2>
+              <p class="lead">The marked one is what the <b>Share</b> button uses; the others sit in its menu.</p>
+
+              <button class="introw" aria-current="true">
+                <input type="radio" name="quick" checked aria-label="Quick share target">
+                <svg class="icon"><use href="#i-share"/></svg>
+                <span class="name"><b>Nextcloud</b><span>Logged in &middot; 41 GB free</span></span>
+                <i class="dot" title="Diagnostics: ok"></i>
+              </button>
+
+              <button class="introw">
+                <input type="radio" name="quick" aria-label="Quick share target">
+                <svg class="icon"><use href="#i-share"/></svg>
+                <span class="name"><b>OneDrive</b><span>Connected as dominic</span></span>
+                <i class="dot" title="Diagnostics: ok"></i>
+              </button>
+
+              <button class="introw">
+                <input type="radio" name="quick" aria-label="Quick share target">
+                <svg class="icon"><use href="#i-play"/></svg>
+                <span class="name"><b>YouTube</b><span>Connected as WARDOGS</span></span>
+                <i class="dot" title="Diagnostics: ok"></i>
+              </button>
+
+              <button class="introw is-off">
+                <input type="radio" name="quick" disabled aria-label="Quick share target">
+                <svg class="icon"><use href="#i-share"/></svg>
+                <span class="name"><b>S3</b><span>off</span></span>
+              </button>
+
+              <button class="introw is-off">
+                <input type="radio" name="quick" disabled aria-label="Quick share target">
+                <svg class="icon"><use href="#i-share"/></svg>
+                <span class="name"><b>WebDAV</b><span>off</span></span>
+              </button>
+
+              <h2 class="section-title">Notify - posts the link</h2>
+              <button class="introw">
+                <span></span>
+                <svg class="icon"><use href="#i-info"/></svg>
+                <span class="name"><b>Discord</b><span>posts every share</span></span>
+                <i class="dot" title="Diagnostics: ok"></i>
+              </button>
+
+              <button class="introw">
+                <span></span>
+                <svg class="icon"><use href="#i-info"/></svg>
+                <span class="name"><b>Webhook</b><span>last post: 404 Not Found</span></span>
+                <i class="dot err" title="Diagnostics: failed"></i>
+              </button>
+
+              <button class="introw is-off">
+                <span></span>
+                <svg class="icon"><use href="#i-info"/></svg>
+                <span class="name"><b>Telegram</b><span>off</span></span>
+              </button>
+            </div>
+
+            <div class="intdetail">
+              <div class="head">
+                <svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg>
+                <h2>Nextcloud</h2>
+                <span class="badge ok"><svg class="icon icon-sm"><use href="#i-check"/></svg> connected</span>
+                <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+              </div>
+              <p class="muted sm">Uploads to a folder of your Nextcloud and shares it as a public link. The link is what the notify integrations post.</p>
+              <div class="field"><label>Server</label><input class="input mono" value="https://cloud.example.com"></div>
+              <div class="fields-2">
+                <div class="field"><label>User</label><input class="input" value="clips-you"></div>
+                <div class="field"><label>App password</label><div class="input-group"><input class="input mono" type="password" value="xxxxxxxxxxxx"><button class="btn btn-icon" type="button" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Credential Manager, <code>replaycut/nextcloud</code>.</span></div>
+                <div class="field"><label>Folder</label><input class="input" value="Clips"></div>
+                <div class="field"><label>Link expiry</label><select class="select"><option>never</option><option selected>30 days</option><option>90 days</option></select></div>
+              </div>
+              <details class="limits"><summary class="muted sm">Limits (optional)</summary></details>
+              <div class="row"><button class="btn">Test connection</button><span class="sm" style="color:var(--ok)"><svg class="icon icon-sm"><use href="#i-check"/></svg> Logged in &middot; 41 GB free of 50 GB</span></div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </section>
+
+  <div class="shots">
+    <section class="shot">
+      <h2>Phone, 375 px - the list</h2>
+      <p class="note muted sm">Eight lines, the whole state of the page at a glance. The radio column stays: it is the only place the quick-share target is chosen.</p>
+      <div class="fit fit-phone">
+        <div class="frame frame-phone">
+          <header class="topbar">
+            <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg></a>
+            <nav class="nav" aria-label="Pages">
+              <a href="#"><svg class="icon"><use href="#i-film"/></svg></a>
+              <a href="#"><svg class="icon"><use href="#i-clock"/></svg></a>
+              <a href="#" aria-current="page"><svg class="icon"><use href="#i-settings"/></svg></a>
+            </nav>
+            <div class="right">
+              <span class="status"><i class="dot"></i></span>
+              <button class="btn btn-ghost btn-icon" title="More"><svg class="icon"><use href="#i-more"/></svg></button>
+            </div>
+          </header>
+          <main class="page">
+            <div class="tabs"><a href="#">General</a><a href="#" class="is-current">Integrations</a></div>
+            <div class="intpage show-list">
+              <div class="intlist">
+                <h2 class="section-title">Storage - makes the link</h2>
+                <p class="lead">The marked one is what <b>Share</b> uses.</p>
+                <button class="introw"><input type="radio" name="q2" checked aria-label="Quick share target"><svg class="icon"><use href="#i-share"/></svg><span class="name"><b>Nextcloud</b><span>Logged in &middot; 41 GB free</span></span><i class="dot"></i></button>
+                <button class="introw"><input type="radio" name="q2" aria-label="Quick share target"><svg class="icon"><use href="#i-share"/></svg><span class="name"><b>OneDrive</b><span>Connected as dominic</span></span><i class="dot"></i></button>
+                <button class="introw"><input type="radio" name="q2" aria-label="Quick share target"><svg class="icon"><use href="#i-play"/></svg><span class="name"><b>YouTube</b><span>Connected as WARDOGS</span></span><i class="dot"></i></button>
+                <button class="introw is-off"><input type="radio" name="q2" disabled aria-label="Quick share target"><svg class="icon"><use href="#i-share"/></svg><span class="name"><b>S3</b><span>off</span></span></button>
+                <button class="introw is-off"><input type="radio" name="q2" disabled aria-label="Quick share target"><svg class="icon"><use href="#i-share"/></svg><span class="name"><b>WebDAV</b><span>off</span></span></button>
+                <h2 class="section-title">Notify - posts the link</h2>
+                <button class="introw"><span></span><svg class="icon"><use href="#i-info"/></svg><span class="name"><b>Discord</b><span>posts every share</span></span><i class="dot"></i></button>
+                <button class="introw"><span></span><svg class="icon"><use href="#i-info"/></svg><span class="name"><b>Webhook</b><span>last post: 404 Not Found</span></span><i class="dot err"></i></button>
+                <button class="introw is-off"><span></span><svg class="icon"><use href="#i-info"/></svg><span class="name"><b>Telegram</b><span>off</span></span></button>
+              </div>
+              <div class="intdetail"></div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </section>
+
+    <section class="shot">
+      <h2>Phone, 375 px - one integration</h2>
+      <p class="note muted sm">Tapping a line opens its own view with a way back. Only this proposal needs a second screen on a phone.</p>
+      <div class="fit fit-phone">
+        <div class="frame frame-phone">
+          <header class="topbar">
+            <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg></a>
+            <nav class="nav" aria-label="Pages">
+              <a href="#"><svg class="icon"><use href="#i-film"/></svg></a>
+              <a href="#"><svg class="icon"><use href="#i-clock"/></svg></a>
+              <a href="#" aria-current="page"><svg class="icon"><use href="#i-settings"/></svg></a>
+            </nav>
+            <div class="right">
+              <span class="status"><i class="dot"></i></span>
+              <button class="btn btn-ghost btn-icon" title="More"><svg class="icon"><use href="#i-more"/></svg></button>
+            </div>
+          </header>
+          <main class="page">
+            <div class="intpage show-detail">
+              <div class="intlist"></div>
+              <div class="intdetail">
+                <a class="backlink" href="#"><svg class="icon"><use href="#i-back"/></svg> All integrations</a>
+                <div class="head">
+                  <svg class="icon" style="color:var(--accent)"><use href="#i-share"/></svg>
+                  <h2>Nextcloud</h2>
+                  <label class="switch"><input type="checkbox" checked><span class="track"></span></label>
+                </div>
+                <span class="badge ok"><svg class="icon icon-sm"><use href="#i-check"/></svg> connected</span>
+                <div class="field"><label>Server</label><input class="input mono" value="https://cloud.example.com"></div>
+                <div class="field"><label>User</label><input class="input" value="clips-you"></div>
+                <div class="field"><label>App password</label><div class="input-group"><input class="input mono" type="password" value="xxxxxxxxxxxx"><button class="btn btn-icon" type="button" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div></div>
+                <div class="field"><label>Folder</label><input class="input" value="Clips"></div>
+                <div class="row"><button class="btn">Test connection</button></div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="mock.js"></script>
+<script src="nav-frames.js"></script>
+</body>
+</html>
