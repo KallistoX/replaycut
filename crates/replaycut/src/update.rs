@@ -598,6 +598,17 @@ pub fn is_installed_copy() -> bool {
     false
 }
 
+/// True when a distribution package put this executable in place (Linux,
+/// under `/usr`): the package manager updates it, not this service.
+#[cfg(target_os = "linux")]
+pub fn is_package_copy() -> bool {
+    crate::linuxshell::is_package_copy()
+}
+#[cfg(not(target_os = "linux"))]
+pub fn is_package_copy() -> bool {
+    false
+}
+
 /// Put the unpacked package into `app`: the running executable is renamed
 /// aside (Windows allows that, Linux does not mind), everything else copied
 /// over. No restart here.
@@ -636,6 +647,9 @@ pub fn install(state: &AppState) -> Result<()> {
             _ => bail!("no verified update is ready - download it first"),
         }
     };
+    if is_package_copy() {
+        bail!("this copy came from a distribution package - update it with your package manager");
+    }
     if !is_installed_copy() {
         bail!("this copy was not installed with {INSTALL_SCRIPT} - update it by hand");
     }

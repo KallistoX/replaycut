@@ -24,6 +24,16 @@ contract.
   (the installer's own output for that path, kept in `dist/linux/` and
   checked by a test) and the icon `replaycut.svg`, so a package installs
   them instead of writing its own; the README says where they go. (#15)
+- **A copy from a distribution package knows it.** On Linux an executable
+  under `/usr` was put there by a package (AUR, deb, rpm): `replaycut
+  install` and `uninstall` say so and leave the package's files alone
+  (`uninstall --purge` still removes this user's settings, state and
+  credentials), `autostart on` and the switch in Settings enable the unit
+  the package installed instead of writing a second one, `autostart status`
+  names the unit that is enabled, and the update banner says the copy
+  updates with the package manager instead of "not installed with
+  install.cmd" - which, on Linux, now reads `install.sh` where it still
+  applies. `GET /api/update` carries `fromPackage`. (#15)
 
 ## [3.3.0] - 2026-09-09
 
@@ -113,8 +123,6 @@ tray icon and a package of its own in every release: a Linux machine sets
 replaycut up the way a Windows one does, and the one-click update works
 there too. The browser side gets twelve themes to pick from and a top bar
 that fits on a phone.
-
-### Added
 
 - **Twelve themes on board.** A fresh installation no longer offers the
   dark default alone: Material Design dark and light, the four Catppuccin

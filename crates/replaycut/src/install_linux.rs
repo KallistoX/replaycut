@@ -107,6 +107,15 @@ pub fn install(
     data_dir: &Path,
 ) -> Result<()> {
     println!("replaycut {VERSION} - install");
+    if linuxshell::is_package_copy() {
+        println!(
+            "\nThis copy was installed by your package manager, together with its\n\
+             desktop entry and user unit - nothing to do here. Updates come with\n\
+             the package; `replaycut autostart on` (or the switch in Settings)\n\
+             starts it with your desktop session."
+        );
+        return Ok(());
+    }
     let source_exe = std::env::current_exe().context("current executable")?;
     let source_dir = source_exe
         .parent()
@@ -209,6 +218,15 @@ pub fn install(
 pub fn uninstall(purge: bool, port: u16, settings_path: &Path, data_dir: &Path) -> Result<()> {
     println!("replaycut {VERSION} - uninstall");
     let app = linuxshell::app_dir();
+    let package = linuxshell::is_package_copy();
+    if package && !purge {
+        println!(
+            "\nThis copy was installed by your package manager - remove the package\n\
+             with it. `replaycut uninstall --purge` still deletes the settings, state,\n\
+             logs and stored credentials of this user."
+        );
+        return Ok(());
+    }
 
     step("Stopping a running instance");
     linuxshell::stop_unit();
@@ -218,27 +236,38 @@ pub fn uninstall(purge: bool, port: u16, settings_path: &Path, data_dir: &Path) 
         println!("  none running");
     }
 
-    step("Removing autostart, desktop entry and icon");
-    if linuxshell::clear_autostart()? {
-        println!("  {} removed", linuxshell::SERVICE_UNIT);
-    }
-    for path in [linuxshell::desktop_entry_path(), linuxshell::icon_path()] {
-        if linuxshell::remove_file_if_present(&path) {
-            println!("  {} removed", path.display());
+    if package {
+        // the files are the package's; only the autostart link is this user's
+        step("Removing autostart");
+        if linuxshell::clear_autostart()? {
+            println!("  {} disabled", linuxshell::SERVICE_UNIT);
         }
-    }
-    if linuxshell::unlink_binary() {
-        println!("  {} removed", linuxshell::bin_link().display());
-    }
-
-    step(&format!("Removing {}", app.display()));
-    if app.is_dir() {
-        // the running executable may be in there; Linux lets it go
-        std::fs::remove_dir_all(&app)
-            .with_context(|| format!("cannot remove {}", app.display()))?;
-        println!("  removed");
+        println!(
+            "\nThe program files belong to the package - remove it with your package manager."
+        );
     } else {
-        println!("  not present");
+        step("Removing autostart, desktop entry and icon");
+        if linuxshell::clear_autostart()? {
+            println!("  {} removed", linuxshell::SERVICE_UNIT);
+        }
+        for path in [linuxshell::desktop_entry_path(), linuxshell::icon_path()] {
+            if linuxshell::remove_file_if_present(&path) {
+                println!("  {} removed", path.display());
+            }
+        }
+        if linuxshell::unlink_binary() {
+            println!("  {} removed", linuxshell::bin_link().display());
+        }
+
+        step(&format!("Removing {}", app.display()));
+        if app.is_dir() {
+            // the running executable may be in there; Linux lets it go
+            std::fs::remove_dir_all(&app)
+                .with_context(|| format!("cannot remove {}", app.display()))?;
+            println!("  removed");
+        } else {
+            println!("  not present");
+        }
     }
 
     if purge
@@ -304,7 +333,12 @@ pub enum AutostartMode {
 pub fn autostart(mode: AutostartMode) -> Result<()> {
     match mode {
         AutostartMode::On => {
-            let exe = installed_exe();
+            // a package's copy brings its own unit; ours needs the installed one
+            let exe = if linuxshell::is_package_copy() {
+                std::env::current_exe().context("current executable")?
+            } else {
+                installed_exe()
+            };
             if !exe.is_file() {
                 anyhow::bail!(
                     "replaycut is not installed ({} missing) - run install.sh first",
@@ -314,7 +348,7 @@ pub fn autostart(mode: AutostartMode) -> Result<()> {
             linuxshell::set_autostart(&exe)?;
             println!(
                 "autostart on: replaycut starts with your desktop session ({})",
-                linuxshell::SERVICE_UNIT
+                linuxshell::autostart_entry().unwrap_or_else(|| linuxshell::SERVICE_UNIT.into())
             );
         }
         AutostartMode::Off => {

@@ -182,7 +182,8 @@ replaycut checks GitHub once a day and shows a banner when a newer release
 exists. "Update now" downloads the ZIP, verifies its signature and hash and
 restarts on the new version; settings, titles, history and credentials are
 kept. By hand: unpack the new ZIP and run its `install.cmd` (`install.sh`
-on Linux). The public
+on Linux). A copy that came from a distribution package updates with your
+package manager; the banner says so. The public
 minisign key is built into replaycut; an unsigned or foreign release is never
 installed.
 
