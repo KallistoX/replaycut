@@ -273,7 +273,6 @@ pub fn uninstall(purge: bool, port: u16, settings_path: &Path, data_dir: &Path) 
             crate::credentials::WEBDAV,
             crate::credentials::YOUTUBE,
             crate::credentials::YOUTUBE_CLIENT,
-            crate::credentials::X,
             crate::credentials::TELEGRAM,
             crate::credentials::WEBHOOK_SECRET,
         ] {

@@ -897,31 +897,6 @@ provider document carries `loopback: true` then, and:
   sees `done` or `failed` like with the device flow. The route sits outside
   `/api/` and needs no session: the state token is the proof.
 
-### X
-
-X is a storage target (`x` in `config.targets`) whose "file" is a post
-with the video attached: the chunked media upload of the v2 API
-(`initialize`, `append` in 4 MiB segments, `finalize`, then `STATUS` polls
-until X has processed the video, at most five minutes), then `POST
-/2/tweets` with the text from the template and the media id. `page` and
-`direct` are `https://x.com/<user>/status/<id>`, `ncPath` is the post id;
-deleting a clip with `?nextcloud=1` deletes the posts its jobs made.
-
-- Settings: `integrations.x { enabled, quickShare, text }`. `text` may use
-  `{title}`, `{clip}` and `{date}`; an empty title falls back to the clip's
-  name without the display-name prefix, an empty result to the title, and
-  the post is cut to 280 characters. A template over 280 characters is a
-  400.
-- The client is the replaycut app's (a public client with PKCE; `X_CLIENT_ID`
-  in the build, `REPLAYCUT_X_CLIENT_ID` overrides it), the account the
-  credential `replaycut/x` (`@username`, refresh token; X rotates it on
-  every refresh). `secrets.x` says whether one is connected.
-- `GET /api/oauth/x` always says `loopback: true`: X has no device flow, so
-  the account connects through the browser on this PC (see "Loopback
-  login"), scopes `tweet.read tweet.write users.read media.write
-  offline.access`. `/start` answers 400, `/loopback` 409 while the build
-  has no client id.
-
 ### Vertical cut
 
 `POST /api/share` takes `vertical: true` and `verticalPos` (0..1, default
@@ -1336,6 +1311,24 @@ Titles, the seen list and the history are rows in `<data-dir>\replaycut.db`
 `clip-names.json`, `clip-seen.json` and `clip-history.json` and moves them to
 `<data-dir>\backup-2.x\`; every share of 2.x becomes a cut without a file, so
 its outputs still hang under their clip. None of this is visible in the API.
+
+## Since 3.3
+
+### X is gone
+
+The X target of 2.6 is removed. X's API has had no free tier since
+6 February 2026: posting is billed per request, so a client shipped with
+replaycut would put every user's posts on the maintainer's bill. No release
+ever carried a client id, so no installation can have used the target.
+
+- `x` is no longer in `config.targets`, `integrations.x` is no longer a
+  settings group (a `PUT /api/settings` that names it is a 400, like any
+  unknown integration) and `secrets.x` is gone.
+- `GET /api/oauth/x` is a 404 like any unknown provider, and the
+  diagnostics have no `x` row.
+- `integrations.x` in an existing `settings.json` is ignored, as any unknown
+  field is. A share whose target was `x` cannot exist, so the history and
+  the delete dialog need no migration.
 
 ## Behaviour
 

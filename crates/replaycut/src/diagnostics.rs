@@ -457,36 +457,6 @@ pub async fn run(state: &AppState) -> Report {
         }
     };
 
-    // x (since 2.6): the built-in client plus the connected account
-    let x_check = {
-        let enabled = settings.integrations.x.enabled;
-        let runtime = runtime.clone();
-        let dry_run = state.dry_run;
-        async move {
-            if !enabled {
-                return Check::new("x", "X", "skip", "integration is off");
-            }
-            if dry_run {
-                return Check::new("x", "X", "ok", "dry run");
-            }
-            let Some(entry) = runtime.integrations.storage("x") else {
-                return Check::new("x", "X", "fail", "enabled, but no account connected")
-                    .with_fix("Settings › Integrations › X: Connect X in the browser on this PC.");
-            };
-            match &entry.storage {
-                integrations::Storage::X(x) => match tokio::time::timeout(TIMEOUT, x.account())
-                    .await
-                {
-                    Ok(Ok(name)) => Check::new("x", "X", "ok", format!("connected as {name}")),
-                    Ok(Err(e)) => Check::new("x", "X", "fail", format!("{e:#}"))
-                        .with_fix("Disconnect and connect X again under Settings › Integrations."),
-                    Err(_) => Check::new("x", "X", "fail", "no answer from X within 5 s"),
-                },
-                _ => Check::new("x", "X", "ok", "dry run"),
-            }
-        }
-    };
-
     // telegram and the generic webhook (since 2.6): the bot answers getMe;
     // the webhook is only checked for its configuration, a real POST would
     // reach the receiver on every diagnostics run
@@ -869,7 +839,6 @@ pub async fn run(state: &AppState) -> Report {
     checks.push(s3_check.await);
     checks.push(webdav_check.await);
     checks.push(youtube_check.await);
-    checks.push(x_check.await);
     checks.push(webhook);
     checks.push(telegram_check.await);
     checks.push(generic_webhook_check.await);

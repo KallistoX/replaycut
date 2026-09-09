@@ -2,7 +2,7 @@
 
 replaycut is a self-hosted program. It runs on your own PC, and there is
 no replaycut server, account or telemetry. This page exists because the
-integrations with YouTube, X and OneDrive ask for a privacy policy of the
+integrations with YouTube and OneDrive ask for a privacy policy of the
 application that requests access.
 
 The published version of this text lives at
@@ -16,7 +16,7 @@ Change both together.
   on your PC that you configured.
 - Settings are a JSON file in your user profile.
 - Credentials and OAuth refresh tokens for the integrations you connect
-  (Nextcloud, OneDrive, S3, WebDAV, YouTube, X, Telegram, Discord, webhook)
+  (Nextcloud, OneDrive, S3, WebDAV, YouTube, Telegram, Discord, webhook)
   are stored in your PC's credential store (the Windows Credential Manager,
   or the keyring behind the Secret Service on Linux). They are never
   written to a file and never sent anywhere but to the service they belong

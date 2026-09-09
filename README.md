@@ -32,7 +32,9 @@ your phone, link in Discord.](docs/design/icons/social.png)
   NVENC, Intel Quick Sync) at below-normal priority with a thread cap, so the
   game keeps the CPU.
 - **Upload where you like.** Nextcloud, OneDrive, any S3 bucket or WebDAV
-  server, YouTube (a vertical cut as a Short), X - or just a file in a folder.
+  server, YouTube (a vertical cut as a Short) - or just a file in a folder.
+  Not X: its API has had no free tier since February 2026, so every post
+  would be billed to whoever registered the app.
 - **The link posts itself.** Discord, Telegram or any webhook right after the
   quick share; every other share offers "Post to ..." when you want it.
 - **Closed until you open it.** A new installation listens on this PC only;

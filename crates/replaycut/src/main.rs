@@ -48,7 +48,6 @@ mod util;
 #[cfg(windows)]
 mod winshell;
 mod wordlist;
-mod x;
 mod youtube;
 
 use std::path::{Path, PathBuf};

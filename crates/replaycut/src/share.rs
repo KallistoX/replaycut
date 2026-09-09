@@ -1211,7 +1211,6 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
             display_name: settings.display_name.clone(),
             vertical: job.vertical,
             at: job.at.clone(),
-            seconds: job.seconds,
         };
         let published = tokio::select! {
             r = storage.publish(&out, &meta) => r.context("upload")?,

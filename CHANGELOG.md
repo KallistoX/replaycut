@@ -10,6 +10,18 @@ contract.
 
 ## [Unreleased]
 
+### Removed
+
+- **X is no longer a share target.** X's API has had no free tier since
+  6 February 2026: every post is billed per request to whoever registered
+  the app, so a client shipped with replaycut would put all its users'
+  posts on the maintainer's bill, and asking each user for their own paid
+  developer account is worse. The card, the settings block
+  (`integrations.x`), the credential `replaycut/x`, the OAuth provider and
+  the diagnostics row are gone. No release ever carried an X client id, so
+  the target could never be used; `integrations.x` in an existing
+  `settings.json` is ignored like any unknown field.
+
 ## [3.2.0] - 2026-09-08
 
 3.1 taught the service a second platform; this release finishes the job.

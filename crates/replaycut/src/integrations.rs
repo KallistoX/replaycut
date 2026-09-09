@@ -41,8 +41,6 @@ pub struct PublishMeta {
     pub vertical: bool,
     /// The job's timestamp.
     pub at: String,
-    /// Length of the cut in seconds (since 2.7, for targets with a limit).
-    pub seconds: f64,
 }
 
 pub enum Storage {
@@ -52,7 +50,6 @@ pub enum Storage {
     S3(crate::s3::S3),
     WebDav(crate::dav::WebDav),
     YouTube(crate::youtube::YouTube),
-    X(crate::x::X),
 }
 
 pub enum Notify {
@@ -88,13 +85,12 @@ pub const TARGET_FILE: &str = "file";
 /// them; adding an integration means one line here plus a settings block,
 /// a credential constant, a `Storage`/`Notify` variant, a card and a
 /// diagnostics row.
-pub const KNOWN_TARGETS: [(&str, &str, &str); 9] = [
+pub const KNOWN_TARGETS: [(&str, &str, &str); 8] = [
     ("nextcloud", "Nextcloud", "storage"),
     ("onedrive", "OneDrive", "storage"),
     ("s3", "S3", "storage"),
     ("webdav", "WebDAV", "storage"),
     ("youtube", "YouTube", "storage"),
-    ("x", "X", "storage"),
     ("discord", "Discord", "notify"),
     ("telegram", "Telegram", "notify"),
     ("webhook", "Webhook", "notify"),
@@ -159,14 +155,6 @@ impl Integrations {
                         folder: "youtube".into(),
                     },
                     quick_share: settings.integrations.youtube.quick_share,
-                });
-            }
-            if settings.integrations.x.enabled {
-                storages.push(StorageEntry {
-                    id: "x",
-                    label: "X",
-                    storage: Storage::DryRun { folder: "x".into() },
-                    quick_share: settings.integrations.x.quick_share,
                 });
             }
             let mut notifies = vec![NotifyEntry {
@@ -296,30 +284,6 @@ impl Integrations {
                 ),
             }
         }
-        let x = &settings.integrations.x;
-        if x.enabled {
-            let provider =
-                crate::oauth::provider("x", settings).ok_or_else(|| anyhow!("no X provider"))?;
-            match credentials::read(credentials::X)? {
-                _ if provider.client_id.is_empty() => {
-                    tracing::warn!("X is enabled but this build has no X client id")
-                }
-                Some(cred) => {
-                    let tokens = std::sync::Arc::new(crate::oauth::TokenSource::new(
-                        provider, cred.user, cred.secret,
-                    ));
-                    storages.push(StorageEntry {
-                        id: "x",
-                        label: "X",
-                        storage: Storage::X(crate::x::X::new(tokens, &x.text)?),
-                        quick_share: x.quick_share,
-                    });
-                }
-                None => tracing::warn!(
-                    "X is enabled but not connected - connect the account under Settings > Integrations"
-                ),
-            }
-        }
         let mut notifies = Vec::new();
         if dc.enabled {
             match credentials::read(credentials::DISCORD_WEBHOOK)? {
@@ -408,7 +372,6 @@ impl Integrations {
             "s3" => settings.integrations.s3.enabled,
             "webdav" => settings.integrations.webdav.enabled,
             "youtube" => settings.integrations.youtube.enabled,
-            "x" => settings.integrations.x.enabled,
             "discord" => settings.integrations.discord.enabled,
             "telegram" => settings.integrations.telegram.enabled,
             "webhook" => settings.integrations.webhook.enabled,
@@ -492,7 +455,7 @@ impl Storage {
             Storage::OneDrive(_) => crate::onedrive::OneDrive::remote_path(month, file_name),
             Storage::S3(s3) => s3.key(month, file_name),
             Storage::WebDav(d) => d.remote_path(month, file_name),
-            Storage::YouTube(_) | Storage::X(_) => String::new(),
+            Storage::YouTube(_) => String::new(),
         }
     }
 
@@ -519,7 +482,6 @@ impl Storage {
             Storage::S3(s3) => s3.publish(file, month).await,
             Storage::WebDav(d) => d.publish(file, month).await,
             Storage::YouTube(yt) => yt.publish(file, meta).await,
-            Storage::X(x) => x.publish(file, meta).await,
         }
     }
 
@@ -535,7 +497,6 @@ impl Storage {
             Storage::S3(s3) => s3.delete(paths).await,
             Storage::WebDav(d) => d.delete(paths).await,
             Storage::YouTube(yt) => yt.delete(paths).await,
-            Storage::X(x) => x.delete(paths).await,
         }
     }
 }

@@ -125,8 +125,6 @@ pub struct Integrations {
     /// since 2.6
     pub youtube: YouTube,
     /// since 2.6
-    pub x: X,
-    /// since 2.6
     pub telegram: Telegram,
     /// since 2.6
     pub webhook: Webhook,
@@ -172,34 +170,6 @@ impl Default for Webhook {
             enabled: false,
             auto_post: true,
             url: String::new(),
-        }
-    }
-}
-
-/// X (since 2.6): every share is a post with the video attached. The
-/// account is the credential `replaycut/x` (refresh token), connected in
-/// the browser on this PC.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct X {
-    pub enabled: bool,
-    pub quick_share: bool,
-    /// Limits of this target (since 2.7): 0 = none, else the share is
-    /// scaled to at most this height and capped at this bitrate.
-    pub max_height: u32,
-    pub max_kbps: u32,
-    /// Text template of the post; `{title}`, `{clip}` and `{date}` are replaced.
-    pub text: String,
-}
-
-impl Default for X {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            quick_share: false,
-            max_height: 0,
-            max_kbps: 0,
-            text: "{title}".into(),
         }
     }
 }
@@ -530,8 +500,7 @@ const YOUTUBE_KEYS: [&str; 5] = [
     "description",
 ];
 /// Storage integrations, for the "one quick-share target" rule.
-const X_KEYS: [&str; 3] = ["enabled", "quickShare", "text"];
-const STORAGE_GROUPS: [&str; 6] = ["nextcloud", "onedrive", "s3", "webdav", "youtube", "x"];
+const STORAGE_GROUPS: [&str; 5] = ["nextcloud", "onedrive", "s3", "webdav", "youtube"];
 /// Every storage takes these (since 2.7).
 const LIMIT_KEYS: [&str; 2] = ["maxHeight", "maxKbps"];
 
@@ -552,7 +521,6 @@ impl Settings {
             "s3" => (i.s3.max_height, i.s3.max_kbps),
             "webdav" => (i.webdav.max_height, i.webdav.max_kbps),
             "youtube" => (i.youtube.max_height, i.youtube.max_kbps),
-            "x" => (i.x.max_height, i.x.max_kbps),
             _ => (0, 0),
         };
         Limits {
@@ -626,7 +594,6 @@ impl Settings {
                         "s3" => &S3_KEYS,
                         "webdav" => &WEBDAV_KEYS,
                         "youtube" => &YOUTUBE_KEYS,
-                        "x" => &X_KEYS,
                         "telegram" => &TELEGRAM_KEYS,
                         "webhook" => &WEBHOOK_KEYS,
                         _ => return Err(format!("unknown integration: {group}")),
@@ -797,10 +764,6 @@ impl Settings {
             self.integrations.webhook.url.trim().is_empty()
                 || crate::notify::is_http_url(self.integrations.webhook.url.trim()),
             "integrations.webhook.url must start with http:// or https://"
-        );
-        anyhow::ensure!(
-            self.integrations.x.text.chars().count() <= 280,
-            "integrations.x.text must be at most 280 characters"
         );
         anyhow::ensure!(
             YOUTUBE_CLIENT_TYPES.contains(&self.integrations.youtube.client_type.as_str()),

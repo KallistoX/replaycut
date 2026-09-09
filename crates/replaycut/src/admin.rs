@@ -98,7 +98,6 @@ fn settings_document(app: &AppState) -> Value {
         "webdav": credentials::read(credentials::WEBDAV).ok().flatten().is_some(),
         "youtube": credentials::read(credentials::YOUTUBE).ok().flatten().is_some(),
         "youtubeClient": credentials::read(credentials::YOUTUBE_CLIENT).ok().flatten().is_some(),
-        "x": credentials::read(credentials::X).ok().flatten().is_some(),
         "telegram": credentials::read(credentials::TELEGRAM).ok().flatten().is_some(),
         "webhookSecret": credentials::read(credentials::WEBHOOK_SECRET).ok().flatten().is_some(),
     });
@@ -1195,7 +1194,6 @@ fn account_lookup(p: &crate::oauth::Provider) -> crate::oauth::AccountLookup {
     let id = p.id;
     let api = match id {
         "youtube" => crate::youtube::api_base(),
-        "x" => crate::x::api_base(),
         _ => crate::onedrive::graph_base(),
     };
     Box::new(move |token| {
@@ -1203,7 +1201,6 @@ fn account_lookup(p: &crate::oauth::Provider) -> crate::oauth::AccountLookup {
         Box::pin(async move {
             match id {
                 "youtube" => crate::youtube::YouTube::channel_title(&api, &token).await,
-                "x" => crate::x::X::username(&api, &token).await,
                 _ => crate::onedrive::OneDrive::me(&api, &token).await,
             }
         })
