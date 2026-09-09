@@ -38,8 +38,18 @@ jobs:
         shell: pwsh
         run: |
           $zip = "$env:RUNNER_TEMP\ffmpeg.zip"
-          Invoke-WebRequest -UseBasicParsing `
-            -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile $zip
+          # gyan.dev answers 503 under load often enough to redden a run on its own
+          for ($i = 1; $i -le 3; $i++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing `
+                -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile $zip
+              break
+            } catch {
+              if ($i -eq 3) { throw }
+              Write-Host "attempt $i failed ($($_.Exception.Message)), retrying in $(15 * $i) s"
+              Start-Sleep -Seconds (15 * $i)
+            }
+          }
           Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\ffmpeg" -Force
           $bin = (Get-ChildItem "$env:RUNNER_TEMP\ffmpeg" -Directory | Select-Object -First 1).FullName + "\bin"
           Add-Content -Path $env:GITHUB_PATH -Value $bin
