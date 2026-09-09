@@ -41,7 +41,25 @@ Remove-Item SHA256SUMS, SHA256SUMS.minisig -ErrorAction SilentlyContinue
 
 $sums = "https://github.com/$Repo/releases/download/$Tag/SHA256SUMS"
 Write-Host "downloading $sums"
-Invoke-WebRequest -Uri $sums -OutFile SHA256SUMS -UseBasicParsing
+# GitHub needs a moment after publishing a release before it serves the
+# assets. Until then this URL answers with an HTML error page, which
+# Invoke-WebRequest spills into the terminal in full - so try a few times,
+# and only accept something that actually looks like a list of checksums.
+$downloaded = $false
+for ($i = 1; $i -le 5; $i++) {
+    try {
+        Invoke-WebRequest -Uri $sums -OutFile SHA256SUMS -UseBasicParsing -ErrorAction Stop
+        if ((Get-Content SHA256SUMS -TotalCount 1) -match '^[0-9a-f]{64}\s') { $downloaded = $true; break }
+        Write-Host "attempt ${i}: that is a web page, not checksums"
+    } catch {
+        Write-Host "attempt ${i}: $(($_.Exception.Message -split "`n")[0].Trim())"
+    }
+    Remove-Item SHA256SUMS -ErrorAction SilentlyContinue
+    if ($i -lt 5) { Write-Host "  waiting 10 s"; Start-Sleep -Seconds 10 }
+}
+if (-not $downloaded) {
+    throw "cannot download $sums - is the release published and did its assets finish uploading?"
+}
 Get-Content SHA256SUMS
 
 # -t puts the tag into the trusted comment; the comment is signed too
