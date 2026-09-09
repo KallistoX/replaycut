@@ -1,0 +1,14 @@
+[Unit]
+Description=replaycut - clip manager for the OBS replay buffer
+Documentation=https://github.com/KallistoX/replaycut
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=exec
+ExecStart="/usr/bin/replaycut" --no-browser
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

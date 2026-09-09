@@ -126,6 +126,16 @@ bars and GNOME with the AppIndicator extension show; without a tray host
 the service runs without the icon, and the page and `replaycut stop` do
 what the menu does.
 
+**Packaging.** For a distribution package (AUR, deb, rpm) the Linux ZIP
+also carries `replaycut.desktop`, `replaycut.service` and `replaycut.svg`
+for a system-wide layout: the executable in `/usr/bin`, the UI in
+`/usr/share/replaycut/ui/index.html` (where the service finds it on its
+own), the desktop entry in `/usr/share/applications`, the icon in
+`/usr/share/icons/hicolor/scalable/apps` and the user unit in
+`/usr/lib/systemd/user`, which `systemctl --user enable --now replaycut`
+starts with the desktop session. `ffmpeg` is the one dependency; OBS, a
+Secret Service and the VAAPI driver are optional.
+
 ## Requirements
 
 - Windows 10 or 11 (the service uses the recycle bin, toast notifications and

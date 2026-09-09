@@ -19,6 +19,11 @@ contract.
   `<prefix>/bin` and, on Linux, in every `$XDG_DATA_DIRS` entry, after the
   executable's folder and the working directory as before. Packages no
   longer need `--ui` in their desktop entry and unit. (#15)
+- **The Linux ZIP carries the files a distribution package needs.**
+  `replaycut.desktop` and `replaycut.service` for `/usr/bin/replaycut`
+  (the installer's own output for that path, kept in `dist/linux/` and
+  checked by a test) and the icon `replaycut.svg`, so a package installs
+  them instead of writing its own; the README says where they go. (#15)
 
 ## [3.3.0] - 2026-09-09
 
@@ -33,8 +38,6 @@ Settings › Integrations shows eight closed cards instead of eight open
 forms, each with the mark of the service behind it, and one sentence at the
 top saying where a share actually goes. X leaves: its API has had no free
 tier since February 2026, so there is no honest way to offer it.
-
-### Added
 
 - **YouTube works without a Google project of your own.** Until now every
   user had to create an OAuth client in the Google console before the
