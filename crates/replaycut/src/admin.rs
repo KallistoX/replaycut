@@ -1095,6 +1095,7 @@ fn update_document(app: &AppState) -> Value {
     let mut doc = serde_json::to_value(&*app.update.lock()).unwrap_or(Value::Null);
     doc["current"] = json!(VERSION);
     doc["installed"] = json!(crate::update::is_installed_copy());
+    doc["fromPackage"] = json!(crate::update::is_package_copy());
     doc["checkUpdates"] = json!(app.settings().check_updates);
     doc
 }

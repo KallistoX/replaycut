@@ -1356,6 +1356,25 @@ ever carried a client id, so no installation can have used the target.
   field is. A share whose target was `x` cannot exist, so the history and
   the delete dialog need no migration.
 
+## Since 3.4
+
+### A copy from a distribution package
+
+On Linux an executable under `/usr` (`/usr/bin/replaycut`) was put there by
+a package (AUR, deb, rpm), and the package manager updates it.
+
+- `GET /api/update` gains `fromPackage`: true for such a copy. `installed`
+  is false for it as before, so the page offers no "Update now"; the hint
+  says the copy updates with the package manager, and the link goes to the
+  release page. `POST /api/update/install` answers 409 with that reason.
+  The daily check itself stays on: the banner is how the user learns that
+  the package is behind.
+- `replaycut install` and `replaycut uninstall` do nothing for such a copy
+  and say so (`uninstall --purge` still removes this user's settings, state
+  and credentials); `autostart on`, and the switch in Settings, enable the
+  unit the package installed instead of writing a second one, and
+  `autostart status` names the unit that is enabled.
+
 ## Behaviour
 
 ### Folder scan

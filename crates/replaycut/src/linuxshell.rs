@@ -35,6 +35,21 @@ pub fn app_dir() -> PathBuf {
     crate::settings::default_data_dir().join("app")
 }
 
+/// Whether `exe` was put in place by a distribution package: it lives under
+/// `/usr` (`/usr/bin`, `/usr/local/bin`), where neither the installer nor
+/// the updater may write. Such a copy is the package manager's to install,
+/// update and remove; its desktop entry and unit come with the package.
+pub fn is_package_path(exe: &Path) -> bool {
+    exe.starts_with("/usr")
+}
+
+/// Whether this executable is a package's copy (see [`is_package_path`]).
+pub fn is_package_copy() -> bool {
+    std::env::current_exe()
+        .and_then(std::fs::canonicalize)
+        .is_ok_and(|p| is_package_path(&p))
+}
+
 fn data_home() -> PathBuf {
     xdg("XDG_DATA_HOME", &[".local", "share"])
 }
@@ -214,9 +229,15 @@ fn systemctl(args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-/// Write the unit for `exe` and enable it for the graphical session.
+/// Write the unit for `exe` and enable it for the graphical session. For a
+/// package's copy the unit came with the package (`/usr/lib/systemd/user`),
+/// so it is only enabled; a unit of our own in `~/.config` would shadow it.
 pub fn set_autostart(exe: &Path) -> Result<()> {
-    write_file(&unit_path(), service_unit(exe))?;
+    if is_package_path(exe) {
+        remove_file_if_present(&unit_path());
+    } else {
+        write_file(&unit_path(), service_unit(exe))?;
+    }
     systemctl(&["daemon-reload"])?;
     systemctl(&["enable", SERVICE_UNIT])?;
     Ok(())
@@ -242,9 +263,16 @@ pub fn autostart_enabled() -> bool {
     wants_link().symlink_metadata().is_ok()
 }
 
-/// What `autostart status` prints when it is on.
+/// What `autostart status` prints when it is on: the unit the link points
+/// at - ours in `~/.config/systemd/user`, or the package's under `/usr`.
 pub fn autostart_entry() -> Option<String> {
-    autostart_enabled().then(|| unit_path().display().to_string())
+    let link = wants_link();
+    link.symlink_metadata().is_ok().then(|| {
+        std::fs::read_link(&link)
+            .unwrap_or_else(|_| unit_path())
+            .display()
+            .to_string()
+    })
 }
 
 /// Start the unit now (after `set_autostart`), so the service runs under
@@ -270,6 +298,17 @@ mod tests {
         assert!(text.contains("Icon=replaycut\n"));
         let odd = desktop_entry(Path::new("/tmp/a \"b\" $c/replaycut"));
         assert!(odd.contains("Exec=\"/tmp/a \\\"b\\\" \\$c/replaycut\"\n"));
+    }
+
+    #[test]
+    fn a_package_puts_the_executable_under_usr() {
+        assert!(is_package_path(Path::new("/usr/bin/replaycut")));
+        assert!(is_package_path(Path::new("/usr/local/bin/replaycut")));
+        assert!(!is_package_path(Path::new(
+            "/home/you/.local/share/replaycut/app/replaycut"
+        )));
+        assert!(!is_package_path(Path::new("/opt/replaycut/replaycut")));
+        assert!(!is_package_path(Path::new("/usrfoo/replaycut")));
     }
 
     #[test]
