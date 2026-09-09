@@ -10,6 +10,23 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Turning HTTPS on gets you back to the page.** "Restart now" built the
+  address to return to from the scheme the page was already using, so
+  switching HTTPS on left the browser waiting on `http://` for a service
+  that had just started answering `https://` - until it gave up with "the
+  service did not come back", while replaycut was running fine. The address
+  now comes from the settings that were saved, so it follows the switch the
+  way it already followed a changed port. Across a scheme change the page
+  cannot check the new address for you - it is a different origin, and a
+  certificate of replaycut's own stops the browser at a warning first - so
+  it says which way it is going and goes there rather than blaming the PC.
+- **Saving a setting that needs a restart says so where you are looking.**
+  The banner appears at the top of a long settings page; a switch near the
+  bottom looked as if nothing had happened. Saving now brings the banner
+  into view.
+
 ## [3.4.1] - 2026-09-09
 
 3.4.0's one new feature could not be switched on. Everything that carries

@@ -1922,9 +1922,12 @@ async function initSettings() {
     $('saveBar').classList.toggle('dirty', n > 0); $('sSave').disabled = !n; $('sDiscard').hidden = !n;
     $('saveMsg').innerHTML = n ? `<svg class="icon icon-sm"><use href="#i-warning"/></svg> Unsaved changes: ${esc(labels(c))}` : 'All changes saved.';
   }
-  function showRestart() {
+  function showRestart(reveal) {
     const b = $('b-restart'); if (!b) return;
     b.hidden = !restartPending.length; $('b-restart-text').textContent = restartPending.length ? `Changed: ${restartPending.join(', ')}. They take effect after a restart.` : '';
+    // The banner sits at the top and the settings page is long: saving a
+    // field near the bottom would otherwise look as if nothing happened.
+    if (reveal && !b.hidden) b.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
   fields.forEach(el => { el.addEventListener('input', () => { if (el.dataset.f === 'displayName') fields.filter(o => o !== el && o.dataset.f === 'displayName').forEach(o => o.value = el.value); dirty(); }); el.addEventListener('change', dirty); });
   document.querySelector('[data-f="integrations.youtube.client"]').addEventListener('change', ytClientUi);
@@ -1979,7 +1982,7 @@ async function initSettings() {
     try {
       const r = await api('/api/settings', jsonOpts('PUT', c), { retries: 0, timeout: 30000 });
       if (!r.ok) toast(r.error, 'err');
-      else { toast('Settings saved', 'ok'); if (c.theme) applyTheme(c.theme); fill(r.settings); if (r.restartNeeded && r.restartNeeded.length) { restartPending = r.settings.restartNeeded; showRestart(); } }
+      else { toast('Settings saved', 'ok'); if (c.theme) applyTheme(c.theme); fill(r.settings); if (r.restartNeeded && r.restartNeeded.length) { restartPending = r.restartNeeded; showRestart(true); } }
     } catch (e) { toast(e.message, 'err'); }
     $('sSave').innerHTML = 'Save'; dirty();
   };
@@ -1997,8 +2000,28 @@ async function initSettings() {
     $('b-restart-now').disabled = true; $('b-restart-now').innerHTML = '<span class="spinner"></span> Restarting';
     try { const r = await api('/api/restart', { method: 'POST', body: '' }, { retries: 0 }); if (!r.ok) { toast(r.error, 'err'); $('b-restart-now').disabled = false; $('b-restart-now').textContent = 'Restart now'; return; } }
     catch (e) { /* the old process is gone already */ }
-    const port = orig && orig.port ? orig.port : location.port, target = location.protocol + '//' + location.hostname + ':' + port + '/settings';
-    for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 1000)); try { const s = await fetch(target.replace('/settings', '/api/session'), { cache: 'no-store' }); if (s.ok) { location.href = target; return; } } catch (e) {} }
+    // Port and scheme may both change with this very restart, so the address
+    // to come back to is built from the settings that were just saved and not
+    // from this page's own URL (since 3.4: `https.enabled` moves the scheme).
+    const port = orig && orig.port ? orig.port : location.port;
+    const proto = orig && orig.https && orig.https.enabled ? 'https:' : 'http:';
+    const base = proto + '//' + location.hostname + ':' + port, target = base + '/settings';
+    const sameOrigin = base === location.origin;
+    if (!sameOrigin) toast(proto === 'https:' ? 'Coming back over HTTPS - your browser will warn once about the certificate.' : 'Coming back over plain HTTP.', 'ok');
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      try {
+        // Across origins the answer is not readable (and with a certificate
+        // of ours the browser stops at a warning first), so `no-cors` asking
+        // "did anything answer at all" is as much as we can learn.
+        const s = await fetch(base + '/api/session', { cache: 'no-store', mode: sameOrigin ? 'cors' : 'no-cors' });
+        if (sameOrigin ? s.ok : true) { location.href = target; return; }
+      } catch (e) {}
+    }
+    // It may well be running and simply unreachable from here - a certificate
+    // this browser does not trust yet looks exactly like a dead service. Go
+    // there and let the browser say what is wrong, rather than blame the PC.
+    if (!sameOrigin) { location.href = target; return; }
     toast(`The service did not come back - start it from ${appMenuName()}.`, 'err');
   };
   // account integrations connect through the device-code flow: OneDrive (since 2.5), YouTube (since 2.6)
