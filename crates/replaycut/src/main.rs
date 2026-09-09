@@ -596,6 +596,53 @@ fn warn_if_open(state: &Arc<AppState>) {
     );
 }
 
+/// Where a relative `uiFile` is looked up: next to the executable, in the
+/// working directory, and - for an executable a distribution package put
+/// into `<prefix>/bin` - under `<prefix>/share/replaycut` and the
+/// `XDG_DATA_DIRS`. The first candidate that exists wins; the one next to
+/// the executable names the missing file in the warning otherwise.
+fn ui_candidates(
+    configured: &Path,
+    exe_dir: Option<&Path>,
+    cwd: Option<&Path>,
+    data_dirs: &[PathBuf],
+) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    let mut add = |p: PathBuf| {
+        if !out.contains(&p) {
+            out.push(p);
+        }
+    };
+    if let Some(dir) = exe_dir {
+        add(dir.join(configured));
+    }
+    if let Some(dir) = cwd {
+        add(dir.join(configured));
+    }
+    if let Some(prefix) = exe_dir.and_then(Path::parent) {
+        add(prefix.join("share").join("replaycut").join(configured));
+    }
+    for dir in data_dirs {
+        add(dir.join("replaycut").join(configured));
+    }
+    out
+}
+
+/// `$XDG_DATA_DIRS`, or the specification's default when it is unset.
+#[cfg(target_os = "linux")]
+fn xdg_data_dirs() -> Vec<PathBuf> {
+    let dirs = std::env::var_os("XDG_DATA_DIRS")
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "/usr/local/share:/usr/share".into());
+    std::env::split_paths(&dirs)
+        .filter(|p| p.is_absolute())
+        .collect()
+}
+#[cfg(not(target_os = "linux"))]
+fn xdg_data_dirs() -> Vec<PathBuf> {
+    Vec::new()
+}
+
 fn resolve_ui_file(configured: &Path) -> PathBuf {
     if configured.is_absolute() {
         return configured.to_path_buf();
@@ -603,19 +650,19 @@ fn resolve_ui_file(configured: &Path) -> PathBuf {
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()));
-    if let Some(dir) = &exe_dir {
-        let candidate = dir.join(configured);
-        if candidate.is_file() {
-            return candidate;
-        }
-    }
-    let cwd = std::env::current_dir()
-        .map(|d| d.join(configured))
-        .unwrap_or_else(|_| configured.to_path_buf());
-    if cwd.is_file() {
-        return cwd;
-    }
-    exe_dir.map(|d| d.join(configured)).unwrap_or(cwd)
+    let cwd = std::env::current_dir().ok();
+    let candidates = ui_candidates(
+        configured,
+        exe_dir.as_deref(),
+        cwd.as_deref(),
+        &xdg_data_dirs(),
+    );
+    candidates
+        .iter()
+        .find(|p| p.is_file())
+        .cloned()
+        .or_else(|| candidates.into_iter().next())
+        .unwrap_or_else(|| configured.to_path_buf())
 }
 
 /// Rolling daily log file; the console copy only when there is a console.
@@ -655,4 +702,49 @@ fn init_logging(
 
 fn local_time() -> tracing_subscriber::fmt::time::ChronoLocal {
     tracing_subscriber::fmt::time::ChronoLocal::new("%Y-%m-%d %H:%M:%S%.3f".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ui_is_looked_up_next_to_the_executable_then_the_prefix_then_the_data_dirs() {
+        let got = ui_candidates(
+            Path::new("ui/index.html"),
+            Some(Path::new("/usr/bin")),
+            Some(Path::new("/home/you")),
+            &[
+                PathBuf::from("/usr/local/share"),
+                PathBuf::from("/usr/share"),
+            ],
+        );
+        let want: Vec<PathBuf> = [
+            "/usr/bin/ui/index.html",
+            "/home/you/ui/index.html",
+            "/usr/share/replaycut/ui/index.html",
+            "/usr/local/share/replaycut/ui/index.html",
+        ]
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn a_per_user_installation_needs_no_data_dirs() {
+        let got = ui_candidates(
+            Path::new("ui/index.html"),
+            Some(Path::new("/home/you/.local/share/replaycut/app")),
+            None,
+            &[],
+        );
+        assert_eq!(
+            got,
+            vec![
+                PathBuf::from("/home/you/.local/share/replaycut/app/ui/index.html"),
+                PathBuf::from("/home/you/.local/share/replaycut/share/replaycut/ui/index.html"),
+            ]
+        );
+    }
 }
