@@ -280,4 +280,22 @@ mod tests {
         assert!(text.contains("WantedBy=graphical-session.target\n"));
         assert!(text.contains("Restart=on-failure\n"));
     }
+
+    /// The files distribution packages install are the installer's output
+    /// for `/usr/bin/replaycut`, so the wording has one source. When this
+    /// fails, regenerate them: the generator is right, the files are stale.
+    #[test]
+    fn the_packaging_files_in_dist_match_the_generator() {
+        let exe = Path::new("/usr/bin/replaycut");
+        assert_eq!(
+            include_str!("../../../dist/linux/replaycut.desktop"),
+            desktop_entry(exe),
+            "dist/linux/replaycut.desktop is out of date"
+        );
+        assert_eq!(
+            include_str!("../../../dist/linux/replaycut.service"),
+            service_unit(exe),
+            "dist/linux/replaycut.service is out of date"
+        );
+    }
 }

@@ -90,6 +90,9 @@ jobs:
           mkdir -p "$pkg/ui"
           cp target/${{ matrix.target }}/release/replaycut dist/install.sh dist/uninstall.sh README.md LICENSE CHANGELOG.md "$pkg"
           cp ui/index.html "$pkg/ui"
+          # for distribution packages: the desktop entry and user unit for
+          # /usr/bin/replaycut, and the icon (see README, "Packaging")
+          cp dist/linux/replaycut.desktop dist/linux/replaycut.service crates/replaycut/assets/replaycut.svg "$pkg"
           chmod +x "$pkg/replaycut" "$pkg/install.sh" "$pkg/uninstall.sh"
           (cd "$pkg" && zip -r "../$pkg.zip" .)
 

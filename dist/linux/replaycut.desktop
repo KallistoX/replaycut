@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=replaycut
+Comment=Clip manager for the OBS replay buffer
+Exec="/usr/bin/replaycut"
+Icon=replaycut
+Terminal=false
+Categories=AudioVideo;Video;
+Keywords=OBS;replay;clip;
+StartupNotify=false
