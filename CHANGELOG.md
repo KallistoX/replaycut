@@ -10,6 +10,16 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- **The UI is found next to a system-wide executable.** A distribution
+  package puts the executable into `/usr/bin` and the UI into
+  `/usr/share/replaycut/ui/index.html`; a relative `uiFile` is now also
+  looked up under `<prefix>/share/replaycut` for an executable in
+  `<prefix>/bin` and, on Linux, in every `$XDG_DATA_DIRS` entry, after the
+  executable's folder and the working directory as before. Packages no
+  longer need `--ui` in their desktop entry and unit. (#15)
+
 ## [3.3.0] - 2026-09-09
 
 This release is about the integrations: the one that was hardest to set up
