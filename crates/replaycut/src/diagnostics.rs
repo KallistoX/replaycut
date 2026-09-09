@@ -446,12 +446,33 @@ pub async fn run(state: &AppState) -> Report {
                 };
             };
             match &entry.storage {
-                integrations::Storage::YouTube(yt) => match tokio::time::timeout(TIMEOUT, yt.account()).await {
-                    Ok(Ok(channel)) => Check::new("youtube", "YouTube", "ok", format!("connected as {channel}")),
-                    Ok(Err(e)) => Check::new("youtube", "YouTube", "fail", format!("{e:#}"))
-                        .with_fix("Disconnect and connect YouTube again under Settings › Integrations. A Google project in \"Testing\" state expires its tokens after 7 days - publish the consent screen."),
-                    Err(_) => Check::new("youtube", "YouTube", "fail", "no answer from Google within 5 s"),
-                },
+                integrations::Storage::YouTube(yt) => {
+                    match tokio::time::timeout(TIMEOUT, yt.account()).await {
+                        Ok(Ok(channel)) => Check::new(
+                            "youtube",
+                            "YouTube",
+                            "ok",
+                            format!("connected as {channel}"),
+                        ),
+                        Ok(Err(e)) => {
+                            let detail = format!("{e:#}");
+                            // A Google account without a channel signs in fine and
+                            // fails at the first upload, so name the real remedy.
+                            let fix = if detail.contains("no YouTube channel") {
+                                "The signed-in Google account has no channel yet. Create one at youtube.com, then disconnect and connect YouTube again under Settings › Integrations."
+                            } else {
+                                "Disconnect and connect YouTube again under Settings › Integrations. A Google project in \"Testing\" state expires its tokens after 7 days - publish the consent screen."
+                            };
+                            Check::new("youtube", "YouTube", "fail", detail).with_fix(fix)
+                        }
+                        Err(_) => Check::new(
+                            "youtube",
+                            "YouTube",
+                            "fail",
+                            "no answer from Google within 5 s",
+                        ),
+                    }
+                }
                 _ => Check::new("youtube", "YouTube", "ok", "dry run"),
             }
         }

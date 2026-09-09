@@ -25,6 +25,17 @@ contract.
   Changing the client, or the client type, disconnects the channel: a
   refresh token belongs to the client that issued it.
 
+### Fixed
+
+- **YouTube errors say what is wrong.** Google answers a failed upload with
+  the message "Unauthorized" and puts the reason in a field replaycut threw
+  away, so a share failed with "HTTP 401 Unauthorized Unauthorized" and left
+  the user guessing. Errors now carry Google's reason and, for the ones that
+  mean something, the remedy: a Google account without a YouTube channel
+  ("create one at youtube.com, then connect again") and an exhausted daily
+  quota ("resets at midnight Pacific time"). The diagnostics row for a
+  missing channel used to suggest reconnecting, which never helped.
+
 ### Removed
 
 - **X is no longer a share target.** X's API has had no free tier since

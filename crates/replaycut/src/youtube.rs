@@ -285,16 +285,31 @@ fn channel_of(v: &Value) -> Result<String> {
         .ok_or_else(|| anyhow!("the account has no YouTube channel"))
 }
 
-/// The message of a Google API error body, or nothing.
+/// The message of a Google API error body with the reason behind it, and for
+/// the reasons that mean something to a user, what to do about them. Google's
+/// message alone is often just "Unauthorized", which says nothing.
 fn api_error(v: &Value) -> String {
-    v["error"]["message"]
-        .as_str()
-        .or_else(|| v["error"]["errors"][0]["reason"].as_str())
-        .unwrap_or("")
-        .lines()
-        .next()
-        .unwrap_or("")
-        .to_string()
+    let first = |s: &str| s.lines().next().unwrap_or("").to_string();
+    let message = first(v["error"]["message"].as_str().unwrap_or(""));
+    let reason = v["error"]["errors"][0]["reason"].as_str().unwrap_or("");
+    let mut out = match (message.is_empty(), reason.is_empty()) {
+        (true, true) => return String::new(),
+        (true, false) => reason.to_string(),
+        (false, true) => message,
+        (false, false) if message.eq_ignore_ascii_case(reason) => message,
+        (false, false) => format!("{message} ({reason})"),
+    };
+    out.push_str(match reason {
+        "youtubeSignupRequired" => {
+            " - this Google account has no YouTube channel yet. Create one at youtube.com, then connect again"
+        }
+        "quotaExceeded" | "dailyLimitExceeded" => {
+            " - the daily quota of the Google project is used up; it resets at midnight Pacific time"
+        }
+        "forbidden" => " - the connected channel may not do this",
+        _ => "",
+    });
+    out
 }
 
 #[cfg(test)]
@@ -613,6 +628,29 @@ pub(crate) mod tests {
             1
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn api_errors_name_the_reason_and_what_to_do() {
+        // the account has no channel: Google's message alone says nothing
+        let v = serde_json::json!({ "error": { "code": 401, "message": "Unauthorized",
+            "errors": [{ "domain": "youtube.header", "reason": "youtubeSignupRequired" }] } });
+        let e = api_error(&v);
+        assert!(e.starts_with("Unauthorized (youtubeSignupRequired)"), "{e}");
+        assert!(e.contains("no YouTube channel"), "{e}");
+
+        let v = serde_json::json!({ "error": { "message": "The request cannot be completed because you have exceeded your quota.",
+            "errors": [{ "reason": "quotaExceeded" }] } });
+        assert!(api_error(&v).contains("resets at midnight"), "{v}");
+
+        // a reason nobody needs explained, and a body without one
+        let v = serde_json::json!({ "error": { "message": "Invalid title", "errors": [{ "reason": "invalidTitle" }] } });
+        assert_eq!(api_error(&v), "Invalid title (invalidTitle)");
+        assert_eq!(
+            api_error(&serde_json::json!({ "error": { "message": "Boom" } })),
+            "Boom"
+        );
+        assert_eq!(api_error(&Value::Null), "");
     }
 
     #[test]
