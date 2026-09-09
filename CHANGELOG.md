@@ -12,6 +12,24 @@ contract.
 
 ### Added
 
+- **HTTPS, if you want it.** `https.enabled` in the settings makes the port
+  speak TLS; it is off by default and a restart away, like the port itself.
+  The service is then its own certificate authority: `<data-dir>/tls` holds a
+  CA that is made once and never replaced - it is the identity of this
+  replaycut - and a server certificate signed by it that carries the
+  machine's names and addresses. That certificate is re-issued whenever the
+  addresses change or it comes within 30 days of running out, and the CA
+  stays put through all of it, so a device that trusts it once keeps
+  trusting it. `https.cert` and `https.key` point at your own PEM pair
+  instead, which is the comfortable way: a certificate from Tailscale, a
+  reverse proxy or a real domain needs no trusting anywhere. Browsers do not
+  know a certificate authority of ours, so they warn once until `ca.crt` is
+  imported by hand - the log line at startup names the file and the
+  fingerprint. A plaintext request to the TLS port gets a readable page with
+  the `https://` link rather than a reset connection, and a certificate that
+  cannot be read leaves the service running on plain HTTP with the reason in
+  the log: on a gaming PC without a console, unreachable is worse than
+  unencrypted.
 - **The UI is found next to a system-wide executable.** A distribution
   package puts the executable into `/usr/bin` and the UI into
   `/usr/share/replaycut/ui/index.html`; a relative `uiFile` is now also

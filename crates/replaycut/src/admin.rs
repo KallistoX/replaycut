@@ -1297,11 +1297,10 @@ pub async fn oauth_loopback(
             format!("{} connects with a code - use /start", p.label),
         ));
     }
-    let redirect_uri = format!(
-        "http://127.0.0.1:{}/oauth/{}/callback",
-        app.settings().port,
-        p.id
-    );
+    let base = crate::oauth::callback_base(&app, p.id)
+        .await
+        .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?;
+    let redirect_uri = format!("{base}/oauth/{}/callback", p.id);
     let url = crate::oauth::start_loopback_flow(&app, &p, &redirect_uri)
         .map_err(|e| ApiError::new(StatusCode::CONFLICT, format!("{e:#}")))?;
     let mut doc = oauth_document(&app, &p);

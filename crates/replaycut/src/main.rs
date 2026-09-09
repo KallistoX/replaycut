@@ -41,6 +41,7 @@ mod setup;
 mod share;
 mod state;
 mod themes;
+mod tls;
 mod toast;
 mod tray;
 mod update;
@@ -484,6 +485,22 @@ async fn startup(
         );
     }
     let bind = format!("{}:{}", settings.bind, settings.port);
+    // A certificate that cannot be read must not keep the service down: on a
+    // gaming PC without a console, "not reachable" is worse than "not
+    // encrypted". The diagnostics and the log say what happened.
+    let tls = match settings.https.enabled {
+        false => None,
+        true => match tls::prepare(data_dir, &settings) {
+            Ok(tls) => Some(tls),
+            Err(e) => {
+                tracing::error!(
+                    "HTTPS is on, but the certificate is unusable: {e:#} - starting without encryption"
+                );
+                None
+            }
+        },
+    };
+    let scheme = if tls.is_some() { "https" } else { "http" };
     let state = Arc::new(AppState::load(Boot {
         settings,
         settings_path: settings_path.to_path_buf(),
@@ -493,13 +510,18 @@ async fn startup(
         media_base,
         runtime,
         dry_run,
+        tls: tls.as_ref().map(|t| t.info.clone()).unwrap_or_default(),
         obs,
     })?);
-    let listener = tokio::net::TcpListener::bind(&bind)
+    let socket = tokio::net::TcpListener::bind(&bind)
         .await
         .with_context(|| format!("cannot listen on {bind}"))?;
+    let listener = match tls {
+        Some(tls) => Serving::Tls(tls::TlsListener::new(socket, tls.config)?),
+        None => Serving::Plain(socket),
+    };
     tracing::info!(
-        "replaycut {VERSION} started: clips {}, http://{bind}/, encoder {}, ffmpeg {}, ffmpeg threads {}, priority {:?}, {}{}",
+        "replaycut {VERSION} started: clips {}, {scheme}://{bind}/, encoder {}, ffmpeg {}, ffmpeg threads {}, priority {:?}, {}{}",
         state.paths().clip_dir.display(),
         state.runtime().encoder.name,
         state.media_base.ffmpeg.display(),
@@ -508,6 +530,11 @@ async fn startup(
         state.runtime().integrations.describe(),
         if state.dry_run { " [DRY RUN: uploads, posts, hotkey, clipboard and toasts are simulated]" } else { "" }
     );
+    if state.tls.active {
+        // The fingerprint is what a phone or a client of ours would pin, and
+        // the path is what a browser on this PC has to import once.
+        tracing::info!("TLS: {}", state.tls.describe());
+    }
     Ok(Startup {
         state,
         listener,
@@ -519,8 +546,15 @@ async fn startup(
 /// receiver of OBS events (consumed by one task in `serve`).
 struct Startup {
     state: Arc<AppState>,
-    listener: tokio::net::TcpListener,
+    listener: Serving,
     obs_events: tokio::sync::mpsc::Receiver<obs_ws::ObsEvent>,
+}
+
+/// The socket, with or without TLS (since 3.4). Both sides are an
+/// `axum::serve::Listener`, so only the call that starts the server differs.
+enum Serving {
+    Plain(tokio::net::TcpListener),
+    Tls(tls::TlsListener),
 }
 
 /// Serve until a shutdown is requested, then give open connections a moment.
@@ -529,7 +563,7 @@ struct Startup {
 /// longer grace period for all of it.
 async fn serve(
     state: Arc<AppState>,
-    listener: tokio::net::TcpListener,
+    listener: Serving,
     obs_events: tokio::sync::mpsc::Receiver<obs_ws::ObsEvent>,
     shutdown: Shutdown,
     open_browser: bool,
@@ -568,7 +602,21 @@ async fn serve(
         }
     };
     let app = http::router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
-    let server = axum::serve(listener, app).with_graceful_shutdown(graceful);
+    let server = async move {
+        match listener {
+            Serving::Plain(l) => axum::serve(l, app).with_graceful_shutdown(graceful).await,
+            // `ConnectInfo<SocketAddr>` is wired up for a plain `TcpListener`
+            // and, generically, for any listener behind `tap_io`. The tap does
+            // nothing; it is how a listener of our own gets the peer address
+            // through to the handlers, which every access rule reads.
+            Serving::Tls(l) => {
+                use axum::serve::ListenerExt as _;
+                axum::serve(l.tap_io(|_| {}), app)
+                    .with_graceful_shutdown(graceful)
+                    .await
+            }
+        }
+    };
     let deadline = async {
         shutdown.wait().await;
         tokio::time::sleep(Duration::from_secs(1)).await;

@@ -49,11 +49,52 @@ pub struct Settings {
     /// Ask for the password on this PC as well (since 2.8), for a Windows
     /// account other people use.
     pub require_login_on_loopback: bool,
+    /// Speak TLS on the port (since 3.4). Off by default.
+    pub https: Https,
     pub integrations: Integrations,
     /// obs-websocket on this PC (the password lives in the Credential Manager).
     pub obs: Obs,
     /// What happens to a recording once its clip has been shared (since 3.0).
     pub cleanup: Cleanup,
+}
+
+/// TLS on the port (since 3.4). Off by default: in a home network HTTP is
+/// enough, and a certificate nobody trusts yet is a step backwards.
+///
+/// With `cert` and `key` empty the service is its own certificate authority
+/// (`<data-dir>/tls`); that CA is the identity of this service and never
+/// changes, while the certificate it signs may be re-issued as often as the
+/// machine's addresses change. Both set points at an own PEM pair - the
+/// comfortable way, because a certificate from Tailscale, a reverse proxy or
+/// a real domain needs no trusting on any device.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Https {
+    pub enabled: bool,
+    /// PEM file with the certificate chain, leaf first. Empty = own CA.
+    pub cert: String,
+    /// PEM file with the private key of `cert`.
+    pub key: String,
+}
+
+impl Https {
+    /// An own PEM pair, as opposed to the built-in certificate authority.
+    pub fn own_pair(&self) -> Option<(&str, &str)> {
+        let (cert, key) = (self.cert.trim(), self.key.trim());
+        (!cert.is_empty() && !key.is_empty()).then_some((cert, key))
+    }
+
+    /// `cert` and `key` come as a pair; one alone is a mistake worth naming
+    /// rather than silently falling back to the own CA.
+    pub fn check(&self) -> Result<()> {
+        let (cert, key) = (self.cert.trim().is_empty(), self.key.trim().is_empty());
+        if cert != key {
+            anyhow::bail!(
+                "https.cert and https.key belong together: set both to use your own certificate, or neither to let replaycut make one"
+            );
+        }
+        Ok(())
+    }
 }
 
 /// Tidying up after a share (since 3.0). Cuts and outputs are never removed
@@ -384,6 +425,7 @@ impl Default for Settings {
             password_hash: None,
             allowed_hosts: Vec::new(),
             require_login_on_loopback: false,
+            https: Https::default(),
             integrations: Integrations::default(),
             obs: Obs::default(),
             cleanup: Cleanup::default(),
@@ -654,6 +696,9 @@ impl Settings {
         if self.ui_file != other.ui_file {
             out.push("uiFile");
         }
+        if self.https != other.https {
+            out.push("https");
+        }
         out
     }
 
@@ -739,6 +784,7 @@ impl Settings {
             self.cleanup.recycle_done_after_days <= 3650,
             "cleanup.recycleDoneAfterDays must be 0 (never) or at most 3650"
         );
+        self.https.check()?;
         anyhow::ensure!(self.obs.port != 0, "obs.port must not be 0");
         anyhow::ensure!(
             !self.obs.host.trim().is_empty(),

@@ -389,6 +389,10 @@ pub struct AppState {
     pub media_base: Media,
     runtime: RwLock<Arc<Runtime>>,
     pub dry_run: bool,
+    /// What TLS is doing (since 3.4): the scheme of every address the
+    /// service hands out, and what the diagnostics and the settings page say
+    /// about the certificate.
+    pub tls: crate::tls::Info,
     /// obs-websocket client (status, requests, reconfigure).
     pub obs: Arc<crate::obs_ws::ObsHandle>,
     /// When this process started (uptime and the diagnostics header).
@@ -474,6 +478,7 @@ pub struct Boot {
     pub media_base: Media,
     pub runtime: Runtime,
     pub dry_run: bool,
+    pub tls: crate::tls::Info,
     pub obs: Arc<crate::obs_ws::ObsHandle>,
 }
 
@@ -501,6 +506,7 @@ impl AppState {
             media_base,
             runtime,
             dry_run,
+            tls,
             obs,
         } = boot;
         let paths = Paths::new(&settings.clip_dir, &data_dir, ui_file);
@@ -547,6 +553,7 @@ impl AppState {
             media_base,
             runtime: RwLock::new(Arc::new(runtime)),
             dry_run,
+            tls,
             obs,
             started: std::time::Instant::now(),
             started_at: util::now_local(),
@@ -664,8 +671,23 @@ impl AppState {
     }
 
     /// The UI address on this machine.
+    /// `https` once TLS is actually running, `http` otherwise (since 3.4).
+    /// Everything that hands out an address goes through here, so the toasts,
+    /// the tray and the QR code follow the switch on their own.
+    pub fn scheme(&self) -> &'static str {
+        if self.tls.active {
+            "https"
+        } else {
+            "http"
+        }
+    }
+
     pub fn ui_url(&self) -> String {
-        format!("http://localhost:{}/", self.settings.read().port)
+        format!(
+            "{}://localhost:{}/",
+            self.scheme(),
+            self.settings.read().port
+        )
     }
 
     /// The UI address for other devices in the network (the tray's "Copy
@@ -673,7 +695,8 @@ impl AppState {
     #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
     pub fn lan_url(&self) -> String {
         format!(
-            "http://{}:{}/",
+            "{}://{}:{}/",
+            self.scheme(),
             platform::lan_host(),
             self.settings.read().port
         )

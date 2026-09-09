@@ -12,5 +12,7 @@ rust-version.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-reqwest.workspace = true
+# `rustls-tls` so the suite can run against a service with HTTPS on (since
+# 3.4) and trust its certificate authority through `TLS_CA`.
+reqwest = { workspace = true, features = ["rustls-tls"] }
 serde_json.workspace = true

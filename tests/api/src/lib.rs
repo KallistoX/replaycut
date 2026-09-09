@@ -163,10 +163,21 @@ fn utc_stamp() -> String {
 pub fn client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
-        Client::builder()
-            .timeout(Duration::from_secs(60))
-            .build()
-            .unwrap()
+        let mut builder = Client::builder().timeout(Duration::from_secs(60));
+        // A service with HTTPS on (since 3.4) signs its certificate with a
+        // certificate authority of its own, in `<data-dir>/tls/ca.crt`. Point
+        // `TLS_CA` at that file and the suite trusts it - the same way a
+        // client of ours would, by knowing the authority instead of skipping
+        // the check. Without the variable nothing changes.
+        if let Ok(path) = std::env::var("TLS_CA") {
+            let pem = std::fs::read(&path)
+                .unwrap_or_else(|e| panic!("TLS_CA points at {path}, which cannot be read: {e}"));
+            let ca = reqwest::Certificate::from_pem(&pem).unwrap_or_else(|e| {
+                panic!("TLS_CA points at {path}, which is not a PEM certificate: {e}")
+            });
+            builder = builder.add_root_certificate(ca);
+        }
+        builder.build().unwrap()
     })
 }
 

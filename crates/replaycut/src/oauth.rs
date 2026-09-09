@@ -530,6 +530,64 @@ pub fn start_loopback_flow(state: &AppState, p: &Provider, redirect_uri: &str) -
     Ok(url)
 }
 
+/// Where the provider sends the browser back to (since 3.4).
+///
+/// Normally that is this service's own port. With HTTPS on it cannot be:
+/// Google's rules for an installed app name `http://127.0.0.1:<port>` as the
+/// loopback redirect and say nothing about `https`, so pointing a redirect at
+/// a TLS port would be a gamble taken at the user's expense - and the error
+/// would show up in their browser, not in our log. The port of a loopback
+/// redirect is free to choose and ignored when the redirect is matched, so
+/// the callback gets a short-lived HTTP listener of its own instead.
+///
+/// The listener serves exactly one route, binds to loopback only and shuts
+/// down as soon as the login is answered or has run out.
+pub async fn callback_base(state: &Arc<AppState>, provider: &'static str) -> Result<String> {
+    let port = state.settings().port;
+    if !state.tls.active {
+        return Ok(format!("http://127.0.0.1:{port}"));
+    }
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .context("cannot open a port for the login answer")?;
+    let port = listener
+        .local_addr()
+        .context("the login port has no address")?
+        .port();
+    let router = axum::Router::new()
+        .route(
+            "/oauth/{provider}/callback",
+            axum::routing::get(crate::admin::oauth_callback),
+        )
+        .with_state(state.clone());
+    let watch = state.clone();
+    tokio::spawn(async move {
+        let done = async move {
+            // The flow lives ten minutes; give the browser a moment beyond
+            // that rather than closing the door while it is walking through.
+            let deadline = Instant::now() + Duration::from_secs(660);
+            while Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                let waiting = matches!(
+                    watch.oauth.lock().get(provider),
+                    Some(Flow {
+                        status: FlowStatus::Pending,
+                        ..
+                    })
+                );
+                if !waiting {
+                    return;
+                }
+            }
+        };
+        let _ = axum::serve(listener, router)
+            .with_graceful_shutdown(done)
+            .await;
+        tracing::debug!("{provider}: the port for the login answer is closed again");
+    });
+    Ok(format!("http://127.0.0.1:{port}"))
+}
+
 /// `GET /oauth/<provider>/callback`: the code comes back from the provider.
 /// Checks the state, exchanges the code and stores the account.
 pub async fn finish_loopback_flow(

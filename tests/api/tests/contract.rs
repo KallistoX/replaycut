@@ -638,9 +638,13 @@ fn t16_origin_check_refuses_cross_site_writes() {
     assert_eq!(body["ok"], false);
     // same-origin and no origin both pass (the endpoint itself answers 200 in dry run)
     let host = url("")
+        .trim_start_matches("https://")
         .trim_start_matches("http://")
         .trim_end_matches('/')
         .to_string();
+    // The origin says `http` whatever the service speaks: the contract
+    // compares host and port and ignores the scheme, and against a service
+    // with HTTPS on (since 3.4) this is what proves it.
     let resp = client()
         .post(url("/api/save"))
         .header("origin", format!("http://{host}"))
