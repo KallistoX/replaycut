@@ -269,6 +269,8 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 #tabIntegrations .card { gap: var(--space-2); }
 #tabIntegrations .card.is-open { gap: var(--space-3); }
 #tabIntegrations .card:not(.is-open) .card-body { display: none; }
+#tabIntegrations .card-head, #tabIntegrations .whatyouget { cursor: pointer; }
+#tabIntegrations .card-head h2 { user-select: text; }
 .card-toggle .icon { transition: transform var(--duration); }
 .card.is-open .card-toggle .icon { transform: rotate(90deg); }
 /* A closed integration that is off says what it would do, instead of
@@ -337,6 +339,11 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 .check-row.skipped { opacity: 0.6; }
 .check-row .label { font-weight: var(--weight-strong); }
 .check-row .detail { color: var(--fg-muted); font-size: var(--text-sm); }
+/* The code of a device login: it is what the eye is looking for, so it is a
+   display of its own and not a word in a sentence. One click selects all of
+   it, for the rare case that the other device is this one. */
+.devicecode { display: inline-block; margin: var(--space-2) 0; padding: var(--space-2) var(--space-3); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-xl); font-weight: var(--weight-strong); letter-spacing: 0.22em; color: var(--fg); user-select: all; }
+.devicecode:empty { display: none; }
 .check-row.problem .detail { color: var(--fg); }
 .check-row .fix { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--surface-2); border-radius: var(--radius-md); font-size: var(--text-sm); }
 .check-row .fix .path { font-family: var(--font-mono); color: var(--fg); }
@@ -977,7 +984,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <div class="card-body stack-3">
         <p class="muted sm">Uploads go to <code>Apps/replaycut/&lt;month&gt;/</code> in your OneDrive and get a link anyone can open. Connecting signs you in at Microsoft with a code; it works from a phone, too.</p>
         <div class="row" id="sOdRow"><button class="btn btn-primary" id="sOdConnect">Connect OneDrive</button><button class="btn" id="sOdDisconnect" hidden>Disconnect</button><span class="muted sm" id="sOdStatus"></span></div>
-        <div class="check-row" id="sOdCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label">Enter this code at Microsoft</div><div class="detail">Open <a id="sOdUri" href="#" target="_blank" rel="noopener"></a> and type <b class="mono" id="sOdUserCode" style="font-size:1.2em;letter-spacing:0.08em"></b>. The card updates when you are done.</div></div></div>
+        <div class="check-row" id="sOdCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label" id="sOdCodeLabel">Enter this code at Microsoft</div><div class="devicecode" id="sOdUserCode" tabindex="0"></div><div class="detail" id="sOdCodeDetail">Open <a id="sOdUri" href="#" target="_blank" rel="noopener"></a> on any device - your phone will do. The card updates when you are done.</div></div></div>
         <label class="switch quick-row"><input type="checkbox" data-f="integrations.onedrive.quickShare"><span class="track"></span> Quick share target <span class="muted sm">(only one storage can be; switching it on takes it from the other)</span></label>
         <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.onedrive.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.onedrive.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
       </div>
@@ -1033,7 +1040,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="field"><label>Client secret</label><div class="input-group"><input class="input mono" id="sYtSecret" type="password" autocomplete="off" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sYtSecret" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div><span class="hint">Stored in the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span> as <code>replaycut/youtube-client</code>. Save, then connect. <a href="https://github.com/KallistoX/replaycut/blob/main/docs/youtube.md" target="_blank" rel="noopener">How to create one</a>.</span></div>
         </div>
         <div class="row" id="sYtRow"><button class="btn btn-primary" id="sYtConnect">Connect YouTube</button><button class="btn" id="sYtDisconnect" hidden>Disconnect</button><span class="muted sm" id="sYtStatus"></span></div>
-        <div class="check-row" id="sYtCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label" id="sYtCodeLabel">Enter this code at Google</div><div class="detail" id="sYtCodeDetail">Open <a id="sYtUri" href="#" target="_blank" rel="noopener"></a> and type <b class="mono" id="sYtUserCode" style="font-size:1.2em;letter-spacing:0.08em"></b>, then pick the channel. The card updates when you are done.</div></div></div>
+        <div class="check-row" id="sYtCode" hidden><div class="mark"><span class="spinner"></span></div><div><div class="label" id="sYtCodeLabel">Enter this code at Google</div><div class="devicecode" id="sYtUserCode" tabindex="0"></div><div class="detail" id="sYtCodeDetail">Open <a id="sYtUri" href="#" target="_blank" rel="noopener"></a> on any device - your phone will do, then pick the channel. The card updates when you are done.</div></div></div>
         <div class="fields-2">
           <div class="field"><label>Privacy</label><select class="select" data-f="integrations.youtube.privacy"><option value="unlisted">unlisted - anyone with the link</option><option value="private">private - only you</option><option value="public">public</option></select></div>
           <div class="field"><label>Description</label><textarea class="input" data-f="integrations.youtube.description" rows="3"></textarea><span class="hint"><code>{title}</code>, <code>{clip}</code> and <code>{date}</code> are filled in. The video title is the clip's title (or its name), plus <code>#Shorts</code> for a vertical cut.</span></div>
@@ -1850,6 +1857,18 @@ async function initSettings() {
       b.title = (open ? 'Hide the settings of ' : 'Show the settings of ') + card.querySelector('.card-head h2').textContent;
     };
   });
+  // The whole head opens the card, not just the arrow - the arrow stays the
+  // control that carries the state for the keyboard and a screen reader.
+  // The switch, links and fields inside the head keep their own click, and
+  // selecting the name with the mouse must not open anything either.
+  document.querySelectorAll('#tabIntegrations .card-head, #tabIntegrations .whatyouget').forEach(area => {
+    area.addEventListener('click', e => {
+      if (e.target.closest('.switch, a, input, select, textarea, .card-toggle')) return;
+      if (String(window.getSelection() || '').length) return;
+      const btn = area.closest('.card').querySelector('.card-toggle');
+      if (btn) btn.click();
+    });
+  });
   document.querySelectorAll('#tabIntegrations [data-f$=".enabled"], #tabIntegrations [data-f$=".autoPost"]').forEach(el => el.addEventListener('change', intSync));
 
   function changes() {
@@ -1963,11 +1982,15 @@ async function initSettings() {
       $(p + 'Connect').hidden = d.connected; $(p + 'Disconnect').hidden = !d.connected;
       $(p + 'Connect').disabled = !d.configured || (d.loopback && !onThisPc);
       $(p + 'Connect').textContent = d.loopback ? `Connect ${label} in this browser` : `Connect ${label}`;
-      const f = d.flow, lbl = $(p + 'CodeLabel'), det = $(p + 'CodeDetail');
+      const f = d.flow, lbl = $(p + 'CodeLabel'), det = $(p + 'CodeDetail'), userCode = $(p + 'UserCode');
+      // The card polls every two seconds. Writing markup that has not
+      // changed would throw away the user's selection of the code, so
+      // every write below happens only when there is something new.
+      const put = (el, prop, value) => { if (el && el[prop] !== value) el[prop] = value; };
       if (d.connected) { s.textContent = `Connected as ${d.account || label}.`; code.hidden = true; }
       else if (!d.configured) { s.textContent = typeof noClient === 'function' ? noClient(d) : noClient; code.hidden = true; }
-      else if (f && f.status === 'pending' && d.loopback) { s.textContent = ''; code.hidden = false; if (lbl) lbl.textContent = 'Finish the login in the tab that opened'; if (det) det.innerHTML = `Nothing opened? <a href="${esc(f.verificationUri)}" target="_blank" rel="noopener">Open the Google login</a>. The card updates when you are done.`; }
-      else if (f && f.status === 'pending') { s.textContent = ''; code.hidden = false; if (lbl) lbl.textContent = 'Enter this code at ' + (provider === 'youtube' ? 'Google' : 'Microsoft'); if (det) det.innerHTML = `Open <a id="${p}Uri" href="${esc(f.verificationUri)}" target="_blank" rel="noopener">${esc(f.verificationUri)}</a> and type <b class="mono" style="font-size:1.2em;letter-spacing:0.08em">${esc(f.userCode)}</b>, then pick the account. The card updates when you are done.`; else { $(p + 'Uri').textContent = f.verificationUri; $(p + 'Uri').href = f.verificationUri; $(p + 'UserCode').textContent = f.userCode; } }
+      else if (f && f.status === 'pending' && d.loopback) { s.textContent = ''; code.hidden = false; put(lbl, 'textContent', 'Finish the login in the tab that opened'); put(userCode, 'textContent', ''); put(det, 'innerHTML', `Nothing opened? <a href="${esc(f.verificationUri)}" target="_blank" rel="noopener">Open the ${esc(label)} login</a>. The card updates when you are done.`); }
+      else if (f && f.status === 'pending') { s.textContent = ''; code.hidden = false; put(lbl, 'textContent', `Enter this code at ${provider === 'youtube' ? 'Google' : 'Microsoft'}`); put(userCode, 'textContent', f.userCode); const a = $(p + 'Uri'); put(a, 'textContent', f.verificationUri); put(a, 'href', f.verificationUri); }
       else if (f && f.status === 'failed') { s.textContent = 'Connecting failed: ' + f.error; code.hidden = true; }
       else if (d.loopback && !onThisPc) { s.textContent = `Not connected. A desktop client connects from the browser on the PC that runs replaycut - open http://localhost:${location.port}/settings#integrations there, or switch the client type.`; code.hidden = true; }
       else { s.textContent = 'Not connected.'; code.hidden = true; }
