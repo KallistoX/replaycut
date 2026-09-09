@@ -2276,7 +2276,6 @@ function initClips() {
   $('delOk').onclick = deleteClip;
 
   $('b-newclip-load').onclick = () => { if (pendingNew) { load(pendingNew); toast('New clip loaded'); } pendingNew = null; banner('b-newclip', false); };
-  $('b-replaystop-start').onclick = async () => { try { const r = await api('/api/obs/replay-buffer/start', { method: 'POST', body: '' }, { retries: 0, timeout: 10000 }); r.ok ? toast('Replay buffer started', 'ok') : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } poll.now(); };
   $('b-newclip-keep').onclick = () => { pendingNew = null; banner('b-newclip', false); };
 
   poll();
@@ -3051,6 +3050,11 @@ $('b-open-local').onclick = async () => {
   location.reload();
 };
 $('b-paused-resume').onclick = async () => { try { const r = await api('/api/scanning', jsonOpts('POST', { paused: false }), { retries: 0 }); if (r.ok) { banner('b-paused', false); if (cfg.scanning) cfg.scanning.paused = false; toast('Scanning resumed', 'ok'); poll.now && poll.now(); } else toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } };
+// The banner shows on every page (applyState), so its button is wired here
+// with the other banners and not in initClips - on Settings, OBS, Activity or
+// Diagnostics the click did nothing at all. Same call as the OBS page and the
+// diagnostics fix. (#20)
+$('b-replaystop-start').onclick = async () => { await obsAction('/api/obs/replay-buffer/start', 'Replay buffer started'); poll.now && poll.now(); };
 $('updNow').onclick = () => { $('updModal').hidden = true; updateNow(); };
 $('b-update-notes').onclick = () => { const l = upd && upd.latest; if (l) showNotes(`What's new in ${l.version}`, l.notes, l.url, upd.installed && !updBusy && upd.phase !== 'installing'); };
 $('b-updated-notes').onclick = () => showNotes(`What's new in ${upd.current}`, upd.updatedNotes, upd.updatedUrl, false);

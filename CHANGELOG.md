@@ -53,6 +53,15 @@ contract.
   install.cmd" - which, on Linux, now reads `install.sh` where it still
   applies. `GET /api/update` carries `fromPackage`. (#15)
 
+### Fixed
+
+- **"Start replay buffer" in the banner works on every page.** The banner
+  saying the replay buffer is not running shows wherever you are, but its
+  button was only wired up on the clips page - on Settings, OBS, Activity or
+  Diagnostics, clicking it did nothing at all: no request, no message.
+  It is now wired once with the other banners, and takes the same route as
+  the button on the OBS page and the one in the diagnostics. (#20)
+
 ## [3.3.0] - 2026-09-09
 
 This release is about the integrations: the one that was hardest to set up
