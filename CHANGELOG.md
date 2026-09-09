@@ -10,6 +10,12 @@ contract.
 
 ## [Unreleased]
 
+## [3.4.3] - 2026-09-10
+
+The last of the three small things the 3.4 line needed, this one about the
+updater itself: it announced a release the moment it was published, which
+is a moment before it can be installed.
+
 ### Changed
 
 - **A release is offered once it can be installed, not before.** Publishing
