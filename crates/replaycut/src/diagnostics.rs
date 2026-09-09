@@ -756,6 +756,8 @@ pub async fn run(state: &AppState) -> Report {
     // failure, not a note
     let network_check = {
         let settings = settings.clone();
+        // since 3.4: the addresses carry the scheme the service speaks
+        let scheme = state.scheme();
         async move {
             let loopback_only = settings.bind == "127.0.0.1" || settings.bind == "::1";
             let mut detail = format!("listening on {}:{}", settings.bind, settings.port);
@@ -764,12 +766,12 @@ pub async fn run(state: &AppState) -> Report {
                 return Check::new("network", "Network", "ok", detail);
             }
             detail.push_str(&format!(
-                " · http://{}:{}/",
+                " · {scheme}://{}:{}/",
                 platform::lan_host(),
                 settings.port
             ));
             if let Some(ip) = platform::primary_ipv4() {
-                detail.push_str(&format!(" · http://{ip}:{}/", settings.port));
+                detail.push_str(&format!(" · {scheme}://{ip}:{}/", settings.port));
             }
             if settings.password_hash.is_none() {
                 return Check::new(
@@ -909,6 +911,58 @@ pub async fn run(state: &AppState) -> Report {
     });
     checks.push(network);
     checks.push(firewall);
+    // https (since 3.4): off, running, or on but unusable - the last one is
+    // the case worth shouting about, because the service came up unencrypted
+    // after being told to encrypt.
+    checks.push({
+        let tls = &state.tls;
+        let expires = tls.not_after.map(|t| (t - chrono::Utc::now()).num_days());
+        match (settings.https.enabled, tls.active) {
+            (false, _) => Check::new(
+                "https",
+                "HTTPS",
+                "skip",
+                "off - connections in this network are not encrypted",
+            ),
+            (true, false) => Check::new(
+                "https",
+                "HTTPS",
+                "fail",
+                "switched on, but the certificate could not be read - running without encryption",
+            )
+            .with_fix(
+                "The log line at startup says what went wrong. Check https.cert and https.key, or clear both to let replaycut make a certificate of its own.",
+            ),
+            (true, true) if tls.own => Check::new(
+                "https",
+                "HTTPS",
+                "ok",
+                match expires {
+                    Some(days) => format!("on · your own certificate · {days} days left"),
+                    None => "on · your own certificate".to_string(),
+                },
+            ),
+            (true, true) => {
+                let detail = format!(
+                    "on · own certificate authority · fingerprint {}",
+                    tls.fingerprint
+                );
+                match expires {
+                    // The certificate is renewed at startup, so the way out
+                    // is a restart and not waiting.
+                    Some(days) if days < 30 => Check::new(
+                        "https",
+                        "HTTPS",
+                        "warn",
+                        format!("{detail} · the certificate expires in {days} days"),
+                    )
+                    .with_fix("Restart replaycut: it issues a new certificate at startup, and the authority your devices trust stays the same."),
+                    Some(days) => Check::new("https", "HTTPS", "ok", format!("{detail} · {days} days left")),
+                    None => Check::new("https", "HTTPS", "ok", detail),
+                }
+            }
+        }
+    });
     // pairing (since 2.8): the device login, and whether it is paused
     let waiting = state.pairing.pending_count();
     checks.push(match state.pairing.paused() {

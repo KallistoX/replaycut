@@ -13,7 +13,8 @@ sensitive is ever written to disk in plain text.
 | Settings | `<data-dir>\settings.json` (override with `--settings`) |
 | State | `<data-dir>\replaycut.db` (clips, cuts and jobs; since 3.0) |
 | State of 2.x | `<data-dir>\backup-2.x\clip-names.json`, `clip-seen.json`, `clip-history.json` - the first start of 3.0 imports these three files and moves them here |
-| Browser sessions | `<data-dir>\sessions.json` (hashes of the login cookies, 30 days; since 2.8 with the device's name, browser, address, when it was made and last seen, and how it got in) |
+| Browser sessions | `<data-dir>\sessions.json` (hashes of the login cookies, 30 days; since 2.8 with the device's name, browser, address, when it was made and last seen, and how it got in; since 3.4 also whether a browser or a client of its own holds it) |
+| TLS certificates | `<data-dir>\tls\` (since 3.4, only with `https.enabled` and no own PEM pair): `ca.crt` and `ca.key`, the authority this installation is known by, made once and never replaced; `server.crt` and `server.key`, re-issued whenever the machine's names or addresses change or less than 30 days are left. On Linux the private keys are `0600`; on Windows the folder is under `%LOCALAPPDATA%` and therefore already bound to your account, as `settings.json` and `sessions.json` are. |
 | Themes | `<data-dir>\themes\<name>.css` (see `docs/themes.md`) |
 | Logs | `<data-dir>\logs\replaycut.<date>.log`, daily rotation, 7 files kept |
 | Previews | `<clipDir>\.preview\` |
@@ -39,6 +40,7 @@ fine.
   "bind": "127.0.0.1",
   "allowedHosts": [],
   "requireLoginOnLoopback": false,
+  "https": { "enabled": false, "cert": "", "key": "" },
   "uiFile": "ui/index.html",
   "displayName": "replaycut",
   "encoder": "auto",
@@ -91,6 +93,8 @@ fine.
 | `bind` | Address to listen on. Since 2.8 the default is `127.0.0.1`: this PC only. `0.0.0.0` makes the UI reachable from other devices in the network - the switch under Settings › Access sets it, together with the password and the firewall rule (see "Security" in the README). Any other address is left alone by that switch and shown as "custom". |
 | `allowedHosts` | Since 2.8: host names this service answers to besides `localhost`, its own computer name and any IP address - for an own DNS name or a reverse proxy. Up to 20 names without scheme or port; everything else gets a `421`. Default empty. |
 | `requireLoginOnLoopback` | Since 2.8: `true` asks for the password on this PC as well, for a Windows account other people use. It applies to answering sign-in requests too. Default `false`. |
+| `https.enabled` | Since 3.4: the port speaks TLS. Default `false`; the switch is under Settings › Access and takes effect after a restart, like `port` and `bind`. With `cert` and `key` empty, replaycut is its own certificate authority in `<data-dir>/tls` - see "Security" in the README for what that costs you in browser warnings. |
+| `https.cert`, `https.key` | Since 3.4: paths to your own PEM pair (certificate chain, leaf first; and its private key). Both or neither - one alone is a `400`. A pair every device already trusts, from Tailscale, a reverse proxy or a domain of yours, is the comfortable way to run HTTPS. If the files cannot be read at startup the service runs on plain HTTP and says so in the log and in the diagnostics. |
 | `uiFile` | The UI file. A relative path is looked up next to the executable first, then in the working directory; since 3.4 also under `<prefix>/share/replaycut` for an executable in `<prefix>/bin` and, on Linux, in every `$XDG_DATA_DIRS` entry (`/usr/share/replaycut/ui/index.html` for a distribution package). |
 | `displayName` | Prefix of the Discord post (`**<displayName>** ...`) and the webhook user name. Clip names that start with this word are shortened in the post. |
 | `encoder` | `auto` tries `h264_amf`, `h264_nvenc`, `h264_qsv`, `libx264` in that order (on Linux `h264_vaapi` comes between NVENC and Quick Sync) with a real test encode and uses the first that works. An encoder name forces that encoder. |

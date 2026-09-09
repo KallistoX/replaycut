@@ -1429,6 +1429,42 @@ contract suite does the same through the `TLS_CA` environment variable.
 Not part of this: ACME/Let's Encrypt, mTLS, and any page or installer step
 that imports the authority into a certificate store for the user.
 
+### A client that is not a browser
+
+A browser is given a cookie and never sees the token in it. A client of its
+own has no cookie jar and wants the value, so it says which it is:
+
+- `POST /api/pair/request` and `POST /api/login` take `client`, either
+  `browser` (the default, and what every page sends) or `native`. Anything
+  else is a `400`.
+- With `native`, the token arrives in the body and **no** `Set-Cookie` is
+  sent: `POST /api/login` answers `200 { ok: true, token }`, and the first
+  `GET /api/pair/<id>` after an approval answers
+  `200 { ok: true, status: "approved", token }`. The two are kept apart on
+  purpose - a token in a body that page scripts could read would give up
+  `HttpOnly` for every browser.
+- `Authorization: Bearer <token>` counts wherever the session cookie counts:
+  the login guard, `GET /api/sessions` (which session is `current`),
+  `POST /api/sessions/clear` and `POST /api/logout`. A request that carries
+  both is judged by its cookie.
+- A session in `GET /api/sessions` carries `client` (`browser` or `native`),
+  and `sessions.json` records it. Sessions written before 3.4 are `browser`.
+  Revoking one works the same either way.
+
+Nothing else changes for such a client: the host check, the rate limits and
+the approval on the PC are what they were. The `Origin` check never applied
+to requests without an `Origin` header, which is what a native client sends.
+
+### Diagnostics of 3.4
+
+One line beside the existing ones:
+
+| Check | What it says |
+| --- | --- |
+| `https` | `skip` while it is off. `ok` with the certificate in use and what is left of it, `warn` under 30 days (the fix is a restart: the certificate is issued at startup), `fail` when HTTPS is on but the certificate could not be read and the service came up unencrypted. |
+
+The `network` line names its addresses with the scheme the service speaks.
+
 ## Behaviour
 
 ### Folder scan

@@ -3112,3 +3112,74 @@ fn t58_plaintext_on_the_tls_port_is_answered() {
         "the page has to name the address that works: {body}"
     );
 }
+
+/// A client that is not a browser signs in the same way, but takes the token
+/// as a value it stores itself: no cookie is set, and `Authorization: Bearer`
+/// opens the same doors. Revoking it in the device list ends it at once.
+#[test]
+fn t59_a_native_client_gets_a_token_instead_of_a_cookie() {
+    let _g = serial();
+    if !since_34() {
+        return;
+    }
+    let (status, v) = post_json(
+        "/api/pair/request",
+        &json!({ "name": "Contract test app", "client": "native" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let id = v["id"].as_str().unwrap_or_default().to_string();
+
+    let (status, a) = post_json(&format!("/api/pair/{id}/approve"), &json!({}));
+    assert_eq!(status, 200, "{a}");
+
+    // the token arrives in the body, and no cookie comes with it
+    let resp = client()
+        .get(url(&format!("/api/pair/{id}")))
+        .send()
+        .expect("poll");
+    assert_eq!(resp.status().as_u16(), 200);
+    assert!(
+        resp.headers().get("set-cookie").is_none(),
+        "a native client must not be handed a cookie - that is what keeps the browser's HttpOnly worth having"
+    );
+    let body: serde_json::Value = resp.json().unwrap_or_default();
+    assert_eq!(body["status"], "approved", "{body}");
+    let token = body["token"].as_str().unwrap_or_default().to_string();
+    assert_eq!(token.len(), 64, "{body}");
+
+    // it opens the same doors as a cookie would
+    let resp = client()
+        .get(url("/api/clips"))
+        .header("authorization", format!("Bearer {token}"))
+        .send()
+        .expect("clips with a bearer token");
+    assert_eq!(resp.status().as_u16(), 200);
+
+    // and the device list knows what kind of client it is
+    let (status, s) = get_json("/api/sessions");
+    assert_eq!(status, 200, "{s}");
+    let mine = s["sessions"]
+        .as_array()
+        .expect("sessions")
+        .iter()
+        .find(|d| d["name"] == "Contract test app")
+        .unwrap_or_else(|| panic!("the app is not listed: {s}"))
+        .clone();
+    assert_eq!(mine["client"], "native", "{mine}");
+    let device_id = mine["id"].as_str().unwrap_or_default().to_string();
+
+    // revoked, the token is worth nothing - but only where a login is
+    // required at all; on loopback without a password everything is open.
+    let (status, d) = delete(&format!("/api/sessions/{device_id}"));
+    assert_eq!(status, 200, "{d}");
+    let (status, s) = get_json("/api/sessions");
+    assert_eq!(status, 200, "{s}");
+    assert!(
+        !s["sessions"]
+            .as_array()
+            .expect("sessions")
+            .iter()
+            .any(|d| d["id"] == device_id.as_str()),
+        "the revoked session is gone: {s}"
+    );
+}

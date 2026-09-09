@@ -76,8 +76,30 @@ pub struct Request {
     pub asked: String,
     created: Instant,
     status: Status,
+    /// Whether a client of ours asked, rather than a browser (since 3.4):
+    /// it wants the token as a value, not as a cookie.
+    pub client: crate::auth::Client,
     /// The session token, waiting for the device's next poll.
     token: Option<String>,
+}
+
+/// What a poll answers: the status, the token the first time after an
+/// approval, and where that token belongs - a cookie for a browser, the
+/// body for a client of ours (since 3.4).
+pub struct Answer {
+    pub status: &'static str,
+    pub token: Option<String>,
+    pub client: crate::auth::Client,
+}
+
+impl Answer {
+    fn status(status: &'static str) -> Self {
+        Self {
+            status,
+            token: None,
+            client: crate::auth::Client::Browser,
+        }
+    }
 }
 
 impl Request {
@@ -203,6 +225,7 @@ impl Pairing {
         name: &str,
         agent: &str,
         ip: IpAddr,
+        client: crate::auth::Client,
     ) -> Result<(String, String, u64), Refused> {
         let mut inner = self.inner.lock();
         inner.prune();
@@ -246,6 +269,7 @@ impl Pairing {
             asked: util::now_local(),
             created: Instant::now(),
             status: Status::Pending,
+            client,
             token: None,
         };
         let answer = (request.id.clone(), request.code.clone(), TTL.as_secs());
@@ -262,12 +286,12 @@ impl Pairing {
     /// The device asks how its request is doing. The token comes with the
     /// first answer after an approval, once, and only to the address that
     /// asked.
-    pub fn poll(&self, id: &str, ip: IpAddr) -> (&'static str, Option<String>) {
+    pub fn poll(&self, id: &str, ip: IpAddr) -> Answer {
         let mut inner = self.inner.lock();
         inner.prune();
         let Some(request) = inner.requests.iter_mut().find(|r| r.id == id) else {
             // unknown or long gone - the device starts over
-            return ("expired", None);
+            return Answer::status("expired");
         };
         if request.ip != ip {
             tracing::warn!(
@@ -275,14 +299,18 @@ impl Pairing {
                 request.code,
                 request.ip
             );
-            return ("denied", None);
+            return Answer::status("denied");
         }
         let token = if request.status == Status::Approved {
             request.token.take()
         } else {
             None
         };
-        (request.status.as_str(), token)
+        Answer {
+            status: request.status.as_str(),
+            token,
+            client: request.client,
+        }
     }
 
     /// The PC says yes. `token` makes the session for the device and is
@@ -439,6 +467,24 @@ mod tests {
         Pairing::new()
     }
 
+    /// A browser asks - the ordinary case these tests are about. The native
+    /// client has its own test below.
+    fn ask(
+        p: &Pairing,
+        name: &str,
+        agent: &str,
+        ip: IpAddr,
+    ) -> Result<(String, String, u64), Refused> {
+        p.ask(name, agent, ip, crate::auth::Client::Browser)
+    }
+
+    /// The pair the tests were written against, before the answer had to say
+    /// where the token belongs.
+    fn poll(p: &Pairing, id: &str, ip: IpAddr) -> (&'static str, Option<String>) {
+        let a = p.poll(id, ip);
+        (a.status, a.token)
+    }
+
     #[test]
     fn codes_are_four_readable_characters() {
         for _ in 0..200 {
@@ -452,12 +498,33 @@ mod tests {
     }
 
     #[test]
+    fn a_native_client_is_told_the_token_belongs_in_the_body() {
+        use crate::auth::Client;
+        let p = pairing();
+        let (id, _, _) = p
+            .ask("replaycut app", "agent", ip(7), Client::Native)
+            .unwrap();
+        p.approve(&id, |_| "secret".into()).unwrap();
+        let answer = p.poll(&id, ip(7));
+        assert_eq!(answer.status, "approved");
+        assert_eq!(answer.token.as_deref(), Some("secret"));
+        assert!(
+            answer.client.is_native(),
+            "the handler decides body or cookie from this"
+        );
+        // A browser asking the same way still gets a cookie's worth.
+        let (id, _, _) = ask(&p, "iPhone", "agent", ip(8)).unwrap();
+        p.approve(&id, |_| "other".into()).unwrap();
+        assert!(!p.poll(&id, ip(8)).client.is_native());
+    }
+
+    #[test]
     fn ask_approve_poll_hands_the_token_over_once() {
         let p = pairing();
-        let (id, code, expires) = p.ask("iPhone, Safari", "agent", ip(7)).expect("asked");
+        let (id, code, expires) = ask(&p, "iPhone, Safari", "agent", ip(7)).expect("asked");
         assert_eq!(code.len(), 4);
         assert_eq!(expires, 120);
-        assert_eq!(p.poll(&id, ip(7)), ("pending", None));
+        assert_eq!(poll(&p, &id, ip(7)), ("pending", None));
         assert_eq!(p.pending_count(), 1);
         let view = p.pending().remove(0);
         assert_eq!(view["id"], id.as_str());
@@ -471,10 +538,10 @@ mod tests {
         assert_eq!(approved.name, "iPhone, Safari");
         assert_eq!(p.pending_count(), 0, "an answered request is not pending");
         // the token comes once, to the device that asked
-        let (status, token) = p.poll(&id, ip(7));
+        let (status, token) = poll(&p, &id, ip(7));
         assert_eq!(status, "approved");
         assert_eq!(token.as_deref(), Some("token-for-192.0.2.7"));
-        assert_eq!(p.poll(&id, ip(7)), ("approved", None), "only once");
+        assert_eq!(poll(&p, &id, ip(7)), ("approved", None), "only once");
         // and a second decision does not land
         assert!(matches!(
             p.approve(&id, |_| "x".into()),
@@ -486,47 +553,47 @@ mod tests {
     #[test]
     fn another_address_gets_nothing() {
         let p = pairing();
-        let (id, _, _) = p.ask("iPhone", "agent", ip(7)).unwrap();
+        let (id, _, _) = ask(&p, "iPhone", "agent", ip(7)).unwrap();
         p.approve(&id, |_| "secret".into()).unwrap();
-        assert_eq!(p.poll(&id, ip(8)), ("denied", None), "not this device");
+        assert_eq!(poll(&p, &id, ip(8)), ("denied", None), "not this device");
         // the real device still gets its token
-        assert_eq!(p.poll(&id, ip(7)).1.as_deref(), Some("secret"));
+        assert_eq!(poll(&p, &id, ip(7)).1.as_deref(), Some("secret"));
     }
 
     #[test]
     fn deny_and_an_unknown_id() {
         let p = pairing();
-        let (id, _, _) = p.ask("Laptop", "agent", ip(9)).unwrap();
+        let (id, _, _) = ask(&p, "Laptop", "agent", ip(9)).unwrap();
         p.deny(&id).unwrap();
-        assert_eq!(p.poll(&id, ip(9)), ("denied", None));
-        assert_eq!(p.poll("0123456789abcdef", ip(9)), ("expired", None));
+        assert_eq!(poll(&p, &id, ip(9)), ("denied", None));
+        assert_eq!(poll(&p, "0123456789abcdef", ip(9)), ("expired", None));
     }
 
     #[test]
     fn a_second_request_replaces_the_first_one_of_that_device() {
         let p = pairing();
-        let (first, _, _) = p.ask("iPhone", "agent", ip(7)).unwrap();
-        let (second, _, _) = p.ask("iPhone", "agent", ip(7)).unwrap();
+        let (first, _, _) = ask(&p, "iPhone", "agent", ip(7)).unwrap();
+        let (second, _, _) = ask(&p, "iPhone", "agent", ip(7)).unwrap();
         assert_ne!(first, second);
         assert_eq!(p.pending_count(), 1);
-        assert_eq!(p.poll(&first, ip(7)), ("expired", None));
-        assert_eq!(p.poll(&second, ip(7)), ("pending", None));
+        assert_eq!(poll(&p, &first, ip(7)), ("expired", None));
+        assert_eq!(poll(&p, &second, ip(7)), ("pending", None));
     }
 
     #[test]
     fn a_flood_pauses_the_device_login() {
         let p = pairing();
-        p.ask("a", "agent", ip(1)).unwrap();
-        p.ask("b", "agent", ip(2)).unwrap();
-        p.ask("c", "agent", ip(3)).unwrap();
+        ask(&p, "a", "agent", ip(1)).unwrap();
+        ask(&p, "b", "agent", ip(2)).unwrap();
+        ask(&p, "c", "agent", ip(3)).unwrap();
         assert!(p.paused().is_none());
         // the fourth address within the minute is one too many
-        let refused = p.ask("d", "agent", ip(4)).expect_err("paused");
+        let refused = ask(&p, "d", "agent", ip(4)).expect_err("paused");
         assert!(matches!(refused, Refused::Paused(s) if s > 500));
         assert!(p.paused().is_some());
         // even the addresses that were fine before have to wait now
         assert!(matches!(
-            p.ask("a", "agent", ip(1)),
+            ask(&p, "a", "agent", ip(1)),
             Err(Refused::Paused(_))
         ));
     }
@@ -535,10 +602,10 @@ mod tests {
     fn five_requests_a_minute_are_enough() {
         let p = pairing();
         for _ in 0..5 {
-            p.ask("iPhone", "agent", ip(7)).unwrap();
+            ask(&p, "iPhone", "agent", ip(7)).unwrap();
         }
         assert!(matches!(
-            p.ask("iPhone", "agent", ip(7)),
+            ask(&p, "iPhone", "agent", ip(7)),
             Err(Refused::TooMany)
         ));
     }
@@ -560,14 +627,14 @@ mod tests {
     #[test]
     fn requests_run_out() {
         let p = pairing();
-        let (id, _, _) = p.ask("iPhone", "agent", ip(7)).unwrap();
+        let (id, _, _) = ask(&p, "iPhone", "agent", ip(7)).unwrap();
         // pretend the two minutes are over
         {
             let mut inner = p.inner.lock();
             let r = &mut inner.requests[0];
             r.created = Instant::now() - TTL - Duration::from_secs(1);
         }
-        assert_eq!(p.poll(&id, ip(7)), ("expired", None));
+        assert_eq!(poll(&p, &id, ip(7)), ("expired", None));
         assert_eq!(p.pending_count(), 0);
         assert!(matches!(
             p.approve(&id, |_| "x".into()),
@@ -581,6 +648,6 @@ mod tests {
         }
         let (_, keep_going) = p.sweep_step();
         assert!(!keep_going, "nothing left to watch");
-        assert_eq!(p.poll(&id, ip(7)), ("expired", None));
+        assert_eq!(poll(&p, &id, ip(7)), ("expired", None));
     }
 }

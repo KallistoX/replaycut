@@ -19,7 +19,7 @@ use argon2::password_hash::rand_core::{OsRng, RngCore};
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
 use axum::extract::{ConnectInfo, Request, State};
-use axum::http::header::{CONTENT_TYPE, COOKIE, HOST, ORIGIN};
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE, COOKIE, HOST, ORIGIN};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -90,6 +90,35 @@ pub enum Via {
     Qr,
 }
 
+/// What kind of client holds a session (since 3.4). A browser gets a cookie
+/// and nothing else; a client of our own gets the token as a value it stores
+/// itself and sends as `Authorization: Bearer`. Keeping them apart is what
+/// lets the cookie stay `HttpOnly`: a token in a JSON body that page scripts
+/// could read would give that up for everyone.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Client {
+    #[default]
+    Browser,
+    Native,
+}
+
+impl Client {
+    /// What `POST /api/login` and `POST /api/pair/request` accept in
+    /// `client`. Anything else is a 400 rather than a silent browser.
+    pub fn parse(raw: Option<&str>) -> Result<Self, &'static str> {
+        match raw.unwrap_or("browser").trim() {
+            "browser" => Ok(Self::Browser),
+            "native" => Ok(Self::Native),
+            _ => Err("client must be \"browser\" or \"native\""),
+        }
+    }
+
+    pub fn is_native(self) -> bool {
+        self == Self::Native
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Session {
@@ -109,6 +138,8 @@ pub struct Session {
     /// (since 2.8).
     pub last_seen: String,
     pub via: Via,
+    /// Browser or a client of our own (since 3.4).
+    pub client: Client,
     /// Unix seconds.
     expires: u64,
 }
@@ -120,6 +151,7 @@ pub struct NewSession {
     pub agent: String,
     pub ip: String,
     pub via: Via,
+    pub client: Client,
 }
 
 impl NewSession {
@@ -130,7 +162,14 @@ impl NewSession {
             agent: agent.chars().take(200).collect(),
             ip: ip.to_string(),
             via,
+            client: Client::Browser,
         }
+    }
+
+    /// The same session, held by a client of our own instead of a browser.
+    pub fn held_by(mut self, client: Client) -> Self {
+        self.client = client;
+        self
     }
 }
 
@@ -279,6 +318,7 @@ impl Sessions {
             created: stamp.clone(),
             last_seen: stamp,
             via: new.via,
+            client: new.client,
             expires: now + SESSION_DAYS * 86_400,
         });
         self.save(&list);
@@ -343,6 +383,8 @@ impl Sessions {
                     "created": s.created,
                     "lastSeen": s.last_seen,
                     "via": s.via,
+                    // since 3.4
+                    "client": s.client,
                     "current": mine.as_deref() == Some(s.hash.as_str()),
                 })
             })
@@ -458,6 +500,24 @@ pub fn cookie_token(headers: &HeaderMap) -> Option<String> {
         let (k, v) = part.trim().split_once('=')?;
         (k.trim() == COOKIE_NAME).then(|| v.trim().to_string())
     })
+}
+
+/// `Authorization: Bearer <token>` (since 3.4), for a client that is not a
+/// browser and therefore has no cookie jar.
+pub fn bearer_token(headers: &HeaderMap) -> Option<String> {
+    let value = headers.get(AUTHORIZATION)?.to_str().ok()?.trim();
+    let (scheme, token) = value.split_once(' ')?;
+    scheme
+        .eq_ignore_ascii_case("bearer")
+        .then(|| token.trim().to_string())
+        .filter(|t| !t.is_empty())
+}
+
+/// The session token of a request, from wherever it came. Everything that
+/// asks "which session is this" goes through here, so a native client is
+/// treated exactly like a browser once it is signed in.
+pub fn session_token(headers: &HeaderMap) -> Option<String> {
+    cookie_token(headers).or_else(|| bearer_token(headers))
 }
 
 /// `secure` is added once TLS is running (since 3.4) and never before: a
@@ -598,7 +658,7 @@ pub async fn origin_check(req: Request, next: Next) -> Response {
 /// Since 2.8 `requireLoginOnLoopback` makes this PC sign in as well, for a
 /// Windows account other people use.
 pub fn is_authenticated(state: &AppState, addr: &SocketAddr, headers: &HeaderMap) -> bool {
-    if cookie_token(headers).is_some_and(|t| state.sessions.is_valid(&t)) {
+    if session_token(headers).is_some_and(|t| state.sessions.is_valid(&t)) {
         return true;
     }
     if !state.password_set() {
@@ -698,6 +758,41 @@ mod tests {
         assert!(is_loopback(&"[::1]:1".parse().unwrap()));
         assert!(is_loopback(&"[::ffff:127.0.0.1]:1".parse().unwrap()));
         assert!(!is_loopback(&"192.0.2.20:1".parse().unwrap()));
+    }
+
+    #[test]
+    fn a_session_is_found_by_cookie_or_by_bearer() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(session_token(&headers), None);
+
+        headers.insert(AUTHORIZATION, "Bearer abc123".parse().unwrap());
+        assert_eq!(bearer_token(&headers).as_deref(), Some("abc123"));
+        assert_eq!(session_token(&headers).as_deref(), Some("abc123"));
+        // The scheme is case-insensitive, the value is not.
+        headers.insert(AUTHORIZATION, "bearer abc123".parse().unwrap());
+        assert_eq!(bearer_token(&headers).as_deref(), Some("abc123"));
+        // Anything that is not a bearer token is none of our business.
+        headers.insert(AUTHORIZATION, "Basic dXNlcjpwdw==".parse().unwrap());
+        assert_eq!(bearer_token(&headers), None);
+        headers.insert(AUTHORIZATION, "Bearer   ".parse().unwrap());
+        assert_eq!(bearer_token(&headers), None);
+
+        // A cookie wins: a browser that also carries a stale header keeps
+        // the session it actually has.
+        headers.insert(AUTHORIZATION, "Bearer from-header".parse().unwrap());
+        headers.insert(COOKIE, "rc_session=from-cookie".parse().unwrap());
+        assert_eq!(session_token(&headers).as_deref(), Some("from-cookie"));
+    }
+
+    #[test]
+    fn the_client_kind_is_browser_unless_it_says_otherwise() {
+        assert_eq!(Client::parse(None).unwrap(), Client::Browser);
+        assert_eq!(Client::parse(Some("browser")).unwrap(), Client::Browser);
+        assert_eq!(Client::parse(Some("native")).unwrap(), Client::Native);
+        assert!(
+            Client::parse(Some("app")).is_err(),
+            "a typo is not a browser"
+        );
     }
 
     #[test]

@@ -1510,11 +1510,13 @@ function deviceRow(d, onGone) {
   const el = document.createElement('div');
   el.className = 'device';
   const via = { password: 'password', approve: 'allowed here', qr: 'QR code' }[d.via] || d.via || '';
-  el.innerHTML = `<div class="who"><b></b> <span class="badge" data-via></span> <span class="badge accent" data-me hidden>this browser</span>
+  el.innerHTML = `<div class="who"><b></b> <span class="badge" data-via></span> <span class="badge" data-client hidden>app</span> <span class="badge accent" data-me hidden>this browser</span>
       <div class="muted xs"><span data-ip class="mono"></span> · last seen <span data-seen></span> · signed in <span data-created></span></div></div>
     <button class="btn btn-sm" data-out>Sign out</button>`;
   el.querySelector('b').textContent = d.name || 'Unknown device';
   el.querySelector('[data-via]').textContent = via;
+  // since 3.4: a client of ours holds a token instead of a cookie
+  el.querySelector('[data-client]').hidden = d.client !== 'native';
   el.querySelector('[data-ip]').textContent = d.ip || '';
   el.querySelector('[data-seen]').textContent = (d.lastSeen || '').replace('T', ' ');
   el.querySelector('[data-created]').textContent = (d.created || '').replace('T', ' ');

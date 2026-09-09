@@ -231,7 +231,9 @@ stored as SHA-256 of their cookie.
 
 **Settings › Signed-in devices** lists every browser that may use replaycut
 with its name, address and when it was last seen. "Sign out" ends one at
-once, "Sign out everywhere" all but your own.
+once, "Sign out everywhere" all but your own. Since 3.4 a client that is
+not a browser can sign in the same way and keep a token instead of a
+cookie; it shows up in the list marked *app*.
 
 **What a web page you visit cannot do.** Every write with a foreign
 `Origin` is refused, and every request whose `Host` is not `localhost`, an
@@ -239,11 +241,44 @@ IP address, this computer's name or a name in `allowedHosts` is answered
 with `421` - that closes DNS rebinding, where a page uses its own name to
 reach a service on your machine.
 
-**Not in 2.8**: HTTPS. The traffic in your network is plain HTTP, so the
-password crosses it once when you use it - which is why the device login
-exists and is the everyday way in. Do not put replaycut on the open
-internet; a VPN or a mesh network (Tailscale and friends) is the way to
-reach it from outside.
+**HTTPS, if you want it** (since 3.4, off by default). Settings › Access
+has the switch; it needs a restart, like the port. With it on, the password
+and the session cookie no longer cross your network in the clear, and the
+browser gives the page its clipboard without a fallback. Without it the
+traffic is plain HTTP - which is why the device login exists and is the
+everyday way in: it means the password does not cross the network at all.
+Either way, do not put replaycut on the open internet; a VPN or a mesh
+network is how you reach it from outside.
+
+The catch with HTTPS is the certificate, and there is no way around it:
+
+- **Bring your own** and there is nothing to explain. Set `https.cert` and
+  `https.key` to a PEM pair every device already trusts. Three ways to get
+  one: **Tailscale** gives your machine a real Let's Encrypt certificate
+  for its `*.ts.net` name (`tailscale cert <name>`), which also solves
+  getting in from outside; a **reverse proxy** (Caddy does it in three
+  lines) in front of replaycut with a domain of yours; or **[mkcert]** if
+  you would rather run your own authority and install it yourself.
+- **Or let replaycut make one.** Leave both empty and it becomes its own
+  certificate authority in `<data-dir>/tls`. That authority is made once
+  and never replaced - it is the identity of this replaycut - while the
+  certificate under it is re-issued whenever your machine's addresses
+  change or it nears its end. No browser knows that authority, so **expect
+  one warning per browser** until you import `ca.crt` into its certificate
+  store. Settings › Access shows the file and its fingerprint; on Windows,
+  `certutil -user -addstore Root ca.crt` does it for your account. Phones
+  are the awkward part - iOS wants the profile *and* a second switch under
+  Settings › General › About › Certificate Trust Settings - which is why
+  the honest answer for a phone today is either your own certificate or
+  plain HTTP.
+
+An old bookmark that still says `http://` gets a page with the right
+address rather than a broken connection, and a certificate replaycut cannot
+read leaves the service running unencrypted with the reason in the log and
+a failing diagnostics line: on a PC without a console, unreachable is worse
+than unencrypted.
+
+[mkcert]: https://github.com/FiloSottile/mkcert
 
 `requireLoginOnLoopback` in the settings asks for the password on this PC
 as well, for a Windows account other people use.

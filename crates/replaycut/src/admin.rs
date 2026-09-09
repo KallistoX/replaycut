@@ -625,7 +625,11 @@ pub async fn pair_request(
         "" => auth::device_name(agent),
         n => n.to_string(),
     };
-    match app.pairing.ask(&name, agent, addr.ip()) {
+    // since 3.4: a client of ours asks for the token as a value, a browser
+    // for a cookie. The answer to the poll follows this.
+    let client = auth::Client::parse(v["client"].as_str())
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))?;
+    match app.pairing.ask(&name, agent, addr.ip(), client) {
         Ok((id, code, expires)) => {
             crate::pairing::watch(&app);
             // `localhost`, not `127.0.0.1`: with HTTPS on, the certificate
@@ -663,9 +667,21 @@ pub async fn pair_poll(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(id): Path<String>,
 ) -> Response {
-    let (status, token) = app.pairing.poll(&id, addr.ip());
-    let mut res = Json(json!({ "ok": true, "status": status })).into_response();
-    if let Some(token) = token {
+    let answer = app.pairing.poll(&id, addr.ip());
+    let mut doc = json!({ "ok": true, "status": answer.status });
+    // A client of ours gets the token in the body and no cookie; a browser
+    // gets the cookie and never sees the value. Mixing the two would give
+    // up HttpOnly for every browser (since 3.4).
+    let cookie = match (&answer.token, answer.client.is_native()) {
+        (Some(token), true) => {
+            doc["token"] = json!(token);
+            None
+        }
+        (Some(token), false) => Some(token.clone()),
+        (None, _) => None,
+    };
+    let mut res = Json(doc).into_response();
+    if let Some(token) = cookie {
         if let Ok(v) = auth::set_cookie_value(&token, app.tls.active).parse() {
             res.headers_mut().insert(SET_COOKIE, v);
         }
@@ -703,6 +719,7 @@ pub async fn pair_approve(
                 agent: r.agent.clone(),
                 ip: r.ip.to_string(),
                 via: auth::Via::Approve,
+                client: r.client,
             })
         })
         .map_err(decided_error)?;
@@ -847,7 +864,7 @@ pub async fn network_disable(State(app): State<App>) -> Result<Json<Value>, ApiE
 
 /// `GET /api/sessions` (since 2.8): the devices that are signed in.
 pub async fn sessions(State(app): State<App>, headers: HeaderMap) -> Json<Value> {
-    let current = auth::cookie_token(&headers);
+    let current = auth::session_token(&headers);
     Json(json!({ "ok": true, "sessions": app.sessions.list(current.as_deref()) }))
 }
 
@@ -869,7 +886,7 @@ pub async fn session_revoke(
 pub async fn sessions_clear(State(app): State<App>, headers: HeaderMap) -> Json<Value> {
     let removed = app
         .sessions
-        .clear_except(auth::cookie_token(&headers).as_deref());
+        .clear_except(auth::session_token(&headers).as_deref());
     tracing::info!("{removed} session(s) signed out");
     Json(json!({ "ok": true, "removed": removed }))
 }
@@ -917,9 +934,16 @@ pub async fn login(
         .get(axum::http::header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let new = auth::NewSession::from_agent(agent, addr.ip(), auth::Via::Password);
+    // since 3.4, as for the device login: `native` takes the token in the
+    // body, a browser gets the cookie and never sees the value.
+    let client = auth::Client::parse(v["client"].as_str())
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))?;
+    let new = auth::NewSession::from_agent(agent, addr.ip(), auth::Via::Password).held_by(client);
     tracing::info!("login from {} ({})", addr.ip(), new.name);
     let token = app.sessions.create(new);
+    if client.is_native() {
+        return Ok(Json(json!({ "ok": true, "token": token })).into_response());
+    }
     let mut res = Json(json!({ "ok": true })).into_response();
     if let Ok(v) = auth::set_cookie_value(&token, app.tls.active).parse() {
         res.headers_mut().insert(SET_COOKIE, v);
@@ -929,7 +953,7 @@ pub async fn login(
 
 /// `POST /api/logout`
 pub async fn logout(State(app): State<App>, headers: HeaderMap) -> Response {
-    if let Some(token) = auth::cookie_token(&headers) {
+    if let Some(token) = auth::session_token(&headers) {
         app.sessions.remove(&token);
     }
     let mut res = Json(json!({ "ok": true })).into_response();

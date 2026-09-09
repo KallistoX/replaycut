@@ -10,6 +10,23 @@ contract.
 
 ## [Unreleased]
 
+This release is about the two things replaycut had left open at the edges:
+the connection, and the copies that a package manager keeps.
+
+HTTPS is now a switch. It is off by default and it stays off for anyone who
+does not want it, because in a home network plain HTTP is usually fine and
+a certificate nobody trusts is a step backwards. Switch it on and replaycut
+becomes its own certificate authority - one that is made once and never
+replaced, so a device that trusts it keeps trusting it while the
+certificate under it is renewed as your addresses change. Bring a
+certificate of your own instead, from Tailscale or a reverse proxy, and
+there is nothing to trust at all. The README says plainly what each way
+costs you.
+
+The same release teaches replaycut to be a good guest in a distribution
+package, and gives a client that is not a browser a way in: it signs in
+like a phone does and keeps a token instead of a cookie.
+
 ### Added
 
 - **HTTPS, if you want it.** `https.enabled` in the settings makes the port
@@ -39,6 +56,19 @@ contract.
   and logs never see, so a client can pin the authority before its first
   request. The OAuth login keeps its plain-HTTP callback on a port of its
   own, because Google's rules for a loopback redirect say `http`.
+
+  The diagnostics gain an `https` line: off, or the certificate in use with
+  what is left of it, or - the one worth shouting about - switched on but
+  unreadable, which leaves the service running unencrypted rather than not
+  running at all.
+- **A client that is not a browser can sign in.** `POST /api/login` and
+  `POST /api/pair/request` take `client: "native"`, and then the token
+  comes back in the body instead of a cookie; `Authorization: Bearer`
+  counts wherever the cookie counts. Browsers keep getting a cookie they
+  cannot read, which is the point of keeping the two apart. Settings ›
+  Signed-in devices marks such a session *app*, and revoking it works the
+  same. Nothing else changes for it: it asks, this PC allows, and the rate
+  limits are what they were.
 - **The UI is found next to a system-wide executable.** A distribution
   package puts the executable into `/usr/bin` and the UI into
   `/usr/share/replaycut/ui/index.html`; a relative `uiFile` is now also
