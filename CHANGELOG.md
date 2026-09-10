@@ -18,6 +18,14 @@ contract.
   YouTube refresh token among them. Both platforms now walk the same list,
   so a purge leaves nothing of yours in the credential store.
 
+- **A menu opens upwards when there is no room below it.** The "..." of a cut
+  or an output row, the render menu, the share menu and the menu in the top
+  bar all measured nothing and opened downwards, so a row in the lower half
+  of the screen - on a phone, almost every row - put its entries out of
+  sight. They are measured on open now, against the window and against a
+  list that scrolls on its own, and flip up when that is where the room is;
+  a menu that fits neither way is clamped and scrolls inside.
+
 ### Changed
 
 - The privacy policy says what Google user data replaycut accesses, how it

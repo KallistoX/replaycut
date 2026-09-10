@@ -90,7 +90,10 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
 /* ---------- menu ----------
  * One popup for the top bar, the share targets and the cut cards. It needs a
  * `position: relative` parent (`.navmenu`, `.split`). */
-.menu { position: absolute; left: 0; top: calc(100% + 4px); min-width: 220px; padding: var(--space-1); z-index: 5; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px var(--scrim); }
+.menu { position: absolute; left: 0; top: calc(100% + 4px); min-width: 220px; overflow-y: auto; padding: var(--space-1); z-index: 5; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px var(--scrim); }
+/* A menu that would not fit below its button opens upwards instead; the page
+ * measures it on open and sets the class. */
+.menu.up { top: auto; bottom: calc(100% + 4px); }
 .menu button, .menu a { display: flex; align-items: center; gap: var(--space-2); min-height: 36px; padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-sm); background: none; color: var(--fg); font: inherit; text-align: left; white-space: nowrap; text-decoration: none; cursor: pointer; }
 .menu button:hover, .menu a:hover { background: var(--surface-2); text-decoration: none; }
 .menu button:disabled { opacity: 0.5; cursor: default; }

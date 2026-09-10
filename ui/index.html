@@ -513,8 +513,11 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; background: var(--
 .share-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
 .share-row .select { width: auto; min-width: 180px; }
 .split { position: relative; display: inline-flex; } .split > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; } .split > .btn-icon { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 1px; }
-.menu { position: absolute; left: 0; top: calc(100% + 4px); min-width: 220px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px var(--scrim); padding: var(--space-1); z-index: 5; display: flex; flex-direction: column; }
+.menu { position: absolute; left: 0; top: calc(100% + 4px); min-width: 220px; overflow-y: auto; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px var(--scrim); padding: var(--space-1); z-index: 5; display: flex; flex-direction: column; }
 .menu.right { left: auto; right: 0; }
+/* A menu that would not fit below its button opens upwards instead; when it
+ * fits neither way it stays put, clamped by `placeMenu()`, and scrolls. */
+.menu.up { top: auto; bottom: calc(100% + 4px); }
 .menu button, .menu a { text-align: left; background: none; border: 0; color: var(--fg); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; font: inherit; display: flex; gap: var(--space-2); align-items: center; min-height: 36px; white-space: nowrap; text-decoration: none; }
 .menu button:hover, .menu a:hover { background: var(--surface-2); text-decoration: none; }
 .menu button:disabled { opacity: 0.5; cursor: default; }
@@ -1306,7 +1309,7 @@ function showPage(name) {
 }
 // The menu: click to open, click anywhere else or Escape to close.
 $('navMore').onclick = e => { e.stopPropagation(); setNavMenu($('navMenu').hidden); };
-function setNavMenu(open) { $('navMenu').hidden = !open; $('navMore').setAttribute('aria-expanded', open ? 'true' : 'false'); }
+function setNavMenu(open) { $('navMenu').hidden = !open; $('navMore').setAttribute('aria-expanded', open ? 'true' : 'false'); if (open) placeMenu($('navMenu'), $('navMore')); }
 document.addEventListener('click', e => { if (!$('navMenu').hidden && !e.target.closest('.navmenu')) setNavMenu(false); });
 $('navMenu').addEventListener('click', e => { if (e.target.closest('a, button')) setNavMenu(false); });
 
@@ -2266,7 +2269,7 @@ function initClips() {
     catch (e) { toast(e.message, 'err'); }
     $('bH264').disabled = false;
   };
-  $('bShareMenu').onclick = e => { e.stopPropagation(); buildShareMenu(); $('shareMenu').hidden = !$('shareMenu').hidden; };
+  $('bShareMenu').onclick = e => { e.stopPropagation(); buildShareMenu(); const m = $('shareMenu'); m.hidden = !m.hidden; if (!m.hidden) placeMenu(m, $('bShareMenu')); };
   document.addEventListener('click', e => {
     if (!$('shareMenu').hidden && !e.target.closest('.split')) $('shareMenu').hidden = true;
     // the render menus of the cut cards (since 3.0)
@@ -2715,6 +2718,36 @@ function showEmpty(kind) {
 // ------------------------------------------------------------ menus (3.1)
 // One helper for every "..." on the page. Entries are objects, `'hr'` is a
 // separator and `{ heading }` a caption; the next click anywhere closes it.
+// A menu opens downwards. Near the bottom of the window - or of a list that
+// scrolls on its own, like the clip list - that puts its entries out of
+// reach, so a menu that does not fit below its button opens upwards. If it
+// fits neither way it keeps its side, is clamped and scrolls inside.
+const MENU_GAP = 4, MENU_EDGE = 8;
+/// The band a menu may use: under the sticky header, inside the nearest
+/// scroll container, above the bottom of the window.
+function menuBounds(el) {
+  const bar = document.querySelector('.topbar');
+  const b = { top: bar ? bar.getBoundingClientRect().bottom : 0, bottom: window.innerHeight };
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const o = getComputedStyle(p).overflowY;
+    if (o === 'auto' || o === 'scroll') {
+      const r = p.getBoundingClientRect();
+      b.top = Math.max(b.top, r.top); b.bottom = Math.min(b.bottom, r.bottom);
+      break;
+    }
+  }
+  return b;
+}
+/// Measure an open menu and put it below its button or above it.
+function placeMenu(m, anchor) {
+  m.classList.remove('up'); m.style.maxHeight = '';
+  const a = anchor.getBoundingClientRect(), box = menuBounds(anchor), h = m.offsetHeight;
+  const below = box.bottom - MENU_EDGE - a.bottom - MENU_GAP;
+  const above = a.top - MENU_GAP - box.top - MENU_EDGE;
+  if (h > below && above > below) m.classList.add('up');
+  const room = m.classList.contains('up') ? above : below;
+  if (h > room) m.style.maxHeight = Math.round(Math.max(room, 0)) + 'px';
+}
 let openMenuEl = null;
 function closeMenu() { if (openMenuEl) { openMenuEl.remove(); openMenuEl = null; } }
 function menu(anchor, items) {
@@ -2739,6 +2772,7 @@ function menu(anchor, items) {
   const holder = anchor.parentElement;
   if (getComputedStyle(holder).position === 'static') holder.style.position = 'relative';
   holder.appendChild(m); openMenuEl = m;
+  placeMenu(m, anchor);
 }
 menu.n = 0;
 document.addEventListener('click', e => { if (openMenuEl && !e.target.closest('.menu') && !e.target.closest('[data-menu-id]')) closeMenu(); });
