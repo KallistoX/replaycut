@@ -20,6 +20,10 @@ contract.
   appears once a notify integration is on. Nothing changed about the encoding:
   best quality stays the default, the limit stays the choice per target.
 
+- **`Ctrl` + `S` saves the settings page.** It works from inside a field too,
+  which is where the hand usually is, and it no longer offers to save the page
+  as an HTML file. The shortcut list behind `?` names it.
+
 ### Changed
 
 - **The save bar sits at the bottom edge of the window.** It used to be

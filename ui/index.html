@@ -1262,6 +1262,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <tr><td><kbd>P</kbd></td><td>Play the selection</td></tr>
       <tr><td><kbd>Enter</kbd></td><td>Share the selection; in the title field: save the title (empty takes the suggestion)</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Close a dialog; in the title field: undo the edit</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>S</kbd></td><td>On the settings page: save what you changed</td></tr>
       <tr><td><kbd>?</kbd></td><td>This list</td></tr>
     </table></div>
     <div class="actions"><button class="btn" id="helpClose">Close <kbd>Esc</kbd></button></div>
@@ -2151,6 +2152,16 @@ async function initSettings() {
     } catch (e) { toast(e.message, 'err'); }
     $('sSave').innerHTML = 'Save'; dirty();
   };
+  // Ctrl+S saves the page, the way it saves a document everywhere else. The
+  // browser's own "save this page as HTML" is of no use here, so the key is
+  // taken on the settings page whether or not there is anything to save -
+  // in a field too, which is where the hand usually is.
+  document.addEventListener('keydown', e => {
+    if ((e.key !== 's' && e.key !== 'S') || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+    if ($('page-settings').hidden) return;
+    e.preventDefault();
+    if (!$('sSave').disabled) $('sSave').click();
+  });
   const fv = f => document.querySelector(`[data-f="${f}"]`).value.trim();
   $('sS3Test').onclick = () => runTest('s3', { endpoint: fv('integrations.s3.endpoint'), region: fv('integrations.s3.region'), bucket: fv('integrations.s3.bucket'), prefix: fv('integrations.s3.prefix'), publicBase: fv('integrations.s3.publicBase'), presignDays: Number(fv('integrations.s3.presignDays')), accessKey: $('sS3Key').value.trim(), secretKey: $('sS3Secret').value }, $('sS3Test'), $('sS3Msg'));
   $('sDavTest').onclick = () => runTest('webdav', { url: fv('integrations.webdav.url'), folder: fv('integrations.webdav.folder'), publicBase: fv('integrations.webdav.publicBase'), user: $('sDavUser').value.trim(), password: $('sDavPw').value }, $('sDavTest'), $('sDavMsg'));
