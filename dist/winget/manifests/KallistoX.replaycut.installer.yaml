@@ -5,7 +5,7 @@
 # explained in dist/winget/README.md of the replaycut repository.
 
 PackageIdentifier: KallistoX.replaycut
-PackageVersion: 3.6.0
+PackageVersion: 3.7.0
 MinimumOSVersion: 10.0.0.0
 InstallerType: zip
 NestedInstallerType: portable
@@ -14,13 +14,13 @@ NestedInstallerFiles:
     PortableCommandAlias: replaycut
 ArchiveBinariesDependOnPath: true
 UpgradeBehavior: install
-ReleaseDate: 2026-09-10
+ReleaseDate: 2026-09-11
 Dependencies:
   PackageDependencies:
     - PackageIdentifier: Gyan.FFmpeg
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/KallistoX/replaycut/releases/download/v3.6.0/replaycut-3.6.0-windows-x64.zip
-    InstallerSha256: 55F9C35CCAEC4DAE2B7FEA222F90B3E6832249A747CD6250AD202B6CED1215F6
+    InstallerUrl: https://github.com/KallistoX/replaycut/releases/download/v3.7.0/replaycut-3.7.0-windows-x64.zip
+    InstallerSha256: 7B6688D9A1EB771FA09A2B17B1CEB90D53244385CA8A53F739191575C0F999A5
 ManifestType: installer
 ManifestVersion: 1.10.0

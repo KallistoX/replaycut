@@ -88,14 +88,15 @@ the installation on port 8420 is not touched - but do not start the portable
 one for the port.
 
 What the manifests describe was checked without winget as well: the release
-ZIP of 3.6.0 carries `replaycut.exe` and `ui\index.html` at its root (so
+ZIP carries `replaycut.exe` and `ui\index.html` at its root (so
 `RelativeFilePath: replaycut.exe` is right), its SHA256 matches
 `InstallerSha256`, and the executable unpacked from it serves the page from
 the folder it was unpacked into.
 
 ### What the install actually did
 
-Run on Windows 11 with winget 1.29.290, against 3.6.0:
+Run on Windows 11 with winget 1.29.290, against 3.6.0 (the manifests here
+have since moved to 3.7.0):
 
 - The archive was downloaded from GitHub, the hash verified, and everything
   unpacked to
@@ -107,7 +108,7 @@ Run on Windows 11 with winget 1.29.290, against 3.6.0:
   needs Developer Mode or administrator rights. The flag is what makes the
   outcome the same on a machine that *could* make the symlink, instead of
   leaving the UI behind a link.
-- `replaycut --version` answered `replaycut 3.6.0`, and the copy from that
+- `replaycut --version` answered the packaged version, and the copy from that
   folder served the page (HTTP 200, the full UI) on a scratch port.
 - `winget uninstall --id "ARP\User\X64\KallistoX.replaycut__DefaultSource"`
   removed the folder and the registration. Note the id: a package installed
