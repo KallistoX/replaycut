@@ -10,6 +10,14 @@ contract.
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-09-10
+
+The release for what the browser got in the way of, most of it on a phone: a
+menu near the bottom of the screen opened into nothing, a banner that came up
+while you worked further down the page sat a thousand pixels above you, and
+the same phone took a new row in the device list every time it signed in
+another way.
+
 ### Fixed
 
 - **`replaycut uninstall --purge` removes every stored credential.** On
