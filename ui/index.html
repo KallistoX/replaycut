@@ -322,12 +322,12 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 .md a { color: var(--accent); }
 .keys { border-collapse: collapse; width: 100%; } .keys td { padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--line); vertical-align: top; } .keys td:first-child { white-space: nowrap; width: 1%; }
 
-.toast-stack { position: fixed; right: var(--space-4); bottom: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); z-index: 20; max-width: min(360px, calc(100vw - 2 * var(--space-4))); }
+.toast-stack { position: fixed; right: var(--space-4); bottom: calc(var(--space-4) + var(--savebar-h, 0px)); display: flex; flex-direction: column; gap: var(--space-2); z-index: 20; max-width: min(360px, calc(100vw - 2 * var(--space-4))); }
 .toast { display: flex; gap: var(--space-2); align-items: center; padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 4px 16px var(--scrim); }
 .toast.ok { border-color: var(--ok); } .toast.ok .icon { color: var(--ok); }
 .toast.err { border-color: var(--err); } .toast.err .icon { color: var(--err); }
 .toast.info .icon { color: var(--info); }
-@media (max-width: 600px) { .toast-stack { left: var(--space-3); right: var(--space-3); bottom: var(--space-3); max-width: none; } }
+@media (max-width: 600px) { .toast-stack { left: var(--space-3); right: var(--space-3); bottom: calc(var(--space-3) + var(--savebar-h, 0px)); max-width: none; } }
 .toast-stack.is-static { position: static; max-width: 360px; }
 
 .modal { position: fixed; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; padding: var(--space-4); z-index: 10; }
@@ -574,9 +574,17 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 .pop::before { content: ""; position: absolute; top: -5px; left: var(--space-3); width: 8px; height: 8px; background: var(--surface-2); border-left: 1px solid var(--line-strong); border-top: 1px solid var(--line-strong); transform: rotate(45deg); }
 /* The address of this service, next to the button that shows its QR code. */
 .addr-box { padding: var(--space-2) var(--space-3); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; }
-.save-bar { position: sticky; bottom: 0; display: flex; gap: var(--space-2); align-items: center; padding: var(--space-3) var(--space-4); margin: 0 calc(-1 * var(--space-4)); background: var(--surface); border-top: 1px solid var(--line-strong); z-index: 4; }
+/* The counterpart of the top bar (since 3.7): the state of this page and the
+   button that acts on it sit at the bottom edge of the window, whether the
+   page scrolls or not. `sticky` only pinned it while the page really did
+   scroll, so on a short tab the bar floated in the middle of nowhere with
+   the window's bottom half empty below it. Its height goes to
+   `--savebar-h`, which keeps the last card and the toasts clear of it. */
+.save-bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); z-index: 5; }
+.save-bar .inner { max-width: var(--max-w); margin: 0 auto; display: flex; gap: var(--space-2); align-items: center; padding: var(--space-3) var(--space-4); }
 .save-bar .msg { flex: 1; color: var(--fg-muted); font-size: var(--text-sm); }
 .save-bar.dirty .msg { color: var(--warn); }
+#page-settings { padding-bottom: calc(var(--space-5) + var(--savebar-h, 57px)); }
 .add-card { border-style: dashed; align-items: center; text-align: center; color: var(--fg-muted); }
 .test-msg { font-size: var(--text-sm); }
 .test-msg.ok { color: var(--ok); } .test-msg.err { color: var(--err); }
@@ -1152,9 +1160,11 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   </div>
 
   <div class="save-bar" id="saveBar">
-    <span class="msg" id="saveMsg">All changes saved.</span>
-    <button class="btn btn-ghost" id="sDiscard" hidden>Discard</button>
-    <button class="btn btn-primary" id="sSave" disabled>Save</button>
+    <div class="inner">
+      <span class="msg" id="saveMsg">All changes saved.</span>
+      <button class="btn btn-ghost" id="sDiscard" hidden>Discard</button>
+      <button class="btn btn-primary" id="sSave" disabled>Save</button>
+    </div>
   </div>
 </main>
 
@@ -1366,6 +1376,13 @@ bannerIds.forEach(id => bannerWatch.observe($(id), { attributeFilter: ['hidden']
 // A banner also grows when its text does, and when the window narrows.
 new ResizeObserver(setBannersH).observe($('banners'));
 layoutBanners();
+// The same for the save bar at the bottom edge of the settings page: the
+// page keeps that much room free below its last card, and the toasts stack
+// above it instead of under it. A page that is not on screen measures 0, so
+// every other page gets its full bottom edge back.
+const setSaveBarH = () => document.documentElement.style.setProperty('--savebar-h', $('saveBar').offsetHeight + 'px');
+new ResizeObserver(setSaveBarH).observe($('saveBar'));
+setSaveBarH();
 // The dot sits in the bar and, in words, in the menu behind it.
 function setDot(state, title) {
   $('dot').className = 'dot ' + (state || ''); $('dotWrap').title = title || '';
@@ -1378,6 +1395,9 @@ function showPage(name) {
   // On a page that lives in the menu, the button carries the mark, so the bar
   // still answers "where am I".
   $('navMore').classList.toggle('is-current', !!$('navMenu').querySelector('a[aria-current="page"]'));
+  // The save bar goes with the settings page: measure it here, so the room
+  // it takes is right in the same frame the page appears in.
+  setSaveBarH();
 }
 // The menu: click to open, click anywhere else or Escape to close.
 $('navMore').onclick = e => { e.stopPropagation(); setNavMenu($('navMenu').hidden); };

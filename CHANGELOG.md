@@ -20,6 +20,15 @@ contract.
   appears once a notify integration is on. Nothing changed about the encoding:
   best quality stays the default, the limit stays the choice per target.
 
+### Changed
+
+- **The save bar sits at the bottom edge of the window.** It used to be
+  `sticky`, which only pinned it while the settings page really did scroll:
+  on a short tab in a large window it floated in the middle of the page with
+  the bottom half of the window empty below it. Now it holds that edge the
+  way the top bar holds its own, on every tab and at every window size, and
+  the page keeps the room below its last card free.
+
 ## [3.6.0] - 2026-09-10
 
 The release for the settings page. Settings › General had grown to seven
