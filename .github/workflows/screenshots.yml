@@ -106,9 +106,25 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/images
-          if (git diff --cached --quiet) {
+          # `git diff --quiet` answers with its exit code and prints nothing,
+          # so the condition has to read $LASTEXITCODE - as a value, `git
+          # diff` is always empty and therefore always false.
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
             Write-Host "the pictures are unchanged"
-          } else {
-            git commit -m "Take the screenshots again [skip ci]"
-            git push
+            exit 0
           }
+          git commit -m "Take the screenshots again [skip ci]"
+          # Taking the pictures takes minutes, and a push from a person can
+          # land on main while it runs - then this push is a non-fast-forward
+          # and the whole run goes red over nothing. Rebase the one picture
+          # commit onto whatever arrived and try again. Nothing else in the
+          # repository writes docs/images, so the rebase cannot conflict.
+          for ($i = 1; $i -le 3; $i++) {
+            git push
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Host "push $i was rejected, rebasing onto main"
+            git pull --rebase origin main
+            if ($LASTEXITCODE -ne 0) { Write-Host "the rebase failed"; exit 1 }
+          }
+          Write-Host "the pictures could not be pushed in three tries"; exit 1
