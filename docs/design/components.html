@@ -259,6 +259,42 @@ encoder: h264_nvenc</textarea></div>
   </div>
 </section>
 
+<section id="collapsible-card">
+  <h2>Collapsible card</h2>
+  <p class="muted">Both settings tabs are made of these. Closed is the normal state: the head carries the name and, in one line that never wraps, what is set inside. The chevron is the button that carries the state for the keyboard and a screen reader; the whole head is clickable. A card whose state waits for a restart opens itself.</p>
+  <div class="demo">
+    <div class="stack-2" style="width:min(100%,520px)">
+      <div class="card is-collapsible">
+        <div class="card-head with-sum"><h3>Encrypted connection</h3><span class="card-sum">HTTPS off</span><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Encrypted connection"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+        <div class="card-body"><p>hidden while closed</p></div>
+      </div>
+      <div class="card is-collapsible">
+        <div class="card-head with-sum"><h3>Recording</h3><span class="card-sum">C:\Users\you\Videos\OBS Studio\replay buffer\2026 season\ranked - playable preview always</span><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Recording"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+        <div class="card-body"><p>hidden while closed</p></div>
+      </div>
+      <div class="card is-collapsible is-open">
+        <div class="card-head with-sum"><h3>Encoding</h3><span class="card-sum">auto (h264_amf) · below normal</span><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="true" title="Hide the settings of Encoding"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+        <div class="card-body stack-3">
+          <div class="fields-2">
+            <div class="field"><label>Encoder</label><select class="select"><option>auto</option></select><span class="hint">In use: h264_amf. Changing it runs a test encode.</span></div>
+            <div class="field"><label>ffmpeg priority <button class="help" type="button" aria-expanded="false" aria-label="What the ffmpeg priority does">?</button></label><select class="select"><option>below normal</option></select></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="help">
+  <h2>Help behind a "?"</h2>
+  <p class="muted">What a setting means sits behind the "?" next to its label, not under the field: the page carries labels and state instead of a wall of grey prose. A line that reports state - "In use: h264_amf", what a switch just did, when a certificate expires - keeps standing. One popover is open at a time, Escape and a click elsewhere close it, and it opens under the whole field so it never covers the control it explains.</p>
+  <div class="demo">
+    <div class="field" style="width:220px"><label>ffmpeg threads <button class="help" type="button" aria-expanded="false" aria-label="What the thread count means">?</button></label><input class="input" value="0"></div>
+    <div class="field" style="width:220px"><label>ffmpeg threads <button class="help" type="button" aria-expanded="false" aria-label="What the thread count means" style="outline:2px solid var(--focus);outline-offset:2px">?</button></label><input class="input" value="0"></div>
+    <div class="field" style="width:220px;margin-bottom:64px"><label>ffmpeg threads <button class="help" type="button" aria-expanded="true" aria-label="What the thread count means">?</button></label><input class="input" value="0"><div class="pop" role="note">0 = half of the cores, at least 2.</div></div>
+  </div>
+</section>
+
 <section id="banners">
   <h2>Banners</h2>
   <p class="muted">Directly under the top bar, stacked in this order: unreachable, job failed, scan stuck, update. They replace the old status block.</p>

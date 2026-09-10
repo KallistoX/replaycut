@@ -48,6 +48,15 @@ no external asset.
   is already loaded, so the usual flow needs no click on the list. Below
   600 px everything stacks and the timeline handles grow to touch size.
 - Every other page is one column, `--max-w` wide (720 px), centred.
+- **Settings** has three levels on both tabs. Open at the top is what a
+  session comes back for - on General the theme, the display name and
+  everything about access (the network switch with the address and its QR
+  code, the password, the signed-in devices). Below that, closed cards for
+  what is set once, each saying in its head what is set. At the bottom of
+  General, one more card, `Advanced`, for the knobs whose default is right
+  for nearly everyone: hardware decoding, the thread count, the log level,
+  the password prompt for this PC. Closed, the tab is two blocks and five
+  lines and fits a phone without scrolling past Access.
 - Exactly one primary button per page: Share, Next, Save, Sign in.
 - Nothing scrolls horizontally at any width; long paths and links wrap or
   get a copy button.
@@ -62,6 +71,23 @@ Listed in `components.html`. The ones worth knowing by name:
   skipped.
 - **Card** - integrations are cards: the switch in the head, the body
   hidden while the integration is off. Another integration is one more card.
+- **Collapsible card** (`.card.is-collapsible`) - both settings tabs are made
+  of these, and closed is the normal state. The head carries the name and,
+  for General, a **summary line** (`.card-sum`) that says what is set inside:
+  `HTTPS off`, `auto (h264_amf) · below normal`, `Port 8420 · starts when you
+  sign in · daily update check`. It never wraps and never pushes the chevron
+  out of the card. The chevron is the button that carries the state; the
+  whole head is clickable. A card whose state waits for a restart opens
+  itself.
+- **Help behind a "?"** (`.help` and its `.pop`) - what a setting means sits
+  behind a small "?" next to its label, not under the field. The rule for
+  what goes behind it: **a static explanation goes behind the "?", a line
+  that reports live state stays visible** - "In use: h264_amf", what the
+  network switch just did, when the certificate expires. The short muted
+  parentheses after a switch label ("(saved at once)") stay too: they are
+  part of the control's meaning, not an explanation of it. One popover is
+  open at a time, Escape and a click elsewhere close it, and it opens under
+  the whole field so it never covers the control it explains.
 - **Result box** - four variants: links (storage on), local (no storage:
   Open folder / Copy file), partial (storage ok, notify failed), error.
 - **Progress** - stages only for the integrations that are on, as the API

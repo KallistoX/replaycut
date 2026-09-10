@@ -173,8 +173,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
 @media (pointer: coarse) { .btn { min-height: var(--touch); } }
 
 /* ---------- fields ---------- */
-.field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-.field > label { font-size: var(--text-sm); color: var(--fg-muted); }
+.field { position: relative; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.field > label { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1) var(--space-2); font-size: var(--text-sm); color: var(--fg-muted); }
 .field .hint { font-size: var(--text-sm); color: var(--fg-muted); }
 .field .error { font-size: var(--text-sm); color: var(--err); }
 .input, .select, textarea.input {
@@ -217,6 +217,23 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 .card.is-disabled .card-body { display: none; }
 .card.is-disabled .card-head { opacity: 0.6; }
 .card.is-disabled .card-head .switch { opacity: 1; }
+/* A card that starts closed, so a settings tab is a handful of heads
+ * instead of every field of every group (Integrations since 3.3, General
+ * since 3.6). The chevron is the control that carries the state; the whole
+ * head is clickable. */
+.card.is-collapsible { gap: var(--space-2); }
+.card.is-collapsible.is-open { gap: var(--space-3); }
+.card.is-collapsible:not(.is-open) .card-body { display: none; }
+.card.is-collapsible:not(.is-open) { padding: var(--space-3) var(--space-4); }
+.card.is-collapsible .card-head { cursor: pointer; min-height: 32px; }
+.card.is-collapsible .card-head h2 { user-select: text; }
+/* A head that carries a summary lets the summary take the room instead. */
+.card-head.with-sum h2, .card-head.with-sum h3 { flex: none; }
+.card-toggle .icon { transition: transform var(--duration); }
+.card.is-open .card-toggle .icon { transform: rotate(90deg); }
+/* What is set inside a closed card, in one line that never wraps and never
+ * pushes the chevron out of the card. */
+.card-sum { flex: 1; min-width: 0; font-size: var(--text-sm); color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- banner ---------- */
 .banner { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--line); background: var(--info-soft); color: var(--fg); }
@@ -363,7 +380,22 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; background: var(--
 .well { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-3); font-family: var(--font-mono); font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
 .list-tight { display: flex; flex-direction: column; gap: var(--space-1); }
 .section-title { font-size: var(--text-sm); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; }
-.needs-restart { color: var(--warn); font-size: var(--text-xs); }
+/* ---------- help ----------
+ * What a setting means sits behind the "?" next to its label (since 3.6),
+ * not under the field: the page carries labels and state instead of a wall
+ * of grey prose. A line that reports state keeps standing. One popover is
+ * open at a time; it opens under the whole field, so it never covers the
+ * control it explains. */
+.help { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex: none; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: none; color: var(--fg-muted); font: var(--weight-strong) var(--text-xs) / 1 var(--font); cursor: pointer; vertical-align: middle; }
+.help:hover, .help[aria-expanded="true"] { border-color: var(--line-strong); color: var(--fg); }
+.help:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.help-anchor { position: relative; display: flex; align-items: center; gap: var(--space-2); }
+.pop { position: absolute; left: 0; top: calc(100% + var(--space-1)); z-index: 6; width: max-content; max-width: min(320px, 100%); padding: var(--space-3); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px var(--scrim); color: var(--fg); font-size: var(--text-base); }
+.pop::before { content: ""; position: absolute; top: -5px; left: var(--space-3); width: 8px; height: 8px; background: var(--surface-2); border-left: 1px solid var(--line-strong); border-top: 1px solid var(--line-strong); transform: rotate(45deg); }
+/* A line that belongs to the switch above it lines up with its label. */
+.switch-note { margin-left: calc(36px + var(--space-2)); }
+/* The address of this service, next to the button that shows its QR code. */
+.addr-box { padding: var(--space-2) var(--space-3); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }

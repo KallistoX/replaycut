@@ -231,8 +231,8 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
 .btn kbd { margin-left: var(--space-1); }
 @media (pointer: coarse) { .btn { min-height: var(--touch); } }
 
-.field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-.field > label { font-size: var(--text-sm); color: var(--fg-muted); }
+.field { position: relative; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.field > label { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1) var(--space-2); font-size: var(--text-sm); color: var(--fg-muted); }
 .field .hint { font-size: var(--text-sm); color: var(--fg-muted); }
 .field .error { font-size: var(--text-sm); color: var(--err); }
 .input, .select, textarea.input {
@@ -272,13 +272,20 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 .card.is-disabled .card-body { display: none; }
 .card.is-disabled .card-head { opacity: 0.6; }
 .card.is-disabled .card-head .switch { opacity: 1; }
-/* Integrations (since 3.3): the cards start closed, so the page is eight
-   heads instead of every field of every one of them. */
-#tabIntegrations .card { gap: var(--space-2); }
-#tabIntegrations .card.is-open { gap: var(--space-3); }
-#tabIntegrations .card:not(.is-open) .card-body { display: none; }
-#tabIntegrations .card-head, #tabIntegrations .whatyouget { cursor: pointer; }
-#tabIntegrations .card-head h2 { user-select: text; }
+/* A card that starts closed, so a settings tab is a handful of heads instead
+   of every field of every group (Integrations since 3.3, General since 3.6). */
+.card.is-collapsible { gap: var(--space-2); }
+.card.is-collapsible.is-open { gap: var(--space-3); }
+.card.is-collapsible:not(.is-open) { padding: var(--space-3) var(--space-4); }
+.card.is-collapsible:not(.is-open) .card-body { display: none; }
+.card.is-collapsible .card-head, #tabIntegrations .whatyouget { cursor: pointer; }
+.card.is-collapsible .card-head { min-height: 32px; }
+.card.is-collapsible .card-head h2 { user-select: text; }
+/* The head of a General card says in one line what is set inside it, so the
+   answer to "which encoder runs?" needs no click. It never wraps and never
+   pushes the chevron out of the card. */
+.card-head.with-sum h2, .card-head.with-sum h3 { flex: none; }
+.card-sum { flex: 1; min-width: 0; font-size: var(--text-sm); color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-toggle .icon { transition: transform var(--duration); }
 .card.is-open .card-toggle .icon { transform: rotate(90deg); }
 /* A closed integration that is off says what it would do, instead of
@@ -507,7 +514,6 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; background: var(--
 .well { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-3); font-family: var(--font-mono); font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
 .list-tight { display: flex; flex-direction: column; gap: var(--space-1); }
 .section-title { font-size: var(--text-sm); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; }
-.needs-restart { color: var(--warn); font-size: var(--text-xs); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
@@ -553,7 +559,21 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 .done { text-align: center; padding: var(--space-6) var(--space-4); display: flex; flex-direction: column; align-items: center; gap: var(--space-3); }
 .done .icon { width: 40px; height: 40px; color: var(--ok); }
 .group { display: flex; flex-direction: column; gap: var(--space-3); }
-.group > h2 { font-size: var(--text-sm); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+.group > h2 { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; }
+.group > h2 .badge { letter-spacing: 0; text-transform: none; }
+/* The explanation of a field lives behind a "?" next to its label (since
+   3.6), so the page carries labels and state instead of a wall of grey
+   prose. A line that reports state - "In use: h264_amf" - keeps standing. */
+.help { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex: none; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: none; color: var(--fg-muted); font: var(--weight-strong) var(--text-xs) / 1 var(--font); cursor: pointer; vertical-align: middle; }
+.help:hover, .help[aria-expanded="true"] { border-color: var(--line-strong); color: var(--fg); }
+.help:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.help-anchor { position: relative; display: flex; align-items: center; gap: var(--space-2); }
+/* A line that belongs to the switch above it lines up with its label. */
+.switch-note { margin-left: calc(36px + var(--space-2)); }
+.pop { position: absolute; left: 0; top: calc(100% + var(--space-1)); z-index: 6; width: max-content; max-width: min(320px, 100%); padding: var(--space-3); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px var(--scrim); color: var(--fg); font-size: var(--text-base); }
+.pop::before { content: ""; position: absolute; top: -5px; left: var(--space-3); width: 8px; height: 8px; background: var(--surface-2); border-left: 1px solid var(--line-strong); border-top: 1px solid var(--line-strong); transform: rotate(45deg); }
+/* The address of this service, next to the button that shows its QR code. */
+.addr-box { padding: var(--space-2) var(--space-3); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; }
 .save-bar { position: sticky; bottom: 0; display: flex; gap: var(--space-2); align-items: center; padding: var(--space-3) var(--space-4); margin: 0 calc(-1 * var(--space-4)); background: var(--surface); border-top: 1px solid var(--line-strong); z-index: 4; }
 .save-bar .msg { flex: 1; color: var(--fg-muted); font-size: var(--text-sm); }
 .save-bar.dirty .msg { color: var(--warn); }
@@ -916,63 +936,82 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <div class="page-head"><h1>Settings</h1><span class="muted">Saved to <code>settings.json</code>; secrets go to the <span data-os="windows">Credential Manager</span><span data-os="linux">keyring</span>.</span></div>
   <div class="tabs"><a href="#general" data-tab="general">General</a><a href="#integrations" data-tab="integrations">Integrations</a></div>
 
+  <!-- General (rebuilt in 3.6): what you come back for is open at the top,
+       what you set once sits in closed cards that say what is set. -->
   <div class="stack-4" id="tabGeneral">
-    <div class="group">
-      <h2>Clips</h2>
-      <div class="field"><label>Recording folder <span class="needs-restart" id="ovClipDir" hidden>set on the command line</span></label><input class="input mono" data-f="clipDir"><span class="hint">Scanned for <code>*.mkv</code>, not recursively. Previews go to <code>.preview\</code>, shared files to <code>shared\</code> inside it.</span></div>
-      <div class="fields-2">
-        <div class="field"><label>Display name</label><input class="input" data-f="displayName"><span class="hint">Prefix of the Discord post; clip names starting with it are shortened in the list.</span></div>
-        <div class="field"><label>Theme</label><select class="select" data-f="theme"></select><span class="hint">Drop a <code>.css</code> file into the <code>themes</code> folder of the data directory to add one.</span></div>
-        <div class="field"><label>Playable preview (H.264)</label><select class="select" data-f="previewH264"><option value="onDemand">on demand - a button in the player when the browser cannot play the recording</option><option value="always">always - made right after every recording, with idle priority</option></select><span class="hint">For phones and browsers that cannot decode AV1 or HEVC: a 720p H.264 copy of the clip next to the preview. "Always" costs about a minute of GPU per 5-minute buffer right after each F9; the OBS-side fix is recording in H.264.</span></div>
-      </div>
-    </div>
-    <div class="group">
-      <h2>Encoding</h2>
-      <div class="fields-2">
-        <div class="field"><label>Encoder</label><select class="select" data-f="encoder"><option value="auto">auto</option><option value="h264_nvenc">h264_nvenc (NVIDIA)</option><option value="h264_amf">h264_amf (AMD)</option><option value="h264_qsv">h264_qsv (Intel)</option><option value="libx264">libx264 (software)</option></select><span class="hint" id="encHint"></span></div>
-        <div class="field"><label>Hardware decoding</label><select class="select" data-f="hwaccel"><option value="">auto (the measured profile of the encoder)</option><option value="none">none (software)</option><option value="cuda">cuda (NVIDIA)</option><option value="d3d11va">d3d11va</option><option value="qsv">qsv (Intel)</option></select><span class="hint">auto tries the GPU path (decode and scale on the card) with a real clip and falls back to software decoding when it fails. <code>replaycut bench</code> compares them.</span></div>
-        <div class="field"><label>ffmpeg priority</label><select class="select" data-f="ffmpegPriority"><option value="normal">normal</option><option value="belowNormal">below normal</option><option value="idle">idle</option></select><span class="hint">Keeps the game smooth while a clip is encoded.</span></div>
-        <div class="field"><label>ffmpeg threads</label><input class="input" data-f="ffmpegThreads" type="number" min="0" max="256"><span class="hint">0 = half of the cores, at least 2.</span></div>
-      </div>
-    </div>
-    <div class="group">
-      <h2>Service</h2>
-      <div class="fields-2">
-        <div class="field"><label>Port <span class="needs-restart">restart needed</span></label><input class="input" data-f="port" type="number" min="1" max="65535"></div>
-        <div class="field"><label>Log level</label><select class="select" data-f="logLevel"><option>error</option><option>warn</option><option>info</option><option>debug</option><option>trace</option></select></div>
-      </div>
-      <label class="switch"><input type="checkbox" data-f="checkUpdates"><span class="track"></span> Check GitHub once a day for a new release <span class="muted sm">(nothing is downloaded until you click)</span></label>
-      <div class="row"><button class="btn" id="sUpdCheck"><svg class="icon"><use href="#i-refresh"/></svg> Check for updates now</button><span class="muted sm" id="sUpdText"></span></div>
-      <label class="switch"><input type="checkbox" id="sAutostart"><span class="track"></span> Start replaycut <span data-os="windows">when I sign in</span><span data-os="linux">with my desktop session</span> <span class="muted sm">(saved at once)</span></label>
+    <div class="fields-2">
+      <div class="field"><label>Display name <button class="help" type="button" aria-expanded="false" aria-label="What the display name does" data-help="Names this replaycut in Discord posts. Clip names that start with it are shortened in the list.">?</button></label><input class="input" data-f="displayName"></div>
+      <div class="field"><label>Theme <button class="help" type="button" aria-expanded="false" aria-label="Where themes come from" data-help="Drop a .css file into the themes folder of the data directory to add one.">?</button></label><select class="select" data-f="theme"></select></div>
     </div>
     <div class="group" id="sAccess">
-      <h2>Access</h2>
+      <h2>Access <span class="badge" id="sNetBadge"></span></h2>
       <label class="switch"><input type="checkbox" id="sNetOn"><span class="track"></span> Reachable from other devices in this network <span class="muted sm">(off = this PC only; applied at once, with a restart)</span></label>
-      <span class="hint" id="sNetMsg"></span>
+      <span class="muted sm switch-note" id="sNetMsg"></span>
+      <div class="row" id="sAddrRow" hidden><code class="addr-box" id="sAddrText"></code><button class="btn" id="sAddr"><svg class="icon"><use href="#i-qr"/></svg> Show QR code</button></div>
       <label class="switch"><input type="checkbox" id="sPwOn"><span class="track"></span> Password for other devices <span class="muted sm">(this PC never needs it)</span></label>
       <div class="fields-2" id="sPwFields">
         <div class="field"><label>New password</label><div class="input-group"><input class="input" id="sPw1" type="password" autocomplete="new-password" placeholder="leave empty to keep"><button class="btn btn-icon" type="button" data-eye="sPw1" title="Show"><svg class="icon"><use href="#i-eye"/></svg></button></div></div>
         <div class="field"><label>Repeat</label><input class="input" id="sPw2" type="password" autocomplete="new-password"><span class="error" id="sPwErr" hidden></span></div>
       </div>
       <div class="row" id="sPwGenRow"><button class="btn" type="button" id="sPwGen">Generate one for me</button><span class="muted sm" id="sPwGenHint" hidden>Write it down now - it is shown only here.</span></div>
-      <label class="switch"><input type="checkbox" data-f="requireLoginOnLoopback"><span class="track"></span> Ask for the password on this PC as well <span class="muted sm">(for a Windows account other people use)</span></label>
-      <div class="row"><button class="btn" id="sAddr"><svg class="icon"><use href="#i-qr"/></svg> Show address and QR code</button><span class="muted sm" id="sAddrText"></span></div>
+      <h3 class="help-anchor">Signed-in devices <button class="help" type="button" aria-expanded="false" aria-label="What signed-in devices are" data-help="Browsers and apps that may use this replaycut without asking again. Signing one out ends it at once.">?</button></h3>
+      <div class="stack-2" id="sDevices"></div>
+      <span class="muted sm" id="sDevNote"></span>
+      <div class="row"><button class="btn" id="sDevOut">Sign out everywhere</button></div>
     </div>
-    <div class="group">
-      <h2>Encrypted connection (HTTPS)</h2>
-      <p class="muted sm">Off by default. With it on, the password and the session cookie no longer cross the network in the clear, and the browser hands the page its clipboard without a fallback.</p>
-      <label class="switch"><input type="checkbox" data-f="https.enabled"><span class="track"></span> Speak HTTPS on this port <span class="muted sm">(needs a restart, like the port)</span></label>
-      <p class="muted sm" id="sTlsWarn">replaycut makes its own certificate, and no browser knows it yet: expect one warning per browser until you import the file below. A certificate of your own - from Tailscale, a reverse proxy or a real domain - avoids that; put its two PEM files in <code>https.cert</code> and <code>https.key</code>.</p>
-      <div class="stack-2" id="sTlsInfo" hidden>
-        <div class="field"><label>Certificate authority</label><div class="input-group"><input class="input" id="sTlsCa" readonly><button class="btn btn-icon" type="button" id="sTlsShow" title="Show in folder"><svg class="icon"><use href="#i-folder"/></svg></button></div><span class="hint">Import this file into a browser to be trusted on this PC.</span></div>
-        <div class="field"><label>Fingerprint (SHA-256)</label><input class="input" id="sTlsFp" readonly><span class="hint" id="sTlsExp"></span></div>
+    <div class="stack-2">
+    <div class="card is-collapsible" data-card="https">
+      <div class="card-head with-sum"><h2>Encrypted connection</h2><span class="card-sum" data-sum></span><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Encrypted connection"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">With HTTPS on, the password and the session cookie no longer cross the network in the clear, and the browser hands the page its clipboard without a fallback.</p>
+        <label class="switch"><input type="checkbox" data-f="https.enabled"><span class="track"></span> Speak HTTPS on this port <span class="muted sm">(needs a restart, like the port)</span></label>
+        <p class="muted sm" id="sTlsWarn">replaycut makes its own certificate, and no browser knows it yet: expect one warning per browser until you import the file below. A certificate of your own - from Tailscale, a reverse proxy or a real domain - avoids that; put its two PEM files in <code>https.cert</code> and <code>https.key</code>.</p>
+        <div class="stack-3" id="sTlsInfo" hidden>
+          <div class="field"><label>Certificate authority <button class="help" type="button" aria-expanded="false" aria-label="What the certificate authority file is for" data-help="Import this file into a browser to be trusted on this PC.">?</button></label><div class="input-group"><input class="input" id="sTlsCa" readonly><button class="btn btn-icon" type="button" id="sTlsShow" title="Show in folder"><svg class="icon"><use href="#i-folder"/></svg></button></div></div>
+          <div class="field"><label>Fingerprint (SHA-256)</label><input class="input" id="sTlsFp" readonly><span class="hint" id="sTlsExp"></span></div>
+        </div>
       </div>
     </div>
-    <div class="group">
-      <h2>Signed-in devices</h2>
-      <p class="muted sm">Browsers that may use this replaycut without asking again. Signing one out ends it at once.</p>
-      <div class="stack-2" id="sDevices"></div>
-      <div class="row"><button class="btn" id="sDevOut">Sign out everywhere</button><span class="muted sm" id="sDevNote"></span></div>
+    <div class="card is-collapsible" data-card="recording">
+      <div class="card-head with-sum"><h2>Recording</h2><span class="card-sum" data-sum></span><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Recording"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <div class="card-body stack-3">
+        <div class="field"><label>Recording folder <button class="help" type="button" aria-expanded="false" aria-label="What the recording folder is scanned for" data-help="Scanned for *.mkv, not recursively. Previews go to .preview\, shared files to shared\ inside it.">?</button> <span class="badge warn" id="ovClipDir" hidden>set on the command line</span></label><input class="input mono" data-f="clipDir"></div>
+        <div class="field"><label>Playable preview (H.264) <button class="help" type="button" aria-expanded="false" aria-label="What the playable preview is for" data-help="For phones and browsers that cannot decode AV1 or HEVC: a 720p H.264 copy next to the preview. &quot;Always&quot; costs about a minute of GPU per 5-minute buffer; recording in H.264 in OBS avoids the need.">?</button></label><select class="select" data-f="previewH264"><option value="onDemand">on demand - a button in the player when the browser cannot play the recording</option><option value="always">always - made right after every recording, with idle priority</option></select></div>
+      </div>
+    </div>
+    <div class="card is-collapsible" data-card="encoding">
+      <div class="card-head with-sum"><h2>Encoding</h2><span class="card-sum" data-sum></span><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Encoding"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <div class="card-body stack-3">
+        <div class="fields-2">
+          <div class="field"><label>Encoder</label><select class="select" data-f="encoder"><option value="auto">auto</option><option value="h264_nvenc">h264_nvenc (NVIDIA)</option><option value="h264_amf">h264_amf (AMD)</option><option value="h264_qsv">h264_qsv (Intel)</option><option value="libx264">libx264 (software)</option></select><span class="hint" id="encHint"></span></div>
+          <div class="field"><label>ffmpeg priority <button class="help" type="button" aria-expanded="false" aria-label="What the ffmpeg priority does" data-help="Keeps the game smooth while a clip is encoded.">?</button></label><select class="select" data-f="ffmpegPriority"><option value="normal">normal</option><option value="belowNormal">below normal</option><option value="idle">idle</option></select></div>
+        </div>
+      </div>
+    </div>
+    <div class="card is-collapsible" data-card="service">
+      <div class="card-head with-sum"><h2>Service</h2><span class="card-sum" data-sum></span><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Service"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <div class="card-body stack-3">
+        <div class="fields-2">
+          <div class="field"><label>Port <button class="help" type="button" aria-expanded="false" aria-label="What the port is" data-help="The address the UI is served on. Changing it needs a restart.">?</button> <span class="badge warn">restart needed</span></label><input class="input" data-f="port" type="number" min="1" max="65535"></div>
+        </div>
+        <label class="switch"><input type="checkbox" id="sAutostart"><span class="track"></span> Start replaycut <span data-os="windows">when I sign in</span><span data-os="linux">with my desktop session</span> <span class="muted sm">(saved at once)</span></label>
+        <label class="switch"><input type="checkbox" data-f="checkUpdates"><span class="track"></span> Check GitHub once a day for a new release <span class="muted sm">(nothing is downloaded until you click)</span></label>
+        <div class="row"><button class="btn" id="sUpdCheck"><svg class="icon"><use href="#i-refresh"/></svg> Check for updates now</button><span class="muted sm" id="sUpdText"></span></div>
+      </div>
+    </div>
+    <div class="card is-collapsible" data-card="advanced">
+      <div class="card-head with-sum"><h2>Advanced</h2><span class="card-sum" data-sum>Only if you know why</span><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Advanced"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <div class="card-body stack-3">
+        <div class="fields-2">
+          <div class="field"><label>Hardware decoding <button class="help" type="button" aria-expanded="false" aria-label="What hardware decoding does" data-help="auto tries the GPU path with a real clip and falls back to software decoding when it fails. replaycut bench compares them.">?</button></label><select class="select" data-f="hwaccel"><option value="">auto (the measured profile of the encoder)</option><option value="none">none (software)</option><option value="cuda">cuda (NVIDIA)</option><option value="d3d11va">d3d11va</option><option value="qsv">qsv (Intel)</option></select></div>
+          <div class="field"><label>ffmpeg threads <button class="help" type="button" aria-expanded="false" aria-label="What the thread count means" data-help="0 = half of the cores, at least 2.">?</button></label><input class="input" data-f="ffmpegThreads" type="number" min="0" max="256"></div>
+        </div>
+        <div class="fields-2">
+          <div class="field"><label>Log level <button class="help" type="button" aria-expanded="false" aria-label="Which log level to pick" data-help="info is enough day to day; debug fills the log for a bug report.">?</button></label><select class="select" data-f="logLevel"><option>error</option><option>warn</option><option>info</option><option>debug</option><option>trace</option></select></div>
+        </div>
+        <label class="switch"><input type="checkbox" data-f="requireLoginOnLoopback"><span class="track"></span> Ask for the password on this PC as well <span class="muted sm">(for a Windows account other people use)</span></label>
+      </div>
+    </div>
     </div>
   </div>
 
@@ -983,7 +1022,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <p class="muted sm">Every other storage you switched on sits in the Share button's menu. <b>Notify</b> integrations post the link; with "post automatically" they do so for every share.</p>
     </div>
     <h2 class="group-title">Storage</h2>
-    <div class="card" id="sNcCard">
+    <div class="card is-collapsible" id="sNcCard">
       <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-nextcloud"/></svg><h2>Nextcloud</h2><span class="badge">storage</span><span class="badge" id="sNcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.nextcloud.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Nextcloud"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
       <p class="whatyouget">Uploads to a folder of your Nextcloud and shares it as a public link.</p>
       <div class="card-body stack-3">
@@ -1001,7 +1040,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="row"><button class="btn" id="sNcTest">Test connection</button><span class="test-msg" id="sNcMsg"></span></div>
       </div>
     </div>
-    <div class="card" id="sOdCard">
+    <div class="card is-collapsible" id="sOdCard">
       <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-onedrive"/></svg><h2>OneDrive</h2><span class="badge">storage</span><span class="badge" id="sOdBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.onedrive.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of OneDrive"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
       <p class="whatyouget">Uploads to your OneDrive and gets a link anyone can open. Signing in works from a phone, with a code.</p>
       <div class="card-body stack-3">
@@ -1012,7 +1051,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <details class="limits"><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.onedrive.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.onedrive.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for saving space here; every other target keeps the recording's quality.</span></div></div></details>
       </div>
     </div>
-    <div class="card" id="sS3Card">
+    <div class="card is-collapsible" id="sS3Card">
       <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-bucket"/></svg><h2>S3</h2><span class="badge">storage</span><span class="badge" id="sS3Badge"></span><label class="switch"><input type="checkbox" data-f="integrations.s3.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of S3"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
       <p class="whatyouget">Any S3-compatible bucket: AWS S3, Cloudflare R2, Backblaze B2, MinIO, Wasabi.</p>
       <div class="card-body stack-3">
@@ -1032,7 +1071,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="row"><button class="btn" id="sS3Test">Test connection</button><span class="test-msg" id="sS3Msg"></span></div>
       </div>
     </div>
-    <div class="card" id="sDavCard">
+    <div class="card is-collapsible" id="sDavCard">
       <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-server"/></svg><h2>WebDAV</h2><span class="badge">storage</span><span class="badge" id="sDavBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.webdav.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of WebDAV"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
       <p class="whatyouget">A Storage Box, nginx or rclone: replaycut writes the file, a public URL of yours turns it into a link.</p>
       <div class="card-body stack-3">
@@ -1049,7 +1088,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="row"><button class="btn" id="sDavTest">Test connection</button><span class="test-msg" id="sDavMsg"></span></div>
       </div>
     </div>
-    <div class="card" id="sYtCard">
+    <div class="card is-collapsible" id="sYtCard">
       <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-youtube"/></svg><h2>YouTube</h2><span class="badge">storage</span><span class="badge" id="sYtBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.youtube.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of YouTube"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
       <p class="whatyouget">Every share becomes its own video on your channel, unlisted unless you choose otherwise.</p>
       <div class="card-body stack-3">
@@ -1073,7 +1112,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       </div>
     </div>
     <h2 class="group-title">Notify</h2>
-    <div class="card" id="sDcCard">
+    <div class="card is-collapsible" id="sDcCard">
       <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-discord"/></svg><h2>Discord</h2><span class="badge">notify</span><span class="badge" id="sDcBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.discord.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Discord"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
       <p class="whatyouget">Posts the link into a Discord channel through a webhook.</p>
       <div class="card-body stack-3">
@@ -1083,7 +1122,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="row"><button class="btn" id="sDcTest">Send test message</button><span class="test-msg" id="sDcMsg"></span></div>
       </div>
     </div>
-    <div class="card" id="sTgCard">
+    <div class="card is-collapsible" id="sTgCard">
       <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-telegram"/></svg><h2>Telegram</h2><span class="badge">notify</span><span class="badge" id="sTgBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.telegram.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Telegram"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
       <p class="whatyouget">A bot posts the link into a chat, group or channel.</p>
       <div class="card-body stack-3">
@@ -1096,7 +1135,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="row"><button class="btn" id="sTgTest">Send test message</button><span class="test-msg" id="sTgMsg"></span></div>
       </div>
     </div>
-    <div class="card" id="sWhCard">
+    <div class="card is-collapsible" id="sWhCard">
       <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-webhook"/></svg><h2>Webhook</h2><span class="badge">notify</span><span class="badge" id="sWhBadge"></span><label class="switch"><input type="checkbox" data-f="integrations.webhook.enabled"><span class="track"></span></label><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Webhook"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
       <p class="whatyouget">A JSON POST per share to any URL: n8n, Home Assistant, Zapier, a Matrix bridge.</p>
       <div class="card-body stack-3">
@@ -1822,6 +1861,9 @@ async function initSetup() {
 const SETTINGS_FIELDS = ['clipDir', 'displayName', 'theme', 'encoder', 'hwaccel', 'ffmpegPriority', 'ffmpegThreads', 'port', 'bind', 'logLevel', 'checkUpdates', 'integrations.nextcloud.enabled', 'integrations.nextcloud.url', 'integrations.nextcloud.folder', 'integrations.nextcloud.expireDays', 'integrations.discord.enabled'];
 const getPath = (o, p) => p.split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
 const setPath = (o, p, v) => { const ks = p.split('.'); let a = o; ks.slice(0, -1).forEach(k => { a[k] = a[k] || {}; a = a[k]; }); a[ks[ks.length - 1]] = v; };
+/// Set by the settings page: what to redraw once the event stream delivered
+/// the config (the measured encoder, the platform).
+let onConfig = null;
 async function initSettings() {
   showPage('settings');
   let orig = null, restartPending = [];
@@ -1840,7 +1882,12 @@ async function initSettings() {
     $('sAutostart').checked = !!s.autostart;
     const lan = s.bind === '0.0.0.0' || s.bind === '::', local = s.bind === '127.0.0.1' || s.bind === '::1';
     $('sNetOn').checked = lan; $('sNetOn').disabled = !lan && !local;
-    $('sNetMsg').textContent = lan || local ? '' : `Listening on ${s.bind} - set on the command line or by hand, so the switch stays out of it.`;
+    $('sNetMsg').textContent = lan ? 'On. Show the QR code below to sign a phone in.'
+      : local ? 'Off - only this PC can reach replaycut now.'
+        : `Listening on ${s.bind} - set on the command line or by hand, so the switch stays out of it.`;
+    $('sNetBadge').textContent = lan ? 'this network' : local ? 'this PC only' : 'custom';
+    // The address is only worth showing once another device can use it.
+    $('sAddrRow').hidden = local;
     $('sPwOn').checked = !!s.passwordSet; $('sPwFields').hidden = !$('sPwOn').checked; $('sPwGenRow').hidden = !$('sPwOn').checked; $('sPwGenHint').hidden = true; $('sPw1').type = 'password'; $('sPw2').type = 'password'; $('sPw1').value = ''; $('sPw2').value = ''; $('sPw1').placeholder = s.passwordSet ? 'leave empty to keep' : 'at least 8 characters';
     $('sNcUser').value = ''; $('sNcPw').value = ''; $('sDcHook').value = '';
     $('sS3Key').value = ''; $('sS3Secret').value = ''; $('sDavUser').value = ''; $('sDavPw').value = '';
@@ -1863,7 +1910,54 @@ async function initSettings() {
     $('sDcBadge').textContent = s.integrations.discord.enabled ? (s.secrets.discord ? 'on' : 'on, no webhook') : 'off'; $('sDcBadge').className = 'badge' + (s.integrations.discord.enabled && !s.secrets.discord ? ' warn' : '');
     tlsUi(s.tls || {});
     restartPending = s.restartNeeded || []; showRestart();
+    openOdd();
     dirty();
+  }
+  // General (since 3.6): the head of every closed card says what is set
+  // inside it. The lines follow the fields, not the saved file, so they
+  // answer for what you are about to save as well.
+  const gv = f => { const el = document.querySelector(`#tabGeneral [data-f="${f}"]`); return !el ? '' : el.type === 'checkbox' ? el.checked : el.value; };
+  const PRIORITY = { normal: 'normal', belowNormal: 'below normal', idle: 'idle' };
+  function httpsSum() {
+    const on = !!gv('https.enabled'), t = (orig && orig.tls) || {};
+    if (on !== !!t.active) {
+      if (restartPending.includes('https')) return on ? 'HTTPS on after the next restart' : 'HTTPS off after the next restart';
+      // Switched on, applied at boot, and still not running: the PEM pair
+      // could not be read - the service says so in the log and the diagnostics.
+      if (on) return 'HTTPS off - your certificate could not be read';
+    }
+    if (!t.active) return 'HTTPS off';
+    if (t.own) return 'HTTPS on - your own certificate';
+    return t.expires ? `HTTPS on - own certificate, valid until ${t.expires}` : 'HTTPS on';
+  }
+  function serviceSum() {
+    const bits = [`Port ${gv('port')}`];
+    if ($('sAutostart').checked) bits.push(document.documentElement.dataset.os === 'linux' ? 'starts with your desktop session' : 'starts when you sign in');
+    if (gv('checkUpdates')) bits.push('daily update check');
+    return bits.join(' · ');
+  }
+  onConfig = () => { $('encHint').textContent = cfg.encoder ? `In use: ${cfg.encoder}. Changing it runs a test encode.` : ''; genSync(); };
+  function genSync() {
+    const enc = gv('encoder'), shown = enc === 'auto' && cfg.encoder ? `auto (${cfg.encoder})` : enc;
+    const sums = {
+      https: httpsSum(),
+      recording: gv('clipDir') + (gv('previewH264') === 'always' ? ' · playable preview always' : ''),
+      encoding: `${shown} · ${PRIORITY[gv('ffmpegPriority')] || gv('ffmpegPriority')}`,
+      service: serviceSum(),
+    };
+    Object.entries(sums).forEach(([k, v]) => {
+      const el = document.querySelector(`#tabGeneral [data-card="${k}"] [data-sum]`);
+      if (el) { el.textContent = v; el.title = v; }
+    });
+  }
+  // A card whose state needs attention opens itself: a closed line is easy
+  // to miss, and both of these wait for a restart to take effect.
+  function openOdd() {
+    ['https', 'service'].forEach(name => {
+      if (!restartPending.includes(name === 'https' ? 'https' : 'port')) return;
+      const card = document.querySelector(`#tabGeneral [data-card="${name}"]`);
+      if (card && !card.classList.contains('is-open')) card.querySelector('.card-toggle').click();
+    });
   }
   // The HTTPS card (since 3.4). The file and the fingerprint only exist once
   // TLS actually runs with a certificate we made: an own PEM pair is trusted
@@ -1920,7 +2014,7 @@ async function initSettings() {
     intCards().map(intOf).filter(i => i.quick).forEach(i => { i.quick.checked = i.label === want; });
     intSync(); dirty();
   };
-  document.querySelectorAll('#tabIntegrations .card-toggle').forEach(b => {
+  document.querySelectorAll('#page-settings .card.is-collapsible .card-toggle').forEach(b => {
     b.onclick = () => {
       const card = b.closest('.card'), open = card.classList.toggle('is-open');
       b.setAttribute('aria-expanded', String(open));
@@ -1931,9 +2025,9 @@ async function initSettings() {
   // control that carries the state for the keyboard and a screen reader.
   // The switch, links and fields inside the head keep their own click, and
   // selecting the name with the mouse must not open anything either.
-  document.querySelectorAll('#tabIntegrations .card-head, #tabIntegrations .whatyouget').forEach(area => {
+  document.querySelectorAll('#page-settings .card.is-collapsible .card-head, #tabIntegrations .whatyouget').forEach(area => {
     area.addEventListener('click', e => {
-      if (e.target.closest('.switch, a, input, select, textarea, .card-toggle')) return;
+      if (e.target.closest('.switch, a, input, select, textarea, button')) return;
       if (String(window.getSelection() || '').length) return;
       const btn = area.closest('.card').querySelector('.card-toggle');
       if (btn) btn.click();
@@ -1958,6 +2052,7 @@ async function initSettings() {
   function labels(c) { const names = { clipDir: 'Recording folder', displayName: 'Display name', theme: 'Theme', encoder: 'Encoder', hwaccel: 'Hardware decoding', ffmpegPriority: 'ffmpeg priority', ffmpegThreads: 'ffmpeg threads', port: 'Port', bind: 'Listen on', logLevel: 'Log level', checkUpdates: 'Update check', integrations: 'Integrations', password: 'Password', nextcloudUser: 'Nextcloud credentials', nextcloudPassword: '', discordWebhook: 'Discord webhook', s3AccessKey: 'S3 keys', s3SecretKey: '', webdavUser: 'WebDAV login', webdavPassword: '', youtubeClientId: 'YouTube client', youtubeClientSecret: '', telegramToken: 'Telegram token', webhookSecret: 'Webhook secret' }; return Object.keys(c).map(k => names[k]).filter(Boolean).join(', '); }
   function dirty() {
     const c = changes(), n = Object.keys(c).length;
+    genSync();
     $('saveBar').classList.toggle('dirty', n > 0); $('sSave').disabled = !n; $('sDiscard').hidden = !n;
     $('saveMsg').innerHTML = n ? `<svg class="icon icon-sm"><use href="#i-warning"/></svg> Unsaved changes: ${esc(labels(c))}` : 'All changes saved.';
   }
@@ -2015,7 +2110,7 @@ async function initSettings() {
     loadDevices($('sDevices'), $('sDevNote'));
   };
   loadDevices($('sDevices'), $('sDevNote'));
-  $('sAutostart').onchange = async () => { try { const r = await api('/api/settings', jsonOpts('PUT', { autostart: $('sAutostart').checked }), { retries: 0 }); r.ok ? toast('Autostart ' + ($('sAutostart').checked ? 'on' : 'off'), 'ok') : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } };
+  $('sAutostart').onchange = async () => { genSync(); try { const r = await api('/api/settings', jsonOpts('PUT', { autostart: $('sAutostart').checked }), { retries: 0 }); r.ok ? toast('Autostart ' + ($('sAutostart').checked ? 'on' : 'off'), 'ok') : toast(r.error, 'err'); } catch (e) { toast(e.message, 'err'); } };
   $('sDiscard').onclick = () => fill(orig);
   $('sSave').onclick = async () => {
     const c = changes(); $('sPwErr').hidden = true;
@@ -2026,7 +2121,7 @@ async function initSettings() {
     try {
       const r = await api('/api/settings', jsonOpts('PUT', c), { retries: 0, timeout: 30000 });
       if (!r.ok) toast(r.error, 'err');
-      else { toast('Settings saved', 'ok'); if (c.theme) applyTheme(c.theme); fill(r.settings); if (r.restartNeeded && r.restartNeeded.length) { restartPending = r.restartNeeded; showRestart(true); } }
+      else { toast('Settings saved', 'ok'); if (c.theme) applyTheme(c.theme); fill(r.settings); if (r.restartNeeded && r.restartNeeded.length) { restartPending = r.restartNeeded; showRestart(true); genSync(); openOdd(); } }
     } catch (e) { toast(e.message, 'err'); }
     $('sSave').innerHTML = 'Save'; dirty();
   };
@@ -2756,6 +2851,40 @@ function showEmpty(kind) {
   }
 }
 
+// ------------------------------------------------------------ help (3.6)
+// What a setting means sits behind the "?" next to its label instead of
+// under the field, so the settings page carries labels and state instead of
+// a wall of grey prose. One is open at a time; Escape and a click elsewhere
+// close it, and the popover opens under the whole field so it never covers
+// the control it explains.
+let openHelp = null;
+function closeHelp() {
+  if (!openHelp) return;
+  openHelp.pop.remove();
+  openHelp.btn.setAttribute('aria-expanded', 'false');
+  openHelp = null;
+}
+function toggleHelp(btn) {
+  const again = openHelp && openHelp.btn === btn;
+  closeHelp();
+  if (again) return;
+  const host = btn.closest('.field, .help-anchor') || btn.parentElement;
+  const pop = document.createElement('div');
+  pop.className = 'pop'; pop.setAttribute('role', 'note'); pop.textContent = btn.dataset.help || '';
+  host.appendChild(pop);
+  btn.setAttribute('aria-expanded', 'true');
+  openHelp = { btn, pop };
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.help');
+  if (btn) { e.preventDefault(); e.stopPropagation(); toggleHelp(btn); return; }
+  if (openHelp && !e.target.closest('.pop')) closeHelp();
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !openHelp) return;
+  const btn = openHelp.btn; closeHelp(); btn.focus();
+});
+
 // ------------------------------------------------------------ menus (3.1)
 // One helper for every "..." on the page. Entries are objects, `'hr'` is a
 // separator and `{ heading }` a caption; the next click anywhere closes it.
@@ -3240,6 +3369,10 @@ function applyState(d, polled, withDone) {
     cfg = Object.assign(cfg, d.config);
     // since 3.2: the page words things for the platform the service runs on
     document.documentElement.dataset.os = cfg.platform || 'windows';
+    // The settings page words two of its lines with the measured encoder and
+    // the platform, and both arrive with this document, after the page was
+    // filled from `/api/settings`.
+    if (onConfig) onConfig();
     // since 3.0: the document holds the done clips only when they were asked
     // for; the two sides of the list are kept apart here
     const all = d.clips || [];
