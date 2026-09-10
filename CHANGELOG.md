@@ -10,6 +10,16 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- **The Limits section says what Discord needs.** Since 2.7 a share keeps the
+  recording's resolution and quality, and Discord only shows its inline player
+  for a linked file below the size its proxy accepts - above that the post is
+  a bare link. `Limits (optional)` on Nextcloud, OneDrive, S3 and WebDAV now
+  says so, and the Discord card points at the storage that feeds it. The line
+  appears once a notify integration is on. Nothing changed about the encoding:
+  best quality stays the default, the limit stays the choice per target.
+
 ## [3.6.0] - 2026-09-10
 
 The release for the settings page. Settings › General had grown to seven
