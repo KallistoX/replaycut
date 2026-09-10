@@ -10,18 +10,25 @@ contract.
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-09-10
+
+The release for the settings page. Settings › General had grown to seven
+groups and a wall of grey help text, and the four things anyone actually
+comes back for were buried in it. It is a short page again: what you come
+back for stands open at the top, what you set once sits behind five lines
+that already say what is set, and the explanations wait behind a "?" until
+you ask for them.
+
 ### Changed
 
-- **Settings › General is a page again instead of a form.** The tab had grown
-  to seven groups and about fifty lines of grey help text, and the four
-  things anyone comes back for were buried in it. Now the theme, the display
-  name and everything about access - the network switch with the address and
-  its QR code, the password, the signed-in devices - stand open at the top,
-  and what you set once sits in five closed cards that say in their head what
-  is set: `HTTPS off`, `auto (h264_amf) · below normal`, `Port 8420 · starts
-  when you sign in · daily update check`. A card that waits for a restart
-  opens itself. `Advanced` at the bottom holds hardware decoding, the thread
-  count, the log level and the password prompt for this PC.
+- **Settings › General has three levels instead of seven groups.** The theme,
+  the display name and everything about access - the network switch with the
+  address and its QR code, the password, the signed-in devices - stand open
+  at the top. What you set once sits in five closed cards whose heads say
+  what is set: `HTTPS off`, `auto (h264_amf) · below normal`, `Port 8420 ·
+  starts when you sign in · daily update check`. A card that waits for a
+  restart opens itself. `Advanced` at the bottom holds hardware decoding, the
+  thread count, the log level and the password prompt for this PC.
 
 - **The help of a setting sits behind a "?" next to its label.** Clicking it
   opens the explanation under the field; Escape or a click elsewhere closes
