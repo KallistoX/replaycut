@@ -1882,9 +1882,9 @@ async function initSettings() {
     $('sAutostart').checked = !!s.autostart;
     const lan = s.bind === '0.0.0.0' || s.bind === '::', local = s.bind === '127.0.0.1' || s.bind === '::1';
     $('sNetOn').checked = lan; $('sNetOn').disabled = !lan && !local;
-    $('sNetMsg').textContent = lan ? 'On. Show the QR code below to sign a phone in.'
-      : local ? 'Off - only this PC can reach replaycut now.'
-        : `Listening on ${s.bind} - set on the command line or by hand, so the switch stays out of it.`;
+    // The badge and the switch already say where the service listens, so the
+    // line stays empty until the switch itself has something to report.
+    $('sNetMsg').textContent = lan || local ? '' : `Listening on ${s.bind} - set on the command line or by hand, so the switch stays out of it.`;
     $('sNetBadge').textContent = lan ? 'this network' : local ? 'this PC only' : 'custom';
     // The address is only worth showing once another device can use it.
     $('sAddrRow').hidden = local;
