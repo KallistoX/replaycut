@@ -18,6 +18,13 @@ contract.
   YouTube refresh token among them. Both platforms now walk the same list,
   so a purge leaves nothing of yours in the credential store.
 
+### Changed
+
+- The privacy policy says what Google user data replaycut accesses, how it
+  uses it, whom it shares it with (nobody), how it protects it and how long
+  it keeps it, each under its own heading (`docs/privacy.md`, and the same
+  text on replaycut.de).
+
 ## [3.4.3] - 2026-09-10
 
 The last of the three small things the 3.4 line needed, this one about the
