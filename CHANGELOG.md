@@ -10,6 +10,14 @@ contract.
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-09-11
+
+A small release about the settings page and about getting replaycut onto a
+PC in the first place. The save bar no longer floats in the middle of a
+short page, `Ctrl` + `S` does what it does everywhere else, the Limits
+section says what Discord's inline player needs, and there is a winget
+package waiting for its pull request.
+
 ### Added
 
 - **The Limits section says what Discord needs.** Since 2.7 a share keeps the
