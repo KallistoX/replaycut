@@ -24,6 +24,12 @@ contract.
   which is where the hand usually is, and it no longer offers to save the page
   as an HTML file. The shortcut list behind `?` names it.
 
+- **A winget package is prepared.** `dist/winget/` carries the manifests for
+  `KallistoX.replaycut` and the note that goes with them: a portable package
+  that puts `replaycut` on the `PATH`, with `replaycut install` still the step
+  that adds the shortcuts and the autostart. `winget install replaycut` works
+  once the pull request against `microsoft/winget-pkgs` is merged.
+
 ### Changed
 
 - **The save bar sits at the bottom edge of the window.** It used to be
