@@ -70,14 +70,13 @@ winget validate --manifest dist\winget\manifests
 
 That is the check this repository can run on its own, and it passes. Trying
 the install locally needs one machine-wide setting, because winget refuses
-manifests from disk otherwise. It asks for administrator rights, so run it
-yourself and put it back when you are done:
+manifests from disk otherwise. It asks for administrator rights:
 
 ```powershell
 winget settings --enable LocalManifestFiles
 winget install --manifest dist\winget\manifests --skip-dependencies
 replaycut --version
-winget uninstall KallistoX.replaycut
+winget uninstall --id "ARP\User\X64\KallistoX.replaycut__DefaultSource"
 winget settings --disable LocalManifestFiles
 ```
 
@@ -93,6 +92,32 @@ ZIP of 3.6.0 carries `replaycut.exe` and `ui\index.html` at its root (so
 `RelativeFilePath: replaycut.exe` is right), its SHA256 matches
 `InstallerSha256`, and the executable unpacked from it serves the page from
 the folder it was unpacked into.
+
+### What the install actually did
+
+Run on Windows 11 with winget 1.29.290, against 3.6.0:
+
+- The archive was downloaded from GitHub, the hash verified, and everything
+  unpacked to
+  `%LOCALAPPDATA%\Microsoft\WinGet\Packages\KallistoX.replaycut__DefaultSource`
+  - the executable with `ui\index.html` beside it, as the manifest assumes.
+- That folder went onto the user `PATH`; no symlink was made. Note that this
+  is what happens **with or without** `ArchiveBinariesDependOnPath`: winget
+  falls back to the `PATH` when it cannot create a symlink, and creating one
+  needs Developer Mode or administrator rights. The flag is what makes the
+  outcome the same on a machine that *could* make the symlink, instead of
+  leaving the UI behind a link.
+- `replaycut --version` answered `replaycut 3.6.0`, and the copy from that
+  folder served the page (HTTP 200, the full UI) on a scratch port.
+- `winget uninstall --id "ARP\User\X64\KallistoX.replaycut__DefaultSource"`
+  removed the folder and the registration. Note the id: a package installed
+  from a local manifest is not found under `KallistoX.replaycut`.
+- **It left the `PATH` entry behind**, pointing at the folder it had just
+  deleted. Also with and without the flag, so it is winget's behaviour on a
+  machine without symlinks, not something the manifest asks for. Harmless -
+  a missing directory on the `PATH` is ignored - but worth knowing, and worth
+  cleaning up by hand after a test install.
+- `%LOCALAPPDATA%\replaycut` was not touched at any point.
 
 ## Submitting
 
