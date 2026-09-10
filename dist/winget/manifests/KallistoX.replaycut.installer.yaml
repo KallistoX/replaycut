@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
 
 # Portable on purpose, and `ArchiveBinariesDependOnPath` because the
 # executable reads its UI from `ui\index.html` next to itself. Both are
@@ -23,4 +23,4 @@ Installers:
     InstallerUrl: https://github.com/KallistoX/replaycut/releases/download/v3.7.0/replaycut-3.7.0-windows-x64.zip
     InstallerSha256: 7B6688D9A1EB771FA09A2B17B1CEB90D53244385CA8A53F739191575C0F999A5
 ManifestType: installer
-ManifestVersion: 1.10.0
+ManifestVersion: 1.12.0
