@@ -179,9 +179,17 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
 
 .page { max-width: var(--max-w); margin: 0 auto; padding: var(--space-5) var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
 .page-head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+/* The banner strip. Only the first banner is pinned under the top bar; the
+ * rest sit in `#bannersMore` and scroll away with the page, so a stack of
+ * them never takes a phone's screen. Its z-index sits above the page and
+ * below the bar. `--banners-h` is the pinned height, set from the page. */
 .banners { display: flex; flex-direction: column; gap: 1px; }
+/* An opaque backdrop: the banners themselves are a tint on the page, and
+ * pinned they have the page scrolling underneath them. */
+.banners.pinned { position: sticky; top: var(--topbar-h); z-index: 4; background: var(--bg); }
+@media (max-width: 600px) { .banners.pinned { max-height: 33vh; overflow-y: auto; } }
 
-.clips { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: calc(100vh - var(--topbar-h)); }
+.clips { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: calc(100vh - var(--topbar-h) - var(--banners-h, 0px)); }
 .cliplist { border-right: 1px solid var(--line); overflow: auto; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); }
 .cliplist > summary { display: none; }
 .cliplist h2 { font-size: var(--text-sm); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: var(--space-3) var(--space-2) var(--space-1); }
@@ -562,7 +570,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 @media (max-width: 480px) { .kv { grid-template-columns: 1fr; } .kv dt { margin-top: var(--space-2); } }
 
 /* ---- page: login and placeholders ---- */
-.centered { min-height: calc(100vh - var(--topbar-h)); display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
+.centered { min-height: calc(100vh - var(--topbar-h) - var(--banners-h, 0px)); display: flex; align-items: center; justify-content: center; padding: var(--space-4); }
 .centered .card { width: 100%; max-width: 380px; }
 /* the device login (since 2.8): the code both sides show, and the request card */
 .pair-code { font-family: var(--font-mono); font-size: 2rem; letter-spacing: 0.3em; text-indent: 0.3em; text-align: center; color: var(--accent); }
@@ -643,7 +651,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   </div>
 </header>
 
-<div class="banners" id="banners">
+<div class="banners pinned" id="banners">
   <div class="banner err" id="b-unreachable" hidden><svg class="icon"><use href="#i-error"/></svg><div class="grow"><b>Service not responding</b> <span class="muted" id="b-unreachable-text"></span></div></div>
   <div class="banner err" id="b-failed" hidden><svg class="icon"><use href="#i-error"/></svg><div class="grow"><b>Last share failed:</b> <span id="b-failed-text"></span></div><button class="btn btn-ghost btn-icon" data-dismiss="b-failed" title="Dismiss"><svg class="icon"><use href="#i-close"/></svg></button></div>
   <div class="banner warn" id="b-scan" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Clip scan stuck</b> <span id="b-scan-text"></span></div></div>
@@ -655,6 +663,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <div class="banner warn" id="b-replaystop" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Replay buffer is not running</b> - F9 does nothing until it does. OBS is open and connected.</div><button class="btn btn-sm" id="b-replaystop-start">Start replay buffer</button></div>
   <div class="banner" id="b-newclip" hidden><svg class="icon"><use href="#i-film"/></svg><div class="grow"><b>New clip:</b> <span id="b-newclip-text"></span> You have marks on the current one.</div><div class="row nowrap"><button class="btn btn-sm" id="b-newclip-load">Load new clip</button><button class="btn btn-sm btn-ghost" id="b-newclip-keep">Keep editing</button></div></div>
 </div>
+<div class="banners" id="bannersMore"></div>
 
 <!-- ===================== Clips ===================== -->
 <div class="clips" id="page-clips" hidden>
@@ -1294,6 +1303,29 @@ function copyText(t) {
 }
 function banner(id, show, text) { const b = $(id); if (!b) return; b.hidden = !show; if (text !== undefined) { const t = $(id + '-text'); if (t) t.textContent = text; } }
 document.querySelectorAll('[data-dismiss]').forEach(b => b.onclick = () => { $(b.dataset.dismiss).hidden = true; if (b.dataset.dismiss === 'b-update') updDismissed = upd && upd.latest ? upd.latest.version : (cfg.update && cfg.update.version); if (b.dataset.dismiss === 'b-failed') failedDismissed = cfg._lastFailedId; });
+// Only one banner is pinned under the top bar: the first one that shows. The
+// others sit in the second strip and scroll away with the page - pinning a
+// stack of them would take a third of a phone's screen and more. The strips
+// are flex columns, so `order` keeps the sequence and a banner only ever
+// moves between the two.
+const bannerIds = [...$('banners').children].map(el => el.id);
+bannerIds.forEach((id, i) => { $(id).style.order = i; });
+// The pinned height is a layout fact: the clips page takes it off its own,
+// and a menu measures against it.
+const setBannersH = () => document.documentElement.style.setProperty('--banners-h', $('banners').offsetHeight + 'px');
+function layoutBanners() {
+  const first = bannerIds.find(id => !$(id).hidden);
+  bannerIds.forEach(id => {
+    const el = $(id), strip = $(id === first ? 'banners' : 'bannersMore');
+    if (el.parentElement !== strip) strip.appendChild(el);
+  });
+  setBannersH();
+}
+const bannerWatch = new MutationObserver(layoutBanners);
+bannerIds.forEach(id => bannerWatch.observe($(id), { attributeFilter: ['hidden'] }));
+// A banner also grows when its text does, and when the window narrows.
+new ResizeObserver(setBannersH).observe($('banners'));
+layoutBanners();
 // The dot sits in the bar and, in words, in the menu behind it.
 function setDot(state, title) {
   $('dot').className = 'dot ' + (state || ''); $('dotWrap').title = title || '';
@@ -1928,9 +1960,14 @@ async function initSettings() {
   function showRestart(reveal) {
     const b = $('b-restart'); if (!b) return;
     b.hidden = !restartPending.length; $('b-restart-text').textContent = restartPending.length ? `Changed: ${restartPending.join(', ')}. They take effect after a restart.` : '';
-    // The banner sits at the top and the settings page is long: saving a
+    layoutBanners();
+    // Pinned, the banner is in sight already. Behind the pinned strip or
+    // below the fold it is not, and the settings page is long: saving a
     // field near the bottom would otherwise look as if nothing happened.
-    if (reveal && !b.hidden) b.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (reveal && !b.hidden && b.parentElement !== $('banners')) {
+      const r = b.getBoundingClientRect(), head = $('banners').getBoundingClientRect().bottom;
+      if (r.top < head || r.bottom > window.innerHeight) b.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   }
   fields.forEach(el => { el.addEventListener('input', () => { if (el.dataset.f === 'displayName') fields.filter(o => o !== el && o.dataset.f === 'displayName').forEach(o => o.value = el.value); dirty(); }); el.addEventListener('change', dirty); });
   document.querySelector('[data-f="integrations.youtube.client"]').addEventListener('change', ytClientUi);
@@ -2723,11 +2760,12 @@ function showEmpty(kind) {
 // reach, so a menu that does not fit below its button opens upwards. If it
 // fits neither way it keeps its side, is clamped and scrolls inside.
 const MENU_GAP = 4, MENU_EDGE = 8;
-/// The band a menu may use: under the sticky header, inside the nearest
-/// scroll container, above the bottom of the window.
+/// The band a menu may use: under the top bar and the pinned banner, inside
+/// the nearest scroll container, above the bottom of the window.
 function menuBounds(el) {
-  const bar = document.querySelector('.topbar');
-  const b = { top: bar ? bar.getBoundingClientRect().bottom : 0, bottom: window.innerHeight };
+  const bar = document.querySelector('.topbar'), pinned = document.getElementById('banners');
+  const head = Math.max(bar ? bar.getBoundingClientRect().bottom : 0, pinned ? pinned.getBoundingClientRect().bottom : 0);
+  const b = { top: head, bottom: window.innerHeight };
   for (let p = el.parentElement; p; p = p.parentElement) {
     const o = getComputedStyle(p).overflowY;
     if (o === 'auto' || o === 'scroll') {

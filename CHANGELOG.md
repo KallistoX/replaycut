@@ -26,6 +26,12 @@ contract.
   list that scrolls on its own, and flip up when that is where the room is;
   a menu that fits neither way is clamped and scrolls inside.
 
+- **The banner strip stays under the top bar while the page scrolls.** A
+  banner that came up while you were working further down the settings page
+  was a thousand pixels above you and looked like nothing had happened.
+  The first banner is pinned under the bar now; further ones scroll with the
+  page, and on a phone the pinned one takes at most a third of the screen.
+
 ### Changed
 
 - The privacy policy says what Google user data replaycut accesses, how it

@@ -117,11 +117,19 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
 /* ---------- page shells ---------- */
 .page { max-width: var(--max-w); margin: 0 auto; padding: var(--space-5) var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
 .page-head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+/* The banner strip sits under the top bar and stays there while the page
+ * scrolls. Only the first banner is pinned; the rest go into a second,
+ * unpinned strip below it, so a stack of banners cannot take a phone's
+ * screen. `--banners-h` is the pinned height, set by the page. */
 .banners { display: flex; flex-direction: column; gap: 1px; }
+/* An opaque backdrop: the banners themselves are a tint on the page, and
+ * pinned they have the page scrolling underneath them. */
+.banners.pinned { position: sticky; top: var(--topbar-h); z-index: 4; background: var(--bg); }
+@media (max-width: 600px) { .banners.pinned { max-height: 33vh; overflow-y: auto; } }
 
 /* Clips page: two columns from 1000 px, list as a collapsible panel below
  * that, everything stacked on a phone. */
-.clips { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: calc(100vh - var(--topbar-h)); }
+.clips { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: calc(100vh - var(--topbar-h) - var(--banners-h, 0px)); }
 .cliplist { border-right: 1px solid var(--line); overflow: auto; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); }
 .cliplist > summary { display: none; }
 .cliplist h2 { font-size: var(--text-sm); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: var(--space-3) var(--space-2) var(--space-1); }
