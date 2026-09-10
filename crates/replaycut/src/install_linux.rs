@@ -290,18 +290,7 @@ pub fn uninstall(purge: bool, port: u16, settings_path: &Path, data_dir: &Path) 
         let _ = std::fs::remove_dir_all(data_dir.join(crate::db::BACKUP_DIR));
         let _ = std::fs::remove_dir_all(data_dir.join("logs"));
         linuxshell::remove_file_if_present(settings_path);
-        for target in [
-            crate::credentials::NEXTCLOUD,
-            crate::credentials::DISCORD_WEBHOOK,
-            crate::credentials::OBS_WEBSOCKET,
-            crate::credentials::ONEDRIVE,
-            crate::credentials::S3,
-            crate::credentials::WEBDAV,
-            crate::credentials::YOUTUBE,
-            crate::credentials::YOUTUBE_CLIENT,
-            crate::credentials::TELEGRAM,
-            crate::credentials::WEBHOOK_SECRET,
-        ] {
+        for target in crate::credentials::ALL {
             match crate::credentials::delete(target) {
                 Ok(true) => println!("  credential {target} removed"),
                 Ok(false) => {}

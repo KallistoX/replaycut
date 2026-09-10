@@ -363,10 +363,7 @@ pub fn uninstall(purge: bool, port: u16, settings_path: &Path, data_dir: &Path) 
         let _ = std::fs::remove_dir_all(data_dir.join(crate::db::BACKUP_DIR));
         let _ = std::fs::remove_dir_all(data_dir.join("logs"));
         winshell::remove_file_if_present(settings_path);
-        for target in [
-            crate::credentials::NEXTCLOUD,
-            crate::credentials::DISCORD_WEBHOOK,
-        ] {
+        for target in crate::credentials::ALL {
             if crate::credentials::delete(target)? {
                 println!("  credential {target} removed");
             }

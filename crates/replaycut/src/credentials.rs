@@ -26,6 +26,21 @@ pub const TELEGRAM: &str = "replaycut/telegram";
 /// Generic webhook: user = `secret`, secret = the HMAC secret (since 2.6).
 pub const WEBHOOK_SECRET: &str = "replaycut/webhook-secret";
 
+/// Every target replaycut ever writes: what `uninstall --purge` removes.
+/// A new credential belongs in this list, or it survives the uninstall.
+pub const ALL: &[&str] = &[
+    NEXTCLOUD,
+    DISCORD_WEBHOOK,
+    OBS_WEBSOCKET,
+    ONEDRIVE,
+    S3,
+    WEBDAV,
+    YOUTUBE,
+    YOUTUBE_CLIENT,
+    TELEGRAM,
+    WEBHOOK_SECRET,
+];
+
 #[derive(Debug, Clone)]
 pub struct Credential {
     pub user: String,

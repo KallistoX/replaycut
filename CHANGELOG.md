@@ -10,6 +10,14 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`replaycut uninstall --purge` removes every stored credential.** On
+  Windows it deleted the two entries of 1.x, Nextcloud and the Discord
+  webhook, and left the seven that came with 2.5 and 2.6 behind - the
+  YouTube refresh token among them. Both platforms now walk the same list,
+  so a purge leaves nothing of yours in the credential store.
+
 ## [3.4.3] - 2026-09-10
 
 The last of the three small things the 3.4 line needed, this one about the
