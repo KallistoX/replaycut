@@ -1546,7 +1546,7 @@ function deviceRow(d, onGone) {
   el.className = 'device';
   const via = { password: 'password', approve: 'allowed here', qr: 'QR code' }[d.via] || d.via || '';
   el.innerHTML = `<div class="who"><b></b> <span class="badge" data-via></span> <span class="badge" data-client hidden>app</span> <span class="badge accent" data-me hidden>this browser</span>
-      <div class="muted xs"><span data-ip class="mono"></span> · last seen <span data-seen></span> · signed in <span data-created></span></div></div>
+      <div class="muted xs"><span data-ip class="mono"></span> · last seen <span data-seen></span> · signed in <span data-created></span><span data-many hidden></span></div></div>
     <button class="btn btn-sm" data-out>Sign out</button>`;
   el.querySelector('b').textContent = d.name || 'Unknown device';
   el.querySelector('[data-via]').textContent = via;
@@ -1555,6 +1555,10 @@ function deviceRow(d, onGone) {
   el.querySelector('[data-ip]').textContent = d.ip || '';
   el.querySelector('[data-seen]').textContent = (d.lastSeen || '').replace('T', ' ');
   el.querySelector('[data-created]').textContent = (d.created || '').replace('T', ' ');
+  // since 3.5: a row is a device; before 3.5 it could stand for more than one sign-in
+  const many = Number(d.sessions) > 1;
+  el.querySelector('[data-many]').hidden = !many;
+  if (many) el.querySelector('[data-many]').textContent = ` · ${d.sessions} sign-ins`;
   el.querySelector('[data-me]').hidden = !d.current;
   el.querySelector('[data-out]').onclick = async () => {
     const b = el.querySelector('[data-out]'); b.disabled = true;

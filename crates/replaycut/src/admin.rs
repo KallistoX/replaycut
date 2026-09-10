@@ -590,6 +590,9 @@ pub async fn session(
         "network": app.network_mode(),
         // false while the device login is paused after a flood
         "pairing": app.pairing.paused().is_none(),
+        // since 3.5: which device the browser says it is, empty until it has
+        // signed in once. Not a credential - it names a row in the list.
+        "device": auth::device_id(&headers).unwrap_or_default(),
     }))
 }
 
@@ -629,7 +632,10 @@ pub async fn pair_request(
     // for a cookie. The answer to the poll follows this.
     let client = auth::Client::parse(v["client"].as_str())
         .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))?;
-    match app.pairing.ask(&name, agent, addr.ip(), client) {
+    // since 3.5: which device is asking, so that letting it in renews the
+    // session it may already have instead of adding a second row
+    let (device, fresh) = auth::device_of(&headers, client);
+    match app.pairing.ask(&name, agent, addr.ip(), client, &device) {
         Ok((id, code, expires)) => {
             crate::pairing::watch(&app);
             // `localhost`, not `127.0.0.1`: with HTTPS on, the certificate
@@ -641,11 +647,17 @@ pub async fn pair_request(
                 crate::toast::Toast::sign_in_request(&name, &addr.ip().to_string(), &code, &url),
             );
             app.tray_changed();
-            Ok((
+            let mut res = (
                 StatusCode::ACCEPTED,
                 Json(json!({ "ok": true, "id": id, "code": code, "expires": expires })),
             )
-                .into_response())
+                .into_response();
+            if fresh {
+                if let Ok(v) = auth::set_device_cookie_value(&device, app.tls.active).parse() {
+                    res.headers_mut().append(SET_COOKIE, v);
+                }
+            }
+            Ok(res)
         }
         Err(crate::pairing::Refused::Paused(seconds)) => Err(ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
@@ -719,6 +731,7 @@ pub async fn pair_approve(
                 agent: r.agent.clone(),
                 ip: r.ip.to_string(),
                 via: auth::Via::Approve,
+                device: r.device.clone(),
                 client: r.client,
             })
         })
@@ -938,7 +951,12 @@ pub async fn login(
     // body, a browser gets the cookie and never sees the value.
     let client = auth::Client::parse(v["client"].as_str())
         .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e))?;
-    let new = auth::NewSession::from_agent(agent, addr.ip(), auth::Via::Password).held_by(client);
+    // since 3.5: a device that already has a session renews it instead of
+    // adding a second row to the list
+    let (device, fresh) = auth::device_of(&headers, client);
+    let new = auth::NewSession::from_agent(agent, addr.ip(), auth::Via::Password)
+        .held_by(client)
+        .on_device(&device);
     tracing::info!("login from {} ({})", addr.ip(), new.name);
     let token = app.sessions.create(new);
     if client.is_native() {
@@ -947,6 +965,11 @@ pub async fn login(
     let mut res = Json(json!({ "ok": true })).into_response();
     if let Ok(v) = auth::set_cookie_value(&token, app.tls.active).parse() {
         res.headers_mut().insert(SET_COOKIE, v);
+    }
+    if fresh {
+        if let Ok(v) = auth::set_device_cookie_value(&device, app.tls.active).parse() {
+            res.headers_mut().append(SET_COOKIE, v);
+        }
     }
     Ok(res)
 }

@@ -32,6 +32,15 @@ contract.
   The first banner is pinned under the bar now; further ones scroll with the
   page, and on a phone the pinned one takes at most a third of the screen.
 
+- **One phone is one row in the device list.** Signing in a second way -
+  the password on one day, a QR code on the next - added a second session
+  instead of renewing the first, and over a few weeks one phone filled the
+  list. A browser now carries a device id (a second cookie, no secret, a
+  year); a sign-in from a device that has a session renews that session, so
+  the row keeps its place and says the newest way in. Rows from before this
+  release have no id: those that share a browser and an address are shown as
+  one device, and signing that one out ends all of its sessions.
+
 ### Changed
 
 - The privacy policy says what Google user data replaycut accesses, how it

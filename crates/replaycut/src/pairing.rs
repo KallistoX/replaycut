@@ -79,6 +79,10 @@ pub struct Request {
     /// Whether a client of ours asked, rather than a browser (since 3.4):
     /// it wants the token as a value, not as a cookie.
     pub client: crate::auth::Client,
+    /// Which device asked (since 3.5), from its `rc_device` cookie. Approving
+    /// hands it to the session, so a device that signs in a second way keeps
+    /// the one row it has.
+    pub device: String,
     /// The session token, waiting for the device's next poll.
     token: Option<String>,
 }
@@ -226,6 +230,7 @@ impl Pairing {
         agent: &str,
         ip: IpAddr,
         client: crate::auth::Client,
+        device: &str,
     ) -> Result<(String, String, u64), Refused> {
         let mut inner = self.inner.lock();
         inner.prune();
@@ -270,6 +275,7 @@ impl Pairing {
             created: Instant::now(),
             status: Status::Pending,
             client,
+            device: device.to_string(),
             token: None,
         };
         let answer = (request.id.clone(), request.code.clone(), TTL.as_secs());
@@ -475,7 +481,7 @@ mod tests {
         agent: &str,
         ip: IpAddr,
     ) -> Result<(String, String, u64), Refused> {
-        p.ask(name, agent, ip, crate::auth::Client::Browser)
+        p.ask(name, agent, ip, crate::auth::Client::Browser, "")
     }
 
     /// The pair the tests were written against, before the answer had to say
@@ -502,7 +508,7 @@ mod tests {
         use crate::auth::Client;
         let p = pairing();
         let (id, _, _) = p
-            .ask("replaycut app", "agent", ip(7), Client::Native)
+            .ask("replaycut app", "agent", ip(7), Client::Native, "")
             .unwrap();
         p.approve(&id, |_| "secret".into()).unwrap();
         let answer = p.poll(&id, ip(7));

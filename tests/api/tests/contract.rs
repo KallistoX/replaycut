@@ -3220,3 +3220,148 @@ fn t60_the_https_switch_can_be_saved() {
         "a refused write changes nothing: {after}"
     );
 }
+
+// ---------------------------------------------------------------- since 3.5
+
+fn since_35() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (3, 5)
+}
+
+/// The whole `Set-Cookie` of a response that sets `name`.
+fn set_cookie(resp: &reqwest::blocking::Response, name: &str) -> Option<String> {
+    let prefix = format!("{name}=");
+    resp.headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find(|c| c.starts_with(&prefix))
+        .map(str::to_string)
+}
+
+/// A device asks for access, carrying the device cookie it has, if any. The
+/// service lets five sign-in requests through a minute, and the suite has
+/// asked a few times by now, so a `429` is waited out rather than failed.
+fn ask_as(name: &str, cookie: Option<&str>) -> reqwest::blocking::Response {
+    for _ in 0..12 {
+        let mut req = client()
+            .post(url("/api/pair/request"))
+            .json(&json!({ "name": name }));
+        if let Some(cookie) = cookie {
+            req = req.header("cookie", cookie);
+        }
+        let resp = req.send().expect("POST /api/pair/request");
+        if resp.status().as_u16() != 429 {
+            assert_eq!(resp.status().as_u16(), 202, "the request is accepted");
+            return resp;
+        }
+        std::thread::sleep(Duration::from_secs(10));
+    }
+    panic!("the device login stayed throttled for two minutes");
+}
+
+/// Every row of the device list under that name.
+fn devices_named(name: &str) -> Vec<serde_json::Value> {
+    let (status, s) = get_json("/api/sessions");
+    assert_eq!(status, 200, "{s}");
+    s["sessions"]
+        .as_array()
+        .expect("sessions")
+        .iter()
+        .filter(|d| d["name"] == name)
+        .cloned()
+        .collect()
+}
+
+/// One phone is one row, however often and however it signs in: the service
+/// hands out a device cookie with the first sign-in and renews that device's
+/// session when it comes back, instead of opening a second one.
+#[test]
+fn t61_one_device_is_one_row_however_it_signs_in() {
+    let _g = serial();
+    if !since_35() {
+        eprintln!("skipped: needs replaycut 3.5");
+        return;
+    }
+    let name = "Contract test phone";
+
+    // a device that carries no id gets one with the answer that starts the
+    // sign-in, and it is a hint, not a credential: HttpOnly, and Lax so that
+    // a QR code opened from a scanner app carries it too
+    let resp = ask_as(name, None);
+    let cookie = set_cookie(&resp, "rc_device")
+        .unwrap_or_else(|| panic!("no device cookie: {:?}", resp.headers()));
+    assert!(cookie.contains("HttpOnly"), "{cookie}");
+    assert!(cookie.contains("SameSite=Lax"), "{cookie}");
+    assert!(cookie.contains("Max-Age=31536000"), "one year: {cookie}");
+    let carry = cookie.split(';').next().unwrap_or_default().to_string();
+    let device = carry.trim_start_matches("rc_device=").to_string();
+    assert_eq!(device.len(), 32, "{carry}");
+    let id = to_value(resp)["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    let (status, v) = post_json(&format!("/api/pair/{id}/approve"), &json!({}));
+    assert_eq!(status, 200, "{v}");
+
+    // the session records the device, and the browser can ask which it is
+    let first = devices_named(name);
+    assert_eq!(first.len(), 1, "{first:?}");
+    assert_eq!(first[0]["device"], device.as_str(), "{:?}", first[0]);
+    assert_eq!(first[0]["sessions"], 1, "{:?}", first[0]);
+    let resp = client()
+        .get(url("/api/session"))
+        .header("cookie", &carry)
+        .send()
+        .expect("GET /api/session");
+    assert_eq!(to_value(resp)["device"], device.as_str());
+    let (_, anon) = get_json("/api/session");
+    assert_eq!(anon["device"], "", "a browser without the cookie has none");
+
+    // the same device signs in again: the row it has is renewed, not doubled
+    let resp = ask_as(name, Some(&carry));
+    assert!(
+        set_cookie(&resp, "rc_device").is_none(),
+        "a device that carries an id is not handed another"
+    );
+    let id = to_value(resp)["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    let (status, v) = post_json(&format!("/api/pair/{id}/approve"), &json!({}));
+    assert_eq!(status, 200, "{v}");
+    let again = devices_named(name);
+    assert_eq!(again.len(), 1, "one device, one row: {again:?}");
+    assert_eq!(again[0]["id"], first[0]["id"], "the row keeps its handle");
+    assert_eq!(
+        again[0]["created"], first[0]["created"],
+        "created stays the first sign-in"
+    );
+
+    // a device that carries no id is a row of its own - nothing is folded
+    // together on a guess
+    let resp = ask_as(name, None);
+    let other = set_cookie(&resp, "rc_device").unwrap_or_default();
+    assert!(!other.is_empty() && !other.starts_with(&carry), "{other}");
+    let id = to_value(resp)["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    let (status, v) = post_json(&format!("/api/pair/{id}/approve"), &json!({}));
+    assert_eq!(status, 200, "{v}");
+    let two = devices_named(name);
+    assert_eq!(two.len(), 2, "two devices, two rows: {two:?}");
+
+    // sign both of them out again
+    for row in &two {
+        let sid = row["id"].as_str().unwrap_or_default();
+        let (status, v) = delete(&format!("/api/sessions/{sid}"));
+        assert_eq!(status, 200, "{v}");
+    }
+    assert!(devices_named(name).is_empty());
+}

@@ -13,7 +13,7 @@ sensitive is ever written to disk in plain text.
 | Settings | `<data-dir>\settings.json` (override with `--settings`) |
 | State | `<data-dir>\replaycut.db` (clips, cuts and jobs; since 3.0) |
 | State of 2.x | `<data-dir>\backup-2.x\clip-names.json`, `clip-seen.json`, `clip-history.json` - the first start of 3.0 imports these three files and moves them here |
-| Browser sessions | `<data-dir>\sessions.json` (hashes of the login cookies, 30 days; since 2.8 with the device's name, browser, address, when it was made and last seen, and how it got in; since 3.4 also whether a browser or a client of its own holds it) |
+| Browser sessions | `<data-dir>\sessions.json` (hashes of the login cookies, 30 days; since 2.8 with the device's name, browser, address, when it was made and last seen, and how it got in; since 3.4 also whether a browser or a client of its own holds it; since 3.5 the device id from the `rc_device` cookie, so one device is one row however it signs in) |
 | TLS certificates | `<data-dir>\tls\` (since 3.4, only with `https.enabled` and no own PEM pair): `ca.crt` and `ca.key`, the authority this installation is known by, made once and never replaced; `server.crt` and `server.key`, re-issued whenever the machine's names or addresses change or less than 30 days are left. On Linux the private keys are `0600`; on Windows the folder is under `%LOCALAPPDATA%` and therefore already bound to your account, as `settings.json` and `sessions.json` are. |
 | Themes | `<data-dir>\themes\<name>.css` (see `docs/themes.md`) |
 | Logs | `<data-dir>\logs\replaycut.<date>.log`, daily rotation, 7 files kept |

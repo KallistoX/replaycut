@@ -1465,6 +1465,69 @@ One line beside the existing ones:
 
 The `network` line names its addresses with the scheme the service speaks.
 
+## Since 3.5
+
+### One device, one row
+
+A browser that signs in gets a second cookie beside `rc_session`:
+
+| Cookie | Value |
+| --- | --- |
+| `rc_device` | 16 random bytes as hex, `Path=/`, `HttpOnly`, `SameSite=Lax`, `Max-Age` one year, `Secure` while TLS runs. |
+
+It says which device is asking and nothing more. It is never accepted as
+proof of anything, so inventing one buys its sender no access; a value that
+is not 32 hex characters is ignored and replaced.
+
+`SameSite=Lax`, not `Strict`, for one reason: a QR code is opened from a
+scanner app, which is a navigation from outside the site. A strict cookie
+would stay at home for exactly the sign-in that has to recognise the device.
+
+The service hands the cookie out with the answer that starts a sign-in, and
+only when the request carries none:
+
+| Endpoint | When |
+| --- | --- |
+| `POST /api/login` | a browser signs in with the password |
+| `POST /api/pair/request` | a device asks for access; the id is kept with the request and handed to the session on approval |
+| `GET /?pair=<token>` | a scanned QR code, alongside the session cookie in the redirect |
+
+A client that is not a browser (`client: "native"`) keeps no cookie jar: it
+carries no device id, and every one of its sign-ins is a row of its own.
+
+**A sign-in from a device that already has a session renews that session**
+instead of adding a second one: the token is replaced (the old one stops
+working at once), `via` says the newest way in, `name`, `agent`, `ip` and
+`lastSeen` are refreshed, and `created` stays the first sign-in. The row
+keeps its `id`.
+
+### Additions to the session fields
+
+- `sessions.json` carries `device` per session. A session written before 3.5
+  has none; the field is empty and nothing is dropped.
+- `GET /api/session` gains `device`: the id the browser carries, `""` until
+  it has signed in once.
+- A row of `GET /api/sessions` gains `device` and `sessions`.
+
+### `GET /api/sessions` lists devices, not sign-ins
+
+One row is one device. Sessions that carry the same device id are one row by
+construction. Sessions from before 3.5 carry none, so rows that share the
+`User-Agent` **and** the address are folded into one - a guess, but one that
+only ever joins rows and never drops a session:
+
+| Field | Which session it comes from |
+| --- | --- |
+| `id`, `name`, `agent`, `ip`, `via`, `client` | the newest |
+| `created` | the oldest: when the device first signed in |
+| `lastSeen` | the newest of all of them |
+| `current` | true when any of them is the caller's |
+| `sessions` | how many are behind the row, `1` for most |
+
+`DELETE /api/sessions/<id>` ends every session behind that row - the device
+is signed out, not one of its logins. `POST /api/sessions/clear` is what it
+was: everything but the caller's own session.
+
 ## Behaviour
 
 ### Folder scan

@@ -35,6 +35,13 @@ use crate::util;
 
 pub const COOKIE_NAME: &str = "rc_session";
 pub const SESSION_DAYS: u64 = 30;
+/// The device cookie of 3.5: a random id that says which device a sign-in
+/// belongs to. It is not a credential and never stands in for one - it only
+/// keeps one phone to one row in the device list, whichever way it signs in.
+pub const DEVICE_COOKIE: &str = "rc_device";
+/// It outlives the session on purpose: a device that signs in again months
+/// later is still the same device.
+pub const DEVICE_DAYS: u64 = 365;
 const MAX_FAILURES: u32 = 10;
 const LOCKOUT: Duration = Duration::from_secs(60);
 const FAILURE_DELAY: Duration = Duration::from_secs(1);
@@ -140,6 +147,9 @@ pub struct Session {
     pub via: Via,
     /// Browser or a client of our own (since 3.4).
     pub client: Client,
+    /// Which device this session belongs to (since 3.5). Empty for a session
+    /// from before 3.5 and for a client of our own, which keeps no cookies.
+    pub device: String,
     /// Unix seconds.
     expires: u64,
 }
@@ -152,6 +162,9 @@ pub struct NewSession {
     pub ip: String,
     pub via: Via,
     pub client: Client,
+    /// The device id from the `rc_device` cookie (since 3.5), empty when
+    /// the device does not carry one.
+    pub device: String,
 }
 
 impl NewSession {
@@ -163,7 +176,15 @@ impl NewSession {
             ip: ip.to_string(),
             via,
             client: Client::Browser,
+            device: String::new(),
         }
+    }
+
+    /// Which device signed in (since 3.5): a login from a device that has a
+    /// session renews that one instead of adding a second row.
+    pub fn on_device(mut self, device: &str) -> Self {
+        self.device = device.to_string();
+        self
     }
 
     /// The same session, held by a client of our own instead of a browser.
@@ -302,13 +323,33 @@ impl Sessions {
         }
     }
 
-    /// A new session for a device; returns the token for the cookie.
+    /// A session for a device; returns the token for the cookie. A device
+    /// that already has one keeps its row (since 3.5): the token is replaced,
+    /// `via` says the newest way in and `created` stays the first sign-in, so
+    /// one phone is one line however often it signs in and however.
     pub fn create(&self, new: NewSession) -> String {
         let token = random_hex(32);
         let now = now_unix();
         let stamp = util::now_local();
         let mut list = self.list.lock();
         list.retain(|s| s.expires > now);
+        let known = (!new.device.is_empty())
+            .then(|| list.iter().position(|s| s.device == new.device))
+            .flatten();
+        if let Some(i) = known {
+            let old = std::mem::replace(&mut list[i].hash, token_hash(&token));
+            let session = &mut list[i];
+            session.name = new.name;
+            session.agent = new.agent;
+            session.ip = new.ip;
+            session.last_seen = stamp;
+            session.via = new.via;
+            session.client = new.client;
+            session.expires = now + SESSION_DAYS * 86_400;
+            self.save(&list);
+            self.touched.lock().remove(&old);
+            return token;
+        }
         list.push(Session {
             id: random_hex(8),
             hash: token_hash(&token),
@@ -319,6 +360,7 @@ impl Sessions {
             last_seen: stamp,
             via: new.via,
             client: new.client,
+            device: new.device,
             expires: now + SESSION_DAYS * 86_400,
         });
         self.save(&list);
@@ -360,8 +402,26 @@ impl Sessions {
         self.save(&list);
     }
 
+    /// What the device list folds sessions by (since 3.5): the device id
+    /// where there is one, otherwise the `User-Agent` and the address, which
+    /// is all a session from before 3.5 knows about its device.
+    fn device_key(s: &Session) -> String {
+        if s.device.is_empty() {
+            format!("agent\n{}\n{}", s.agent, s.ip)
+        } else {
+            format!("device\n{}", s.device)
+        }
+    }
+
     /// The device list of `GET /api/sessions` (since 2.8), newest first.
     /// `current` is the caller's token, so its own row can say so.
+    ///
+    /// One row is one device (since 3.5). Sessions that carry the same
+    /// device id are one row already; the ones from before 3.5 carry none,
+    /// so rows that share the `User-Agent` and the address are folded into
+    /// one - a guess, but one that only ever joins rows and never drops a
+    /// session. `sessions` says how many are behind a row, `created` is the
+    /// first sign-in of the device and `via` the newest way in.
     pub fn list(&self, current: Option<&str>) -> Vec<serde_json::Value> {
         let now = now_unix();
         let mine = current.map(token_hash);
@@ -373,31 +433,65 @@ impl Sessions {
             .cloned()
             .collect();
         list.sort_by(|a, b| b.created.cmp(&a.created));
-        list.iter()
-            .map(|s| {
-                json!({
-                    "id": s.id,
-                    "name": s.name,
-                    "agent": s.agent,
-                    "ip": s.ip,
-                    "created": s.created,
-                    "lastSeen": s.last_seen,
-                    "via": s.via,
-                    // since 3.4
-                    "client": s.client,
-                    "current": mine.as_deref() == Some(s.hash.as_str()),
-                })
-            })
-            .collect()
+        let mut keys: Vec<String> = Vec::new();
+        let mut rows: Vec<serde_json::Value> = Vec::new();
+        for s in &list {
+            let is_mine = mine.as_deref() == Some(s.hash.as_str());
+            if let Some(i) = keys.iter().position(|k| *k == Self::device_key(s)) {
+                let row = &mut rows[i];
+                // the list is newest first, so this one is the older sign-in
+                row["created"] = json!(s.created);
+                if s.last_seen.as_str() > row["lastSeen"].as_str().unwrap_or("") {
+                    row["lastSeen"] = json!(s.last_seen);
+                }
+                if is_mine {
+                    row["current"] = json!(true);
+                }
+                row["sessions"] = json!(row["sessions"].as_u64().unwrap_or(1) + 1);
+                continue;
+            }
+            keys.push(Self::device_key(s));
+            rows.push(json!({
+                "id": s.id,
+                "name": s.name,
+                "agent": s.agent,
+                "ip": s.ip,
+                "created": s.created,
+                "lastSeen": s.last_seen,
+                "via": s.via,
+                // since 3.4
+                "client": s.client,
+                "current": is_mine,
+                // since 3.5
+                "device": s.device,
+                "sessions": 1,
+            }));
+        }
+        rows
     }
 
-    /// Revoke one session by its id (since 2.8); the name for the log.
+    /// Sign a device out by the id of its row (since 2.8); the name for the
+    /// log. A row stands for a device, so every session behind it goes
+    /// (since 3.5) - for a device from before 3.5 that is every session with
+    /// the same `User-Agent` and address.
     pub fn revoke(&self, id: &str) -> Option<String> {
         let mut list = self.list.lock();
         let i = list.iter().position(|s| s.id == id)?;
-        let gone = list.remove(i);
+        let gone = list[i].clone();
+        let key = Self::device_key(&gone);
+        let mut hashes: Vec<String> = Vec::new();
+        list.retain(|s| {
+            let same = Self::device_key(s) == key;
+            if same {
+                hashes.push(s.hash.clone());
+            }
+            !same
+        });
         self.save(&list);
-        self.touched.lock().remove(&gone.hash);
+        let mut touched = self.touched.lock();
+        for hash in &hashes {
+            touched.remove(hash);
+        }
         Some(gone.name)
     }
 
@@ -493,13 +587,48 @@ impl Sessions {
     }
 }
 
-/// The session token from the request's cookies, if any.
-pub fn cookie_token(headers: &HeaderMap) -> Option<String> {
+/// One cookie from the request's `Cookie` header.
+fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     let cookies = headers.get(COOKIE)?.to_str().ok()?;
     cookies.split(';').find_map(|part| {
         let (k, v) = part.trim().split_once('=')?;
-        (k.trim() == COOKIE_NAME).then(|| v.trim().to_string())
+        (k.trim() == name).then(|| v.trim().to_string())
     })
+}
+
+/// The session token from the request's cookies, if any.
+pub fn cookie_token(headers: &HeaderMap) -> Option<String> {
+    cookie_value(headers, COOKIE_NAME)
+}
+
+/// The device id the browser carries (since 3.5), if it is one of ours.
+/// It says which device is asking and nothing else: it is never accepted as
+/// proof of anything, so a made-up one buys its sender no access.
+pub fn device_id(headers: &HeaderMap) -> Option<String> {
+    cookie_value(headers, DEVICE_COOKIE).filter(|v| is_device_id(v))
+}
+
+fn is_device_id(value: &str) -> bool {
+    value.len() == 32 && value.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// A fresh device id for a browser that carries none.
+fn new_device_id() -> String {
+    random_hex(16)
+}
+
+/// Which device a browser request comes from (since 3.5): the id it carries,
+/// or a fresh one - and then the answer has to hand it back as a cookie. A
+/// client of our own keeps no cookie jar, so it stays without a device id and
+/// every one of its sign-ins is its own row.
+pub fn device_of(headers: &HeaderMap, client: Client) -> (String, bool) {
+    if client.is_native() {
+        return (String::new(), false);
+    }
+    match device_id(headers) {
+        Some(id) => (id, false),
+        None => (new_device_id(), true),
+    }
 }
 
 /// `Authorization: Bearer <token>` (since 3.4), for a client that is not a
@@ -535,6 +664,19 @@ pub fn clear_cookie_value(secure: bool) -> String {
     format!(
         "{COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict{}; Max-Age=0",
         if secure { "; Secure" } else { "" }
+    )
+}
+
+/// The device cookie (since 3.5). `SameSite=Lax`, not `Strict`: a QR code is
+/// opened from a scanner app, which is a navigation from outside the site,
+/// and a strict cookie would stay at home for exactly the sign-in that has
+/// to recognise the device. It is `HttpOnly` all the same - no page script
+/// has any use for it.
+pub fn set_device_cookie_value(device: &str, secure: bool) -> String {
+    format!(
+        "{DEVICE_COOKIE}={device}; Path=/; HttpOnly; SameSite=Lax{}; Max-Age={}",
+        if secure { "; Secure" } else { "" },
+        DEVICE_DAYS * 86_400
     )
 }
 
@@ -971,5 +1113,128 @@ mod tests {
         sessions.record_success(ip);
         assert!(sessions.check_lockout(ip).is_ok());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn one_device_stays_one_row_however_it_signs_in() {
+        let dir = std::env::temp_dir().join(format!("rc-device-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("sessions.json");
+        let sessions = Sessions::load(&file);
+        let agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/605.1.15";
+        let ip: IpAddr = "192.0.2.7".parse().unwrap();
+        let phone = "0123456789abcdef0123456789abcdef";
+        let first =
+            sessions.create(NewSession::from_agent(agent, ip, Via::Approve).on_device(phone));
+        let created = sessions.list.lock()[0].created.clone();
+
+        // the same phone, a second way in: the row it has is renewed
+        let second = sessions.create(NewSession::from_agent(agent, ip, Via::Qr).on_device(phone));
+        assert_eq!(sessions.list.lock().len(), 1, "one device, one session");
+        let row = sessions.list.lock()[0].clone();
+        assert_eq!(row.via, Via::Qr, "via says the newest way in");
+        assert_eq!(row.created, created, "created stays the first sign-in");
+        assert!(sessions.is_valid(&second));
+        assert!(
+            !sessions.is_valid(&first),
+            "the token of the row is replaced"
+        );
+
+        // a device that carries no id is not folded into anyone's row
+        sessions.create(NewSession::from_agent(agent, ip, Via::Password));
+        assert_eq!(sessions.list.lock().len(), 2);
+        // and another device is another row, however alike it looks
+        sessions.create(
+            NewSession::from_agent(agent, ip, Via::Password)
+                .on_device("fedcba9876543210fedcba9876543210"),
+        );
+        assert_eq!(sessions.list.lock().len(), 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sessions_of_one_device_from_before_3_5_are_listed_as_one() {
+        let dir = std::env::temp_dir().join(format!("rc-fold-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("sessions.json");
+        let agent = "Mozilla/5.0 (iPhone) Safari/605.1.15";
+        let ends = now_unix() + 86_400;
+        let old = json!([
+            {
+                "id": "1111111111111111", "hash": token_hash("a"), "name": "iPhone, Safari",
+                "agent": agent, "ip": "192.0.2.7", "created": "2026-09-07T20:15:00",
+                "lastSeen": "2026-09-08T09:00:00", "via": "approve", "expires": ends,
+            },
+            {
+                "id": "2222222222222222", "hash": token_hash("b"), "name": "Windows PC, Edge",
+                "agent": "Mozilla/5.0 (Windows NT 10.0) Edg/141.0.0.0", "ip": "192.0.2.9",
+                "created": "2026-09-08T18:00:00", "lastSeen": "2026-09-08T18:30:00",
+                "via": "password", "expires": ends,
+            },
+            {
+                "id": "3333333333333333", "hash": token_hash("c"), "name": "iPhone, Safari",
+                "agent": agent, "ip": "192.0.2.7", "created": "2026-09-10T19:00:00",
+                "lastSeen": "2026-09-10T21:00:00", "via": "qr", "expires": ends,
+            },
+        ]);
+        std::fs::write(&file, old.to_string()).unwrap();
+
+        let sessions = Sessions::load(&file);
+        assert!(
+            sessions.list.lock().iter().all(|s| s.device.is_empty()),
+            "a session from before 3.5 has no device id"
+        );
+        let rows = sessions.list(None);
+        assert_eq!(rows.len(), 2, "one phone, one PC: {rows:?}");
+        let phone = &rows[0];
+        assert_eq!(phone["sessions"], 2, "{phone}");
+        assert_eq!(phone["via"], "qr", "the newest way in: {phone}");
+        assert_eq!(phone["created"], "2026-09-07T20:15:00", "{phone}");
+        assert_eq!(phone["lastSeen"], "2026-09-10T21:00:00", "{phone}");
+        assert_eq!(phone["device"], "", "{phone}");
+
+        // signing that one row out ends both of its sessions, and nobody else's
+        let id = phone["id"].as_str().unwrap_or_default().to_string();
+        assert_eq!(sessions.revoke(&id).as_deref(), Some("iPhone, Safari"));
+        assert_eq!(sessions.list.lock().len(), 1, "the PC keeps its session");
+        assert_eq!(sessions.list(None).len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_device_cookie_is_lax_and_never_proof_of_anything() {
+        let phone = "0123456789abcdef0123456789abcdef";
+        let value = set_device_cookie_value(phone, false);
+        // Lax, or the sign-in that needs it most - a QR code opened from a
+        // scanner app - would arrive without it.
+        assert!(value.contains("SameSite=Lax"), "{value}");
+        assert!(value.contains("HttpOnly"), "{value}");
+        assert!(!value.contains("Secure"), "{value}");
+        assert!(
+            value.contains(&format!("Max-Age={}", DEVICE_DAYS * 86_400)),
+            "{value}"
+        );
+        assert!(set_device_cookie_value(phone, true).contains("; Secure"));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            COOKIE,
+            format!("{COOKIE_NAME}=abc; {DEVICE_COOKIE}={phone}")
+                .parse()
+                .unwrap(),
+        );
+        assert_eq!(device_id(&headers).as_deref(), Some(phone));
+        assert_eq!(device_of(&headers, Client::Browser), (phone.into(), false));
+        // a client of ours keeps no cookies, so it stays without a device
+        assert_eq!(device_of(&headers, Client::Native).0, "");
+        // anything that is not one of our ids is ignored
+        let mut junk = HeaderMap::new();
+        junk.insert(
+            COOKIE,
+            format!("{DEVICE_COOKIE}=../../secrets").parse().unwrap(),
+        );
+        assert_eq!(device_id(&junk), None);
+        let (fresh, is_new) = device_of(&junk, Client::Browser);
+        assert!(is_new && is_device_id(&fresh), "{fresh}");
     }
 }

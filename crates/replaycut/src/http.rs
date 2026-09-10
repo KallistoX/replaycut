@@ -210,23 +210,35 @@ async fn entry(
     };
     if !app.pairing.redeem_qr(token) {
         tracing::warn!("a QR sign-in from {} was too old or used up", addr.ip());
-        return Ok(redirect("/login?pair=expired", None));
+        return Ok(redirect("/login?pair=expired", &[]));
     }
     let agent = headers
         .get(axum::http::header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let session = auth::NewSession::from_agent(agent, addr.ip(), auth::Via::Qr);
+    // Since 3.5 the device cookie travels with this navigation - it is
+    // `SameSite=Lax` for exactly this case - so a phone that scanned the
+    // code keeps the row it already has instead of opening a second one.
+    let (device, fresh) = auth::device_of(&headers, auth::Client::Browser);
+    let session = auth::NewSession::from_agent(agent, addr.ip(), auth::Via::Qr).on_device(&device);
     tracing::info!("QR sign-in from {} ({})", addr.ip(), session.name);
-    let cookie = auth::set_cookie_value(&app.sessions.create(session), app.tls.active);
-    Ok(redirect("/", Some(&cookie)))
+    let mut cookies = vec![auth::set_cookie_value(
+        &app.sessions.create(session),
+        app.tls.active,
+    )];
+    if fresh {
+        cookies.push(auth::set_device_cookie_value(&device, app.tls.active));
+    }
+    Ok(redirect("/", &cookies))
 }
 
-fn redirect(location: &str, cookie: Option<&str>) -> Response {
+fn redirect(location: &str, cookies: &[String]) -> Response {
     let mut res = (StatusCode::SEE_OTHER, [("Location", location)]).into_response();
-    if let Some(cookie) = cookie.and_then(|c| HeaderValue::from_str(c).ok()) {
-        res.headers_mut()
-            .insert(axum::http::header::SET_COOKIE, cookie);
+    for cookie in cookies {
+        if let Ok(value) = HeaderValue::from_str(cookie) {
+            res.headers_mut()
+                .append(axum::http::header::SET_COOKIE, value);
+        }
     }
     res
 }
