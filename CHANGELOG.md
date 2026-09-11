@@ -19,6 +19,18 @@ contract.
   the built-in client together, about six uploads - so `docs/youtube.md` and
   its "bring your own Google client" route stay as they are.
 
+### Fixed
+
+- **replaycut starts on a Windows that has no Visual C++ Redistributable.**
+  The executable imported `VCRUNTIME140.dll`, which is not part of Windows -
+  it arrives with that redistributable, which every game installs and a fresh
+  installation does not have. On such a machine replaycut died before its
+  first line with `STATUS_DLL_NOT_FOUND` and no message. The Windows build now
+  links the C runtime into the executable, so the ZIP carries everything it
+  needs; only the UCRT is left, and that has been part of Windows since 10.
+  The executable grew by 135 KB. Found by the winget validation pipeline,
+  which installs into a clean Windows sandbox.
+
 ## [3.7.0] - 2026-09-11
 
 A small release about the settings page and about getting replaycut onto a

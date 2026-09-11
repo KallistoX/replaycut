@@ -3,3 +3,13 @@
 # keeps the order deterministic (libtest runs single-threaded tests by name).
 [env]
 RUST_TEST_THREADS = "1"
+
+# Link the C runtime into the executable instead of importing it. Without
+# this the binary needs `VCRUNTIME140.dll`, which is not part of Windows: it
+# arrives with the Visual C++ Redistributable, which every game installs and
+# almost no fresh installation has. replaycut is a ZIP you unpack and run, so
+# it has to carry what it needs - 3.7.0 died with STATUS_DLL_NOT_FOUND on a
+# clean machine. Only the UCRT (`api-ms-win-crt-*`) is left, and that has
+# been part of Windows since 10.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
