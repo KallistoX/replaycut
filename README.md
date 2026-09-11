@@ -8,7 +8,7 @@ post the link.**
 [![CI](https://img.shields.io/github/actions/workflow/status/KallistoX/replaycut/ci.yml?branch=main&label=CI)](https://github.com/KallistoX/replaycut/actions/workflows/ci.yml)
 [![Downloads](https://img.shields.io/github/downloads/KallistoX/replaycut/total)](https://github.com/KallistoX/replaycut/releases)
 [![License: AGPL-3.0-only](https://img.shields.io/github/license/KallistoX/replaycut)](LICENSE)
-![Platform: Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%2F11-0aa)
+![Platform: Windows and Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0aa)
 
 ![replaycut - clip manager for the OBS replay buffer. F9 in the game, trim on
 your phone, link in Discord.](docs/design/icons/social.png)
