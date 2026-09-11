@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
 
 PackageIdentifier: KallistoX.replaycut
-PackageVersion: 3.7.0
+PackageVersion: 3.7.1
 PackageLocale: en-US
 Publisher: KallistoX
 PublisherUrl: https://github.com/KallistoX
@@ -30,7 +30,7 @@ Tags:
   - screen-recording
   - self-hosted
   - video
-ReleaseNotesUrl: https://github.com/KallistoX/replaycut/releases/tag/v3.7.0
+ReleaseNotesUrl: https://github.com/KallistoX/replaycut/releases/tag/v3.7.1
 Documentations:
   - DocumentLabel: Settings
     DocumentUrl: https://github.com/KallistoX/replaycut/blob/main/docs/settings.md
