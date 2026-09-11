@@ -308,6 +308,12 @@ suite) and its file formats, so a 1.x installation migrates in place.
 Releases are published on GitHub as a ZIP for Windows x64; see
 [`CHANGELOG.md`](CHANGELOG.md) for what each version brings.
 
+replaycut is built with Claude Code. The maintainer writes the
+specifications, reviews and accepts every change and tries every release
+against real OBS on real hardware before it is tagged; the code, the tests
+and much of the prose come out of that collaboration. It is said here so
+that nobody has to guess.
+
 ```bash
 cargo build --workspace
 ```
