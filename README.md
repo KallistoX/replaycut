@@ -103,7 +103,11 @@ what they say. Double-click the shortcut to start it again; if it is already
 running, that opens the page.
 
 Windows SmartScreen may warn about an unsigned download the first time: click
-"More info", then "Run anyway".
+"More info", then "Run anyway". replaycut has applied to the [SignPath
+Foundation](https://signpath.org/) for free code signing; once granted, the
+Windows executable of every release will be signed by SignPath.io with a
+SignPath Foundation certificate, and this section will carry the code
+signing policy.
 
 ### Linux
 
