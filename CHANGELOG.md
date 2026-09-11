@@ -10,6 +10,14 @@ contract.
 
 ## [Unreleased]
 
+## [3.7.1] - 2026-09-11
+
+A fix release for a hole that was there from the start: on a Windows that
+had never seen a Visual C++ Redistributable, replaycut did not start at all.
+Nobody noticed because every game brings that redistributable along - it
+took a clean machine, and the one that found it was the winget validation
+sandbox.
+
 ### Changed
 
 - **Google verified replaycut's built-in YouTube client.** Connecting a
