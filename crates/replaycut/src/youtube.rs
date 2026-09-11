@@ -3,9 +3,10 @@
 //! the settings say otherwise. The link is `https://youtu.be/<id>`. The
 //! account is an OAuth client - the one built into this release since 3.3,
 //! or the user's own - plus the refresh token of the connected channel. The
-//! quota (1600 units per upload out of 10 000 a day) hangs on the client's
-//! project, so the built-in one is good for about six uploads a day across
-//! everyone using it until Google grants an extension.
+//! quota hangs on the client's project: uploads have a bucket of their own,
+//! 100 a day, and the other calls share 10 000 units a day (`channels.list`
+//! 1, `videos.delete` 50). The built-in client carries those 100 uploads for
+//! everyone using it together.
 
 use std::path::Path;
 use std::sync::Arc;

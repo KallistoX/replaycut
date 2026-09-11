@@ -15,15 +15,18 @@ where that is not enough.
 ## Why you might want your own
 
 YouTube's quota belongs to the **Google project behind the client**, not to
-the user: 10 000 units a day, 1 600 per upload. The client built into
-replaycut is therefore good for about **six uploads a day for everyone who
-uses it together**, unless Google grants it a higher quota. Your own project
-has those 10 000 units for you alone.
+the user. Uploading has a bucket of its own: **100 uploads a day per
+project**, and everything else - reading the channel name, deleting a video -
+comes out of a separate allowance of 10 000 units a day. The client built
+into replaycut therefore carries about **100 uploads a day for everyone who
+uses it together**; your own project has those 100 for you alone.
 
 Signs that you want your own client:
 
-- Uploads fail with `quotaExceeded` although you only shared a clip or two.
-- You upload several clips a day, every day.
+- Uploads fail with `quotaExceeded` although you only shared a clip or two -
+  someone else on the built-in client got there first that day.
+- You share a lot, and would rather not share the day's budget with everyone
+  else who uses replaycut.
 - You would rather not depend on somebody else's app registration at all.
 
 Creating one takes about fifteen minutes and costs nothing. What you need
@@ -120,8 +123,10 @@ file is then ready for TikTok, Instagram Reels or WhatsApp.
 
 ## Quota and limits
 
-- 1 600 units per upload, 10 000 units a day per project, reset at midnight
-  Pacific time. Deleting a video from the delete dialog costs 50.
+- `videos.insert` has a bucket of its own: 100 uploads a day per project.
+  Everything else comes out of 10 000 units a day - deleting a video from the
+  delete dialog costs 50 of them, reading the channel name costs 1. Both
+  reset at midnight Pacific time.
 - The connection check in the diagnostics costs 1 unit.
 - A client of your own, published without Google's review, may have at most
   100 users - you are the only one, so it never bites. The built-in client

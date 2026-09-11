@@ -10,6 +10,17 @@ contract.
 
 ## [Unreleased]
 
+### Changed
+
+- **The YouTube card no longer warns about a quota that is long gone.** Since
+  2.6 the card and `docs/youtube.md` said an upload costs 1 600 of the
+  project's 10 000 units a day, so the built-in client was good for about six
+  uploads a day for everyone together. YouTube has since given `videos.insert`
+  a bucket of its own: **100 uploads a day per project**, with the 10 000
+  units left for the other calls (reading the channel name costs 1, deleting
+  a video 50). The texts say that now - which also takes the sharpest edge off
+  the reason to bring your own Google client, though the reason itself stays.
+
 ## [3.7.1] - 2026-09-11
 
 A fix release for a hole that was there from the start: on a Windows that
