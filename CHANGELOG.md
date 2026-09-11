@@ -10,6 +10,15 @@ contract.
 
 ## [Unreleased]
 
+### Changed
+
+- **Google verified replaycut's built-in YouTube client.** Connecting a
+  channel is the plain Google login now: the "Google hasn't verified this
+  app" screen is gone, and so is the limit of 100 accounts that may connect
+  at all. The quota is unchanged - 10 000 units a day for everyone who uses
+  the built-in client together, about six uploads - so `docs/youtube.md` and
+  its "bring your own Google client" route stay as they are.
+
 ## [3.7.0] - 2026-09-11
 
 A small release about the settings page and about getting replaycut onto a

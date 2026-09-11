@@ -6,19 +6,19 @@ as a Short. Since 3.3 it brings its own Google client: switch the YouTube
 card on, click **Connect YouTube**, done. This page is for the one case
 where that is not enough.
 
-> **While Google is reviewing the built-in client**, connecting shows the
-> screen "Google hasn't verified this app" once. That is expected: open
-> *Advanced* and continue. Until the review is through, at most 100 Google
-> accounts can connect it at all. Both go away when the review ends; a
-> client of your own has neither.
+> Google verified the built-in client on 11 September 2026, so connecting
+> is the plain Google login: no "Google hasn't verified this app" screen
+> and no limit on how many accounts may connect. What the built-in client
+> does have is a quota shared by everyone who uses it - that is what the
+> rest of this page is about.
 
 ## Why you might want your own
 
 YouTube's quota belongs to the **Google project behind the client**, not to
 the user: 10 000 units a day, 1 600 per upload. The client built into
 replaycut is therefore good for about **six uploads a day for everyone who
-uses it together**, until Google grants the extension that is being applied
-for. Your own project has those 10 000 units for you alone.
+uses it together**, unless Google grants it a higher quota. Your own project
+has those 10 000 units for you alone.
 
 Signs that you want your own client:
 
@@ -123,8 +123,9 @@ file is then ready for TikTok, Instagram Reels or WhatsApp.
 - 1 600 units per upload, 10 000 units a day per project, reset at midnight
   Pacific time. Deleting a video from the delete dialog costs 50.
 - The connection check in the diagnostics costs 1 unit.
-- Unverified apps may have at most 100 users; with your own client you are
-  the only one.
+- A client of your own, published without Google's review, may have at most
+  100 users - you are the only one, so it never bites. The built-in client
+  went through the review and has no such limit.
 - If uploads fail with `quotaExceeded`, wait for the reset or request a
   higher quota in the Google console (APIs & Services › YouTube Data API v3
   › Quotas).
