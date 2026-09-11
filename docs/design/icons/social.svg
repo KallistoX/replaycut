@@ -25,5 +25,5 @@
 
   <!-- bottom line -->
   <text x="110" y="560" font-family="Segoe UI, Roboto, sans-serif" font-size="30" fill="#8a94a3">F9 in the game  ·  trim on your phone  ·  link in Discord</text>
-  <text x="1170" y="84" text-anchor="end" font-family="Segoe UI, Roboto, sans-serif" font-size="26" fill="#5f6876">Windows · Rust · AGPL-3.0</text>
+  <text x="1170" y="84" text-anchor="end" font-family="Segoe UI, Roboto, sans-serif" font-size="26" fill="#5f6876">Windows · Linux · AGPL-3.0</text>
 </svg>
