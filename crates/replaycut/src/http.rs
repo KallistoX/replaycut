@@ -409,8 +409,13 @@ async fn job(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Valu
 
 /// The shared file of a finished job, for the local-mode actions (since 2.1).
 fn shared_file_of(app: &AppState, id: &str) -> Result<std::path::PathBuf, ApiError> {
+    // The jobs map holds this run only; the store holds every output there
+    // ever was. Without the fallback every row of the clips and activity
+    // pages lost both actions on the first restart, while the download beside
+    // them kept working.
     let job = app
         .job(id)
+        .or_else(|| app.history_job(id))
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "unknown job"))?;
     let Some(file) = job.file.filter(|_| job.ok == Some(true)) else {
         return Err(ApiError::new(

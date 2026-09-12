@@ -31,6 +31,12 @@ contract.
   own, and "Download", "Copy the file" and "Open the folder" handed over the
   newer one. A name that is taken now gets a counter: `..._2.mp4`.
   ([#26](https://github.com/KallistoX/replaycut/issues/26))
+- **"Open the folder" and "Copy the file" work again after a restart.** Both
+  looked the job up among the jobs of the running service only, so every
+  output from an earlier run answered "unknown job" - which is every output
+  on the clips and activity pages after the first restart, while the
+  download button beside them worked. They ask the store as well now, as
+  publishing and posting have since 2.6.1.
 - **`presignDays` is validated as the documentation describes it.** S3
   presigned links live 1 to 7 days, and that is what `docs/settings.md`
   says, but `PUT /api/settings` took any number and stored it; only the
