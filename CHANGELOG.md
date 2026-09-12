@@ -31,6 +31,14 @@ contract.
   own, and "Download", "Copy the file" and "Open the folder" handed over the
   newer one. A name that is taken now gets a counter: `..._2.mp4`.
   ([#26](https://github.com/KallistoX/replaycut/issues/26))
+- **A clip whose recording went while replaycut was not running is listed
+  again.** Since 3.0 a clip stays on the page for its cuts once its
+  recording is gone - but only when the service watched it go. A recording
+  deleted while replaycut was closed left a clip the next start never
+  listed at all: its cuts and everything rendered from them were still on
+  disk and in the store, and still on the Activity page, but there was no
+  way to reach them from the clips page. The scan reconciles the store with
+  the folder now, whoever emptied it.
 - **A failed post no longer writes the credential into the log.** When a
   post could not reach its server at all - no network, a wrong host, a
   timeout - the error carried the URL it had tried, and for these

@@ -3123,7 +3123,9 @@ function renderCuts() {
     } else {
       primary.innerHTML = '<svg class="icon icon-sm"><use href="#i-cut-in"/></svg> Marks';
       primary.title = 'Put the marks of the timeline on this range';
-      primary.disabled = c.state === 'pending';
+      // without the recording there is no timeline to put them on, and
+      // everything they feed is disabled
+      primary.disabled = c.state === 'pending' || (cur && cur.file === null);
       primary.onclick = e => { e.preventDefault(); putMarks(c); };
     }
     act.appendChild(primary);

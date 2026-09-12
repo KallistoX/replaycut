@@ -6,6 +6,7 @@
 //! The folder can change at runtime (settings page): every round re-reads
 //! the paths and re-creates the watcher when the folder differs.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -301,6 +302,20 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
                 state.forget_clip(&base);
             }
         }
+        // The same may have happened while the service was not running. This
+        // run never knew those clips, so the loop above cannot reach them and
+        // the store still says they have their recording - which is what the
+        // clips page needs to be false before it lists a clip for its cuts
+        // alone. Without this they and their cuts fell off the page on the
+        // next start (since 3.8). Rows without cuts are left as they are:
+        // nothing lists them either way, and forgetting reaches into the
+        // store on the strength of one folder listing.
+        for base in stale_rows(&state.db.clips().unwrap_or_default(), &existing) {
+            if state.has_cuts(&base) {
+                tracing::info!("{base} went before this start - its cuts stay");
+                state.recording_recycled(&base);
+            }
+        }
         let mut inner = state.inner.lock();
         let before = inner.seen.len();
         inner.seen.retain(|base| existing.contains(base));
@@ -431,4 +446,44 @@ fn file_ready(path: &Path) -> bool {
 #[cfg(not(windows))]
 fn file_ready(path: &Path) -> bool {
     std::fs::File::open(path).is_ok()
+}
+
+/// Clip rows whose recording the store still believes in although the folder
+/// listing does not carry it. The scan reconciles them so that a clip whose
+/// recording went while the service was down is listed for its cuts again.
+fn stale_rows(rows: &BTreeMap<String, crate::db::ClipRow>, existing: &[String]) -> Vec<String> {
+    rows.values()
+        .filter(|r| r.has_file && !existing.iter().any(|e| e == &r.base))
+        .map(|r| r.base.clone())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stale_rows;
+    use std::collections::BTreeMap;
+
+    fn row(base: &str, has_file: bool) -> crate::db::ClipRow {
+        crate::db::ClipRow {
+            base: base.to_string(),
+            state: "active".into(),
+            done_at: None,
+            first_seen: None,
+            has_file,
+            doc: None,
+        }
+    }
+
+    #[test]
+    fn a_row_whose_recording_is_not_in_the_folder_is_stale() {
+        let rows: BTreeMap<String, crate::db::ClipRow> = ["here", "gone", "known-gone"]
+            .iter()
+            .map(|b| (b.to_string(), row(b, *b != "known-gone")))
+            .collect();
+        let existing = vec!["here".to_string()];
+        assert_eq!(stale_rows(&rows, &existing), vec!["gone".to_string()]);
+        // nothing is stale while every recording is there
+        let all = vec!["here".to_string(), "gone".to_string()];
+        assert!(stale_rows(&rows, &all).is_empty());
+    }
 }
