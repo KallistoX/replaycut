@@ -353,14 +353,16 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 .check-row.waiting .mark { color: var(--accent); }
 .check-row.skipped { opacity: 0.6; }
 .check-row .label { font-weight: var(--weight-strong); }
-.check-row .detail { color: var(--fg-muted); font-size: var(--text-sm); }
+/* a detail carries paths and URLs with no place to break: on a phone the
+   grid column would otherwise grow past the screen and cut the line off */
+.check-row .detail { color: var(--fg-muted); font-size: var(--text-sm); overflow-wrap: anywhere; }
 /* The code of a device login: it is what the eye is looking for, so it is a
    display of its own and not a word in a sentence. One click selects all of
    it, for the rare case that the other device is this one. */
 .devicecode { display: inline-block; margin: var(--space-2) 0; padding: var(--space-2) var(--space-3); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-xl); font-weight: var(--weight-strong); letter-spacing: 0.22em; color: var(--fg); user-select: all; }
 .devicecode:empty { display: none; }
 .check-row.problem .detail { color: var(--fg); }
-.check-row .fix { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--surface-2); border-radius: var(--radius-md); font-size: var(--text-sm); }
+.check-row .fix { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--surface-2); border-radius: var(--radius-md); font-size: var(--text-sm); overflow-wrap: anywhere; }
 .check-row .fix .path { font-family: var(--font-mono); color: var(--fg); }
 .check-row .side { display: flex; gap: var(--space-2); align-items: center; }
 @media (max-width: 480px) { .check-row { grid-template-columns: 24px 1fr; } .check-row .side { grid-column: 2; } }
