@@ -539,7 +539,7 @@ words, `facts` is absent and `checks` is empty. Check ids: `replay`,
 `adopt-folder` when a button applies. Facts are read on connect, on a
 profile change and every 30 s.
 
-### `POST /api/obs/replay-buffer/start`, `/api/obs/reconnect`, `/api/obs/adopt-folder`
+### `POST /api/obs/replay-buffer/start`, `/api/obs/reconnect`, `/api/obs/refresh`, `/api/obs/adopt-folder`
 
 - `replay-buffer/start`: `StartReplayBuffer`; `200 { ok }` (also when it
   already runs), `409` without a connection.
