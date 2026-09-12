@@ -302,3 +302,47 @@ fn every_icon_reference_has_a_symbol() {
         missing.join("\n  ")
     );
 }
+
+/// Banner buttons that only one page wires, with the reason. The banner they
+/// sit in is raised by that page alone, so the button cannot be reached from
+/// anywhere else; anything not listed here has to work on every page.
+const BANNER_BUTTONS_OF_ONE_PAGE: &[(&str, &str)] = &[(
+    "b-restart-now",
+    "the \"Restart needed\" banner is raised by the settings page alone, and \
+     the address to come back to is built from the settings it just saved",
+)];
+
+/// Every button of the banner strip is wired.
+///
+/// The strip is part of every page, so a button in it is on screen wherever
+/// the user is. Issue 20 was exactly this: a banner whose button did nothing
+/// because its handler sat in one page's init. `data-dismiss` buttons are
+/// wired by a single loop over the whole document and need no handler of
+/// their own.
+#[test]
+fn every_banner_button_is_wired() {
+    let html = ui();
+    let mut unwired = Vec::new();
+    for (at, id) in attr_values(&html, " id=\"") {
+        if !id.starts_with("b-") {
+            continue;
+        }
+        let tag = tag_around(&html, at);
+        if !tag.starts_with("<button") || tag.contains("data-dismiss") {
+            continue;
+        }
+        if BANNER_BUTTONS_OF_ONE_PAGE.iter().any(|(b, _)| *b == id) {
+            continue;
+        }
+        if !html.contains(&format!("$('{id}').onclick")) {
+            unwired.push(format!("line {}: id=\"{id}\"", line_of(&html, at)));
+        }
+    }
+    assert!(
+        unwired.is_empty(),
+        "these banner buttons have no onclick, so they do nothing wherever \
+         their banner shows (wire them next to the other banner handlers, or \
+         list them in BANNER_BUTTONS_OF_ONE_PAGE with the reason):\n  {}",
+        unwired.join("\n  ")
+    );
+}
