@@ -76,8 +76,14 @@ impl Report {
     }
 }
 
+/// A size for a diagnostics line. Below a gigabyte it is megabytes: a cuts
+/// folder of a few hundred megabytes read as "0.0 GB" before.
 fn gb(bytes: u64) -> String {
-    format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+    if bytes < 1_073_741_824 {
+        format!("{:.0} MB", bytes as f64 / 1_048_576.0)
+    } else {
+        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+    }
 }
 
 fn count_files(dir: &std::path::Path, ext: &str) -> usize {
@@ -1019,4 +1025,18 @@ pub async fn run(state: &AppState) -> Report {
         }
     }
     Report { checks, text }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gb;
+
+    #[test]
+    fn a_size_below_a_gigabyte_is_megabytes() {
+        assert_eq!(gb(0), "0 MB");
+        assert_eq!(gb(300 * 1_048_576), "300 MB");
+        assert_eq!(gb(1_073_741_823), "1024 MB");
+        assert_eq!(gb(1_073_741_824), "1.0 GB");
+        assert_eq!(gb(216_768_856_064), "201.9 GB");
+    }
 }
