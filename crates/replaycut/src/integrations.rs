@@ -766,7 +766,8 @@ impl Discord {
             .query(&[("wait", "true")])
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(crate::notify::without_url)?;
         let status = res.status();
         if status.is_success() {
             return Ok("Link posted".to_string());

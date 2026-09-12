@@ -39,6 +39,15 @@ fn html_escape(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
+/// A transport error from reqwest says which URL it was sending to, and for
+/// a post the URL *is* the credential: the bot token sits in Telegram's path,
+/// a Discord webhook is nothing but its URL. That text ends up in the log,
+/// in the job's status, in the history and in the diagnostics paste, so the
+/// URL goes before the error travels any further (since 3.8).
+pub fn without_url(e: reqwest::Error) -> anyhow::Error {
+    anyhow::Error::new(e.without_url())
+}
+
 // ---------------------------------------------------------------------------
 // Telegram
 
@@ -82,7 +91,8 @@ impl Telegram {
             .post(format!("{}/bot{}/{method}", self.api, self.token))
             .json(body)
             .send()
-            .await?;
+            .await
+            .map_err(without_url)?;
         let status = res.status();
         let v: Value = res.json().await.unwrap_or(Value::Null);
         if !status.is_success() || v["ok"] != true {
@@ -178,7 +188,7 @@ impl Webhook {
         if let Some(secret) = &self.secret {
             req = req.header("X-Replaycut-Signature", signature(secret, &body));
         }
-        let res = req.body(body).send().await?;
+        let res = req.body(body).send().await.map_err(without_url)?;
         let status = res.status();
         if !status.is_success() {
             let detail = res.text().await.unwrap_or_default();
@@ -381,5 +391,23 @@ pub(crate) mod tests {
             signature("Jefe", b"what do ya want for nothing?"),
             "sha256=5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
         );
+    }
+}
+
+#[cfg(test)]
+mod url_leak {
+    /// A post that cannot reach its server must not name the URL it tried:
+    /// the Telegram token sits in the path, a Discord webhook is its URL.
+    #[tokio::test]
+    async fn a_transport_error_does_not_carry_the_credential() {
+        let mut t = super::Telegram::new("123456:SECRET-TOKEN-abcdefghij", "-100123").unwrap();
+        t.api = "http://127.0.0.1:1".into();
+        let e = format!("{:#}", t.me().await.unwrap_err());
+        assert!(!e.contains("SECRET-TOKEN"), "{e}");
+        assert!(!e.contains("127.0.0.1:1"), "{e}");
+
+        let w = super::Webhook::new("http://127.0.0.1:1/hooks/s3cret-path", None).unwrap();
+        let e = format!("{:#}", w.test().await.unwrap_err());
+        assert!(!e.contains("s3cret-path"), "{e}");
     }
 }
