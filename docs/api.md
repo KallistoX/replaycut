@@ -829,6 +829,10 @@ status text joins the job's `discord` field.
   s)` and the direct link on the next line. `POST /api/test/telegram {
   token?, chatId? }` runs `getMe` and sends a test message: `{ ok, bot,
   posted, ms }` or `{ ok: false, error }`.
+
+  Built and tested against a fake of the Bot API, not verified with a real
+  bot. If you use it and it works, or does not, please say so in an issue;
+  an integration nobody can test may be dropped in a later release.
 - `integrations.webhook { enabled, autoPost, url }` with the optional
   secret as the write-only `webhookSecret` (credential
   `replaycut/webhook-secret`). `url` must be http(s) (400 otherwise). Every

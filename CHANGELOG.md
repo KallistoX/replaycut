@@ -62,6 +62,10 @@ contract.
 
 ### Changed
 
+- **The Telegram integration says that it has never met a real bot.** It was
+  built and tested against a fake of the Bot API; the card, `docs/api.md` and
+  `docs/settings.md` say so now and ask for an issue either way, because an
+  integration nobody can test may be dropped again.
 - **The YouTube card no longer warns about a quota that is long gone.** Since
   2.6 the card and `docs/youtube.md` said an upload costs 1 600 of the
   project's 10 000 units a day, so the built-in client was good for about six

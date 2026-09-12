@@ -140,7 +140,7 @@ in the log; the service still starts.
 | `replaycut/webdav` | DAV user | DAV password (since 2.5) |
 | `replaycut/youtube-client` | Google client ID | Client secret of your own Google project (since 2.6, see [`docs/youtube.md`](youtube.md)) |
 | `replaycut/youtube` | Channel title | The OAuth refresh token of the connected channel (since 2.6) |
-| `replaycut/telegram` | `bot` | The bot token from @BotFather (since 2.6) |
+| `replaycut/telegram` | `bot` | The bot token from @BotFather (since 2.6). Built and tested against a fake of the Bot API, not verified with a real bot. If you use it and it works, or does not, please say so in an issue; an integration nobody can test may be dropped in a later release. |
 | `replaycut/webhook-secret` | `secret` | The HMAC secret of the generic webhook (since 2.6, optional) |
 
 `replaycut setup` writes them. On Windows `cmdkey /list` shows them and

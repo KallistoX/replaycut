@@ -48,6 +48,8 @@ your phone, link in Discord.](docs/design/icons/social.png)
   Nord, Dracula, Gruvbox, Solarized and Tokyo Night a click away in Settings;
   your own is one CSS file in a folder.
 
+See [`docs/settings.md`](docs/settings.md) for the status of each integration.
+
 ## How it works
 
 1. **Record.** OBS keeps the last minutes in the replay buffer. You press the
