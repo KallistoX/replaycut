@@ -1552,6 +1552,19 @@ without one the recording's own rate is scaled by the share of the picture
 that reaches the file - `maxHeight` squared against the recording's height,
 or 1080x1920 for a vertical cut, never more than the recording itself.
 
+### Every output has its own file
+
+`shared\<clip>_<start>-<end>[_<title>][_9x16].mp4` was the whole name of an
+output, so a second rendering of the same range overwrote the first - here
+and on the storage, because the file name is the remote name - while the
+first output stayed in the history with the size of a file that was no
+longer its own. A name another output already carries now gets a counter
+before the suffix: `..._2.mp4`, `..._3.mp4`, and so on. A `publish` still
+re-uses the file of its source job; it is the same file going somewhere
+else.
+
+`sizeMB` of an output is therefore the size of the file it names, always.
+
 ## Behaviour
 
 ### Folder scan

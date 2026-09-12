@@ -398,6 +398,14 @@ impl Db {
         Ok(out)
     }
 
+    /// Does a job other than `id` carry this file name (since 3.8)? Every
+    /// output has its own file, so a name that is taken is not written again.
+    pub fn file_taken_by_other(&self, file: &str, id: &str) -> Result<bool> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare("SELECT 1 FROM jobs WHERE file = ?1 AND id <> ?2 LIMIT 1")?;
+        Ok(stmt.exists(params![file, id])?)
+    }
+
     /// Drop the jobs of one cut (a cut that is deleted takes its outputs).
     pub fn delete_jobs_of_cut(&self, cut: &str) -> Result<usize> {
         Ok(self

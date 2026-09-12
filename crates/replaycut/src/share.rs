@@ -156,6 +156,46 @@ pub fn vertical_file_name(name: &str) -> String {
     }
 }
 
+/// The nth name in a row: `X.mp4`, `X_2.mp4`, `X_3.mp4` (since 3.8).
+fn numbered_file_name(name: &str, n: u32) -> String {
+    match name.strip_suffix(".mp4") {
+        Some(stem) => format!("{stem}_{n}.mp4"),
+        None => format!("{name}_{n}"),
+    }
+}
+
+/// A name no other output carries (since 3.8). Two renderings of the same
+/// range are one file name, so the second used to overwrite the first - here
+/// and on the storage - while the first stayed in the history with the size
+/// of a file that was no longer its own.
+fn free_file_name(state: &AppState, id: &str, wanted: &str) -> String {
+    let taken = |name: &str| {
+        let running = state
+            .inner
+            .lock()
+            .jobs
+            .values()
+            .any(|j| j.id != id && j.file.as_deref() == Some(name));
+        running
+            || state.db.file_taken_by_other(name, id).unwrap_or_else(|e| {
+                tracing::warn!("cannot look up the file name {name}: {e:#}");
+                false
+            })
+    };
+    if !taken(wanted) {
+        return wanted.to_string();
+    }
+    (2..=MAX_FILE_NAMES)
+        .map(|n| numbered_file_name(wanted, n))
+        .find(|c| !taken(c))
+        .unwrap_or_else(|| numbered_file_name(wanted, MAX_FILE_NAMES))
+}
+
+/// How far the counter of `free_file_name` counts before it gives up and
+/// writes over the last one. A range rendered a thousand times is a bug
+/// somewhere else.
+const MAX_FILE_NAMES: u32 = 1000;
+
 /// Text of the post: `[<title> - ]<base without the "<prefix> " part>`.
 /// The prefix is only removed when it is a whole word at the start.
 pub fn post_label(prefix: &str, base: &str, title: &str) -> String {
@@ -1059,11 +1099,12 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         Some(f) if republish => f.clone(),
         _ => {
             let name = share_file_name(&job.base, job.start, job.end, &slug(&title));
-            if job.vertical {
+            let name = if job.vertical {
                 vertical_file_name(&name)
             } else {
                 name
-            }
+            };
+            free_file_name(state, id, &name)
         }
     };
     let out = state.paths().shared_dir.join(&file_name);
@@ -1495,6 +1536,13 @@ mod tests {
             vertical_file_name("a_b_219-233.mp4"),
             "a_b_219-233_9x16.mp4"
         );
+        // the counter of an output whose name is taken goes last, so the
+        // 9:16 marker stays where it is
+        assert_eq!(
+            numbered_file_name("a_b_219-233_9x16.mp4", 2),
+            "a_b_219-233_9x16_2.mp4"
+        );
+        assert_eq!(numbered_file_name("a_b_219-233", 3), "a_b_219-233_3");
     }
 
     #[test]

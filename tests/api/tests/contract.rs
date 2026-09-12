@@ -3436,3 +3436,63 @@ fn t62_a_storage_target_says_what_it_caps_a_share_at() {
     assert_eq!(nc["maxHeight"], 0, "{nc}");
     assert_eq!(nc["maxKbps"], 0, "{nc}");
 }
+
+/// Every output has its own file, and the size it reports is the size of
+/// that file. Two renderings of the same range used to be one file.
+#[test]
+fn t63_every_output_has_its_own_file_and_its_own_size() {
+    let _g = serial();
+    if !since_38() {
+        eprintln!("skipped: needs replaycut 3.8");
+        return;
+    }
+    // a clip of its own: the fixture is out of the list by now (t50)
+    let base = format!("{} outputs", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let body = json!({ "base": base, "start": 3.0, "end": 6.0, "audio": "mix",
+                       "target": "file", "after": "keep" });
+
+    let mut outputs = Vec::new();
+    for _ in 0..2 {
+        let (status, v) = post_json("/api/share", &body);
+        assert_eq!(status, 202, "{v}");
+        let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+        assert_eq!(done["ok"], true, "{done}");
+        outputs.push(done);
+    }
+
+    let name = |j: &serde_json::Value| j["file"].as_str().unwrap_or_default().to_string();
+    assert_ne!(
+        name(&outputs[0]),
+        name(&outputs[1]),
+        "the second rendering took the file of the first"
+    );
+
+    // and each of them reports the size of the file it names
+    for job in &outputs {
+        let path = env().clip_dir.join("shared").join(name(job));
+        let on_disk = std::fs::metadata(&path)
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+            .len() as f64
+            / 1_048_576.0;
+        let said = job["sizeMB"].as_f64().unwrap_or_default();
+        assert!(
+            (said - on_disk).abs() < 0.02,
+            "{} says {said} MB and has {on_disk} MB",
+            path.display()
+        );
+    }
+
+    // the history keeps them apart too
+    let history = state()["history"].as_array().expect("history").clone();
+    for job in &outputs {
+        let id = job["id"].as_str().unwrap_or_default();
+        let entry = history
+            .iter()
+            .find(|e| e["id"] == id)
+            .unwrap_or_else(|| panic!("job {id} is not in the history"));
+        assert_eq!(entry["file"], job["file"], "{entry}");
+        assert_eq!(entry["sizeMB"], job["sizeMB"], "{entry}");
+    }
+}

@@ -23,6 +23,14 @@ contract.
   against real renderings of a 2560x1440 recording: 15 MB promised for
   15.14 MB without limits, 9 MB for 8.69 MB at 1080p, 9 MB for 8.89 MB as a
   vertical cut. ([#25](https://github.com/KallistoX/replaycut/issues/25))
+- **Every output has its own file again.** An output was named after the
+  clip, the range and the title and nothing else, so rendering a range a
+  second time - another quality, another audio track, another target -
+  overwrote the first rendering, on this PC and on the storage. The older
+  output stayed in the list with the size of a file that was no longer its
+  own, and "Download", "Copy the file" and "Open the folder" handed over the
+  newer one. A name that is taken now gets a counter: `..._2.mp4`.
+  ([#26](https://github.com/KallistoX/replaycut/issues/26))
 
 ### Changed
 
