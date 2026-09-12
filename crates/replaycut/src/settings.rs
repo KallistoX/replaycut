@@ -782,8 +782,14 @@ impl Settings {
         if path.is_file() {
             let text = std::fs::read_to_string(path)
                 .with_context(|| format!("cannot read {}", path.display()))?;
-            let settings: Settings = serde_json::from_str(text.trim_start_matches('\u{feff}'))
+            let mut settings: Settings = serde_json::from_str(text.trim_start_matches('\u{feff}'))
                 .with_context(|| format!("{} is not valid settings JSON", path.display()))?;
+            // A hand-edited file may hold anything, and `validate` only guards
+            // `PUT /api/settings`. S3 has always clamped `presignDays` where it
+            // signs; repairing it here keeps a later save from being refused
+            // for a number the file brought along.
+            settings.integrations.s3.presign_days =
+                settings.integrations.s3.presign_days.clamp(1, 7);
             return Ok(settings);
         }
         // A brand-new file: nothing is set up yet.
@@ -898,6 +904,10 @@ impl Settings {
             self.integrations.youtube.description.chars().count() <= 4000,
             "integrations.youtube.description must be at most 4000 characters"
         );
+        anyhow::ensure!(
+            (1..=7).contains(&self.integrations.s3.presign_days),
+            "integrations.s3.presignDays must be between 1 and 7"
+        );
         Ok(())
     }
 
@@ -981,6 +991,22 @@ mod tests {
             .with_patch(&serde_json::json!({ "passwordHash": "x" }))
             .unwrap_err();
         assert!(err.contains("unknown field: passwordHash"), "{err}");
+
+        // presigned S3 links live 1 to 7 days (docs/settings.md); anything
+        // else used to be stored and then quietly clamped where it signs
+        assert_eq!(s.integrations.s3.presign_days, 7);
+        for bad in [0, 8, 999] {
+            let err = s
+                .with_patch(
+                    &serde_json::json!({ "integrations": { "s3": { "presignDays": bad } } }),
+                )
+                .unwrap_err();
+            assert!(err.contains("presignDays"), "{bad}: {err}");
+        }
+        let next = s
+            .with_patch(&serde_json::json!({ "integrations": { "s3": { "presignDays": 3 } } }))
+            .unwrap();
+        assert_eq!(next.integrations.s3.presign_days, 3);
         let err = s.with_patch(&serde_json::json!({ "port": 0 })).unwrap_err();
         assert!(err.contains("port"), "{err}");
         let err = s

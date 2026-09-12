@@ -31,6 +31,16 @@ contract.
   own, and "Download", "Copy the file" and "Open the folder" handed over the
   newer one. A name that is taken now gets a counter: `..._2.mp4`.
   ([#26](https://github.com/KallistoX/replaycut/issues/26))
+- **`presignDays` is validated as the documentation describes it.** S3
+  presigned links live 1 to 7 days, and that is what `docs/settings.md`
+  says, but `PUT /api/settings` took any number and stored it; only the
+  signing clamped it back. Out of range is a 400 now, and a file that
+  already holds such a number is repaired when it is read.
+- **The cuts line of the diagnostics says megabytes below a gigabyte.** It
+  read "0.0 GB" for anything smaller, which is most of the time.
+- **A publish carries the `maxHeight` of the file it sends.** It copied
+  every other field of its source job, so a rendering that had been scaled
+  down read as a full-resolution one in the history.
 
 ### Changed
 
