@@ -388,6 +388,11 @@ impl Integrations {
                         let s = self.storage(id);
                         v["connected"] = Value::Bool(s.is_some());
                         v["quickShare"] = Value::Bool(s.is_some_and(|s| s.quick_share));
+                        // since 3.8: the page plans the size of a share, so it
+                        // has to know what this target caps it at
+                        let limits = settings.limits(id);
+                        v["maxHeight"] = serde_json::json!(limits.max_height);
+                        v["maxKbps"] = serde_json::json!(limits.max_kbps);
                     } else {
                         let n = self.notifies.iter().find(|n| n.id == *id);
                         v["connected"] = Value::Bool(n.is_some());

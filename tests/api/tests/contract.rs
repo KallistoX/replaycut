@@ -3365,3 +3365,74 @@ fn t61_one_device_is_one_row_however_it_signs_in() {
     }
     assert!(devices_named(name).is_empty());
 }
+
+// ---------------------------------------------------------------- since 3.8
+
+fn since_38() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (3, 8)
+}
+
+/// The storage entry of a target says what it caps a share at, so the page
+/// can plan the size instead of promising a best-quality render.
+#[test]
+fn t62_a_storage_target_says_what_it_caps_a_share_at() {
+    let _g = serial();
+    if !since_38() {
+        eprintln!("skipped: needs replaycut 3.8");
+        return;
+    }
+    let target = |v: &serde_json::Value, id: &str| {
+        v["config"]["targets"]
+            .as_array()
+            .expect("targets")
+            .iter()
+            .find(|t| t["id"] == id)
+            .unwrap_or_else(|| panic!("no target {id}"))
+            .clone()
+    };
+
+    // every storage carries both, connected or not; a notify target neither
+    for t in state()["config"]["targets"]
+        .as_array()
+        .expect("targets")
+        .iter()
+    {
+        if t["kind"] == "storage" {
+            assert!(t["maxHeight"].is_u64(), "{t}");
+            assert!(t["maxKbps"].is_u64(), "{t}");
+        } else {
+            assert!(t.get("maxHeight").is_none(), "{t}");
+            assert!(t.get("maxKbps").is_none(), "{t}");
+        }
+    }
+
+    // and they are the numbers the settings hold
+    let (status, r) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "nextcloud": { "maxHeight": 720, "maxKbps": 4000 } } }),
+    );
+    assert_eq!(status, 200, "{r}");
+    let nc = target(&state(), "nextcloud");
+    assert_eq!(nc["maxHeight"], 720, "{nc}");
+    assert_eq!(nc["maxKbps"], 4000, "{nc}");
+    assert_eq!(
+        target(&state(), "s3")["maxKbps"],
+        0,
+        "another storage is untouched"
+    );
+
+    let (status, r) = put_json(
+        "/api/settings",
+        &json!({ "integrations": { "nextcloud": { "maxHeight": 0, "maxKbps": 0 } } }),
+    );
+    assert_eq!(status, 200, "{r}");
+    let nc = target(&state(), "nextcloud");
+    assert_eq!(nc["maxHeight"], 0, "{nc}");
+    assert_eq!(nc["maxKbps"], 0, "{nc}");
+}

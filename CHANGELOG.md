@@ -10,6 +10,20 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The size the share row promises is the size that comes out.** "about
+  N MB" always planned a best-quality render at the recording's resolution,
+  because the limits a target may put on a share (`maxHeight`, `maxKbps`,
+  there since 2.7) never reached the page at all. With Nextcloud set to
+  1080p and 8000 kbit/s the line promised 218 MB for a file of 11.76 MB. The
+  storage targets carry their limits now, the estimate uses them, and it
+  takes the 9:16 crop into account as well, which it also ignored; the line
+  says what will really happen ("H.264, 1080p at 8000 kbit/s"). Measured
+  against real renderings of a 2560x1440 recording: 15 MB promised for
+  15.14 MB without limits, 9 MB for 8.69 MB at 1080p, 9 MB for 8.89 MB as a
+  vertical cut. ([#25](https://github.com/KallistoX/replaycut/issues/25))
+
 ### Changed
 
 - **The YouTube card no longer warns about a quota that is long gone.** Since

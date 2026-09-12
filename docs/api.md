@@ -1528,6 +1528,30 @@ only ever joins rows and never drops a session:
 is signed out, not one of its logins. `POST /api/sessions/clear` is what it
 was: everything but the caller's own session.
 
+## Since 3.8
+
+### A storage target says what it caps a share at
+
+A `storage` entry of `config.targets` gains the two limits of 2.7:
+
+| Field | Value |
+| --- | --- |
+| `maxHeight` | `integrations.<id>.maxHeight`, `0` for none |
+| `maxKbps` | `integrations.<id>.maxKbps`, `0` for none |
+
+They are the numbers the settings hold, for every storage, whether it is
+connected or not; `notify` entries have neither. Without them the page could
+not plan a share: it promised the size of a best-quality render at the
+recording's resolution even when the target scales the share down and caps
+its bitrate, which is wrong by the factor the limits take off - on a 59
+Mbit/s recording, 218 MB promised for a file of 11.76 MB.
+
+The estimate of the share row now reads them, and the 9:16 crop with them:
+a bitrate cap is the estimate (`maxKbps` plus 128 kbit/s of audio), and
+without one the recording's own rate is scaled by the share of the picture
+that reaches the file - `maxHeight` squared against the recording's height,
+or 1080x1920 for a vertical cut, never more than the recording itself.
+
 ## Behaviour
 
 ### Folder scan

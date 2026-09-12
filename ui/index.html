@@ -2383,13 +2383,26 @@ let v, tl, sel, hin, hout, ph;
 const short = b => { const p = (cfg.displayName || '').trim(); return p && b && b.toLowerCase().startsWith(p.toLowerCase()) ? b.slice(p.length).trim() : (b || ''); };
 const audioLabel = id => (cfg.audio.find(a => a.id === id) || {}).label || id || 'Mix';
 function expiry() { return cfg.expireDays > 0 ? 'link expires in ' + cfg.expireDays + ' days' : 'link never expires'; }
+// what a target caps a share at (since 3.8: the storage entries carry it)
+function limitsOf(id) { const t = (cfg.targets || []).find(t => t.id === id); return { maxHeight: (t && t.maxHeight) || 0, maxKbps: (t && t.maxKbps) || 0 }; }
 // size estimate (since 2.7): the share keeps the recording's quality, so the recording's own rate is the guide
-function plan(d) { const a = 128000; if (cfg.shareKbps > 0) { const vb = cfg.shareKbps * 1000; return { mb: (vb + a) * d / 8 / 1048576, kbps: vb / 1000 }; } // H.264 needs more bits than the recording's codec for the same picture
+// `lim` is what the target caps it at, `vertical` whether it is the 9:16 crop (both since 3.8)
+function plan(d, vertical, lim) { const a = 128000;
+  // the height that reaches the file, and how much of the picture survives
+  const h = vertical ? 1920 : (lim.maxHeight > 0 && cur && cur.height > lim.maxHeight ? lim.maxHeight : (cur && cur.height) || 0);
+  if (lim.maxKbps > 0) { const vb = lim.maxKbps * 1000; return { mb: (vb + a) * d / 8 / 1048576, kbps: lim.maxKbps, height: h }; }
   const codec = (cur && cur.codec || '').toLowerCase();
   // since 2.8 the ratio is learned from the last plain H.264 shares of the same codec (median of up to five); the table is the fallback
   const learned = (histData || []).filter(e => e.sourceKbps > 0 && e.sizeMB > 0 && e.seconds > 0 && !e.cancelled && e.mode !== 'copy' && !e.vertical && !e.maxHeight && !e.kbps && (e.codec || '').toLowerCase() === codec).slice(0, 5).map(e => e.sizeMB * 8388.608 / e.seconds / e.sourceKbps).sort((a, b) => a - b);
   const factor = learned.length ? learned[Math.floor(learned.length / 2)] : ({ av1: 2.5, hevc: 2, h264: 1.3 }[codec] || 2);
-  const bps = cur && cur.size && cur.duration ? cur.size * 8 / cur.duration * factor : 20e6; return { mb: (bps + a) * d / 8 / 1048576, kbps: 0 }; }
+  // H.264 needs more bits than the recording's codec for the same picture, and
+  // fewer for a smaller one: in quality mode the encoder spends its bits per
+  // pixel it writes, never more than for the recording itself (a 9:16 crop
+  // scaled up to 1080x1920 puts no detail back)
+  const src = cur && cur.width && cur.height ? cur.width * cur.height : 0;
+  const out = vertical ? 1080 * 1920 : (src && h ? Math.round(cur.width * h / cur.height) * h : src);
+  const area = src ? Math.min(1, out / src) : 1;
+  const bps = cur && cur.size && cur.duration ? cur.size * 8 / cur.duration * factor * area : 20e6; return { mb: (bps + a) * d / 8 / 1048576, kbps: 0, height: h }; }
 
 function initClips() {
   v = $('v'); tl = $('tl'); sel = $('sel'); hin = $('hin'); hout = $('hout'); ph = $('ph');
@@ -2534,12 +2547,14 @@ function render() {
   hin.dataset.time = fmt(tIn); hout.dataset.time = fmt(tOut);
   hin.title = 'In: ' + fmt(tIn); hout.title = 'Out: ' + fmt(tOut);
   ph.style.left = (v.currentTime / d * 100) + '%';
-  const len = tOut - tIn, p = plan(Math.max(1, len)), copy = $('mode').value === 'copy';
-  $('selInfo').innerHTML = `${fmt(tIn)} - ${fmt(tOut)} · <b>${len.toFixed(1)} s</b>`;
-  const size = copy ? `about <b>${(cur.size * Math.max(1, len) / (d || 1) / 1048576).toFixed(0)} MB</b> as recorded (${esc((cur.codec || 'copy').toUpperCase())}, keyframe-accurate)` : `about <b>${p.mb.toFixed(0)} MB</b> ${p.kbps ? `at ${p.kbps.toFixed(0)} kbit/s` : `H.264, ${cur.height ? cur.height + 'p' : 'recording resolution'} at best quality`}`;
-  const warn = copy && cur.codec && cur.codec !== 'h264' && !cfg.localMode ? ' · <span class="badge warn">Discord embeds and iPhones need H.264</span>' : '';
   const def = defaultTarget();
-  const vert = $('frame').value === 'vertical' ? ' · <span class="badge accent">9:16</span> 1080x1920, <code>#Shorts</code> on YouTube' : '';
+  const vertical = $('frame').value === 'vertical', copy = $('mode').value === 'copy';
+  const len = tOut - tIn, p = plan(Math.max(1, len), vertical, limitsOf(def));
+  $('selInfo').innerHTML = `${fmt(tIn)} - ${fmt(tOut)} · <b>${len.toFixed(1)} s</b>`;
+  const res = vertical ? '1080x1920' : p.height ? p.height + 'p' : 'recording resolution';
+  const size = copy ? `about <b>${(cur.size * Math.max(1, len) / (d || 1) / 1048576).toFixed(0)} MB</b> as recorded (${esc((cur.codec || 'copy').toUpperCase())}, keyframe-accurate)` : `about <b>${p.mb.toFixed(0)} MB</b> H.264, ${res} ${p.kbps ? `at ${p.kbps.toFixed(0)} kbit/s` : 'at best quality'}`;
+  const warn = copy && cur.codec && cur.codec !== 'h264' && !cfg.localMode ? ' · <span class="badge warn">Discord embeds and iPhones need H.264</span>' : '';
+  const vert = vertical ? ' · <span class="badge accent">9:16</span> <code>#Shorts</code> on YouTube' : '';
   $('planInfo').innerHTML = size + warn + vert +
     (def === 'file' ? ` · <span class="badge accent">file only</span> no quick-share storage - the file stays in <code>shared\\</code>${storageTargets().length ? ', the menu offers ' + esc(storageTargets().map(t => t.label).join(', ')) : ''}` : ` · to <b>${esc(targetLabel(def))}</b>, ${esc(expiry())}${cfg.webhook ? ' + post' : ''}`);
   setupText();
