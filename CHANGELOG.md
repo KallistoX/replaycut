@@ -31,6 +31,18 @@ contract.
   own, and "Download", "Copy the file" and "Open the folder" handed over the
   newer one. A name that is taken now gets a counter: `..._2.mp4`.
   ([#26](https://github.com/KallistoX/replaycut/issues/26))
+- **A failed post no longer writes the credential into the log.** When a
+  post could not reach its server at all - no network, a wrong host, a
+  timeout - the error carried the URL it had tried, and for these
+  integrations the URL is the credential: the bot token is part of
+  Telegram's, a Discord webhook is nothing but its URL. That text went into
+  the log, into the job's status, into the history and from there into the
+  text behind "Copy diagnostics". The URL is stripped from such an error
+  now.
+- **The page comes back from a one-click update about three seconds
+  sooner.** It waited a fixed three seconds before it even started asking
+  whether the new service was up. It now waits for the old one to go quiet
+  and then asks four times a second.
 - **"Open the folder" and "Copy the file" work again after a restart.** Both
   looked the job up among the jobs of the running service only, so every
   output from an earlier run answered "unknown job" - which is every output
