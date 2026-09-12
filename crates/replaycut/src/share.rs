@@ -704,6 +704,10 @@ pub fn publish(state: &AppState, source: &str, target: &str) -> Result<Started, 
         audio: src.audio.clone(),
         mode: src.mode.clone(),
         kbps: src.kbps,
+        // the file was made with these, and the contract says a job carries
+        // `kbps` and `maxHeight` as used - without it a capped rendering read
+        // as a full-resolution one in the history
+        max_height: src.max_height,
         codec: src.codec.clone(),
         source_kbps: src.source_kbps,
         vertical: src.vertical,
