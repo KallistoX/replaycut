@@ -1296,7 +1296,9 @@ remote copies. A clip that loses its last cut is `new` again.
 
 Since 3.0 the store keeps every entry - there is no 200 cap any more.
 
-- `limit`: how many entries at most (default 200, at most 5000).
+- `limit`: how many entries at most (default 200, at most 5000). It is a
+  maximum: `0` is an empty page. Anything that is not a number - `abc`, a
+  negative number, nothing at all - is the default.
 - `before`: only entries whose `at` is older than this local timestamp. The
   `at` of the last entry of a page is what asks for the next one.
 

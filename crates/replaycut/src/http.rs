@@ -370,11 +370,13 @@ async fn history(
     State(app): State<App>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Json<Value> {
+    // `limit` is a maximum, so 0 is a page of nothing and not a page of one;
+    // a number that is no number at all falls back to the default
     let limit = query
         .get("limit")
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(MAX_HISTORY)
-        .clamp(1, 5000);
+        .min(5000);
     let before = query
         .get("before")
         .map(String::as_str)
