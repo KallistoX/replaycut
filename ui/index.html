@@ -1303,6 +1303,8 @@ const $ = s => document.getElementById(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = s => { s = Math.max(0, s || 0); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
 const fmtShort = s => { s = Math.max(0, Math.round(s || 0)); const m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + r; };
+// a size on screen: below a gigabyte "0.0 GB" says nothing
+const fmtSize = b => b < 1073741824 ? `${(b / 1048576).toFixed(0)} MB` : `${(b / 1073741824).toFixed(1)} GB`;
 const PAGES = { '/': 'clips', '/index.html': 'clips', '/login': 'login', '/setup': 'setup', '/settings': 'settings', '/diagnostics': 'diagnostics', '/obs': 'obs', '/activity': 'activity' };
 // /approve and /approve/<id> are the same page (since 2.8)
 const page = PAGES[location.pathname] || (location.pathname.startsWith('/approve') ? 'approve' : 'clips');
@@ -1712,7 +1714,7 @@ async function runTest(kind, body, btn, msg) {
     const r = await api('/api/test/' + kind, jsonOpts('POST', body), { retries: 0, timeout: 30000 });
     if (r.ok) {
       msg.className = 'test-msg ok';
-      if (kind === 'nextcloud') { const free = r.freeBytes != null ? ` · ${(r.freeBytes / 1073741824).toFixed(1)} GB free` : ''; msg.textContent = `Logged in as ${r.displayName || r.user}${free} (${r.ms} ms)`; }
+      if (kind === 'nextcloud') { const free = r.freeBytes != null ? ` · ${fmtSize(r.freeBytes)} free` : ''; msg.textContent = `Logged in as ${r.displayName || r.user}${free} (${r.ms} ms)`; }
       else if (kind === 's3') msg.textContent = `Bucket reachable, probe written and removed · ${r.links} (${r.ms} ms)`;
       else if (kind === 'webdav') msg.textContent = `Server reachable as ${r.user}, probe written and removed (${r.ms} ms)`;
       else if (kind === 'telegram') msg.textContent = `Bot ${r.bot} answers · ${r.posted} (${r.ms} ms)`;
@@ -3448,7 +3450,7 @@ function applyState(d, polled, withDone) {
     const qWarn = !!q && q.usedPercent >= 80;
     $('quotaDot').hidden = !qWarn;
     if (qWarn) { $('quotaDot').className = 'dot ' + (q.usedPercent >= 95 ? 'err' : 'warn'); $('quotaDot').title = `Nextcloud ${Math.round(q.usedPercent)} % used`; }
-    if (q) { const gb = b => (b / 1073741824).toFixed(1) + ' GB'; $('quota').textContent = `Nextcloud ${Math.round(q.usedPercent)} %`; $('quota').className = 'badge' + (q.usedPercent >= 95 ? ' err' : q.usedPercent >= 80 ? ' warn' : ''); $('quota').title = `${gb(q.free)} free of ${gb(q.total)}` + (q.usedPercent >= 80 ? ' - delete old uploads or raise the quota' : ''); }
+    if (q) { $('quota').textContent = `Nextcloud ${Math.round(q.usedPercent)} %`; $('quota').className = 'badge' + (q.usedPercent >= 95 ? ' err' : q.usedPercent >= 80 ? ' warn' : ''); $('quota').title = `${fmtSize(q.free)} free of ${fmtSize(q.total)}` + (q.usedPercent >= 80 ? ' - delete old uploads or raise the quota' : ''); }
     if ((cfg.update || (upd && upd.latest)) && !updBusy) refreshUpdate();
     const ob = cfg.obs || {};
     // since 2.8: an installation from before that is open to the network
