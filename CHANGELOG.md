@@ -47,6 +47,12 @@ contract.
   with a "Cancel" button. It now asks once a second while something runs and
   not at all otherwise, a job waiting behind it shows up with "Remove from
   queue", and the progress bar of the running job is visible again.
+- **An encode that does not finish leaves no broken file behind.** Quitting
+  replaycut during a share, or an encode that failed, left a half-written
+  file under the output's name in `shared\` - it looked finished and did not
+  play. A share now encodes into `<name>.part.mp4` and only a finished file
+  gets its name; what a quit or a crash left behind goes when replaycut
+  starts again.
 - **A share "as recorded" says again that it starts earlier.** Without
   re-encoding, a file can only begin at a keyframe, so it starts up to a
   couple of seconds before the in mark. Since 3.1 the result card and the

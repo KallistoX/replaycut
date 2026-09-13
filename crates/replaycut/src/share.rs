@@ -814,6 +814,34 @@ async fn apply_after(state: &Arc<AppState>, job: &Job) {
     }
 }
 
+/// The file an encode writes until it is finished: `x.mp4` → `x.part.mp4`.
+pub fn part_of(out: &Path) -> PathBuf {
+    out.with_extension("part.mp4")
+}
+
+/// Whether a file in `shared\` is an unfinished encode (see [`part_of`]).
+pub fn is_part(name: &str) -> bool {
+    name.to_ascii_lowercase().ends_with(".part.mp4")
+}
+
+/// A stop or a crash during an encode leaves its `.part.mp4` in `shared\`.
+/// Called on start, before any job can run, so each one is a leftover.
+pub fn remove_unfinished_encodes(shared: &Path) {
+    let Ok(entries) = std::fs::read_dir(shared) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !is_part(&name) || !entry.path().is_file() {
+            continue;
+        }
+        match std::fs::remove_file(entry.path()) {
+            Ok(()) => tracing::info!("removed the unfinished encode {name}"),
+            Err(e) => tracing::warn!("cannot remove the unfinished encode {name}: {e}"),
+        }
+    }
+}
+
 /// Where a rendering starts inside the cut file: the cut begins at its
 /// keyframe, the range a moment later.
 fn seek_in_cut(cut: &Cut, start: f64) -> f64 {
@@ -1233,7 +1261,13 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         } else {
             runtime.encoder.clone()
         };
-        if let Err(e) = encode(state, id, &job, &input, seek, &out, token, &profile).await {
+        // ffmpeg writes `<name>.part.mp4`, and only a finished encode gets
+        // the output's name. Until 3.9 it wrote the name itself, so a stop
+        // or a failed encode left a broken file that looked like an output;
+        // leftovers of a stop or a crash go when the service starts.
+        let part = part_of(&out);
+        if let Err(e) = encode(state, id, &job, &input, seek, &part, token, &profile).await {
+            let _ = std::fs::remove_file(&part);
             if token.is_cancelled() || job.mode == "copy" || !profile.is_gpu_path() {
                 return Err(e);
             }
@@ -1244,18 +1278,25 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
             state
                 .encoder_fallbacks
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let _ = std::fs::remove_file(&out);
-            encode(
+            let retry = encode(
                 state,
                 id,
                 &job,
                 &input,
                 seek,
-                &out,
+                &part,
                 token,
                 &profile.software_fallback(),
             )
-            .await?;
+            .await;
+            if let Err(e) = retry {
+                let _ = std::fs::remove_file(&part);
+                return Err(e);
+            }
+        }
+        if let Err(e) = std::fs::rename(&part, &out) {
+            let _ = std::fs::remove_file(&part);
+            bail!("cannot move the finished file into place: {e}");
         }
         let size_mb = (std::fs::metadata(&out)?.len() as f64 / 1_048_576.0 * 100.0).round() / 100.0;
         // copy mode cuts at the keyframe before `start`: say where the file really begins
@@ -1549,6 +1590,39 @@ async fn encode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unfinished_encode_has_a_name_of_its_own() {
+        let out = Path::new("shared").join("WARDOGS_2026-09-11_23-10-05_11-71_9x16.mp4");
+        let part = part_of(&out);
+        assert_eq!(
+            part.file_name().unwrap().to_string_lossy(),
+            "WARDOGS_2026-09-11_23-10-05_11-71_9x16.part.mp4"
+        );
+        assert!(is_part(&part.file_name().unwrap().to_string_lossy()));
+        assert!(is_part("x.PART.MP4"));
+        assert!(!is_part(&out.file_name().unwrap().to_string_lossy()));
+        // a title may end in "part" - that is still a finished output
+        assert!(!is_part("Clip_12-30_Best-part.mp4"));
+    }
+
+    #[test]
+    fn leftover_encodes_are_removed_and_outputs_stay() {
+        let dir = std::env::temp_dir().join(format!("rc-part-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["a.part.mp4", "a.mp4", "b_9x16.part.mp4", "notes.txt"] {
+            std::fs::write(dir.join(name), b"x").unwrap();
+        }
+        remove_unfinished_encodes(&dir);
+        let mut left: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(left, ["a.mp4", "notes.txt"]);
+    }
 
     #[test]
     fn slug_matches_contract() {

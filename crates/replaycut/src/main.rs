@@ -574,6 +574,8 @@ async fn serve(
         u.updated_notes = Some(j.notes);
         u.updated_url = Some(j.url);
     }
+    // before the server takes a share: every unfinished encode is a leftover
+    share::remove_unfinished_encodes(&state.paths().shared_dir);
     tokio::spawn(scanner::run(state.clone()));
     tokio::spawn(obs_ws::run(state.obs.clone()));
     tokio::spawn(obs_link::react(
