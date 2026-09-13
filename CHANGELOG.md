@@ -10,6 +10,12 @@ contract.
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-09-13
+
+A one-change release for everyone who installs replaycut from now on: a share
+nobody set limits for no longer fills the disk. An installation that exists
+already is not touched - its limits stay where you put them.
+
 ### Changed
 
 - **A new installation shares at up to 1080p and 24000 kbit/s.** Someone who
