@@ -3206,7 +3206,8 @@ function outputRow(o, mode) {
   if (o.sizeMB) bits.push(`${o.sizeMB} MB`);
   if (mode !== 'result') bits.push(`${Number(o.seconds).toFixed(1)} s`);
   if (o.vertical) bits.push('9:16');
-  if (o.mode === 'copy') bits.push('as recorded');
+  // a copy begins at the keyframe before the in mark; say so when it is more than a moment (2.4, again since 3.9.1)
+  if (o.mode === 'copy') bits.push(o.actualStart != null && o.actualStart < o.start - 0.05 ? `as recorded, from ${(o.start - o.actualStart).toFixed(1)} s earlier` : 'as recorded');
   if (o.source) bits.push('again');
   if (mode === 'result') bits.push(local ? 'on this PC' : 'link copied');
   if (o.discord) bits.push(`<span class="${/fail/i.test(o.discord) ? 'err' : 'ok'}">${esc(o.discord)}</span>`);

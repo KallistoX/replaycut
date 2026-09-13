@@ -47,6 +47,11 @@ contract.
   with a "Cancel" button. It now asks once a second while something runs and
   not at all otherwise, a job waiting behind it shows up with "Remove from
   queue", and the progress bar of the running job is visible again.
+- **A share "as recorded" says again that it starts earlier.** Without
+  re-encoding, a file can only begin at a keyframe, so it starts up to a
+  couple of seconds before the in mark. Since 3.1 the result card and the
+  output rows only said "as recorded"; they now say "as recorded, from 1.3 s
+  earlier" when it is more than a moment.
 - **"Set in" and "Set out" put the mark where the playhead is.** Setting the
   in mark behind the out mark stopped half a second before the old out mark,
   so the second range of a recording started where the first one ended
