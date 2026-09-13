@@ -10,6 +10,18 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- **"Mark done" and "Bring back" next to "Delete".** A clip could only be
+  put away by a share with "mark done afterwards" or by deleting its
+  recording, and only the result card brought it back. The loaded clip now
+  has its own button (and the key `D`): "Mark done" puts it under Done and
+  loads the clip below it, "Bring back" returns a done clip to the active
+  list and keeps it on screen, and both offer Undo for five seconds. Done is
+  only the state - the recording stays where it is, and a done clip keeps
+  its cuts and their render buttons. On a phone both buttons next to the
+  title show their icons only.
+
 ### Fixed
 
 - **A second share no longer takes the progress bar from the one that

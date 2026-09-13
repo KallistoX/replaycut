@@ -372,6 +372,56 @@ fn only_a_running_job_takes_the_progress_bar() {
     );
 }
 
+/// Every letter the clips page answers to is in the list behind `?`, and no
+/// letter does two things. The handler is an `else if` chain, so a second
+/// use of a letter would silently never run. `D` (Mark done / Bring back)
+/// came in 3.9.1 next to `I`, `O` and `P`.
+#[test]
+fn every_letter_shortcut_is_listed_once() {
+    let html = ui();
+    let help_at = html
+        .find("id=\"helpModal\"")
+        .expect("the keyboard shortcuts dialog is gone");
+    let help = &html[help_at..help_at + html[help_at..].find("</table>").unwrap_or(0)];
+    let mut letters: BTreeMap<char, usize> = BTreeMap::new();
+    const NEEDLE: &str = "k === '";
+    let mut at = 0;
+    while let Some(i) = html[at..].find(NEEDLE) {
+        let start = at + i + NEEDLE.len();
+        at = start;
+        let mut chars = html[start..].chars();
+        if let (Some(c), Some('\'')) = (chars.next(), chars.next()) {
+            if c.is_ascii_lowercase() {
+                *letters.entry(c).or_default() += 1;
+            }
+        }
+    }
+    for must in ['i', 'o', 'p', 'd'] {
+        assert!(
+            letters.contains_key(&must),
+            "the clips page no longer answers to {must:?} - update this test and the list behind ?"
+        );
+    }
+    let twice: Vec<char> = letters
+        .iter()
+        .filter(|(_, n)| **n > 1)
+        .map(|(c, _)| *c)
+        .collect();
+    assert!(
+        twice.is_empty(),
+        "these letters are handled more than once - the later branch never runs: {twice:?}"
+    );
+    let unlisted: Vec<char> = letters
+        .keys()
+        .map(|c| c.to_ascii_uppercase())
+        .filter(|c| !help.contains(&format!("<kbd>{c}</kbd>")))
+        .collect();
+    assert!(
+        unlisted.is_empty(),
+        "these shortcuts work but the list behind ? does not name them: {unlisted:?}"
+    );
+}
+
 /// Banner buttons that only one page wires, with the reason. The banner they
 /// sit in is raised by that page alone, so the button cannot be reached from
 /// anywhere else; anything not listed here has to work on every page.

@@ -329,6 +329,7 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 .toast.ok { border-color: var(--ok); } .toast.ok .icon { color: var(--ok); }
 .toast.err { border-color: var(--err); } .toast.err .icon { color: var(--err); }
 .toast.info .icon { color: var(--info); }
+.toast > span { flex: 1; min-width: 0; }
 @media (max-width: 600px) { .toast-stack { left: var(--space-3); right: var(--space-3); bottom: calc(var(--space-3) + var(--savebar-h, 0px)); max-width: none; } }
 .toast-stack.is-static { position: static; max-width: 360px; }
 
@@ -531,6 +532,8 @@ kbd { display: inline-block; min-width: 18px; padding: 0 5px; background: var(--
 /* ---- page: clips ---- */
 .editor .title-row { display: flex; gap: var(--space-2); align-items: center; }
 .editor .title-row .input { flex: 1; min-width: 160px; }
+/* on a phone the buttons next to the title keep their icons, the title field its room */
+@media (max-width: 600px) { .editor .title-row .btn { padding: 0; width: var(--touch); } .editor .title-row .btn .lbl { display: none; } }
 .plan { color: var(--fg-muted); font-size: var(--text-sm); }
 .plan b { color: var(--fg); }
 .share-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
@@ -730,7 +733,8 @@ ol.steps b { color: var(--fg); font-weight: normal; }
     <div id="editorBody" class="stack-3" hidden>
       <div class="title-row">
         <input class="input" id="title" maxlength="80" placeholder="Title (optional) - shown in the list, the file name and the post" disabled>
-        <button class="btn btn-danger" id="bDel" disabled><svg class="icon"><use href="#i-trash"/></svg> Delete</button>
+        <button class="btn" id="bDone" title="Mark this clip done - the recording stays where it is (D)" aria-label="Mark done" disabled><svg class="icon"><use href="#i-check"/></svg><span class="lbl">Mark done</span></button>
+        <button class="btn btn-danger" id="bDel" aria-label="Delete" disabled><svg class="icon"><use href="#i-trash"/></svg><span class="lbl">Delete</span></button>
       </div>
       <div class="player-wrap"><video id="v" controls preload="auto" playsinline></video><div class="crop-ov" id="cropOv" hidden><i id="cropL"></i><b id="cropW"></b><i id="cropR"></i><span>9:16 window - drag the slider below</span></div>
         <div class="gone-ov" id="goneOv" hidden><svg class="icon"><use href="#i-film"/></svg><b>Recording recycled</b><span>Its cuts are still here - render and publish them below.</span></div>
@@ -1276,6 +1280,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Start or end of the clip</td></tr>
       <tr><td><kbd>I</kbd> <kbd>O</kbd></td><td>Set the in or out mark at the playhead</td></tr>
       <tr><td><kbd>P</kbd></td><td>Play the selection</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Mark the clip done, or bring a done clip back</td></tr>
       <tr><td><kbd>Enter</kbd></td><td>Share the selection; in the title field: save the title (empty takes the suggestion)</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Close a dialog; in the title field: undo the edit</td></tr>
       <tr><td><kbd>Ctrl</kbd> + <kbd>S</kbd></td><td>On the settings page: save what you changed</td></tr>
@@ -1358,13 +1363,20 @@ async function api(path, opts = {}, { timeout = 6000, retries = 1 } = {}) {
 }
 const jsonOpts = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-// in-page toasts: bottom right, 3 s, at most three
-function toast(msg, kind = 'info') {
+// in-page toasts: bottom right, 3 s, at most three; one with an action
+// (`{ label, onclick }`, e.g. Undo) stays 5 s and closes when it is used
+function toast(msg, kind = 'info', action) {
   const stack = $('toasts'), icon = { ok: 'check', err: 'error', info: 'info' }[kind] || 'info';
   const t = document.createElement('div'); t.className = 'toast ' + kind;
   t.innerHTML = `<svg class="icon"><use href="#i-${icon}"/></svg><span></span>`; t.lastChild.textContent = msg;
+  if (action) {
+    const b = document.createElement('button'); b.className = 'btn btn-sm btn-ghost';
+    b.innerHTML = `<svg class="icon icon-sm"><use href="#i-${action.icon || 'undo'}"/></svg> `; b.append(action.label);
+    b.onclick = () => { t.remove(); action.onclick(); };
+    t.appendChild(b);
+  }
   stack.appendChild(t); while (stack.children.length > 3) stack.firstChild.remove();
-  setTimeout(() => t.remove(), 3000);
+  setTimeout(() => t.remove(), action ? 5000 : 3000);
 }
 function copyText(t) {
   if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t);
@@ -2479,6 +2491,7 @@ function initClips() {
     else if (k === 'Home') seek(0); else if (k === 'End') seek(cur.duration);
     else if (k === 'i' || k === 'I') setIn(); else if (k === 'o' || k === 'O') setOut();
     else if (k === 'p' || k === 'P') playSel();
+    else if ((k === 'd' || k === 'D') && !e.ctrlKey && !e.metaKey && !e.altKey) toggleDone();
     else if (k === 'Enter') share();
   });
   $('bIn').onclick = setIn; $('bOut').onclick = setOut; $('bPrev').onclick = playSel;
@@ -2550,6 +2563,7 @@ function initClips() {
     syncNc();
     $('modal').hidden = false; $('delCancel').focus();
   };
+  $('bDone').onclick = toggleDone;
   $('delCancel').onclick = () => { $('modal').hidden = true; };
   $('modal').addEventListener('click', e => { if (e.target === $('modal')) $('modal').hidden = true; });
   $('delOk').onclick = deleteClip;
@@ -2651,7 +2665,7 @@ function load(c, keepSel) {
   }
   if (!keepSel) { tIn = 0; tOut = c.duration; edited = false; if ($('frame').value !== 'wide') { $('frame').value = 'wide'; $('frame').onchange(); } }
   document.querySelectorAll('.clip').forEach(e => e.classList.toggle('active', e.dataset.base === c.base));
-  $('title').value = c.title || ''; $('title').placeholder = suggestTitle(c); $('title').disabled = false; $('bDel').disabled = false;
+  $('title').value = c.title || ''; $('title').placeholder = suggestTitle(c); $('title').disabled = false; $('bDel').disabled = false; doneButton();
   // nothing to cut from without the recording; the cuts below still render
   ['bShare', 'bShareMenu', 'bCut', 'bIn', 'bOut', 'bAll', 'bPrev'].forEach(id => { $(id).disabled = gone; });
   $('tl').style.display = gone ? 'none' : '';
@@ -2659,8 +2673,50 @@ function load(c, keepSel) {
 }
 function unload() {
   cur = null; if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
-  $('title').value = ''; $('title').disabled = true; $('bDel').disabled = true; $('selInfo').textContent = ''; $('planInfo').textContent = '';
+  $('title').value = ''; $('title').disabled = true; $('bDel').disabled = true; $('bDone').disabled = true; $('selInfo').textContent = ''; $('planInfo').textContent = '';
   sel.style.width = '0'; ph.style.left = '0';
+}
+/// "Mark done" or "Bring back" for the loaded clip, as its state says.
+function doneButton() {
+  const b = $('bDone'); if (!cur) { b.disabled = true; return; }
+  const done = cur.state === 'done', label = done ? 'Bring back' : 'Mark done';
+  b.disabled = false;
+  if (b.getAttribute('aria-label') === label) return;
+  b.setAttribute('aria-label', label);
+  b.title = done ? 'Put this clip back in the active list (D)' : 'Mark this clip done - the recording stays where it is (D)';
+  b.innerHTML = `<svg class="icon"><use href="#i-${done ? 'undo' : 'check'}"/></svg><span class="lbl">${label}</span>`;
+}
+/// Done by hand (since 3.9.1). Done is only the clip's state: the recording
+/// stays where it is, and "Delete › only the recording" is still the way to
+/// get rid of it. "Mark done" loads the clip below it in the list (or the one
+/// above), "Bring back" keeps it on screen; the toast offers Undo for 5 s.
+let putAway = null;
+function toggleDone() {
+  if (!cur || $('bDone').disabled) return;
+  setClipDone(cur, cur.state !== 'done', false);
+}
+async function setClipDone(c, done, undo) {
+  const i = clips.findIndex(x => x.base === c.base);
+  const next = done && !undo && cur && cur.base === c.base ? (clips[i + 1] || clips[i - 1] || null) : null;
+  $('bDone').disabled = true;
+  // the state document this change sends may come in before the answer: it
+  // must not treat the clip as gone and load a clip of its own choosing
+  putAway = c.base;
+  try {
+    const r = await api('/api/clips/' + encodeURIComponent(c.base) + '/state', jsonOpts('PUT', { state: done ? 'done' : 'active' }), { retries: 0 });
+    if (!r.ok) { toast(r.error, 'err'); return; }
+    c.state = done ? 'done' : 'active';
+    clips = clips.filter(x => x.base !== c.base); doneClips = doneClips.filter(x => x.base !== c.base);
+    if (done) doneClips.unshift(c);
+    else { clips.push(c); clips.sort((a, b) => (b.created || '').localeCompare(a.created || '')); }
+    // the list changed under our hands, not because a clip was recorded
+    lastSeen = clips.length ? clips[0].base : null;
+    if (next) load(next);
+    else if (done && !undo && cur && cur.base === c.base && clipFilter === 'active') { unload(); showEmpty('none'); }
+    if (undo && !done) load(c);
+    if (!undo) toast(done ? 'Marked done' : 'Brought back', 'ok', { label: 'Undo', onclick: () => setClipDone(c, !done, true) });
+  } catch (e) { toast(e.message, 'err'); }
+  finally { putAway = null; listKey = ''; renderList(); doneButton(); poll.now(); }
 }
 function setIn() { if (!cur) return; tIn = Math.min(v.currentTime, tOut - 0.5); edited = true; render(); }
 function setOut() { if (!cur) return; tOut = Math.max(v.currentTime, tIn + 0.5); edited = true; render(); }
@@ -3348,7 +3404,7 @@ function clipTargets(c) {
 }
 function renderList() {
   const shown = listedClips();
-  const key = clipFilter + JSON.stringify(shown.map(c => [c.base, c.title, c.tracks, c.thumb, c.state, c.file === null, (c.cuts || []).length, clipTargets(c).join()])) + (cur ? cur.base : ''); if (key === listKey) return; listKey = key;
+  const key = clipFilter + JSON.stringify(shown.map(c => [c.base, c.title, c.tracks, c.thumb, c.state, c.file === null, (c.cuts || []).length, clipTargets(c).join()])) + (cur ? cur.base : '') + JSON.stringify(counts); if (key === listKey) return; listKey = key;
   const list = $('list'); list.innerHTML = '';
   if (!shown.length) {
     list.innerHTML = clipFilter === 'done'
@@ -3573,7 +3629,7 @@ function applyState(d, polled, withDone) {
     if (page !== 'clips') return;
     // the "Afterwards" menu starts at the setting until someone picks (3.0)
     if (!afterChosen && cfg.cleanup && cfg.cleanup.afterShare) $('after').value = cfg.cleanup.afterShare;
-    allClips().forEach(c => { if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; cur.cuts = c.cuts; if (document.activeElement !== $('title')) $('title').value = c.title || '';
+    allClips().forEach(c => { if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; cur.cuts = c.cuts; if (c.state && cur.state !== c.state && putAway !== c.base) { cur.state = c.state; doneButton(); } if (document.activeElement !== $('title')) $('title').value = c.title || '';
       // the recording went to the recycle bin while the page was open (3.0)
       if (c.file === null && cur.file !== null) { load(c, true); toast(`The recording is in the ${trashName()} - its cuts are still here`); }
       // the playable copy arrived: switch the player to it, keeping the position (since 2.6)
@@ -3592,8 +3648,8 @@ function applyState(d, polled, withDone) {
       const newest = shown[0];
       if (!cur && newest) load(newest);
       // a clip that was put away stays loaded; only one that is really gone is replaced
-      else if (cur && !allClips().some(c => c.base === cur.base)) { unload(); if (newest) { load(newest); toast('Clip is gone - loaded the next one'); } else showEmpty(cfg.setupDone === false ? 'setup' : 'none'); }
-      else if (newest && newest.base !== lastSeen && lastSeen !== null && clipFilter === 'active') {
+      else if (cur && cur.base !== putAway && !allClips().some(c => c.base === cur.base)) { unload(); if (newest) { load(newest); toast('Clip is gone - loaded the next one'); } else showEmpty(cfg.setupDone === false ? 'setup' : 'none'); }
+      else if (newest && newest.base !== lastSeen && lastSeen !== null && clipFilter === 'active' && !putAway) {
         if (!edited) { load(newest); toast('New clip loaded'); }
         else if (!pendingNew || pendingNew.base !== newest.base) { pendingNew = newest; $('b-newclip-text').textContent = `${short(newest.base)} (${fmt(newest.duration)}).`; banner('b-newclip', true); }
       }
