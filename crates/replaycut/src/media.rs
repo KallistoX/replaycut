@@ -175,8 +175,13 @@ const QSV_OPTS: &[&str] = &["-preset", "medium"];
 const X264_OPTS: &[&str] = &["-preset", "veryfast"];
 // Quality-driven rate control (since 2.7): one fixed step per encoder that
 // looks like the recording; the size follows the picture.
+//
+// AMF since 3.8: 24/26/28 instead of 18/20/22. Measured on a 1440p60 game
+// recording, VMAF against it stays at 98 (99.8 before) while the file is
+// half the size; each step of 2 is worth 17-20 %. At 18/20 a share of a
+// busy scene ran at 110-270 Mbit/s, ten times the recording.
 const AMF_QUALITY: &[&str] = &[
-    "-quality", "quality", "-rc", "cqp", "-qp_i", "18", "-qp_p", "20", "-qp_b", "22",
+    "-quality", "quality", "-rc", "cqp", "-qp_i", "24", "-qp_p", "26", "-qp_b", "28",
 ];
 const NVENC_QUALITY: &[&str] = &["-preset", "p5", "-rc", "vbr", "-cq", "19", "-b:v", "0"];
 const QSV_QUALITY: &[&str] = &["-preset", "medium", "-global_quality", "20"];

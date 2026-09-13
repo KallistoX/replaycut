@@ -70,6 +70,13 @@ contract.
 
 ### Changed
 
+- **A share encoded on an AMD GPU is half the size it was, and looks the
+  same.** "Best quality" on AMF meant a fixed quantizer of 18, which put a
+  busy scene at 110 to 270 Mbit/s - ten times the recording, so a 20-second
+  share could be as large as the five-minute recording it came from. The
+  step is 24 now. Measured against a 1440p60 game recording: VMAF 98 instead
+  of 99.8, which is the recording to the eye, at 47 % less size. NVIDIA,
+  Intel and the software encoder are unchanged.
 - **The Telegram integration says that it has never met a real bot.** It was
   built and tested against a fake of the Bot API; the card, `docs/api.md` and
   `docs/settings.md` say so now and ask for an issue either way, because an
