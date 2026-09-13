@@ -2842,7 +2842,7 @@ function showResult(r) {
     note('Picture and every audio track, copied. Render it below whenever you like.');
     return;
   }
-  const postFailed = r.discord && /post failed/i.test(r.discord);
+  const postFailed = lastPostFailed(r.discord);
   if (postFailed) box.className = 'result partial';
   const to = r.target && r.target !== 'file' ? targetLabel(r.target) : '';
   head(postFailed ? 'warning' : 'check',
@@ -2965,7 +2965,7 @@ function renderActivity(d) {
     loadActivity(actAll).then(() => { actLoading = false; renderActivity(stateDoc); });
   }
   const shown = actEntries.filter(e => !actFilter || (e.target || 'nextcloud') === actFilter);
-  const key = actFilter + JSON.stringify(shown.map(e => e.id + (e.discord ? '+' : ''))) + JSON.stringify(cfg.targets || null); if (key === actKey) return; actKey = key;
+  const key = actFilter + JSON.stringify(shown.map(e => e.id + (e.discord || ''))) + JSON.stringify(cfg.targets || null); if (key === actKey) return; actKey = key;
   // one button per target that actually occurs, plus "all"
   const seen = [];
   actEntries.forEach(e => { const t = e.target || 'nextcloud'; if (!seen.includes(t)) seen.push(t); });
@@ -3209,6 +3209,13 @@ function shortWhen(at) {
   const s = (at || '').replace('T', ' ');
   return s.slice(0, 10) === localDay(0) ? s.slice(11, 16) : `${dayLabel(s.slice(0, 10))} ${s.slice(11, 16)}`;
 }
+/// Whether the last post of an output failed (3.10). Each attempt adds to the
+/// status with " · ", so a post that worked the second time ends well - and a
+/// failed one may be sent again. Until 3.9 any "fail" in it kept it red, and
+/// any status at all took "Post the link to …" out of the menu.
+function lastPostFailed(status) {
+  return !!status && /fail/i.test(String(status).split(' · ').pop());
+}
 function outputRow(o, mode) {
   const row = document.createElement('div'); row.className = 'outrow';
   const local = !o.direct;
@@ -3222,7 +3229,7 @@ function outputRow(o, mode) {
   if (o.mode === 'copy') bits.push(o.actualStart != null && o.actualStart < o.start - 0.05 ? `as recorded, from ${(o.start - o.actualStart).toFixed(1)} s earlier` : 'as recorded');
   if (o.source) bits.push('again');
   if (mode === 'result') bits.push(local ? 'on this PC' : 'link copied');
-  if (o.discord) bits.push(`<span class="${/fail/i.test(o.discord) ? 'err' : 'ok'}">${esc(o.discord)}</span>`);
+  if (o.discord) bits.push(`<span class="${lastPostFailed(o.discord) ? 'err' : 'ok'}">${esc(o.discord)}</span>`);
   row.innerHTML = `<div class="meta">${bits.map(b => `<span>${b}</span>`).join('')}</div><div class="act"></div>`;
   const act = row.querySelector('.act');
   const primary = document.createElement('button');
@@ -3248,7 +3255,7 @@ function outputMenu(o, local) {
     items.push({ label: 'Open the folder', icon: 'i-folder', onclick: () => jobAction(o.id, 'open-folder', 'Folder opened on the PC') });
   }
   if (o.file) items.push({ label: 'Download to this device', icon: 'i-download', href: `/api/jobs/${encodeURIComponent(o.id)}/file`, download: o.file });
-  const posts = o.direct && !o.discord ? (cfg.targets || []).filter(t => t.kind === 'notify' && t.connected) : [];
+  const posts = o.direct && (!o.discord || lastPostFailed(o.discord)) ? (cfg.targets || []).filter(t => t.kind === 'notify' && t.connected) : [];
   const publishes = o.file ? storageTargets().filter(t => t.id !== o.target) : [];
   if (posts.length || publishes.length) items.push('hr');
   posts.forEach(t => items.push({ label: `Post the link to ${t.label}`, icon: 'i-send', onclick: () => postTo(o.id, t.id) }));
@@ -3278,7 +3285,7 @@ function renderCuts() {
   box.hidden = !cur || !cuts.length;
   if (box.hidden) { cutsKey = ''; return; }
   const open = new Set([...list.querySelectorAll('details[open]')].map(d => d.dataset.cut));
-  const key = cur.base + JSON.stringify(cuts.map(c => [c.id, c.state, (c.outputs || []).map(o => o.id + (o.discord ? '+' : '')).join()])); if (key === cutsKey) return; cutsKey = key;
+  const key = cur.base + JSON.stringify(cuts.map(c => [c.id, c.state, (c.outputs || []).map(o => o.id + (o.discord || '')).join()])); if (key === cutsKey) return; cutsKey = key;
   $('cutCount').textContent = cuts.length;
   list.innerHTML = '';
   cuts.forEach(c => {

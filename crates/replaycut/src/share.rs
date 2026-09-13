@@ -1466,7 +1466,8 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!("share [{id}]: {} post failed: {e:#}", entry.label);
-                        format!("post failed: {e}")
+                        // with its cause: "error sending request" alone says nothing
+                        format!("post failed: {e:#}")
                     }
                 };
                 tracing::info!("share [{id}]: {}: {status}", entry.label);

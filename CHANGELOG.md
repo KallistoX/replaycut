@@ -54,6 +54,13 @@ contract.
   with a "Cancel" button. It now asks once a second while something runs and
   not at all otherwise, a job waiting behind it shows up with "Remove from
   queue", and the progress bar of the running job is visible again.
+- **A post that failed can be sent again, and shows that it failed.** When
+  Discord refused a post (for example "too many requests"), replaycut
+  counted it as posted and showed it in green. And after any failed post the
+  output menu no longer offered "Post the link to …", although sending it
+  again works. A refused post is a failed post now, its status says why, the
+  menu offers it again, and once it went through the status turns green. The
+  desktop toast no longer calls every post "Discord".
 - **No more cuts that stay "cutting …" forever.** A share reserves its cut
   when it is queued; taken out of the queue, or lost to a restart while it
   waited, it left that cut behind with a spinner that never stopped. Such a

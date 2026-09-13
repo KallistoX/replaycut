@@ -782,9 +782,20 @@ impl Discord {
         if status.is_success() {
             return Ok("Link posted".to_string());
         }
+        // A refusal is a failed post, as with the webhook and Telegram. Until
+        // 3.9 it came back as the status "webhook HTTP 429" - shown as posted,
+        // with no way to send it again.
         let detail = res.text().await.unwrap_or_default();
-        tracing::warn!("Discord webhook: HTTP {status} {detail}");
-        Ok(format!("webhook HTTP {}", status.as_u16()))
+        bail!(
+            "Discord: HTTP {status} {}",
+            detail
+                .lines()
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take(120)
+                .collect::<String>()
+        )
     }
 }
 

@@ -109,7 +109,9 @@ impl Toast {
             let discord = job
                 .discord
                 .as_deref()
-                .map(|d| format!(". Discord: {d}"))
+                // the status says itself which target it is about when there
+                // are several; "Discord" was wrong for the others
+                .map(|d| format!(". {d}"))
                 .unwrap_or_default();
             Self {
                 title: "Clip shared, link copied".into(),
@@ -278,10 +280,12 @@ mod tests {
     }
 
     #[test]
-    fn shared_toast_matches_the_1_4_wording() {
+    fn shared_toast_repeats_the_post_status() {
+        // 1.4 wrote "Discord: posted"; since 2.5 the post may have gone to a
+        // webhook or Telegram, so the toast repeats the status as it is
         let t = Toast::share_result(&job(), true, "http://localhost:8420/");
         assert_eq!(t.title, "Clip shared, link copied");
-        assert_eq!(t.text, "1.25 MB, 7 s. Discord: posted");
+        assert_eq!(t.text, "1.25 MB, 7 s. posted");
         assert_eq!(t.url.as_deref(), Some("https://cloud.example.com/s/abc"));
     }
 
