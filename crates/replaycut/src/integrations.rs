@@ -787,7 +787,7 @@ impl Discord {
         // with no way to send it again.
         let detail = res.text().await.unwrap_or_default();
         bail!(
-            "Discord: HTTP {status} {}",
+            "HTTP {status} {}",
             detail
                 .lines()
                 .next()

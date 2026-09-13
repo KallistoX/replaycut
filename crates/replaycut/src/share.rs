@@ -1473,20 +1473,15 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
                     }
                 };
                 tracing::info!("share [{id}]: {}: {status}", entry.label);
-                statuses.push(if notifies_len_is_one(&runtime) {
-                    status
-                } else {
-                    format!("{}: {status}", entry.label)
-                });
+                // Always with the target's name, as "Post the link to …" has
+                // done since 2.7; with one target the automatic post left it
+                // out, so the same post read differently by path (#46).
+                statuses.push(format!("{}: {status}", entry.label));
             }
             state.with_job(id, |j| j.discord = Some(statuses.join(" · ")));
         }
     }
     Ok(())
-}
-
-fn notifies_len_is_one(runtime: &crate::state::Runtime) -> bool {
-    runtime.integrations.auto_notifies().count() == 1
 }
 
 /// `seek` is where in `input` the range begins: zero for the preview copy of
@@ -1635,14 +1630,12 @@ async fn encode(
         .context("ffmpeg did not exit")??;
     let err = stderr_task.await.unwrap_or_default();
     if !status.success() {
-        bail!(
-            "ffmpeg: {}",
-            if err.is_empty() {
-                status.to_string()
-            } else {
-                err
-            }
-        );
+        if err.is_empty() {
+            // ended from outside or crashed: "ffmpeg: exit code: 0xffffffff"
+            // was all the card said (#46)
+            bail!("ffmpeg stopped without saying why ({status})");
+        }
+        bail!("ffmpeg: {err}");
     }
     Ok(())
 }

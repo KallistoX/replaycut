@@ -97,7 +97,7 @@ impl Telegram {
         let v: Value = res.json().await.unwrap_or(Value::Null);
         if !status.is_success() || v["ok"] != true {
             bail!(
-                "Telegram {method}: HTTP {status} {}",
+                "{method}: HTTP {status} {}",
                 v["description"].as_str().unwrap_or("")
             );
         }
@@ -193,7 +193,8 @@ impl Webhook {
         if !status.is_success() {
             let detail = res.text().await.unwrap_or_default();
             bail!(
-                "webhook: HTTP {status} {}",
+                // the caller names the target ("Webhook: …")
+                "HTTP {status} {}",
                 detail
                     .lines()
                     .next()
