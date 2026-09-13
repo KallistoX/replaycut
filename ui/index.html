@@ -2829,7 +2829,9 @@ function showResult(r) {
       row.innerHTML = `<button class="btn btn-sm" id="rRetry"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Upload again</button>`;
       box.appendChild(row);
       $('rRetry').onclick = () => publishTo(r.id, r.target);
-    } else if (r.kind !== 'cut' && r.kind !== 'preview') {
+    } else if (r.id && r.kind !== 'cut' && r.kind !== 'preview') {
+      // only a job that ran can be tried again; a refused request (no id, e.g.
+      // "selection too short") would get the same answer (#46)
       const row = document.createElement('div'); row.className = 'row';
       row.innerHTML = '<button class="btn btn-sm" id="rRetry"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Try again</button>';
       box.appendChild(row);
@@ -3038,7 +3040,8 @@ async function share(target) {
 /// 3.9 every job took the bar, which then sat at 0 % behind "Queued" while
 /// the running job went on out of sight and its result card never came.
 function followJob(r) {
-  if (r.position === 0) watchJob(r.job, true);
+  // the card of an earlier job would read as the result of this one (#46)
+  if (r.position === 0) { showResult(null); watchJob(r.job, true); }
   else poll.now();
 }
 /// The clip a job belongs to, named only when it is not the one on screen.
