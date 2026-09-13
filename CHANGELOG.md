@@ -39,6 +39,11 @@ contract.
   with a "Cancel" button. It now asks once a second while something runs and
   not at all otherwise, a job waiting behind it shows up with "Remove from
   queue", and the progress bar of the running job is visible again.
+- **Switching the list between Done and Active keeps the clip you are on.**
+  Coming back to Active took the newest clip for a new recording: the page
+  loaded it with "New clip loaded", or showed the "New clip" banner when a
+  range was set. The same could happen after "Undo" on a clip that a share
+  had marked done. Only a clip that was really recorded counts as new now.
 - **Activity shows what finishes while it is open.** The list of outputs was
   read once, when the page opened, so a share that finished afterwards left
   "Running now" and did not arrive under "Outputs", and a post from an

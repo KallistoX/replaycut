@@ -2838,7 +2838,8 @@ function afterLine(box, r) {
   line.querySelector('[data-undo]').onclick = async () => {
     try {
       const res = await api('/api/clips/' + encodeURIComponent(r.base) + '/state', jsonOpts('PUT', { state: 'active' }), { retries: 0 });
-      if (res.ok) { toast(r.after === 'recycle' ? `Clip is back in the list - the recording stays in the ${trashName()}` : 'Clip is back in the list', 'ok'); line.remove(); poll.now(); }
+      // the clip coming back is no new recording, even when it is the newest
+      if (res.ok) { lastSeen = null; toast(r.after === 'recycle' ? `Clip is back in the list - the recording stays in the ${trashName()}` : 'Clip is back in the list', 'ok'); line.remove(); poll.now(); }
       else toast(res.error, 'err');
     } catch (e) { toast(e.message, 'err'); }
   };
@@ -3644,17 +3645,21 @@ function applyState(d, polled, withDone) {
       else history.replaceState(null, '', '/');
     }
     const shown = listedClips();
+    // A new recording lands in the active list, whatever the filter shows.
+    // Until 3.9 `lastSeen` followed the list on screen, so coming back from
+    // Done took the newest active clip for a new one and loaded it.
+    const fresh = clips[0];
     if (shown.length || (cur && allClips().some(c => c.base === cur.base))) {
       const newest = shown[0];
       if (!cur && newest) load(newest);
       // a clip that was put away stays loaded; only one that is really gone is replaced
       else if (cur && cur.base !== putAway && !allClips().some(c => c.base === cur.base)) { unload(); if (newest) { load(newest); toast('Clip is gone - loaded the next one'); } else showEmpty(cfg.setupDone === false ? 'setup' : 'none'); }
-      else if (newest && newest.base !== lastSeen && lastSeen !== null && clipFilter === 'active' && !putAway) {
-        if (!edited) { load(newest); toast('New clip loaded'); }
-        else if (!pendingNew || pendingNew.base !== newest.base) { pendingNew = newest; $('b-newclip-text').textContent = `${short(newest.base)} (${fmt(newest.duration)}).`; banner('b-newclip', true); }
+      else if (fresh && fresh.base !== lastSeen && lastSeen !== null && clipFilter === 'active' && !putAway) {
+        if (!edited) { load(fresh); toast('New clip loaded'); }
+        else if (!pendingNew || pendingNew.base !== fresh.base) { pendingNew = fresh; $('b-newclip-text').textContent = `${short(fresh.base)} (${fmt(fresh.duration)}).`; banner('b-newclip', true); }
       }
-      if (newest) lastSeen = newest.base;
     } else { if (cur) unload(); showEmpty(cfg.setupDone === false ? 'setup' : 'none'); }
+    if (fresh && clipFilter === 'active') lastSeen = fresh.base;
     buildAudio(); histData = d.history || [];
     if (d.job && watchingJob !== d.job) watchJob(d.job);                      // running job (e.g. after reload)
     else if (!d.job && !watchingJob && d.last && d.last.id !== shownLast) { showResult(d.last); shownLast = d.last.id; cfg._lastFailed = d.last.ok === false && !d.last.cancelled; cfg._lastFailedId = d.last.id; setBusy(false); }
