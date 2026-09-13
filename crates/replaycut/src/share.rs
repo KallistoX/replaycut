@@ -635,7 +635,9 @@ pub fn publish(state: &AppState, source: &str, target: &str) -> Result<Started, 
                 })
         })
         .ok_or_else(|| ShareError::UnknownJob(source.to_string()))?;
-    let Some(file) = src.file.clone().filter(|_| src.ok == Some(true)) else {
+    // a share whose upload failed has its file too (since 3.10)
+    let finished = src.ok == Some(true) || src.upload_error.is_some();
+    let Some(file) = src.file.clone().filter(|_| finished) else {
         return Err(ShareError::Invalid(
             "the source job has no finished file".to_string(),
         ));

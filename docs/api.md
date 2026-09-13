@@ -241,7 +241,7 @@ reach OBS is not detectable and still answers `ok: true`.
 ### HistoryEntry
 
 A copy of a successfully finished Job without `percent`, `stage`, `ok` and
-`error`. Newest first; the service keeps 200 entries across restarts.
+`error` (since 3.10 also of a share whose upload failed, with `uploadError`). Newest first; the service keeps 200 entries across restarts.
 
 ### Config
 
@@ -1633,6 +1633,17 @@ longer becomes a history entry, and it does not become `last` in the status
 document: it never ran, so Activity has nothing to list and no page a result
 card to show. A job cancelled while it runs is recorded as before, with
 `cancelled: true` and no link.
+
+### A share whose upload failed stays an output
+
+A share or render that made its file and then could not send it ends as
+before, `ok: false` with `error`, and carries `uploadError` with the same
+text. Such a job is recorded in the history like a finished one: `file`, the
+storage it was meant for in `target`, no `link` or `direct`, and
+`uploadError`. It is listed under its cut and on Activity, `POST
+/api/jobs/<id>/publish` takes it as its source - its own target included -
+and a delete removes its file like any output's. A share that failed before
+its file existed leaves no entry, as before.
 
 ## Behaviour
 

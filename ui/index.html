@@ -2823,7 +2823,14 @@ function showResult(r) {
     box.className = 'result err';
     head('error', r.kind === 'cut' ? 'Cut failed' : r.kind === 'preview' ? 'Playable preview failed' : 'Share failed');
     note(r.error || 'unknown error');
-    if (r.kind !== 'cut' && r.kind !== 'preview') {
+    if (r.uploadError && r.file) {
+      // since 3.10: the file is there, only sending it failed - send it, do not encode again
+      note(`The file is in shared\\${r.file} - it is under its cut and on Activity until it goes out.`);
+      const row = document.createElement('div'); row.className = 'row';
+      row.innerHTML = `<button class="btn btn-sm" id="rRetry"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Upload again</button>`;
+      box.appendChild(row);
+      $('rRetry').onclick = () => publishTo(r.id, r.target);
+    } else if (r.kind !== 'cut' && r.kind !== 'preview') {
       const row = document.createElement('div'); row.className = 'row';
       row.innerHTML = '<button class="btn btn-sm" id="rRetry"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Try again</button>';
       box.appendChild(row);
@@ -3222,6 +3229,7 @@ function outputRow(o, mode) {
   const bits = [];
   bits.push(`<b>${mode === 'result' ? `${fmt(o.start)} - ${fmt(o.end)}` : esc(shortWhen(o.finished || o.at))}</b>`);
   if (mode === 'clip') bits.push(esc(local ? 'on this PC' : targetLabel(o.target)));
+  if (o.uploadError) bits.push(`<span class="err" title="${esc(o.uploadError)}">not uploaded to ${esc(targetLabel(o.target))}</span>`);
   if (o.sizeMB) bits.push(`${o.sizeMB} MB`);
   if (mode !== 'result') bits.push(`${Number(o.seconds).toFixed(1)} s`);
   if (o.vertical) bits.push('9:16');
@@ -3256,7 +3264,8 @@ function outputMenu(o, local) {
   }
   if (o.file) items.push({ label: 'Download to this device', icon: 'i-download', href: `/api/jobs/${encodeURIComponent(o.id)}/file`, download: o.file });
   const posts = o.direct && (!o.discord || lastPostFailed(o.discord)) ? (cfg.targets || []).filter(t => t.kind === 'notify' && t.connected) : [];
-  const publishes = o.file ? storageTargets().filter(t => t.id !== o.target) : [];
+  // an output whose upload failed may go to that very storage again (3.10)
+  const publishes = o.file ? storageTargets().filter(t => t.id !== o.target || o.uploadError) : [];
   if (posts.length || publishes.length) items.push('hr');
   posts.forEach(t => items.push({ label: `Post the link to ${t.label}`, icon: 'i-send', onclick: () => postTo(o.id, t.id) }));
   publishes.forEach(t => items.push({ label: `Publish to ${t.label}`, icon: 'i-share', onclick: () => publishTo(o.id, t.id) }));
@@ -3297,7 +3306,8 @@ function renderCuts() {
     // stays open across a refresh, and a cut worth reading opens itself
     if (open.has(c.id) || (open.size === 0 && here && outs.length)) el.open = true;
     // where it went, or why it cannot go anywhere
-    const targets = [...new Set(outs.map(o => o.target && o.target !== 'file' ? targetLabel(o.target) : 'on this PC'))];
+    // an output whose upload failed is only on this PC (3.10)
+    const targets = [...new Set(outs.map(o => o.target && o.target !== 'file' && !o.uploadError ? targetLabel(o.target) : 'on this PC'))];
     const where = c.state === 'pending'
       ? '<span class="spinner"></span>cutting …'
       : c.state === 'missing'
@@ -3431,7 +3441,7 @@ function allClips() { const seen = new Set(); return clips.concat(doneClips).fil
 /// Where a clip's outputs went, for the badges in the list.
 function clipTargets(c) {
   const out = [];
-  (c.cuts || []).forEach(cut => (cut.outputs || []).forEach(o => { const t = o.target || 'nextcloud'; if (!out.includes(t)) out.push(t); }));
+  (c.cuts || []).forEach(cut => (cut.outputs || []).forEach(o => { const t = o.uploadError ? 'file' : (o.target || 'nextcloud'); if (!out.includes(t)) out.push(t); }));
   return out;
 }
 function renderList() {

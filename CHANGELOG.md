@@ -24,6 +24,12 @@ contract.
 
 ### Changed
 
+- **A share whose upload failed keeps its file within reach.** When the
+  storage could not be reached, the encoded file stayed in `shared\` with
+  nothing on the page pointing at it, and "Try again" encoded it once more.
+  Such a share is an output "on this PC" now, marked "not uploaded to …",
+  with "Publish to" in its menu, and the result card offers "Upload again"
+  (`docs/api.md`, since 3.10: `uploadError`).
 - **A share taken out of the queue leaves no trace.** "Remove from queue" on
   a share that had not started yet put a "cancelled" row on Activity and a
   "Share cancelled" card on every open page. Only a share that is stopped

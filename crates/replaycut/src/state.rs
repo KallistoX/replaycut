@@ -168,6 +168,10 @@ pub struct Job {
     // `keep`, `done` or `recycle` (the recording goes to the recycle bin)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub after: String,
+    // since 3.10: the file was made but sending it failed - the job stays an
+    // output "on this PC" and this is why it went nowhere
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upload_error: Option<String>,
 }
 
 fn default_mode() -> String {
@@ -1287,6 +1291,7 @@ impl AppState {
             .lock()
             .get(id)
             .is_some_and(|t| t.is_cancelled());
+        let shared = self.paths().shared_dir.clone();
         let mut inner = self.inner.lock();
         let job = inner.jobs.get_mut(id)?;
         match result {
@@ -1303,6 +1308,18 @@ impl AppState {
             }
             Err(msg) => {
                 job.ok = Some(false);
+                // Since 3.10 a share whose file was made but not sent stays an
+                // output: until 3.9 the file was left in shared\ with nothing
+                // pointing at it, and "Publish to" could not reach it.
+                if job.source.is_none()
+                    && job.is_output()
+                    && job
+                        .file
+                        .as_deref()
+                        .is_some_and(|f| shared.join(f).is_file())
+                {
+                    job.upload_error = Some(msg.clone());
+                }
                 job.error = Some(msg);
                 job.stage = "error".into();
             }
@@ -1313,7 +1330,8 @@ impl AppState {
         // the playable preview is housekeeping: no history entry, not the
         // "last share". A cut is no output either, but the page shows it.
         if !job.is_preview() {
-            if job.is_output() && (job.ok == Some(true) || job.cancelled) {
+            let kept = job.ok == Some(true) || job.cancelled || job.upload_error.is_some();
+            if job.is_output() && kept {
                 let entry = job.history_entry();
                 self.record_job(&mut inner, entry);
             }
@@ -1521,6 +1539,30 @@ mod tests {
         .unwrap();
         assert_eq!(old.mode, "h264");
         assert_eq!(old.target, "");
+    }
+
+    #[test]
+    fn a_failed_upload_keeps_its_error_in_the_entry() {
+        let job = Job {
+            id: "up1".into(),
+            stage: "error".into(),
+            ok: Some(false),
+            error: Some("upload: connection refused".into()),
+            upload_error: Some("upload: connection refused".into()),
+            file: Some("Replay_1_0-5.mp4".into()),
+            target: "nextcloud".into(),
+            ..Job::default()
+        };
+        let e = job.history_entry();
+        assert_eq!(e["uploadError"], "upload: connection refused");
+        assert_eq!(e["file"], "Replay_1_0-5.mp4");
+        assert!(e.get("ok").is_none() && e.get("error").is_none());
+        assert!(e.get("link").is_none());
+        let back: Job = serde_json::from_value(e).unwrap();
+        assert!(back.upload_error.is_some());
+        // a finished share says nothing about it
+        let fine = Job::default().history_entry();
+        assert!(fine.get("uploadError").is_none());
     }
 
     #[test]
