@@ -474,7 +474,6 @@ details.limits summary { cursor: pointer; list-style: none; } details.limits sum
 .cutrow .where .ok { color: var(--ok); }
 .cutrow .where .warn { color: var(--warn); }
 .cutrow .act { display: flex; gap: var(--space-1); align-items: center; }
-.cutrow .bar { height: 3px; margin: 0 var(--space-2) var(--space-1) 30px; }
 .cutrow .body { border-top: 1px solid var(--line); padding: var(--space-1) var(--space-2) var(--space-2) 30px; display: flex; flex-direction: column; }
 .cutrow .body .note { color: var(--fg-muted); font-size: var(--text-sm); padding: var(--space-2) 0; }
 @media (min-width: 700px) { .cutrow .where { flex-basis: auto; margin-left: auto; } }
@@ -3352,12 +3351,9 @@ function renderCuts() {
       body.appendChild(note);
     }
     outs.forEach(o => body.appendChild(outputRow(o, 'clip')));
-    if (c.state === 'pending') {
-      const bar = document.createElement('div'); bar.className = 'bar'; bar.innerHTML = '<i style="width:40%"></i>';
-      el.appendChild(bar);
-    } else {
-      el.appendChild(body);
-    }
+    // a cut being made says so with the spinner in its row; the bar that
+    // stood under it had no style and sat in the closed row (#46)
+    if (c.state !== 'pending') el.appendChild(body);
     list.appendChild(el);
   });
 }
