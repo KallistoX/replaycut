@@ -227,6 +227,32 @@ fn numeric_fields_are_read_as_numbers() {
     );
 }
 
+/// The other direction for the limits: every target the settings give
+/// limits to has both fields in the page. Until 3.8 "File only" had none in
+/// the settings either, and a share to it was always a best-quality render -
+/// a field that exists in the settings but not in the page is the same gap.
+#[test]
+fn every_target_limit_is_in_the_page() {
+    let html = ui();
+    let bound: BTreeSet<String> = bound_fields(&html).into_iter().map(|(_, f)| f).collect();
+    let limits: Vec<String> = default_paths()
+        .into_keys()
+        .filter(|p| {
+            p.starts_with("integrations.") && (p.ends_with(".maxHeight") || p.ends_with(".maxKbps"))
+        })
+        .collect();
+    assert!(
+        limits.contains(&"integrations.file.maxHeight".to_string())
+            && limits.contains(&"integrations.file.maxKbps".to_string()),
+        "Settings::default() lost the limits of File only: {limits:?}"
+    );
+    let missing: Vec<&String> = limits.iter().filter(|p| !bound.contains(*p)).collect();
+    assert!(
+        missing.is_empty(),
+        "the settings take these limits but the page offers no field for them: {missing:?}"
+    );
+}
+
 /// Ids the script looks up by hand: `$('x')` and `getElementById('x')`.
 fn referenced_ids(html: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();

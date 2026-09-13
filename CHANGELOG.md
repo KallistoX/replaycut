@@ -10,6 +10,19 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- **"File only" takes limits, like a storage.** A share that stays on this
+  PC - what the Share button does without a quick-share storage - was always
+  a best-quality render at the recording's resolution, and only a storage
+  could cap that: a player's 21-second cut of 24 MB came out as a 255 MB
+  file. Settings › Integrations › **On this PC** has the same "Limits
+  (optional)" as every storage now, a maximum height and a maximum bitrate,
+  and the share row plans with them ("H.264, 1080p at 8000 kbit/s"). The card
+  also says what fits into Discord when you paste the file there: 20 MB
+  without Nitro, about 19 seconds at 1080p and 8000 kbit/s. Nothing changes
+  until you set a limit.
+
 ### Fixed
 
 - **The size the share row promises is the size that comes out.** "about

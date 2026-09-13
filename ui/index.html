@@ -292,6 +292,8 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
    nothing at all. Opening it still shows the fields, switched on or not. */
 .whatyouget { margin: 0; color: var(--fg-muted); font-size: var(--text-sm); }
 .card.is-open .whatyouget, .card:not(.is-off) .whatyouget { display: none; }
+/* A card with nothing to switch off says what it is in any state. */
+#tabIntegrations .whatyouget.sub { display: block; }
 #tabIntegrations .card.is-off:not(.is-open) .card-head h2 { color: var(--fg-muted); }
 /* The quick-share target is chosen once, in the summary at the top; the
    bound checkbox stays where it is so the save logic does not change. */
@@ -1030,6 +1032,13 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <p id="sIntSummary"></p>
       <div class="row"><label for="sQuickTarget">The <b>Share</b> button uploads to</label><select class="select" id="sQuickTarget"></select></div>
       <p class="muted sm">Every other storage you switched on sits in the Share button's menu. <b>Notify</b> integrations post the link; with "post automatically" they do so for every share.</p>
+    </div>
+    <div class="card is-collapsible" id="sFileCard">
+      <div class="card-head"><svg class="icon" style="color:var(--accent)"><use href="#i-folder"/></svg><h2>On this PC</h2><span class="badge" id="sFileBadge"></span><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of On this PC"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
+      <p class="whatyouget sub">File only: the share stays in <code>shared\</code> on this PC</p>
+      <div class="card-body stack-3">
+        <details class="limits" open><summary class="muted sm">Limits (optional)</summary><div class="fields-2"><div class="field"><label>Max height</label><select class="select" data-f="integrations.file.maxHeight"><option value="0">none - the recording's resolution</option><option value="1440">1440p</option><option value="1080">1080p</option><option value="720">720p</option></select></div><div class="field"><label>Max bitrate (kbit/s)</label><input class="input" data-f="integrations.file.maxKbps" type="number" min="0" max="200000" step="500" placeholder="0 = none"><span class="hint">Only for the file that stays here; every storage has limits of its own.</span></div></div><p class="muted sm note">Pasting the file into Discord ("Copy the file", then Ctrl+V) counts against its upload limit: 20 MB without Nitro, which at 1080p and 8000 kbit/s is a clip of up to about 19 seconds, at 4000 kbit/s about 38. A link posted from a storage has more room: 1080p at 6000-8000 kbit/s keeps a one-minute clip under Discord's limit.</p></details>
+      </div>
     </div>
     <h2 class="group-title">Storage</h2>
     <div class="card is-collapsible" id="sNcCard">
@@ -2023,7 +2032,8 @@ async function initSettings() {
   };
   function intSync() {
     const all = intCards().map(intOf);
-    all.forEach(i => i.card.classList.toggle('is-off', !(i.on && i.on.checked)));
+    // "On this PC" has no switch: it is never off (since 3.8)
+    all.forEach(i => i.card.classList.toggle('is-off', !!i.on && !i.on.checked));
     const storages = all.filter(i => i.quick), target = storages.find(i => i.quick.checked && i.on.checked);
     const sel = $('sQuickTarget');
     const want = target ? target.label : '';
@@ -2081,9 +2091,16 @@ async function initSettings() {
     return c;
   }
   function labels(c) { const names = { clipDir: 'Recording folder', displayName: 'Display name', theme: 'Theme', encoder: 'Encoder', hwaccel: 'Hardware decoding', ffmpegPriority: 'ffmpeg priority', ffmpegThreads: 'ffmpeg threads', port: 'Port', bind: 'Listen on', logLevel: 'Log level', checkUpdates: 'Update check', integrations: 'Integrations', password: 'Password', nextcloudUser: 'Nextcloud credentials', nextcloudPassword: '', discordWebhook: 'Discord webhook', s3AccessKey: 'S3 keys', s3SecretKey: '', webdavUser: 'WebDAV login', webdavPassword: '', youtubeClientId: 'YouTube client', youtubeClientSecret: '', telegramToken: 'Telegram token', webhookSecret: 'Webhook secret' }; return Object.keys(c).map(k => names[k]).filter(Boolean).join(', '); }
+  // "On this PC" (since 3.8): the head says the limits of File only, from
+  // the fields, so it answers for what is about to be saved as well
+  function fileSync() {
+    const num = f => Number(document.querySelector(`[data-f="integrations.file.${f}"]`).value) || 0;
+    const h = num('maxHeight'), k = num('maxKbps');
+    $('sFileBadge').textContent = h || k ? [h ? h + 'p' : '', k ? k + ' kbit/s' : ''].filter(Boolean).join(' at ') : 'no limits';
+  }
   function dirty() {
     const c = changes(), n = Object.keys(c).length;
-    genSync();
+    genSync(); fileSync();
     $('saveBar').classList.toggle('dirty', n > 0); $('sSave').disabled = !n; $('sDiscard').hidden = !n;
     $('saveMsg').innerHTML = n ? `<svg class="icon icon-sm"><use href="#i-warning"/></svg> Unsaved changes: ${esc(labels(c))}` : 'All changes saved.';
   }
@@ -2387,7 +2404,7 @@ let v, tl, sel, hin, hout, ph;
 const short = b => { const p = (cfg.displayName || '').trim(); return p && b && b.toLowerCase().startsWith(p.toLowerCase()) ? b.slice(p.length).trim() : (b || ''); };
 const audioLabel = id => (cfg.audio.find(a => a.id === id) || {}).label || id || 'Mix';
 function expiry() { return cfg.expireDays > 0 ? 'link expires in ' + cfg.expireDays + ' days' : 'link never expires'; }
-// what a target caps a share at (since 3.8: the storage entries carry it)
+// what a target caps a share at (since 3.8: the storage entries carry it, and the one of File only)
 function limitsOf(id) { const t = (cfg.targets || []).find(t => t.id === id); return { maxHeight: (t && t.maxHeight) || 0, maxKbps: (t && t.maxKbps) || 0 }; }
 // size estimate (since 2.7): the share keeps the recording's quality, so the recording's own rate is the guide
 // `lim` is what the target caps it at, `vertical` whether it is the 9:16 crop (both since 3.8)
