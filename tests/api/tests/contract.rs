@@ -3693,3 +3693,54 @@ fn t66_a_range_on_a_keyframe_keeps_its_first_seconds() {
         );
     }
 }
+
+/// "Afterwards: recycle" waits for the jobs of the same clip that still have
+/// to cut from the recording. Until 3.9 the first share recycled it at once
+/// and a second share of the clip, waiting behind it, failed with "unknown
+/// clip".
+#[test]
+fn t67_recycle_afterwards_leaves_the_recording_to_a_share_that_waits() {
+    let _g = serial();
+    if !since_30() {
+        return;
+    }
+    let base = format!("{} recycle", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+
+    let share = |start: f64, end: f64, after: &str| {
+        let body = json!({ "base": base, "start": start, "end": end, "audio": "mix",
+                           "target": "file", "after": after });
+        let (status, v) = post_json("/api/share", &body);
+        assert_eq!(status, 202, "{v}");
+        v["job"].as_str().expect("job").to_string()
+    };
+    let first = share(2.0, 5.0, "recycle");
+    let second = share(8.0, 12.0, "keep");
+
+    let (_, done) = wait_job(&first, JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+    let (_, done) = wait_job(&second, JOB_TIMEOUT);
+    assert_eq!(
+        done["ok"], true,
+        "the share behind the one that recycles lost its recording: {done}"
+    );
+    // the recording went once nothing needed it any more
+    // (a recycled clip is done, so it is only in the document with `done=1`)
+    let gone = (0..20).any(|_| {
+        let (_, doc) = get_json("/api/clips?done=1");
+        let recycled = doc["clips"]
+            .as_array()
+            .and_then(|c| c.iter().find(|c| c["base"] == base.as_str()))
+            .is_some_and(|c| c["file"].is_null());
+        if !recycled {
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        recycled
+    });
+    assert!(gone, "the recording was not recycled after the last share");
+    assert!(
+        !env().clip_dir.join(format!("{base}.mkv")).exists(),
+        "the recording is still in the clip folder"
+    );
+}

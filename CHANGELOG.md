@@ -47,6 +47,12 @@ contract.
   with a "Cancel" button. It now asks once a second while something runs and
   not at all otherwise, a job waiting behind it shows up with "Remove from
   queue", and the progress bar of the running job is visible again.
+- **"Recycle the recording afterwards" waits for the next share of the same
+  clip.** Two shares of one clip in a row, the first one set to recycle the
+  recording: the first took the recording away and the second failed with
+  "unknown clip". The clip is now only marked done until the last share
+  that still needs the recording has cut its range, and that one recycles
+  it.
 - **An encode that does not finish leaves no broken file behind.** Quitting
   replaycut during a share, or an encode that failed, left a half-written
   file under the output's name in `shared\` - it looked finished and did not

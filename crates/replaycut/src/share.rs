@@ -808,10 +808,56 @@ async fn apply_after(state: &Arc<AppState>, job: &Job) {
             }
         }
         AFTER_RECYCLE => {
-            crate::state::recycle_recording(state, &job.base).await;
+            // A later job of this clip may still have to cut from the
+            // recording. Until 3.9 it lost it and failed with "unknown clip";
+            // now the clip is only put away here, and the last such job
+            // recycles the recording when it is done.
+            if let Some(heir) = hand_on_recycling(state, job) {
+                tracing::info!(
+                    "share [{}]: the recording of {} stays until job {heir} has cut from it",
+                    job.id,
+                    job.base
+                );
+                if let Err(e) = state.set_clip_state(&job.base, crate::db::CLIP_DONE) {
+                    tracing::warn!("share [{}]: cannot mark the clip done: {e}", job.id);
+                }
+            } else {
+                crate::state::recycle_recording(state, &job.base).await;
+            }
         }
         _ => {}
     }
+}
+
+/// The last job after `job` - running now or waiting - that needs the
+/// recording of the same clip, with "Afterwards: recycle" handed to it.
+fn hand_on_recycling(state: &AppState, job: &Job) -> Option<String> {
+    let mut inner = state.inner.lock();
+    let later: Vec<String> = inner
+        .current_job
+        .iter()
+        .chain(inner.queue.iter())
+        .filter(|id| **id != job.id)
+        .cloned()
+        .collect();
+    let heir = later.into_iter().rev().find(|id| {
+        inner
+            .jobs
+            .get(id)
+            .is_some_and(|j| j.base == job.base && needs_recording(j))
+    })?;
+    if let Some(j) = inner.jobs.get_mut(&heir) {
+        j.after = crate::settings::AFTER_RECYCLE.to_string();
+    }
+    Some(heir)
+}
+
+/// Whether a job reads the recording itself: a share cuts its range from it
+/// and the playable preview encodes it; a render has its cut, a publish its
+/// file.
+fn needs_recording(job: &Job) -> bool {
+    let share = job.kind.is_empty() || job.kind == crate::state::KIND_SHARE;
+    job.source.is_none() && (share || job.kind == KIND_CUT || job.is_preview())
 }
 
 /// The file an encode writes until it is finished: `x.mp4` → `x.part.mp4`.
