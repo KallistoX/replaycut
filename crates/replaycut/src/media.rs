@@ -381,10 +381,17 @@ fn vaapi_profiles() -> Vec<Profile> {
     out
 }
 
-/// The newest preview in the clip folder, the sample for testing a GPU path
-/// (lavfi sources cannot exercise a hardware decoder).
-pub fn newest_preview(clip_dir: &Path) -> Option<PathBuf> {
-    let dir = clip_dir.join(".preview");
+/// The sample for testing a GPU decode path (lavfi sources cannot exercise a
+/// hardware decoder): the newest preview, or else the newest recording - the
+/// preview is a remux of one, same codec. Until 3.9 only a preview counted,
+/// and the first scan makes them after the detection: the whole first session
+/// of a new installation decoded on the CPU.
+pub fn detection_sample(clip_dir: &Path) -> Option<PathBuf> {
+    newest_with_extension(&clip_dir.join(".preview"), "mp4")
+        .or_else(|| newest_with_extension(clip_dir, "mkv"))
+}
+
+fn newest_with_extension(dir: &Path, ext: &str) -> Option<PathBuf> {
     std::fs::read_dir(dir)
         .ok()?
         .flatten()
@@ -392,7 +399,8 @@ pub fn newest_preview(clip_dir: &Path) -> Option<PathBuf> {
             e.path()
                 .extension()
                 .and_then(|x| x.to_str())
-                .is_some_and(|x| x.eq_ignore_ascii_case("mp4"))
+                .is_some_and(|x| x.eq_ignore_ascii_case(ext))
+                && e.path().is_file()
         })
         .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
         .map(|e| e.path())
@@ -1033,6 +1041,32 @@ fn winget_ffmpeg(packages: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::VideoInfo;
+
+    #[test]
+    fn the_detection_sample_is_a_preview_or_else_the_newest_recording() {
+        use std::time::{Duration, SystemTime};
+        let dir = std::env::temp_dir().join(format!("rc-sample-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".preview")).unwrap();
+        let touch = |path: &std::path::Path, age_s: u64| {
+            let f = std::fs::File::create(path).unwrap();
+            f.set_modified(SystemTime::now() - Duration::from_secs(age_s))
+                .unwrap();
+        };
+        // a first start: recordings, no preview yet
+        assert_eq!(super::detection_sample(&dir), None);
+        touch(&dir.join("old.mkv"), 600);
+        touch(&dir.join("new.mkv"), 60);
+        touch(&dir.join("notes.txt"), 1);
+        assert_eq!(super::detection_sample(&dir), Some(dir.join("new.mkv")));
+        // once the scan made previews, the newest of them
+        touch(&dir.join(".preview").join("old.mp4"), 300);
+        assert_eq!(
+            super::detection_sample(&dir),
+            Some(dir.join(".preview").join("old.mp4"))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn video_info_parses_ffprobe_csv() {

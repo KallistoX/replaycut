@@ -53,6 +53,11 @@ contract.
   play. A share now encodes into `<name>.part.mp4` and only a finished file
   gets its name; what a quit or a crash left behind goes when replaycut
   starts again.
+- **The first start uses the graphics card for decoding, too.** A new
+  installation tested the GPU decode paths only against a preview, and the
+  first start has none yet, so its whole first session decoded recordings
+  on the CPU - next to the game. The newest recording in the folder is the
+  test sample now when there is no preview.
 - **A share "as recorded" says again that it starts earlier.** Without
   re-encoding, a file can only begin at a keyframe, so it starts up to a
   couple of seconds before the in mark. Since 3.1 the result card and the

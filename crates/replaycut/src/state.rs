@@ -325,7 +325,7 @@ impl Runtime {
         let encoder = match previous {
             Some(p) if p.encoder_setting == encoder_setting => p.encoder.clone(),
             _ => {
-                let sample = crate::media::newest_preview(&settings.clip_dir);
+                let sample = crate::media::detection_sample(&settings.clip_dir);
                 media
                     .detect_encoder(
                         &settings.encoder,
