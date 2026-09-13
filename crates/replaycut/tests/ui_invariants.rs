@@ -3,8 +3,9 @@
 //! The UI is one static file with no build step and no tests of its own, so a
 //! careless edit can break it silently: 2.7.0 shipped with a mangled viewport
 //! meta tag and with limit fields that were sent as text instead of numbers.
-//! These checks are string searches over the file - no HTML or JS parser - and
-//! cover what the service and the settings API rely on.
+//! These checks are string searches over the file and cover what the service
+//! and the settings API rely on; only the script itself goes through a
+//! JavaScript parser (`oxc`, a dev-dependency), so it loads at all.
 //!
 //! The settings side pulls `Settings::default()` in from `../src/settings.rs`,
 //! so the field paths are checked against the real struct, not against a copy
@@ -326,6 +327,66 @@ fn every_icon_reference_has_a_symbol() {
         missing.is_empty(),
         "these icons have no <symbol> and render as nothing:\n  {}",
         missing.join("\n  ")
+    );
+}
+
+/// The script of the page, the text between `<script>` and `</script>`.
+fn scripts(html: &str) -> Vec<(usize, &str)> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(i) = html[at..].find("<script>") {
+        let start = at + i + "<script>".len();
+        let end = start
+            + html[start..]
+                .find("</script>")
+                .expect("a <script> without </script>");
+        out.push((start, &html[start..end]));
+        at = end;
+    }
+    out
+}
+
+/// The script parses, and the early errors a browser raises before running
+/// a single line are not there either - a name declared twice, a `return`
+/// outside a function, an `else` without its `if`. Any of them leaves the
+/// page blank without a test noticing; in the session of 2026-09-13 both a
+/// second `const seen` and an `else` after a line put between it and its `if`
+/// only showed up in the browser console.
+#[test]
+fn the_script_parses_without_early_errors() {
+    use oxc_allocator::Allocator;
+    use oxc_parser::Parser;
+    use oxc_semantic::SemanticBuilder;
+    use oxc_span::SourceType;
+
+    let html = ui();
+    let found = scripts(&html);
+    assert!(!found.is_empty(), "the page has no inline script");
+    let mut problems = Vec::new();
+    for (offset, source) in found {
+        let allocator = Allocator::default();
+        let parsed = Parser::new(&allocator, source, SourceType::cjs()).parse();
+        let mut errors: Vec<_> = parsed.errors;
+        if !parsed.panicked {
+            let semantic = SemanticBuilder::new()
+                .with_check_syntax_error(true)
+                .build(&parsed.program);
+            errors.extend(semantic.errors);
+        }
+        for e in errors {
+            let at = e
+                .labels
+                .as_ref()
+                .and_then(|l| l.first())
+                .map(|l| offset + l.offset())
+                .unwrap_or(offset);
+            problems.push(format!("line {}: {e}", line_of(&html, at)));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "the page's script does not load:\n  {}",
+        problems.join("\n  ")
     );
 }
 
