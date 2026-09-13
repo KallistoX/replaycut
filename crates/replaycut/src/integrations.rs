@@ -364,7 +364,8 @@ impl Integrations {
         self.notifies.iter().filter(|n| n.auto_post)
     }
 
-    /// `config.targets`: every known integration with its state.
+    /// `config.targets`: "File only" (since 3.8), then every known
+    /// integration with its state.
     pub fn targets(&self, settings: &Settings) -> Value {
         let enabled = |id: &str| match id {
             "nextcloud" => settings.integrations.nextcloud.enabled,
@@ -377,10 +378,19 @@ impl Integrations {
             "webhook" => settings.integrations.webhook.enabled,
             _ => false,
         };
+        // since 3.8 "File only" has limits of its own, and the page plans a
+        // share to it like one to a storage. Its own kind, so nothing that
+        // lists storages or notify integrations picks it up; always there,
+        // since there is nothing to switch on or connect.
+        let file = settings.limits(TARGET_FILE);
+        let file = serde_json::json!({
+            "id": TARGET_FILE, "label": "On this PC", "kind": TARGET_FILE,
+            "enabled": true, "connected": true,
+            "maxHeight": file.max_height, "maxKbps": file.max_kbps,
+        });
         Value::Array(
-            KNOWN_TARGETS
-                .iter()
-                .map(|(id, label, kind)| {
+            std::iter::once(file)
+                .chain(KNOWN_TARGETS.iter().map(|(id, label, kind)| {
                     let mut v = serde_json::json!({
                         "id": id, "label": label, "kind": kind, "enabled": enabled(id),
                     });
@@ -399,7 +409,7 @@ impl Integrations {
                         v["autoPost"] = Value::Bool(n.is_some_and(|n| n.auto_post));
                     }
                     v
-                })
+                }))
                 .collect(),
         )
     }
@@ -865,6 +875,33 @@ mod tests {
         ));
         assert!(!is_webhook_url("https://example.com/api/webhooks/1/x"));
         assert!(!is_webhook_url("https://discord.com/channels/1/2"));
+    }
+
+    /// "File only" is a target of its own kind (since 3.8): it carries its
+    /// limits, and a page that lists storages or notify integrations by kind
+    /// never takes it for one of them.
+    #[test]
+    fn the_file_target_carries_its_limits_under_a_kind_of_its_own() {
+        let mut settings = Settings::default();
+        settings.integrations.file.max_height = 1080;
+        settings.integrations.file.max_kbps = 8000;
+        let targets = Integrations::build(&settings, true)
+            .unwrap()
+            .targets(&settings);
+        let list = targets.as_array().unwrap();
+        let file = &list[0];
+        assert_eq!(file["id"], "file");
+        assert_eq!(file["kind"], "file");
+        assert_eq!(file["maxHeight"], 1080);
+        assert_eq!(file["maxKbps"], 8000);
+        assert_eq!(file["enabled"], true);
+        assert_eq!(file["connected"], true);
+        assert!(file.get("quickShare").is_none(), "{file}");
+        assert_eq!(list.iter().filter(|t| t["id"] == "file").count(), 1);
+        assert!(list[1..]
+            .iter()
+            .all(|t| t["kind"] == "storage" || t["kind"] == "notify"));
+        assert_eq!(list.len(), KNOWN_TARGETS.len() + 1);
     }
 
     #[test]

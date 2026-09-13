@@ -3397,13 +3397,14 @@ fn t62_a_storage_target_says_what_it_caps_a_share_at() {
             .clone()
     };
 
-    // every storage carries both, connected or not; a notify target neither
+    // every storage carries both, connected or not, and so does "File only"
+    // (t65); a notify target neither
     for t in state()["config"]["targets"]
         .as_array()
         .expect("targets")
         .iter()
     {
-        if t["kind"] == "storage" {
+        if t["kind"] == "storage" || t["kind"] == "file" {
             assert!(t["maxHeight"].is_u64(), "{t}");
             assert!(t["maxKbps"].is_u64(), "{t}");
         } else {

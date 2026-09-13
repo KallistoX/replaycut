@@ -1558,6 +1558,35 @@ without one the recording's own rate is scaled by the share of the picture
 that reaches the file - `maxHeight` squared against the recording's height,
 or 1080x1920 for a vertical cut, never more than the recording itself.
 
+### "File only" has limits too
+
+Until 3.8 only a storage could cap a share, so a share to `file` - the
+Share button of every installation without a quick-share storage - was
+always a best-quality render at the recording's resolution: 255 MB for a
+21-second cut of 24 MB. The settings gain a block for it:
+
+- `integrations.file { maxHeight, maxKbps }`, both `0` (none) by default, so
+  nothing changes for an installation that sets nothing. The bounds are a
+  storage's: `maxHeight` 0 or 240..4320, `maxKbps` 0 or 500..200000, 400
+  otherwise. The block takes no other field - "File only" has no switch,
+  no credentials and is never the quick share (`quickShare` is a 400); it
+  is what a share falls back to when no storage is.
+- A share to `file` (named, or the default without a quick-share storage)
+  is scaled and capped exactly as a share to a storage with those limits,
+  and the job carries `kbps` and `maxHeight` as used. The preview copy
+  (`kind: "preview"`) is not a share and keeps its own 720p and bitrate.
+- `config.targets` starts with an entry for it:
+
+```json
+{ "id": "file", "label": "On this PC", "kind": "file", "enabled": true,
+  "connected": true, "maxHeight": 0, "maxKbps": 0 }
+```
+
+`kind` is `file`, not `storage`: a client that lists storages (the Share
+menu, "Publish to") or notify integrations by kind never takes it for one.
+`enabled` and `connected` are always true, since there is nothing to switch
+on or connect; the entry has neither `quickShare` nor `autoPost`.
+
 ### Every output has its own file
 
 `shared\<clip>_<start>-<end>[_<title>][_9x16].mp4` was the whole name of an

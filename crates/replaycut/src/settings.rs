@@ -169,6 +169,21 @@ pub struct Integrations {
     pub telegram: Telegram,
     /// since 2.6
     pub webhook: Webhook,
+    /// since 3.8
+    pub file: FileOnly,
+}
+
+/// "File only" (since 3.8): the share stays in `shared\` on this PC. Not an
+/// integration - nothing to switch on or connect - but a target all the same,
+/// and the one a share goes to when no storage is the quick share. It takes
+/// the limits a storage takes and nothing else.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FileOnly {
+    /// 0 = none, else the share is scaled to at most this height and capped
+    /// at this bitrate, as on a storage.
+    pub max_height: u32,
+    pub max_kbps: u32,
 }
 
 /// Telegram bot (since 2.6): posts the link into a chat or channel. The bot
@@ -556,12 +571,18 @@ const YOUTUBE_KEYS: [&str; 6] = [
     "privacy",
     "description",
 ];
+/// "File only" carries nothing but its limits (since 3.8).
+const FILE_KEYS: [&str; 0] = [];
 /// Storage integrations, for the "one quick-share target" rule.
 const STORAGE_GROUPS: [&str; 5] = ["nextcloud", "onedrive", "s3", "webdav", "youtube"];
-/// Every storage takes these (since 2.7).
+/// Every storage takes these (since 2.7), and "File only" (since 3.8).
 const LIMIT_KEYS: [&str; 2] = ["maxHeight", "maxKbps"];
+/// The groups that take `LIMIT_KEYS`: the storages plus "File only". Not
+/// `STORAGE_GROUPS` - "File only" is never the quick share, it is what a
+/// share falls back to when no storage is.
+const LIMITED_GROUPS: [&str; 6] = ["nextcloud", "onedrive", "s3", "webdav", "youtube", "file"];
 
-/// The limits of a storage target (since 2.7): 0 means none.
+/// The limits of a target (since 2.7): 0 means none.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Limits {
     pub max_height: u32,
@@ -569,7 +590,8 @@ pub struct Limits {
 }
 
 impl Settings {
-    /// The limits of a storage target by id; unknown ids have none.
+    /// The limits of a target by id: a storage, or `file` (since 3.8);
+    /// unknown ids have none.
     pub fn limits(&self, target: &str) -> Limits {
         let i = &self.integrations;
         let (h, k) = match target {
@@ -578,6 +600,7 @@ impl Settings {
             "s3" => (i.s3.max_height, i.s3.max_kbps),
             "webdav" => (i.webdav.max_height, i.webdav.max_kbps),
             "youtube" => (i.youtube.max_height, i.youtube.max_kbps),
+            "file" => (i.file.max_height, i.file.max_kbps),
             _ => (0, 0),
         };
         Limits {
@@ -587,7 +610,7 @@ impl Settings {
     }
 
     fn validate_limits(&self) -> Result<()> {
-        for id in STORAGE_GROUPS {
+        for id in LIMITED_GROUPS {
             let l = self.limits(id);
             anyhow::ensure!(
                 l.max_height == 0 || (240..=4320).contains(&l.max_height),
@@ -639,13 +662,14 @@ pub fn patch_accepts(path: &str) -> bool {
                 "youtube" => &YOUTUBE_KEYS,
                 "telegram" => &TELEGRAM_KEYS,
                 "webhook" => &WEBHOOK_KEYS,
+                "file" => &FILE_KEYS,
                 _ => return false,
             };
             match parts.next() {
                 None => true,
                 Some(field) => {
                     allowed.contains(&field)
-                        || (STORAGE_GROUPS.contains(&second) && LIMIT_KEYS.contains(&field))
+                        || (LIMITED_GROUPS.contains(&second) && LIMIT_KEYS.contains(&field))
                 }
             }
         }
@@ -713,15 +737,16 @@ impl Settings {
                         "youtube" => &YOUTUBE_KEYS,
                         "telegram" => &TELEGRAM_KEYS,
                         "webhook" => &WEBHOOK_KEYS,
+                        "file" => &FILE_KEYS,
                         _ => return Err(format!("unknown integration: {group}")),
                     };
                     let Some(fields) = fields.as_object() else {
                         return Err(format!("integrations.{group} must be an object"));
                     };
-                    let storage = STORAGE_GROUPS.contains(&group.as_str());
+                    let limited = LIMITED_GROUPS.contains(&group.as_str());
                     for (field, v) in fields {
                         if !allowed.contains(&field.as_str())
-                            && !(storage && LIMIT_KEYS.contains(&field.as_str()))
+                            && !(limited && LIMIT_KEYS.contains(&field.as_str()))
                         {
                             return Err(format!("unknown field: integrations.{group}.{field}"));
                         }
@@ -1140,6 +1165,92 @@ mod limit_tests {
         // an old settings.json with the field still loads
         let old: Settings = serde_json::from_str(r#"{"shareKbps": 6000, "port": 8420}"#).unwrap();
         assert_eq!(old.port, 8420);
+    }
+
+    /// "File only" takes the limits a storage takes (since 3.8), with the
+    /// same bounds, and nothing a storage has besides them.
+    #[test]
+    fn file_only_takes_limits_and_nothing_else() {
+        let s = Settings::default();
+        // nothing changes for someone who sets nothing, a file from 3.7 included
+        assert_eq!(s.limits("file"), Limits::default());
+        let old: Settings =
+            serde_json::from_str(r#"{"integrations": {"nextcloud": {"maxKbps": 8000}}}"#).unwrap();
+        assert_eq!(old.limits("file"), Limits::default());
+
+        let next = s
+            .with_patch(&serde_json::json!({ "integrations": { "file": { "maxHeight": 1080, "maxKbps": 8000 } } }))
+            .unwrap();
+        assert_eq!(
+            next.limits("file"),
+            Limits {
+                max_height: 1080,
+                max_kbps: 8000
+            }
+        );
+        assert_eq!(
+            next.limits("nextcloud"),
+            Limits::default(),
+            "a storage is untouched"
+        );
+        assert_eq!(
+            next.public_json()["integrations"]["file"],
+            serde_json::json!({ "maxHeight": 1080, "maxKbps": 8000 })
+        );
+        // back to none
+        let none = next
+            .with_patch(&serde_json::json!({ "integrations": { "file": { "maxHeight": 0, "maxKbps": 0 } } }))
+            .unwrap();
+        assert_eq!(none.limits("file"), Limits::default());
+
+        for (field, bad) in [
+            ("maxHeight", 100),
+            ("maxHeight", 5000),
+            ("maxKbps", 499),
+            ("maxKbps", 200_001),
+        ] {
+            let err = s
+                .with_patch(&serde_json::json!({ "integrations": { "file": { field: bad } } }))
+                .unwrap_err();
+            assert!(
+                err.contains(&format!("integrations.file.{field}")),
+                "{field} {bad}: {err}"
+            );
+        }
+        for (field, edge) in [
+            ("maxHeight", 240),
+            ("maxHeight", 4320),
+            ("maxKbps", 500),
+            ("maxKbps", 200_000),
+        ] {
+            assert!(
+                s.with_patch(&serde_json::json!({ "integrations": { "file": { field: edge } } }))
+                    .is_ok(),
+                "{field} {edge}"
+            );
+        }
+
+        // not a storage: it cannot be the quick share, and has no switch
+        for field in ["quickShare", "enabled", "folder"] {
+            let err = s
+                .with_patch(&serde_json::json!({ "integrations": { "file": { field: true } } }))
+                .unwrap_err();
+            assert!(
+                err.contains(&format!("unknown field: integrations.file.{field}")),
+                "{err}"
+            );
+        }
+        // and a storage taking the quick share does not write into it
+        let quick = s
+            .with_patch(&serde_json::json!({ "integrations": { "s3": { "quickShare": true } } }))
+            .unwrap();
+        assert!(quick.public_json()["integrations"]["file"]
+            .get("quickShare")
+            .is_none());
+
+        assert!(patch_accepts("integrations.file.maxHeight"));
+        assert!(patch_accepts("integrations.file.maxKbps"));
+        assert!(!patch_accepts("integrations.file.quickShare"));
     }
 }
 
