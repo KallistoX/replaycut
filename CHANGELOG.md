@@ -10,6 +10,18 @@ contract.
 
 ## [Unreleased]
 
+### Changed
+
+- **A new installation shares at up to 1080p and 24000 kbit/s.** Someone who
+  never opens the settings shares to "File only" or to the Nextcloud the
+  setup offers, and both were a best-quality render at the recording's
+  resolution - a busy 1440p60 scene came out at 158 Mbit/s, close to 20 MB a
+  second. Both now start with a limit: a fixed 3 MB a second, about 180 MB a
+  minute, and measured against game recordings still close to the recording
+  in a busy scene, where 8000 kbit/s visibly smears. The setup says so. An
+  existing installation keeps its settings; the limits are under Settings ›
+  Integrations, on "On this PC" and on each storage.
+
 ## [3.8.0] - 2026-09-13
 
 A release about the size of a share. A player reported a file ten times the

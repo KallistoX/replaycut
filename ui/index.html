@@ -872,11 +872,11 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 
   <section class="stack-4" id="wiz2" hidden>
     <div class="page-head"><h1>Integrations</h1><span class="muted">Optional. Each one can be switched on later in Settings.</span></div>
-    <div class="local-note" id="wLocalNote"><svg class="icon"><use href="#i-info"/></svg><div><b>Without integrations replaycut is a local clip manager.</b> "Share" cuts and encodes the clip into <code>shared\</code> and offers "Open folder" and "Copy file", so Ctrl+V in Discord attaches it. Nothing leaves this PC.</div></div>
+    <div class="local-note" id="wLocalNote"><svg class="icon"><use href="#i-info"/></svg><div><b>Without integrations replaycut is a local clip manager.</b> "Share" cuts and encodes the clip into <code>shared\</code> and offers "Open folder" and "Copy file", so Ctrl+V in Discord attaches it. Nothing leaves this PC. <span id="wSizeLocal"></span></div></div>
     <div class="card" id="wNcCard">
       <div class="card-head"><svg class="icon icon-brand" style="color:var(--accent)"><use href="#i-b-nextcloud"/></svg><h2>Nextcloud</h2><span class="badge" id="wNcBadge">off</span><label class="switch"><input type="checkbox" id="wNcOn"><span class="track"></span></label></div>
       <div class="card-body stack-3">
-        <p class="muted sm">Uploads the shared file to <code>&lt;folder&gt;/&lt;YYYY-MM&gt;/</code> and creates a public link. The link goes to the clipboard and, if Discord is on, into the post.</p>
+        <p class="muted sm">Uploads the shared file to <code>&lt;folder&gt;/&lt;YYYY-MM&gt;/</code> and creates a public link. The link goes to the clipboard and, if Discord is on, into the post. <span id="wNcSize"></span></p>
         <div class="field"><label>Server</label><input class="input" id="wNcUrl" placeholder="https://cloud.example.com"></div>
         <div class="fields-2">
           <div class="field"><label>User</label><input class="input" id="wNcUser" autocomplete="off"></div>
@@ -1756,6 +1756,16 @@ async function initSetup() {
   if (settings.secrets && settings.secrets.nextcloud) $('wNcUser').placeholder = 'stored - leave empty to keep';
   if (settings.secrets && settings.secrets.nextcloud) $('wNcPw').placeholder = 'stored - leave empty to keep';
   if (settings.secrets && settings.secrets.discord) $('wDcHook').placeholder = 'stored - leave empty to keep';
+  // since 3.9 a new installation caps File only and Nextcloud; say what a
+  // share comes out as, from the settings themselves
+  const sizeLine = l => {
+    const h = (l && l.maxHeight) || 0, k = (l && l.maxKbps) || 0;
+    if (!h && !k) return 'Shares keep the quality of the recording; Settings › Integrations can cap their size.';
+    const what = [h ? h + 'p' : '', k ? k + ' kbit/s' : ''].filter(Boolean).join(' and ');
+    return `Shares come out at up to ${what}${k ? `, about ${Math.round((k + 128) * 60 / 8 / 1024 / 10) * 10} MB a minute` : ''} - Settings › Integrations changes that.`;
+  };
+  $('wSizeLocal').textContent = sizeLine((settings.integrations || {}).file);
+  $('wNcSize').textContent = sizeLine(nc);
   const cardState = () => { $('wNcCard').classList.toggle('is-disabled', !$('wNcOn').checked); $('wNcBadge').textContent = $('wNcOn').checked ? 'on' : 'off'; $('wDcCard').classList.toggle('is-disabled', !$('wDcOn').checked); $('wDcBadge').textContent = $('wDcOn').checked ? 'on' : 'off'; $('wLocalNote').hidden = $('wNcOn').checked || $('wDcOn').checked; $('wSkip2').hidden = $('wNcOn').checked || $('wDcOn').checked; };
   $('wNcOn').onchange = $('wDcOn').onchange = cardState; cardState();
   // step 3: the network switch. Off is the default of 2.8 - the password
