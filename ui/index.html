@@ -2695,9 +2695,15 @@ function toggleDone() {
   if (!cur || $('bDone').disabled) return;
   setClipDone(cur, cur.state !== 'done', false);
 }
+/// The clip that takes the place of one leaving `list`: the next one below
+/// it that `stays`, or else the nearest one above.
+function neighbour(list, base, stays) {
+  const i = list.findIndex(c => c.base === base);
+  if (i < 0) return null;
+  return list.slice(i + 1).find(stays) || list.slice(0, i).reverse().find(stays) || null;
+}
 async function setClipDone(c, done, undo) {
-  const i = clips.findIndex(x => x.base === c.base);
-  const next = done && !undo && cur && cur.base === c.base ? (clips[i + 1] || clips[i - 1] || null) : null;
+  const next = done && !undo && cur && cur.base === c.base ? neighbour(clips, c.base, x => x.base !== c.base) : null;
   $('bDone').disabled = true;
   // the state document this change sends may come in before the answer: it
   // must not treat the clip as gone and load a clip of its own choosing
@@ -3606,7 +3612,7 @@ function applyState(d, polled, withDone) {
     if (onConfig) onConfig();
     // since 3.0: the document holds the done clips only when they were asked
     // for; the two sides of the list are kept apart here
-    const all = d.clips || [];
+    const all = d.clips || [], before = clips;
     counts = d.counts || counts;
     if (withDone) { clips = all.filter(c => c.state !== 'done'); doneClips = all.filter(c => c.state === 'done'); }
     else clips = all;
@@ -3652,8 +3658,17 @@ function applyState(d, polled, withDone) {
     if (shown.length || (cur && allClips().some(c => c.base === cur.base))) {
       const newest = shown[0];
       if (!cur && newest) load(newest);
-      // a clip that was put away stays loaded; only one that is really gone is replaced
-      else if (cur && cur.base !== putAway && !allClips().some(c => c.base === cur.base)) { unload(); if (newest) { load(newest); toast('Clip is gone - loaded the next one'); } else showEmpty(cfg.setupDone === false ? 'setup' : 'none'); }
+      // The loaded clip left the document: a share put it away ("Afterwards"),
+      // or it is really gone. Its neighbour in the list takes its place, as
+      // after "Mark done"; until 3.9 the newest clip did, with "Clip is gone"
+      // even for a clip that was only marked done.
+      else if (cur && cur.base !== putAway && !allClips().some(c => c.base === cur.base)) {
+        const putAwayByShare = d.last && d.last.base === cur.base && (d.last.after === 'done' || d.last.after === 'recycle');
+        const next = neighbour(before, cur.base, c => shown.some(s => s.base === c.base)) || newest;
+        unload();
+        if (next) { load(next); toast(putAwayByShare ? 'Loaded the next clip' : 'Clip is gone - loaded the next one'); }
+        else showEmpty(cfg.setupDone === false ? 'setup' : 'none');
+      }
       else if (fresh && fresh.base !== lastSeen && lastSeen !== null && clipFilter === 'active' && !putAway) {
         if (!edited) { load(fresh); toast('New clip loaded'); }
         else if (!pendingNew || pendingNew.base !== fresh.base) { pendingNew = fresh; $('b-newclip-text').textContent = `${short(fresh.base)} (${fmt(fresh.duration)}).`; banner('b-newclip', true); }

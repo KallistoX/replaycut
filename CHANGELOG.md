@@ -39,6 +39,11 @@ contract.
   with a "Cancel" button. It now asks once a second while something runs and
   not at all otherwise, a job waiting behind it shows up with "Remove from
   queue", and the progress bar of the running job is visible again.
+- **After a share that marks the clip done, the clip next to it is loaded.**
+  The page jumped to the newest clip in the list and said "Clip is gone",
+  although the clip was only marked done. It now loads the clip below the
+  one you shared (or the one above), like "Mark done", and says "Loaded the
+  next clip".
 - **Switching the list between Done and Active keeps the clip you are on.**
   Coming back to Active took the newest clip for a new recording: the page
   loaded it with "New clip loaded", or showed the "New clip" banner when a
