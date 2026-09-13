@@ -276,16 +276,40 @@ async fn fetch_latest_from(url: &str) -> Result<UpdateInfo> {
 /// One check: remember a newer release (or forget an outdated one).
 /// Returns the newer release, if any.
 pub async fn check(state: &AppState) -> Result<Option<UpdateInfo>> {
-    {
+    let was_ready = {
         let mut u = state.update.lock();
         if matches!(u.phase, Phase::Downloading | Phase::Installing) {
             return Ok(u.latest.clone());
         }
+        begin_check(&mut u)
+    };
+    let result = fetch_latest_from(&releases_url()).await;
+    let outcome = finish_check(&mut state.update.lock(), was_ready, result);
+    state.tray_changed();
+    outcome
+}
+
+/// Start a check. A package that is downloaded and verified stays `ready`
+/// meanwhile, and the check keeps it when it finds the same release (since
+/// 3.10): until 3.9 the phase went to `checking` first, the "same release,
+/// still ready" test after the answer could never be true, and "Restart to
+/// update" downloaded the package a second time. Returns whether it was
+/// ready.
+fn begin_check(u: &mut UpdateStatus) -> bool {
+    let ready = u.phase == Phase::Ready;
+    if !ready {
         u.phase = Phase::Checking;
     }
-    let result = fetch_latest_from(&releases_url()).await;
-    let outcome = {
-        let mut u = state.update.lock();
+    ready
+}
+
+/// What a check's answer does to the status. Returns the newer release.
+fn finish_check(
+    u: &mut UpdateStatus,
+    was_ready: bool,
+    result: Result<UpdateInfo>,
+) -> Result<Option<UpdateInfo>> {
+    {
         u.checked_at = Some(crate::util::now_local());
         match result {
             // A release is announced only once it can actually be installed.
@@ -307,8 +331,8 @@ pub async fn check(state: &AppState) -> Result<Option<UpdateInfo>> {
             }
             Ok(info) if is_newer(&info.version, VERSION) => {
                 u.unfinished = false;
-                let same_ready = u.phase == Phase::Ready
-                    && u.latest.as_ref().map(|l| &l.version) == Some(&info.version);
+                let same_ready =
+                    was_ready && u.latest.as_ref().map(|l| &l.version) == Some(&info.version);
                 if !same_ready {
                     if u.latest.as_ref() != Some(&info) {
                         tracing::info!(
@@ -344,9 +368,7 @@ pub async fn check(state: &AppState) -> Result<Option<UpdateInfo>> {
                 Err(e)
             }
         }
-    };
-    state.tray_changed();
-    outcome
+    }
 }
 
 /// Background task: first check after a minute, then daily.
@@ -1210,6 +1232,43 @@ replaycut --version
             dir.display(),
             key.public_base64()
         );
+    }
+
+    #[test]
+    fn a_check_keeps_a_verified_package_ready() {
+        let release = |version: &str| UpdateInfo {
+            version: version.into(),
+            packaged: true,
+            asset_url: "https://example.com/pkg.zip".into(),
+            sums_url: "https://example.com/SHA256SUMS".into(),
+            minisig_url: "https://example.com/SHA256SUMS.minisig".into(),
+            ..UpdateInfo::default()
+        };
+        let mut u = UpdateStatus {
+            phase: Phase::Ready,
+            latest: Some(release("99.0.0")),
+            ready_dir: Some(PathBuf::from("update/99.0.0/unpacked")),
+            ..UpdateStatus::default()
+        };
+        // the same release again: still ready, nothing to download
+        let was_ready = begin_check(&mut u);
+        assert!(was_ready);
+        assert_eq!(u.phase, Phase::Ready, "ready while the check runs");
+        finish_check(&mut u, was_ready, Ok(release("99.0.0"))).unwrap();
+        assert_eq!(u.phase, Phase::Ready);
+        assert!(u.ready_dir.is_some());
+        // a failed check changes nothing about the package either
+        let was_ready = begin_check(&mut u);
+        let _ = finish_check(&mut u, was_ready, Err(anyhow!("offline")));
+        assert_eq!(u.phase, Phase::Ready);
+        // a newer release than the one downloaded: that one is available
+        let was_ready = begin_check(&mut u);
+        finish_check(&mut u, was_ready, Ok(release("99.1.0"))).unwrap();
+        assert_eq!(u.phase, Phase::Available);
+        assert!(u.ready_dir.is_none());
+        // and without a package, a check shows that it runs
+        assert!(!begin_check(&mut u));
+        assert_eq!(u.phase, Phase::Checking);
     }
 
     #[tokio::test]

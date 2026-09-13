@@ -3525,7 +3525,8 @@ function updateBanner() {
     show('b-update-bar', u.phase === 'downloading'); show('b-update-pct', u.phase === 'downloading');
     $('b-update-now').disabled = updBusy;
     if (u.phase === 'downloading') { $('b-update-text').textContent = `Downloading replaycut ${l.version} …`; $('b-update-hint').textContent = ''; $('b-update-bar').firstElementChild.style.width = (u.percent || 0) + '%'; $('b-update-pct').textContent = (u.percent || 0) + ' %'; }
-    else if (u.phase === 'ready') { $('b-update-text').textContent = `replaycut ${l.version} is downloaded and verified.`; $('b-update-hint').textContent = u.error || 'The service restarts on the new version; this page reloads.'; $('b-update-now').textContent = 'Restart to update'; }
+    // while a share runs the restart waits, and the banner keeps saying why (#46)
+    else if (u.phase === 'ready') { $('b-update-text').textContent = `replaycut ${l.version} is downloaded and verified.`; $('b-update-hint').textContent = stateDoc && stateDoc.busy ? 'A share is running - restart when it is done.' : (u.error || 'The service restarts on the new version; this page reloads.'); $('b-update-now').textContent = 'Restart to update'; }
     else if (u.phase === 'installing') { $('b-update-text').textContent = `Installing replaycut ${l.version} …`; $('b-update-hint').textContent = 'The page reloads when the service is back.'; }
     else if (u.phase === 'error') { $('b-update-text').textContent = `Update to replaycut ${l.version} failed.`; $('b-update-hint').textContent = u.error || ''; $('b-update-now').textContent = 'Try again'; }
     else if (!packaged) { $('b-update-text').textContent = `replaycut ${l.version} is available, but that release has no package for this platform yet.`; $('b-update-hint').textContent = 'The update installs itself once a release carries one.'; }
