@@ -820,6 +820,45 @@ fn seek_in_cut(cut: &Cut, start: f64) -> f64 {
     (start - cut.actual_start.unwrap_or(cut.start)).max(0.0)
 }
 
+/// A cut made by 3.0 to 3.9 whose range starts right on a keyframe says it
+/// begins one keyframe earlier than it does (the lookup never read the
+/// keyframe on the start), and a rendering from it loses that much at the
+/// front. While the recording is there, ask it again and put the answer in
+/// the store; without the recording the stored value is all there is.
+async fn recheck_cut_start(state: &AppState, cut: &mut Cut) {
+    let Some(clip) = clip_path_of(state, &cut.base).ok().filter(|p| p.is_file()) else {
+        return;
+    };
+    let Some(keyframe) = state
+        .runtime()
+        .media
+        .keyframe_at_or_before(&clip, cut.start)
+        .await
+    else {
+        return;
+    };
+    if cut
+        .actual_start
+        .is_some_and(|s| (s - keyframe).abs() < 0.001)
+    {
+        return;
+    }
+    let stored = cut
+        .actual_start
+        .map_or_else(|| "an unknown point".to_string(), |s| format!("{s:.3} s"));
+    tracing::info!(
+        "cut [{}]: begins at {keyframe:.3} s, not at {stored} - corrected",
+        cut.id
+    );
+    match state
+        .db
+        .set_cut_file(&cut.id, cut.file.as_deref(), Some(keyframe), &cut.state)
+    {
+        Ok(()) => cut.actual_start = Some(keyframe),
+        Err(e) => tracing::warn!("cut [{}]: cannot store where it begins: {e:#}", cut.id),
+    }
+}
+
 /// The cut file of this job's range: ready already, or made now. Stream copy
 /// with every audio track, so nothing is lost and no GPU is needed.
 async fn make_cut(
@@ -839,6 +878,7 @@ async fn make_cut(
     let out = state.paths().cut_of(&cut.id);
     if cut.state == CUT_READY && out.is_file() {
         tracing::info!("share [{}]: cut {} is there already", job.id, cut.id);
+        recheck_cut_start(state, &mut cut).await;
         return Ok(cut);
     }
     let runtime = state.runtime();
@@ -1159,7 +1199,7 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
     let source = if republish {
         None
     } else if job.kind == KIND_RENDER {
-        let cut = state
+        let mut cut = state
             .db
             .cut(job.cut.as_deref().unwrap_or_default())?
             .ok_or_else(|| anyhow!("the cut of this render is no longer known"))?;
@@ -1167,6 +1207,7 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         if !file.is_file() {
             bail!("the file of cut {} is gone - cut the range again", cut.id);
         }
+        recheck_cut_start(state, &mut cut).await;
         Some((file, seek_in_cut(&cut, job.start)))
     } else {
         state.with_job(id, |j| j.stage = "cut".into());

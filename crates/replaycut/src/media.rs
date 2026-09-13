@@ -733,9 +733,13 @@ impl Media {
     /// nothing better than the range itself.
     pub async fn keyframe_at_or_before(&self, path: &Path, at: f64) -> Option<f64> {
         // OBS writes a keyframe every one or two seconds; 30 s is room for
-        // a badly configured encoder and still a short read.
+        // a badly configured encoder and still a short read. The end of a
+        // read interval is exclusive, so the read goes a second past `at`:
+        // a keyframe right on `at` is the one the cut starts at, and until
+        // 3.9 it was never read - the cut was taken for starting one
+        // keyframe earlier and every rendering lost that much at the front.
         let from = (at - 30.0).max(0.0);
-        let interval = format!("{from:.3}%{at:.3}");
+        let interval = format!("{from:.3}%{:.3}", at + 1.0);
         let p = path.to_string_lossy();
         let out = self
             .ffprobe(&[

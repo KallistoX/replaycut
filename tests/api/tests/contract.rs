@@ -3651,3 +3651,45 @@ fn t65_file_only_takes_limits_like_a_storage() {
         assert_eq!(u64::from(h), height, "recording resolution kept");
     }
 }
+
+/// A cut begins at the keyframe at or before its start - including one that
+/// sits exactly on the start - and a rendering is as long as its range. Until
+/// 3.9 the keyframe lookup stopped reading just before the start, took the
+/// keyframe one interval earlier for the cut's beginning, and every rendering
+/// of a range on a keyframe lost that interval at the front: two seconds with
+/// the keyframes OBS writes.
+#[test]
+fn t66_a_range_on_a_keyframe_keeps_its_first_seconds() {
+    let _g = serial();
+    if !since_30() {
+        return;
+    }
+    let base = format!("{} keyframes", fixture().base);
+    make_clip_with_keyframes_every(&base, 2);
+    wait_for_clip(&base, Duration::from_secs(20));
+
+    // (start, end, the keyframe the cut begins at)
+    for (start, end, keyframe) in [(6.0, 10.0, 6.0), (7.0, 10.0, 6.0)] {
+        let body = json!({ "base": base, "start": start, "end": end, "audio": "mix",
+                           "target": "file", "after": "keep" });
+        let (status, v) = post_json("/api/share", &body);
+        assert_eq!(status, 202, "{v}");
+        let cut = v["cut"].as_str().expect("cut").to_string();
+        let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+        assert_eq!(done["ok"], true, "{done}");
+
+        let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+        let actual = c["actualStart"].as_f64().expect("actualStart");
+        assert!(
+            (actual - keyframe).abs() < 0.02,
+            "{start}-{end}: the cut begins at the keyframe at {keyframe} s, it says {actual}: {c}"
+        );
+        let file = done["file"].as_str().expect("file");
+        let seconds = shared_duration(file);
+        assert!(
+            (seconds - (end - start)).abs() < 0.15,
+            "{start}-{end}: {} s asked for, {seconds} s rendered into {file}",
+            end - start
+        );
+    }
+}

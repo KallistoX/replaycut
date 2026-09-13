@@ -24,6 +24,14 @@ contract.
 
 ### Fixed
 
+- **A share whose in mark sits on a keyframe keeps its first seconds.** OBS
+  writes a keyframe every two seconds, and the arrow keys, Home and "Whole
+  clip" put the playhead on whole seconds - so an in mark right on a
+  keyframe was common. Such a share started one keyframe late and came out
+  two seconds short at the front, since 3.0. The cut itself was always
+  right; what it said about where it begins was not. A cut made before this
+  release is corrected the next time it is rendered, as long as its
+  recording is still there.
 - **A second share no longer takes the progress bar from the one that
   runs.** Sharing two cuts one after the other dropped the bar to 0 % the
   moment the second one was queued; the first went on out of sight and its

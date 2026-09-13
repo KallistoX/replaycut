@@ -76,6 +76,17 @@ pub fn fixture() -> &'static Fixture {
 /// Write `<base>.mkv` into the clip folder: 20 s of `testsrc` video plus
 /// four AAC tracks. Used for the fixture and for extra clips in tests.
 pub fn make_clip(base: &str) -> PathBuf {
+    make_clip_with(base, &[])
+}
+
+/// A clip like [`make_clip`] with a keyframe exactly every `seconds`, the
+/// way OBS records: for the tests about where a cut really begins.
+pub fn make_clip_with_keyframes_every(base: &str, seconds: u32) -> PathBuf {
+    let expr = format!("expr:gte(t,n_forced*{seconds})");
+    make_clip_with(base, &["-force_key_frames", &expr, "-sc_threshold", "0"])
+}
+
+fn make_clip_with(base: &str, video_args: &[&str]) -> PathBuf {
     let env = env();
     let path = env.clip_dir.join(format!("{base}.mkv"));
     let mut cmd = Command::new(&env.ffmpeg);
@@ -103,6 +114,7 @@ pub fn make_clip(base: &str) -> PathBuf {
         "-pix_fmt",
         "yuv420p",
     ]);
+    cmd.args(video_args);
     cmd.args(["-c:a", "aac", "-b:a", "64k"]);
     cmd.arg(&path);
     let out = cmd
