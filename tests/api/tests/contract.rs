@@ -3523,3 +3523,122 @@ fn t64_the_history_page_takes_the_limit_it_is_given() {
         assert_eq!(count(q), all, "{q}");
     }
 }
+
+/// "File only" takes the limits a storage takes, and a share to it is
+/// scaled and capped by them. Until 3.8 it was always a best-quality render
+/// at the recording's resolution.
+#[test]
+fn t65_file_only_takes_limits_like_a_storage() {
+    let _g = serial();
+    if !since_38() {
+        eprintln!("skipped: needs replaycut 3.8");
+        return;
+    }
+    let set = |h: u32, k: u32| {
+        put_json(
+            "/api/settings",
+            &json!({ "integrations": { "file": { "maxHeight": h, "maxKbps": k } } }),
+        )
+    };
+    let file_target = || {
+        state()["config"]["targets"]
+            .as_array()
+            .expect("targets")
+            .iter()
+            .find(|t| t["id"] == "file")
+            .cloned()
+            .expect("config.targets has no entry for file")
+    };
+
+    // an entry of its own kind, always there, never a quick share
+    let t = file_target();
+    assert_eq!(t["kind"], "file", "{t}");
+    assert_eq!(t["enabled"], true, "{t}");
+    assert_eq!(t["connected"], true, "{t}");
+    assert!(t.get("quickShare").is_none(), "{t}");
+
+    // the bounds of a storage, and nothing a storage has besides them
+    for bad in [
+        json!({ "maxHeight": 100 }),
+        json!({ "maxHeight": 5000 }),
+        json!({ "maxKbps": 499 }),
+        json!({ "maxKbps": 200001 }),
+        json!({ "quickShare": true }),
+        json!({ "enabled": true }),
+    ] {
+        let (status, v) = put_json(
+            "/api/settings",
+            &json!({ "integrations": { "file": bad.clone() } }),
+        );
+        assert_eq!(status, 400, "{bad}: {v}");
+    }
+
+    let (status, r) = set(360, 1500);
+    assert_eq!(status, 200, "{r}");
+    assert_eq!(
+        r["settings"]["integrations"]["file"]["maxHeight"], 360,
+        "{r}"
+    );
+    let (_, s) = get_json("/api/settings");
+    assert_eq!(s["integrations"]["file"]["maxKbps"], 1500, "{s}");
+    let t = file_target();
+    assert_eq!(t["maxHeight"], 360, "{t}");
+    assert_eq!(t["maxKbps"], 1500, "{t}");
+
+    let base = format!("{} fileonly", fixture().base);
+    make_clip(&base);
+    let clip = wait_for_clip(&base, Duration::from_secs(20));
+    let height = clip["height"].as_u64().unwrap_or(720);
+    let share_file = |start: f64, end: f64| {
+        let (status, v) = post_json(
+            "/api/share",
+            &json!({ "base": base, "start": start, "end": end, "audio": "mix",
+                     "target": "file", "after": "keep" }),
+        );
+        assert_eq!(status, 202, "{v}");
+        let (stages, job) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+        assert_eq!(job["ok"], true, "{job}");
+        assert_eq!(job["target"], "file", "{job}");
+        assert!(!stages.iter().any(|s| s == "upload"), "{stages:?}");
+        let path = env()
+            .clip_dir
+            .join("shared")
+            .join(job["file"].as_str().unwrap_or_default());
+        (job, path)
+    };
+
+    // with limits: scaled to the height, capped at the bitrate
+    let (job, path) = share_file(3.0, 9.0);
+    assert_eq!(job["kbps"], 1500, "{job}");
+    assert_eq!(job["maxHeight"], 360, "{job}");
+    if let Some((_, h)) = video_size(&path) {
+        assert_eq!(h, 360, "{} is not scaled to the cap", path.display());
+    }
+    // a cap, not a target: the six seconds plus the encoder's buffer of two
+    // seconds and the audio, with room for the container
+    let bytes = std::fs::metadata(&path)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+        .len();
+    let kbit_per_s = bytes as f64 * 8.0 / 1000.0 / 6.0;
+    assert!(
+        kbit_per_s < (1500.0 * 8.0 / 6.0 + 128.0) * 1.25,
+        "{} runs at {kbit_per_s:.0} kbit/s against a cap of 1500",
+        path.display()
+    );
+
+    // without them the share keeps the recording's resolution again
+    let (status, r) = set(0, 0);
+    assert_eq!(status, 200, "{r}");
+    let t = file_target();
+    assert_eq!(t["maxHeight"], 0, "{t}");
+    assert_eq!(t["maxKbps"], 0, "{t}");
+    let (job, path) = share_file(9.0, 12.0);
+    assert_eq!(job["kbps"], 0, "{job}");
+    assert!(
+        job.get("maxHeight").is_none() || job["maxHeight"] == 0,
+        "{job}"
+    );
+    if let Some((_, h)) = video_size(&path) {
+        assert_eq!(u64::from(h), height, "recording resolution kept");
+    }
+}
