@@ -496,6 +496,8 @@ details.limits summary { cursor: pointer; list-style: none; } details.limits sum
 .gone-ov b { color: var(--fg); }
 .actrow { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--line); font-size: var(--text-sm); display: flex; flex-direction: column; gap: var(--space-1); }
 .actrow .meta { color: var(--fg-muted); }
+.actrow .bar { height: 6px; background: var(--surface-2); border-radius: var(--radius-sm); overflow: hidden; }
+.actrow .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width var(--duration-slow); }
 .hist { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--line); font-size: var(--text-sm); display: flex; flex-direction: column; gap: var(--space-1); }
 .hist .meta { color: var(--fg-muted); }
 .hist.expired { opacity: 0.6; }
@@ -2804,41 +2806,71 @@ function activityRow(e) {
   wrap.appendChild(outputRow(e, 'clip'));
   return wrap;
 }
-/// The queue on top: the running job and what waits behind it. What a job is
-/// about only `/api/jobs/<id>` knows, so the rows fill in as the answers come.
-let queueJobs = {}, queueBusy = false;
-function renderQueue(d) {
-  const box = $('actQueue'), ids = [d.job].concat(d.queue || []).filter(Boolean);
-  $('actQueueCard').hidden = !ids.length;
-  if (!ids.length) { box.innerHTML = ''; queueJobs = {}; return; }
-  box.innerHTML = '';
-  ids.forEach((id, i) => {
-    const j = queueJobs[id] || {};
-    const what = j.base ? `${esc(j.title || short(j.base))} · ${fmt(j.seconds)}` : id;
-    const doing = i === 0
-      ? `${esc(STAGE_TEXT[j.stage] || j.stage || 'Running')}${j.stage === 'encode' ? ` ${j.percent || 0} %` : ''}`
-      : `Waiting - ${i} ahead`;
-    const row = document.createElement('div'); row.className = 'actrow';
-    row.innerHTML = `<div class="row nowrap"><b class="grow truncate">${what}</b><button class="btn btn-sm btn-ghost" data-cancel><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div>
-      <div class="meta">${doing}${j.target ? ' · ' + esc(targetLabel(j.target)) : ''}${j.kind && j.kind !== 'share' ? ` · <span class="badge">${esc(j.kind)}</span>` : ''}</div>
-      ${i === 0 && j.stage === 'encode' ? `<div class="bar"><i style="width:${j.percent || 0}%"></i></div>` : ''}`;
-    row.querySelector('[data-cancel]').onclick = async () => {
-      try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/cancel', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(r.stopped ? 'Removed from the queue' : 'Stopping …') : toast(r.error, 'err'); }
-      catch (e) { toast(e.message, 'err'); }
-      poll.now();
-    };
-    box.appendChild(row);
+/// What a job in the queue is about: the state document names the ids only,
+/// `/api/jobs/<id>` knows the rest. A waiting job is asked for once; `fresh`
+/// (the running job on Activity) again for its progress, at most once a
+/// second. `redraw` runs when answers came in and draws from the newest
+/// state document - until 3.9 the redraw reused the document it started
+/// with, asked for the running job again straight away, and so kept a
+/// finished job on screen while asking for it about a thousand times a second.
+let stateDoc = null, queueJobs = {}, queueAsking = false, queueFreshAt = 0, queueT = null;
+function learnJobs(ids, fresh, redraw) {
+  Object.keys(queueJobs).forEach(id => { if (!ids.includes(id)) delete queueJobs[id]; });
+  clearTimeout(queueT);
+  if (queueAsking) return;
+  const since = Date.now() - queueFreshAt;
+  const want = ids.slice(0, 6).filter(id => {
+    const j = queueJobs[id];
+    return !j || (j.failedAt && Date.now() - j.failedAt > 5000) || (id === fresh && since >= 1000);
   });
-  // fetch what we do not know yet (and refresh the running one for its progress)
-  if (queueBusy) return;
-  queueBusy = true;
-  Promise.all(ids.slice(0, 6).map(async (id, i) => {
-    if (i > 0 && queueJobs[id]) return;
-    try { queueJobs[id] = await api('/api/jobs/' + encodeURIComponent(id), {}, { retries: 0 }); } catch (e) {}
-  })).then(() => { queueBusy = false; if (page === 'activity') renderQueue(d); });
+  // progress that arrives within the second is picked up once it is over
+  if (fresh && since < 1000) queueT = setTimeout(redraw, 1000 - since);
+  if (!want.length) return;
+  queueAsking = true;
+  if (want.includes(fresh)) queueFreshAt = Date.now();
+  Promise.all(want.map(async id => {
+    try { queueJobs[id] = await api('/api/jobs/' + encodeURIComponent(id), {}, { retries: 0 }); }
+    catch (e) { queueJobs[id] = { id, failedAt: Date.now() }; }
+  })).then(() => { queueAsking = false; redraw(); });
+}
+async function cancelJob(id) {
+  try { const r = await api('/api/jobs/' + encodeURIComponent(id) + '/cancel', { method: 'POST', body: '' }, { retries: 0 }); r.ok ? toast(r.stopped ? 'Removed from the queue' : 'Stopping …') : toast(r.error, 'err'); }
+  catch (e) { toast(e.message, 'err'); }
+  poll.now();
+}
+/// The queue on top: the running job and what waits behind it. A row stays
+/// the same element across redraws, so a click on its button is not lost to
+/// the progress update that lands between press and release.
+function renderQueue() {
+  if (page !== 'activity') return;
+  const d = stateDoc || {}, box = $('actQueue'), ids = [d.job].concat(d.queue || []).filter(Boolean);
+  $('actQueueCard').hidden = !ids.length;
+  learnJobs(ids, d.job || null, renderQueue);
+  const rows = new Map([...box.children].map(r => [r.dataset.job, r]));
+  rows.forEach((r, id) => { if (!ids.includes(id)) r.remove(); });
+  ids.forEach((id, i) => {
+    const j = queueJobs[id] || {}, running = id === d.job;
+    let row = rows.get(id);
+    if (!row) {
+      row = document.createElement('div'); row.className = 'actrow'; row.dataset.job = id;
+      row.innerHTML = '<div class="row nowrap"><b class="grow truncate"></b><button class="btn btn-sm btn-ghost" data-cancel></button></div><div class="meta"></div><div class="bar" hidden><i></i></div>';
+      row.querySelector('[data-cancel]').onclick = () => cancelJob(id);
+    }
+    row.querySelector('b').textContent = j.base ? `${j.title || short(j.base)} · ${fmt(j.start)} - ${fmt(j.end)}` : id;
+    const btn = row.querySelector('[data-cancel]'), label = running ? 'Cancel' : 'Remove from queue';
+    if (btn.dataset.label !== label) { btn.dataset.label = label; btn.title = running ? 'Stop this job' : 'Take this job out of the queue'; btn.innerHTML = `<svg class="icon icon-sm"><use href="#i-close"/></svg> ${label}`; }
+    const doing = running
+      ? (j.stage === 'queued' ? 'Starting …' : `${STAGE_TEXT[j.stage] || j.stage || 'Running'}${j.stage === 'encode' ? ` ${j.percent || 0} %` : ''}`)
+      : `Waiting - ${i} ahead`;
+    row.querySelector('.meta').innerHTML = `${esc(doing)}${j.target ? ' · ' + esc(targetLabel(j.target)) : ''}${j.kind && j.kind !== 'share' ? ` · <span class="badge">${esc(j.kind)}</span>` : ''}`;
+    const bar = row.querySelector('.bar');
+    bar.hidden = !(running && j.stage === 'encode');
+    bar.firstChild.style.width = (j.percent || 0) + '%';
+    if (box.children[i] !== row) box.insertBefore(row, box.children[i] || null);
+  });
 }
 function renderActivity(d) {
-  renderQueue(d);
+  renderQueue();
   const shown = actEntries.filter(e => !actFilter || (e.target || 'nextcloud') === actFilter);
   const key = actFilter + JSON.stringify(shown.map(e => e.id + (e.discord ? '+' : ''))) + JSON.stringify(cfg.targets || null); if (key === actKey) return; actKey = key;
   // one button per target that actually occurs, plus "all"
@@ -3454,7 +3486,7 @@ async function poll() {
 // the "scan stuck" check only runs on polled documents (the safety poll every 30 s while live)
 function applyState(d, polled, withDone) {
   {
-    failures = 0; banner('b-unreachable', false);
+    failures = 0; banner('b-unreachable', false); stateDoc = d;
     // devices waiting to sign in; only this PC and signed-in clients see them
     if (Array.isArray(d.pending)) { if (approveRender) approveRender(d.pending); else updatePendingModal(d.pending); }
     cfg = Object.assign(cfg, d.config);

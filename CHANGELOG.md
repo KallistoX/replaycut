@@ -10,6 +10,15 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Activity page no longer floods the service while a job runs.** Its
+  "Running now" card asked for the running job about a thousand times a
+  second and went on after the job had ended, showing it as still running
+  with a "Cancel" button. It now asks once a second while something runs and
+  not at all otherwise, a job waiting behind it shows up with "Remove from
+  queue", and the progress bar of the running job is visible again.
+
 ## [3.9.0] - 2026-09-13
 
 A one-change release for everyone who installs replaycut from now on: a share
