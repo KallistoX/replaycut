@@ -3521,15 +3521,20 @@ fn t64_the_history_page_takes_the_limit_it_is_given() {
         assert_eq!(status, 200, "{q}: {v}");
         v["history"].as_array().expect("history").len()
     };
-    let all = count("");
+    // Everything the store has (up to the cap of 5000), and the default page
+    // of 200. A service that has run for a while has more than a page, so
+    // the default is not "all" - on a fresh one the two are the same.
+    let all = count("?limit=5000");
     assert!(all > 1, "the tests before left entries behind");
+    let page = all.min(200);
+    assert_eq!(count(""), page, "the default page");
 
     assert_eq!(count("?limit=0"), 0, "a limit of none is a page of none");
     assert_eq!(count("?limit=1"), 1);
     assert_eq!(count("?limit=99999"), all, "the cap is not a floor");
     // not a number: the default, not zero and not an error
     for q in ["?limit=abc", "?limit=-1", "?limit="] {
-        assert_eq!(count(q), all, "{q}");
+        assert_eq!(count(q), page, "{q}");
     }
 }
 
