@@ -18,6 +18,10 @@ contract.
   with a "Cancel" button. It now asks once a second while something runs and
   not at all otherwise, a job waiting behind it shows up with "Remove from
   queue", and the progress bar of the running job is visible again.
+- **Activity shows what finishes while it is open.** The list of outputs was
+  read once, when the page opened, so a share that finished afterwards left
+  "Running now" and did not arrive under "Outputs", and a post from an
+  output's menu did not show its status, until the page was reloaded.
 
 ## [3.9.0] - 2026-09-13
 
