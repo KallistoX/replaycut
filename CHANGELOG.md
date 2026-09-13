@@ -39,6 +39,12 @@ contract.
   with a "Cancel" button. It now asks once a second while something runs and
   not at all otherwise, a job waiting behind it shows up with "Remove from
   queue", and the progress bar of the running job is visible again.
+- **"Set in" and "Set out" put the mark where the playhead is.** Setting the
+  in mark behind the out mark stopped half a second before the old out mark,
+  so the second range of a recording started where the first one ended
+  (1:09.5 instead of 1:20) - the same for "Set out" before the in mark. Now
+  the mark lands at the playhead and the other one gives way: the out mark
+  moves to the end of the clip, the in mark to its start.
 - **After a share that marks the clip done, the clip next to it is loaded.**
   The page jumped to the newest clip in the list and said "Clip is gone",
   although the clip was only marked done. It now loads the clip below the

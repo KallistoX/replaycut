@@ -2724,8 +2724,13 @@ async function setClipDone(c, done, undo) {
   } catch (e) { toast(e.message, 'err'); }
   finally { putAway = null; listKey = ''; renderList(); doneButton(); poll.now(); }
 }
-function setIn() { if (!cur) return; tIn = Math.min(v.currentTime, tOut - 0.5); edited = true; render(); }
-function setOut() { if (!cur) return; tOut = Math.max(v.currentTime, tIn + 0.5); edited = true; render(); }
+// A mark set at the playhead lands at the playhead, and the other mark gives
+// way when it is passed: the out mark goes to the end, the in mark to the
+// start. Until 3.9 the new mark stopped half a second short of the other one,
+// so the next range of a recording quietly began at the last one's end.
+// Dragging a handle keeps its clamp (see the timeline).
+function setIn() { if (!cur) return; const d = cur.duration || v.duration || 0; tIn = Math.max(0, Math.min(v.currentTime, d - 0.5)); if (tOut - tIn < 0.5) tOut = d; edited = true; render(); }
+function setOut() { if (!cur) return; tOut = Math.max(v.currentTime, 0.5); if (tOut - tIn < 0.5) tIn = 0; edited = true; render(); }
 function seek(t) { v.currentTime = Math.max(0, Math.min(cur ? cur.duration : 0, t)); render(); }
 function playSel() { if (!cur) return; stopAt = tOut; seek(tIn); v.play(); }
 
