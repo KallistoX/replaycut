@@ -54,6 +54,10 @@ contract.
   with a "Cancel" button. It now asks once a second while something runs and
   not at all otherwise, a job waiting behind it shows up with "Remove from
   queue", and the progress bar of the running job is visible again.
+- **No more cuts that stay "cutting …" forever.** A share reserves its cut
+  when it is queued; taken out of the queue, or lost to a restart while it
+  waited, it left that cut behind with a spinner that never stopped. Such a
+  cut goes with its share now, and a start clears what an earlier stop left.
 - **"Recycle the recording afterwards" waits for the next share of the same
   clip.** Two shares of one clip in a row, the first one set to recycle the
   recording: the first took the recording away and the second failed with

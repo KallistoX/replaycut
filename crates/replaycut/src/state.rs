@@ -1091,6 +1091,19 @@ impl AppState {
         self.tray_changed();
     }
 
+    /// On start: the cuts shares reserved and never made (since 3.10).
+    pub fn drop_pending_cuts(&self) {
+        match self.db.delete_pending_cuts() {
+            Ok(ids) if !ids.is_empty() => tracing::info!(
+                "dropped {} cut(s) that were never made: {}",
+                ids.len(),
+                ids.join(", ")
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::warn!("cannot drop the cuts that were never made: {e:#}"),
+        }
+    }
+
     /// A cut whose job never made its file is no cut at all (since 3.0).
     pub fn drop_pending_cut(&self, id: &str) {
         match self.db.delete_pending_cut(id) {
@@ -1348,6 +1361,10 @@ impl AppState {
                 }
                 drop(inner);
                 self.cancels.lock().remove(id);
+                // the cut this share reserved stays only if it has a file
+                if let Some(cut) = job.cut.as_deref() {
+                    self.drop_pending_cut(cut);
+                }
                 self.tray_changed();
                 tracing::info!("share [{id}] cancelled while queued");
                 Ok(true)

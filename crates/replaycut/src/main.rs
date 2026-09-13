@@ -576,6 +576,7 @@ async fn serve(
     }
     // before the server takes a share: every unfinished encode is a leftover
     share::remove_unfinished_encodes(&state.paths().shared_dir);
+    state.drop_pending_cuts();
     tokio::spawn(scanner::run(state.clone()));
     tokio::spawn(obs_ws::run(state.obs.clone()));
     tokio::spawn(obs_link::react(

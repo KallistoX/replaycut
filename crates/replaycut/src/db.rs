@@ -530,6 +530,23 @@ impl Db {
         Ok(gone > 0)
     }
 
+    /// Forget every cut that never got a file (since 3.10). No job survives a
+    /// restart, so on start each one is left over from a share that waited
+    /// or was cutting when the service stopped. Returns their ids.
+    pub fn delete_pending_cuts(&self) -> Result<Vec<String>> {
+        let conn = self.conn.lock();
+        let ids = {
+            let mut stmt = conn.prepare("SELECT id FROM cuts WHERE file IS NULL AND state = ?1")?;
+            let rows = stmt.query_map(params![CUT_PENDING], |r| r.get::<_, String>(0))?;
+            rows.collect::<rusqlite::Result<Vec<String>>>()?
+        };
+        conn.execute(
+            "DELETE FROM cuts WHERE file IS NULL AND state = ?1",
+            params![CUT_PENDING],
+        )?;
+        Ok(ids)
+    }
+
     /// The cuts of one clip, oldest first.
     pub fn cuts_of(&self, base: &str) -> Result<Vec<Cut>> {
         let conn = self.conn.lock();
@@ -1221,7 +1238,22 @@ mod tests {
         assert_eq!(row.first_seen.as_deref(), Some("2026-09-08T20:00:00"));
         assert_eq!(row.doc.unwrap()["name"], "Replay A.mkv");
 
-        // a cut makes it active
+        // a cut makes it active (a pending one, reserved by a share that
+        // never ran, is gone on the next start; a ready one stays)
+        db.put_cut(&Cut {
+            id: "bbbb2222".into(),
+            base: "Replay A".into(),
+            start: 7.0,
+            end: 9.0,
+            audio: "mix".into(),
+            vertical: false,
+            vertical_pos: None,
+            file: None,
+            actual_start: None,
+            created: "2026-09-08T20:00:30".into(),
+            state: CUT_PENDING.into(),
+        })
+        .unwrap();
         db.put_cut(&Cut {
             id: "aaaa1111".into(),
             base: "Replay A".into(),
@@ -1237,6 +1269,9 @@ mod tests {
         })
         .unwrap();
         assert_eq!(db.clip("Replay A").unwrap().unwrap().state, CLIP_ACTIVE);
+        assert_eq!(db.cuts_of("Replay A").unwrap().len(), 2);
+        assert_eq!(db.delete_pending_cuts().unwrap(), ["bbbb2222"]);
+        assert!(db.delete_pending_cuts().unwrap().is_empty());
         assert_eq!(db.cuts_of("Replay A").unwrap().len(), 1);
 
         // done and back, and a second scan does not undo the state

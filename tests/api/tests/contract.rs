@@ -1037,6 +1037,7 @@ fn t28_queue_runs_shares_in_order_and_cancel_ends_them() {
     assert_eq!(status, 202, "{v}");
     assert_eq!(v["position"], 2, "{v}");
     let c = v["job"].as_str().unwrap_or("").to_string();
+    let c_cut = v["cut"].as_str().unwrap_or("").to_string();
     let st = state();
     assert_eq!(st["job"], a.as_str());
     assert_eq!(st["queue"], json!([b, c]), "{}", st["queue"]);
@@ -1069,6 +1070,11 @@ fn t28_queue_runs_shares_in_order_and_cancel_ends_them() {
                 .is_some_and(|e| e.iter().all(|e| e["id"] != c.as_str())),
             "a job taken out of the queue is in the history"
         );
+        // and the cut it had reserved, which never got a file, is gone too
+        if !c_cut.is_empty() {
+            let (status, cut) = get_json(&format!("/api/cuts/{c_cut}"));
+            assert_eq!(status, 404, "the reserved cut stayed: {cut}");
+        }
     }
 
     // the first finishes, the second takes over and gets cancelled while it runs
