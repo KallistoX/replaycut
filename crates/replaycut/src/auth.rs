@@ -755,10 +755,10 @@ pub async fn host_check(State(state): State<Arc<AppState>>, req: Request, next: 
     let host = req.headers().get(HOST).and_then(|v| v.to_str().ok());
     if !host_allowed(host, &crate::platform::hostname(), &state.allowed_hosts()) {
         tracing::warn!(
-            "refused {} {} for host {:?}",
+            "refused {} {} for host {}",
             req.method(),
             req.uri().path(),
-            host
+            host.unwrap_or("(none)")
         );
         return (
             StatusCode::MISDIRECTED_REQUEST,
@@ -780,11 +780,11 @@ pub async fn origin_check(req: Request, next: Next) -> Response {
         let host = req.headers().get(HOST).and_then(|v| v.to_str().ok());
         if !origin_allowed(origin, host) {
             tracing::warn!(
-                "refused {} {} from origin {:?} (host {:?})",
+                "refused {} {} from origin {} (host {})",
                 req.method(),
                 req.uri().path(),
-                origin,
-                host
+                origin.unwrap_or("(none)"),
+                host.unwrap_or("(none)")
             );
             return (
                 StatusCode::FORBIDDEN,

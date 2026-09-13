@@ -190,11 +190,6 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
                 height: video.height,
                 fps: video.fps,
             };
-            tracing::info!(
-                "new clip: {} ({:.1} MB, {duration} s, {tracks} audio tracks) - preview ready",
-                clip.name,
-                *size as f64 / 1_048_576.0
-            );
             let wants_h264 = clip.preview_h264.is_none()
                 && state.settings().preview_h264 == "always"
                 && !state.dry_run;
@@ -213,6 +208,19 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
                 changed = true;
                 (inner.seen.insert(base.clone()), inner.seen_ready)
             };
+            // Only a recording nobody has seen is news; the clips a start
+            // finds again are counted once the first scan is done. Until 3.9
+            // every start listed each of them as "new clip".
+            let what = format!(
+                "{} ({:.1} MB, {duration} s, {tracks} audio tracks) - preview ready",
+                clip.name,
+                *size as f64 / 1_048_576.0
+            );
+            if new_to_seen && ready {
+                tracing::info!("new clip: {what}");
+            } else {
+                tracing::debug!("clip: {what}");
+            }
             // `previewH264: always` (since 2.6): the playable copy right away,
             // behind the running jobs, with idle priority
             if wants_h264 {
@@ -324,6 +332,14 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
         }
         if seen_dirty {
             state.save_seen(&inner);
+        }
+        // the first scan of this run: what the start found, in one line
+        if inner.scan_at.is_none() {
+            tracing::info!(
+                "{} clip(s) in {}",
+                inner.clips.len(),
+                paths.clip_dir.display()
+            );
         }
         inner.seen_ready = true;
         inner.scan_at = Some(util::now_local());

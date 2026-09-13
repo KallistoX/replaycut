@@ -1203,23 +1203,34 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         .find(|m| m.id == job.audio)
         .map(|m| m.label)
         .unwrap_or("?");
-    tracing::info!(
-        "share [{id}]: {} {}-{} s ({} s) {}{}, audio '{mode_label}' -> {file_name}",
-        job.base,
-        job.start,
-        job.end,
-        job.seconds,
-        if job.mode == "copy" {
-            "copy (no re-encode)".to_string()
-        } else {
-            format!("@ {} kbps", job.kbps)
-        },
-        if job.vertical {
-            format!(" vertical 9:16 at {:.2}", job.vertical_pos.unwrap_or(0.5))
-        } else {
-            String::new()
-        }
-    );
+    // A publish encodes nothing and said so above; a render is named a render.
+    // Until 3.9 both read as a share "@ N kbps" in the log.
+    if !republish {
+        tracing::info!(
+            "{} [{id}]: {} {}-{} s ({} s) {}{}, audio '{mode_label}' -> {file_name}",
+            if job.kind == crate::state::KIND_RENDER {
+                "render"
+            } else {
+                "share"
+            },
+            job.base,
+            job.start,
+            job.end,
+            job.seconds,
+            if job.mode == "copy" {
+                "copy (no re-encode)".to_string()
+            } else if job.kbps == 0 {
+                "at best quality".to_string()
+            } else {
+                format!("@ {} kbps", job.kbps)
+            },
+            if job.vertical {
+                format!(" vertical 9:16 at {:.2}", job.vertical_pos.unwrap_or(0.5))
+            } else {
+                String::new()
+            }
+        );
+    }
 
     // cut (since 3.0): the rendering is made from the cut file, not from the
     // recording. A share cuts its range first (stage `cut`, stream copy, a

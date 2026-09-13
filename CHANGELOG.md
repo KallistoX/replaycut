@@ -58,6 +58,11 @@ contract.
   first start has none yet, so its whole first session decoded recordings
   on the CPU - next to the game. The newest recording in the folder is the
   test sample now when there is no preview.
+- **The log reads as the evening it was.** A start no longer lists every
+  clip in the folder as "new clip" - it says how many it found in one line;
+  renders are logged as renders, a publish no longer as a share at some
+  bitrate, "at best quality" replaces "@ 0 kbps", and refused requests name
+  the host as plain text.
 - **A share "as recorded" says again that it starts earlier.** Without
   re-encoding, a file can only begin at a keyframe, so it starts up to a
   couple of seconds before the in mark. Since 3.1 the result card and the
