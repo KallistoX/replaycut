@@ -2758,17 +2758,29 @@ async function deleteClip() {
   // since 3.0: the recording alone, or everything that hangs off the clip
   const scope = $('delScopeRow').hidden ? 'all' : (document.querySelector('input[name="delScope"]:checked') || {}).value || 'all';
   const nc = !!cfg.nextcloud && $('delNc').checked && scope === 'all';
+  // what takes its place, chosen before the list changes (3.9.1)
+  const next = neighbour(listedClips(), c.base, x => x.base !== c.base);
   unload();   // release the stream, otherwise the browser keeps the preview open
   $('delOk').disabled = true;
+  putAway = c.base;   // a state document before the answer loads nothing of its own
   try {
     const q = `?scope=${scope}` + (nc ? '&remote=1' : '');
     const r = await api('/api/clips/' + encodeURIComponent(c.base) + q, { method: 'DELETE' }, { retries: 0, timeout: 30000 });
     if (r.ok) {
       toast(`Deleted: ${r.recycled} file(s) in the ${trashName()}` + (r.cuts ? `, ${r.cuts} cut${r.cuts === 1 ? '' : 's'} kept` : '') + (nc ? `, ${r.nextcloud} uploaded cop${r.nextcloud === 1 ? 'y' : 'ies'} removed` : ''), 'ok');
       lastSeen = null; showResult(null); shownLast = null;
+      // A done clip that only lost its recording stays in the Done list with
+      // its cuts; everything else leaves the list and the clip below it
+      // comes up, as after "Mark done". Until 3.9 the newest clip did.
+      if (r.cuts && clipFilter === 'done') { c.file = null; load(c); }
+      else {
+        clips = clips.filter(x => x.base !== c.base); doneClips = doneClips.filter(x => x.base !== c.base);
+        if (next) load(next);
+      }
     }
-    else toast('Delete failed: ' + r.error, 'err');
-  } catch (e) { toast('Delete failed: ' + e.message, 'err'); }
+    else { toast('Delete failed: ' + r.error, 'err'); load(c); }
+  } catch (e) { toast('Delete failed: ' + e.message, 'err'); load(c); }
+  putAway = null;
   $('delOk').disabled = false; poll.now();
 }
 
@@ -3663,7 +3675,7 @@ function applyState(d, polled, withDone) {
     const fresh = clips[0];
     if (shown.length || (cur && allClips().some(c => c.base === cur.base))) {
       const newest = shown[0];
-      if (!cur && newest) load(newest);
+      if (!cur && newest && !putAway) load(newest);
       // The loaded clip left the document: a share put it away ("Afterwards"),
       // or it is really gone. Its neighbour in the list takes its place, as
       // after "Mark done"; until 3.9 the newest clip did, with "Clip is gone"

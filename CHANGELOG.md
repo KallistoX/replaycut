@@ -63,6 +63,10 @@ contract.
   although the clip was only marked done. It now loads the clip below the
   one you shared (or the one above), like "Mark done", and says "Loaded the
   next clip".
+- **Deleting a clip loads the clip next to it.** After a delete the page
+  jumped to the newest clip in the list. It now loads the clip below the
+  deleted one (or the one above), and a done clip that only lost its
+  recording stays on screen in the Done view with its cuts.
 - **Switching the list between Done and Active keeps the clip you are on.**
   Coming back to Active took the newest clip for a new recording: the page
   loaded it with "New clip loaded", or showed the "New clip" banner when a
