@@ -88,6 +88,15 @@ contract.
   first start has none yet, so its whole first session decoded recordings
   on the CPU - next to the game. The newest recording in the folder is the
   test sample now when there is no preview.
+- **Smaller things.** A downloaded and verified update stays ready through
+  the daily check instead of being downloaded again, and the banner says why
+  it waits while a share runs. Post statuses name their target the same way
+  on every path ("Discord: Link posted"). A refused request no longer offers
+  "Try again", and the card of an earlier job goes when a new one starts. An
+  ffmpeg that stops without a message says so instead of only an exit code.
+  The first start no longer puts `shared` and `.cuts` into the default folder
+  before the setup chose one, and the empty bar under a cut being made is
+  gone.
 - **The log reads as the evening it was.** A start no longer lists every
   clip in the folder as "new clip" - it says how many it found in one line;
   renders are logged as renders, a publish no longer as a share at some

@@ -486,14 +486,11 @@ pub struct Boot {
     pub obs: Arc<crate::obs_ws::ObsHandle>,
 }
 
+/// The folders a start needs. `.cuts\` and `shared\` come with the first cut
+/// and the first share (since 3.10): a first start, before the setup chose
+/// a folder, put both into the default one - `shared` visibly into Videos.
 fn create_dirs(paths: &Paths) -> Result<()> {
-    for d in [
-        &paths.data_dir,
-        &paths.clip_dir,
-        &paths.preview_dir,
-        &paths.cuts_dir,
-        &paths.shared_dir,
-    ] {
+    for d in [&paths.data_dir, &paths.clip_dir, &paths.preview_dir] {
         std::fs::create_dir_all(d).with_context(|| format!("cannot create {}", d.display()))?;
     }
     Ok(())

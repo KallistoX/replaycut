@@ -959,6 +959,10 @@ async fn make_cut(
     }
     let runtime = state.runtime();
     let started = Instant::now();
+    // `.cuts\` is made with the first cut, not at start (since 3.10)
+    if let Some(dir) = out.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    }
     tokio::select! {
         r = runtime.media.cut(clip, &out, job.start, job.seconds) => r.context("cut")?,
         _ = token.cancelled() => {
@@ -1325,6 +1329,11 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         // or a failed encode left a broken file that looked like an output;
         // leftovers of a stop or a crash go when the service starts.
         let part = part_of(&out);
+        // `shared\` is made with the first share, not at start (since 3.10)
+        if let Some(dir) = out.parent() {
+            std::fs::create_dir_all(dir)
+                .with_context(|| format!("cannot create {}", dir.display()))?;
+        }
         if let Err(e) = encode(state, id, &job, &input, seek, &part, token, &profile).await {
             let _ = std::fs::remove_file(&part);
             if token.is_cancelled() || job.mode == "copy" || !profile.is_gpu_path() {
