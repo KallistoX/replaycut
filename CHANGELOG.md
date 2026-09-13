@@ -10,6 +10,17 @@ contract.
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-09-13
+
+A release about the size of a share. A player reported a file ten times the
+size of the cut it came from, and the page was right: the file was that
+large, because a share without limits is a best-quality render. Now a share
+on an AMD GPU is half the size at the same look, "File only" can be capped
+like any storage, and the share row promises the size that really comes
+out. Besides that, every output has its own file again, a failed post no
+longer writes a credential into the log, and "Open the folder" and "Copy the
+file" work after a restart.
+
 ### Added
 
 - **"File only" takes limits, like a storage.** A share that stays on this
