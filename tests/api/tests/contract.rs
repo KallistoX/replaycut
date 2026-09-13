@@ -1058,6 +1058,18 @@ fn t28_queue_runs_shares_in_order_and_cancel_ends_them() {
     assert_eq!(jc["cancelled"], true);
     assert_eq!(jc["ok"], false);
     assert_eq!(state()["queue"], json!([b]));
+    // since 3.10 a job that never ran leaves no entry and is not `last`
+    if since_310() {
+        let st = state();
+        assert_ne!(st["last"]["id"], c.as_str(), "{}", st["last"]);
+        let (_, h) = get_json("/api/history?limit=50");
+        assert!(
+            h["history"]
+                .as_array()
+                .is_some_and(|e| e.iter().all(|e| e["id"] != c.as_str())),
+            "a job taken out of the queue is in the history"
+        );
+    }
 
     // the first finishes, the second takes over and gets cancelled while it runs
     let (stages, ja) = wait_job(&a, JOB_TIMEOUT);
@@ -3376,6 +3388,16 @@ fn t61_one_device_is_one_row_however_it_signs_in() {
 }
 
 // ---------------------------------------------------------------- since 3.8
+
+fn since_310() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split(['.', '-']).map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (3, 10)
+}
 
 fn since_38() -> bool {
     let v = state()["config"]["version"]

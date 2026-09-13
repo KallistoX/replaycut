@@ -22,6 +22,13 @@ contract.
   its cuts and their render buttons. On a phone both buttons next to the
   title show their icons only.
 
+### Changed
+
+- **A share taken out of the queue leaves no trace.** "Remove from queue" on
+  a share that had not started yet put a "cancelled" row on Activity and a
+  "Share cancelled" card on every open page. Only a share that is stopped
+  while it runs is recorded as cancelled now (`docs/api.md`, since 3.10).
+
 ### Fixed
 
 - **A share whose in mark sits on a keyframe keeps its first seconds.** OBS

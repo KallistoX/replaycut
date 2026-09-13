@@ -655,7 +655,8 @@ file removed, an upload in flight is dropped and the started remote file
 deleted, then the job ends with stage `cancelled`, `ok: false`, `error:
 "cancelled"`, `cancelled: true`. A job in `discord`, `done`, `error` or
 already `cancelled` answers 409; an unknown id 404. Cancelled jobs appear in
-the history with `cancelled: true` and no link.
+the history with `cancelled: true` and no link (since 3.10 only the ones
+cancelled while they ran, see [below](#a-job-taken-out-of-the-queue-leaves-no-entry)).
 
 ### Thumbnails
 
@@ -1620,6 +1621,18 @@ Why these numbers: measured with AMF on 1440p60 game recordings, VMAF on a
 1080p picture, 24000 kbit/s is the first bitrate at which a busy scene still
 looks like the recording (93.6, the worst percent of frames 79.5; 8000 gives
 69.8 and 41.5). A best-quality render of the same scene ran at 158 Mbit/s.
+
+## Since 3.10
+
+### A job taken out of the queue leaves no entry
+
+`POST /api/jobs/<id>/cancel` on a job that is still waiting works as before:
+it leaves the queue at once, the answer is `{ ok: true, stopped: true }`, and
+`GET /api/jobs/<id>` shows stage `cancelled` with `cancelled: true`. It no
+longer becomes a history entry, and it does not become `last` in the status
+document: it never ran, so Activity has nothing to list and no page a result
+card to show. A job cancelled while it runs is recorded as before, with
+`cancelled: true` and no link.
 
 ## Behaviour
 

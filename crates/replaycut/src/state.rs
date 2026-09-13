@@ -1341,12 +1341,10 @@ impl AppState {
                     j.cancelled = true;
                     j.position = None;
                     j.finished = Some(util::now_local());
-                    let done = j.clone();
-                    if done.is_output() {
-                        let entry = done.history_entry();
-                        self.record_job(&mut inner, entry);
-                    }
-                    inner.last = Some(done);
+                    // Since 3.10 a job that never ran is no history entry and
+                    // not `last`: Activity listed it as "cancelled", and every
+                    // open page showed its result card, for a click on
+                    // "Remove from queue".
                 }
                 drop(inner);
                 self.cancels.lock().remove(id);
