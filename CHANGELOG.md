@@ -10,6 +10,13 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- **"On this PC" opens with one click.** The card holds nothing but the
+  limits, yet it put them behind a second fold ("Limits (optional)") inside
+  the card, so reaching the two fields could take two clicks. The fields sit
+  directly in the card now.
+
 ## [3.8.0] - 2026-09-13
 
 A release about the size of a share. A player reported a file ten times the
