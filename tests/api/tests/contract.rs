@@ -1937,7 +1937,16 @@ fn t42_quality_by_default_limits_per_target_and_posting_on_request() {
     let clip = wait_for_clip(&base, Duration::from_secs(20));
     let height = clip["height"].as_u64().unwrap_or(720);
 
-    // a share without limits keeps the recording's resolution and reports no bitrate cap
+    // a share without limits keeps the recording's resolution and reports no
+    // bitrate cap. Since 3.9 a new installation caps "File only", and the
+    // service under test may be one (CI starts it with an empty data dir).
+    if since_38() {
+        let (status, r) = put_json(
+            "/api/settings",
+            &json!({ "integrations": { "file": { "maxHeight": 0, "maxKbps": 0 } } }),
+        );
+        assert_eq!(status, 200, "{r}");
+    }
     let (status, v) = post_json(
         "/api/share",
         &json!({ "after": "keep", "base": base, "start": 0, "end": 2, "audio": "mix", "target": "file" }),

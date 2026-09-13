@@ -589,6 +589,18 @@ pub struct Limits {
     pub max_kbps: u32,
 }
 
+/// What a new installation caps a share to Nextcloud and to "File only" at
+/// (since 3.9); every other target, and a field missing from an existing
+/// file, stays at none. Measured with AMF on 1440p60 game recordings, VMAF
+/// on a 1080p picture: 24000 is the first bitrate at which a busy scene
+/// still looks like the recording (93.6, the worst percent of frames 79.5;
+/// 8000 gives 69.8 and 41.5), at a fixed 3 MB a second instead of up to
+/// 19 MB a second for the best-quality render of the same scene.
+pub const NEW_INSTALL_LIMITS: Limits = Limits {
+    max_height: 1080,
+    max_kbps: 24_000,
+};
+
 impl Settings {
     /// The limits of a target by id: a storage, or `file` (since 3.8);
     /// unknown ids have none.
@@ -817,11 +829,19 @@ impl Settings {
                 settings.integrations.s3.presign_days.clamp(1, 7);
             return Ok(settings);
         }
-        // A brand-new file: nothing is set up yet.
-        let settings = Settings {
+        // A brand-new file: nothing is set up yet, and the two targets someone
+        // who never opens the settings shares to are capped (since 3.9). Only
+        // here - `Settings::default()` and a missing field keep meaning no
+        // limit, so no existing installation changes.
+        let mut settings = Settings {
             setup_done: false,
             ..Settings::default()
         };
+        let i = &mut settings.integrations;
+        (i.nextcloud.max_height, i.nextcloud.max_kbps) =
+            (NEW_INSTALL_LIMITS.max_height, NEW_INSTALL_LIMITS.max_kbps);
+        (i.file.max_height, i.file.max_kbps) =
+            (NEW_INSTALL_LIMITS.max_height, NEW_INSTALL_LIMITS.max_kbps);
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
@@ -1165,6 +1185,58 @@ mod limit_tests {
         // an old settings.json with the field still loads
         let old: Settings = serde_json::from_str(r#"{"shareKbps": 6000, "port": 8420}"#).unwrap();
         assert_eq!(old.port, 8420);
+    }
+
+    /// A new installation caps Nextcloud and "File only" (since 3.9); an
+    /// existing file keeps what it says, and says none where it says nothing.
+    #[test]
+    fn a_new_installation_caps_nextcloud_and_file_only() {
+        let dir = std::env::temp_dir().join(format!("rc-limits-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("settings.json");
+
+        let fresh = Settings::load_or_create(&path).unwrap();
+        assert_eq!(fresh.limits("nextcloud"), NEW_INSTALL_LIMITS);
+        assert_eq!(fresh.limits("file"), NEW_INSTALL_LIMITS);
+        for id in ["onedrive", "s3", "webdav", "youtube"] {
+            assert_eq!(fresh.limits(id), Limits::default(), "{id}");
+        }
+        // written into the file, so the next start reads the same
+        let again = Settings::load_or_create(&path).unwrap();
+        assert_eq!(again.limits("nextcloud"), NEW_INSTALL_LIMITS);
+        assert_eq!(again.limits("file"), NEW_INSTALL_LIMITS);
+
+        // a file from before 3.9 that never carried the fields: no limits
+        std::fs::write(
+            &path,
+            r#"{"port": 8420, "integrations": {"nextcloud": {"enabled": true}}}"#,
+        )
+        .unwrap();
+        let old = Settings::load_or_create(&path).unwrap();
+        assert_eq!(old.limits("nextcloud"), Limits::default());
+        assert_eq!(old.limits("file"), Limits::default());
+        // and one that says none keeps saying it
+        std::fs::write(
+            &path,
+            r#"{"integrations": {"file": {"maxHeight": 0, "maxKbps": 0}}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            Settings::load_or_create(&path).unwrap().limits("file"),
+            Limits::default()
+        );
+
+        // the defaults of the struct are not a new installation
+        assert_eq!(Settings::default().limits("nextcloud"), Limits::default());
+        assert_eq!(Settings::default().limits("file"), Limits::default());
+        // and the numbers pass the bounds of a limit
+        assert!(Settings {
+            integrations: fresh.integrations.clone(),
+            ..Settings::default()
+        }
+        .validate()
+        .is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// "File only" takes the limits a storage takes (since 3.8), with the

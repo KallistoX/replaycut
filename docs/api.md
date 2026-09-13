@@ -1600,6 +1600,27 @@ else.
 
 `sizeMB` of an output is therefore the size of the file it names, always.
 
+## Since 3.9
+
+### A new installation caps the shares nobody set limits for
+
+A `settings.json` the service creates - the first start, `replaycut install`,
+the takeover of a 1.x service - starts `integrations.nextcloud` and
+`integrations.file` at `maxHeight: 1080` and `maxKbps: 24000`. Those are the
+two targets someone who never opens the settings shares to: the Share button
+without integrations, and the integration the setup offers. Every other
+target starts without limits, YouTube included.
+
+Nothing else changes. A missing `maxHeight` or `maxKbps` still means none, so
+an existing file keeps what it says and says none where it says nothing; the
+values are only ever written into a file that did not exist. The limits
+behave exactly as those of 2.7 and 3.8, and can be set back to `0`.
+
+Why these numbers: measured with AMF on 1440p60 game recordings, VMAF on a
+1080p picture, 24000 kbit/s is the first bitrate at which a busy scene still
+looks like the recording (93.6, the worst percent of frames 79.5; 8000 gives
+69.8 and 41.5). A best-quality render of the same scene ran at 158 Mbit/s.
+
 ## Behaviour
 
 ### Folder scan

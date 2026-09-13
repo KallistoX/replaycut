@@ -54,7 +54,9 @@ fine.
       "url": "https://cloud.example.com",
       "folder": "Clips",
       "expireDays": 0,
-      "quickShare": true
+      "quickShare": true,
+      "maxHeight": 1080,
+      "maxKbps": 24000
     },
     "discord": {
       "enabled": false,
@@ -83,8 +85,8 @@ fine.
       "url": ""
     },
     "file": {
-      "maxHeight": 0,
-      "maxKbps": 0
+      "maxHeight": 1080,
+      "maxKbps": 24000
     }
   }
 }
@@ -121,8 +123,8 @@ for you. Command-line overrides win over the file for as long as the
 process runs but are never written back.
 | `integrations.nextcloud` | `enabled` switches the upload on. `url` is the server, `folder` the target folder (clips land in `<folder>/<YYYY-MM>/`), `expireDays` sets an expiry on the public link (`0` = never; an expired link also kills the Discord post). `quickShare` (default true, since 2.5) makes it the target of the Share button; off keeps the button local and leaves Nextcloud in the button's menu. |
 | `integrations.discord` | `enabled` switches the webhook post on. The webhook URL itself is a credential. `autoPost` (default true, since 2.5) posts every share that produced a link; since 2.7 only the quick share, the others on request ("Post to ..."). |
-| `integrations.<storage>.maxHeight`, `maxKbps` | Since 2.7, on every storage block (`nextcloud`, `onedrive`, `s3`, `webdav`, `youtube`): `0` (default) keeps the recording's resolution and encodes in the encoder's quality mode; a height (240-4320) scales the share down to it, a bitrate (500-200000 kbit/s) caps it at constant bitrate. Limits belong to the target, so only shares to that target shrink. Discord shows its inline player only for a small file: 1080p at 6000-8000 kbit/s keeps a one-minute clip under the size its proxy accepts, and above that the post is a bare link. The global `shareKbps` of 2.0-2.6 is gone. |
-| `integrations.file.maxHeight`, `maxKbps` | Since 3.8: the same two limits for "File only", the share that stays in `shared\` on this PC - what the Share button does when no storage is the quick share. Same values and bounds as on a storage, `0` (default) for none; the block takes nothing else. Settings › Integrations › On this PC. Pasting such a file into Discord ("Copy the file", then Ctrl+V) counts against Discord's upload limit, 20 MB without Nitro since August 2026: at 1080p and 8000 kbit/s that is about 20 seconds of clip. |
+| `integrations.<storage>.maxHeight`, `maxKbps` | Since 2.7, on every storage block (`nextcloud`, `onedrive`, `s3`, `webdav`, `youtube`): `0` (default; since 3.9 a new installation starts `nextcloud` at 1080p and 24000, see `integrations.file`) keeps the recording's resolution and encodes in the encoder's quality mode; a height (240-4320) scales the share down to it, a bitrate (500-200000 kbit/s) caps it at constant bitrate. Limits belong to the target, so only shares to that target shrink. Discord shows its inline player only for a small file: 1080p at 6000-8000 kbit/s keeps a one-minute clip under the size its proxy accepts, and above that the post is a bare link. The global `shareKbps` of 2.0-2.6 is gone. |
+| `integrations.file.maxHeight`, `maxKbps` | Since 3.8: the same two limits for "File only", the share that stays in `shared\` on this PC - what the Share button does when no storage is the quick share. Same values and bounds as on a storage, `0` for none; the block takes nothing else. Since 3.9 a new installation starts here and on `integrations.nextcloud` at 1080p and 24000 kbit/s - about 180 MB a minute, and in a busy scene still close to the recording - while a field missing from an existing file keeps meaning none. Settings › Integrations › On this PC. Pasting such a file into Discord ("Copy the file", then Ctrl+V) counts against Discord's upload limit, 20 MB without Nitro since August 2026: at 1080p and 8000 kbit/s that is about 20 seconds of clip. |
 | `integrations.onedrive` | `enabled` switches the OneDrive upload on (since 2.5); `quickShare` makes it the Share button's target. The account is connected under Settings › Integrations with a code at Microsoft; the refresh token is the credential `replaycut/onedrive`. Uploads land in `Apps/replaycut/<YYYY-MM>/`. |
 | `integrations.s3` | S3-compatible storage (since 2.5): `endpoint` (`https://<account>.r2.cloudflarestorage.com`, `https://s3.<region>.amazonaws.com`, `http://minio:9000`), `region` (`auto` for R2), `bucket`, `prefix` (folder inside the bucket), `publicBase` (public URL serving the keys; empty = presigned links), `presignDays` (1-7). Keys are the credential `replaycut/s3`. |
 | `integrations.webdav` | Generic WebDAV (since 2.5): `url` (the DAV root), `folder` below it, `publicBase` (public URL that serves the folder; required, the link is `<publicBase>/<month>/<file>`). Login is the credential `replaycut/webdav`. |
