@@ -12,6 +12,15 @@ contract.
 
 ### Fixed
 
+- **A second share no longer takes the progress bar from the one that
+  runs.** Sharing two cuts one after the other dropped the bar to 0 % the
+  moment the second one was queued; the first went on out of sight and its
+  result card never showed. The bar now stays with the running job, and
+  whatever waits behind it has a line of its own under the bar ("1 more
+  queued: 2:10.0 - 2:27.0 → Nextcloud") with "Remove from queue". When the
+  running job ends, its result card comes as before and the next job takes
+  the bar. The same goes for renders, "Save cut", "Publish to" and the
+  playable preview. A running job of another clip names that clip.
 - **The Activity page no longer floods the service while a job runs.** Its
   "Running now" card asked for the running job about a thousand times a
   second and went on after the job had ended, showing it as still running

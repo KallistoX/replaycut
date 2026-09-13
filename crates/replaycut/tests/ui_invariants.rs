@@ -329,6 +329,49 @@ fn every_icon_reference_has_a_symbol() {
     );
 }
 
+/// The job the page watches is the job the progress bar shows, so only a job
+/// that runs may be watched. Issue 29 was every place that starts a job
+/// calling `watchJob` with the job it had just queued: the bar fell to 0 %
+/// behind "Queued" while the running job went on out of sight, and its
+/// result card never came. A place that starts a job hands the answer to
+/// `followJob`, which watches a job that runs at once and leaves a waiting
+/// one to the queue line; the poll attaches to the job the state document
+/// names as running. Nothing else calls `watchJob`.
+#[test]
+fn only_a_running_job_takes_the_progress_bar() {
+    let html = ui();
+    let follow = html
+        .find("function followJob(")
+        .expect("followJob is gone - where do started jobs go now?");
+    let follow_end = follow
+        + html[follow..]
+            .find("\n}")
+            .expect("followJob has no closing brace at the start of a line");
+    let mut stray = Vec::new();
+    let mut at = 0;
+    while let Some(i) = html[at..].find("watchJob(") {
+        let pos = at + i;
+        at = pos + 1;
+        let defined = html[..pos].ends_with("function ");
+        let from_poll = html[pos..].starts_with("watchJob(d.job)");
+        let from_follow = pos > follow && pos < follow_end;
+        if !(defined || from_poll || from_follow) {
+            let line = html[pos..].lines().next().unwrap_or_default();
+            stray.push(format!(
+                "line {}: {}",
+                line_of(&html, pos),
+                line.chars().take(80).collect::<String>()
+            ));
+        }
+    }
+    assert!(
+        stray.is_empty(),
+        "these calls watch a job directly - one that waits would take the progress \
+         bar from the running job (hand the answer to followJob instead):\n  {}",
+        stray.join("\n  ")
+    );
+}
+
 /// Banner buttons that only one page wires, with the reason. The banner they
 /// sit in is raised by that page alone, so the button cannot be reached from
 /// anywhere else; anything not listed here has to work on every page.
