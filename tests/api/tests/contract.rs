@@ -3875,7 +3875,7 @@ fn t68_switching_the_recording_folder_keeps_the_old_clips() {
     assert_eq!(status, 200, "{v}");
     wait_for_scan(Duration::from_secs(20));
     assert_eq!(
-        state()["config"]["clipDir"].as_str(),
+        get_json("/api/settings").1["clipDir"].as_str(),
         Some(temp.to_string_lossy().as_ref()),
         "the service is watching the other folder now"
     );
@@ -3893,6 +3893,12 @@ fn t68_switching_the_recording_folder_keeps_the_old_clips() {
         preview.status().as_u16(),
         200,
         "the preview of a clip in the old folder"
+    );
+    // the page tells the two folders apart by this and the clip's `path`
+    assert_eq!(
+        state()["config"]["clipDir"].as_str(),
+        Some(temp.to_string_lossy().as_ref()),
+        "config.clipDir says which folder is being watched"
     );
 
     // and it can still be rendered - from its own folder
