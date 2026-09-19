@@ -10,6 +10,24 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Changing the recording folder no longer loses the clips of the old
+  one.** Switching the folder in Settings › General marked every clip that
+  had cuts as done and every one of those cuts as missing, and switching
+  back healed none of it: the clips stayed done, their cuts stayed
+  unrenderable although their files had never moved, and every old clip was
+  announced again with a "Clip saved" toast. replaycut remembers which
+  folder a recording is in now. The clips of a folder that is no longer
+  watched stay in the list and stay usable - trim, cut, render, publish,
+  delete - as long as their recording is there, their preview and their
+  outputs are served from that folder, and a render writes its cut and its
+  file beside the recording instead of into the new folder. Their cards say
+  "another folder", with the path on hover. A recording that is really gone
+  still takes its clip out of the list, and now brings it back when the file
+  returns. The first start after the update repairs what an earlier switch
+  did. (#40)
+
 ## [3.10.0] - 2026-09-19
 
 A release without a new feature, on purpose. Twenty everyday flows were
