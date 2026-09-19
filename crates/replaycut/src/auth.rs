@@ -217,12 +217,14 @@ pub fn device_name(agent: &str) -> String {
         "Device"
     };
     // Order matters: Edge and Opera also call themselves Chrome, and
-    // every Chrome also claims Safari.
-    let browser = if agent.contains("Edg/") {
+    // every Chrome also claims Safari. On iOS every browser is WebKit and
+    // says `Safari/` too, with its own name in front: `EdgiOS`, `CriOS`,
+    // `FxiOS`.
+    let browser = if agent.contains("Edg/") || agent.contains("EdgiOS/") {
         "Edge"
     } else if agent.contains("OPR/") || agent.contains("Opera") {
         "Opera"
-    } else if agent.contains("Firefox/") {
+    } else if agent.contains("Firefox/") || agent.contains("FxiOS/") {
         "Firefox"
     } else if agent.contains("Chrome/") || agent.contains("CriOS/") {
         "Chrome"
@@ -1093,6 +1095,20 @@ mod tests {
         assert_eq!(
             name("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36"),
             "Android, Chrome"
+        );
+        // On iOS every browser is WebKit and ends in `Safari/604.1`; what it
+        // is stands in front of that.
+        assert_eq!(
+            name("Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/153.0.4234.32 Version/26.0 Mobile/15E148 Safari/604.1"),
+            "iPhone, Edge"
+        );
+        assert_eq!(
+            name("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/141.0 Mobile/15E148 Safari/605.1.15"),
+            "iPhone, Firefox"
+        );
+        assert_eq!(
+            name("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/141.0.0.0 Mobile/15E148 Safari/604.1"),
+            "iPhone, Chrome"
         );
         assert_eq!(name(""), "Unknown device");
         assert_eq!(name("curl/8.9.1"), "Device, Browser");

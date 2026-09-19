@@ -131,6 +131,11 @@ contract.
   read once, when the page opened, so a share that finished afterwards left
   "Running now" and did not arrive under "Outputs", and a post from an
   output's menu did not show its status, until the page was reloaded.
+- **A phone running Edge or Firefox on iOS is named after its browser.** Every
+  browser on iOS is WebKit and ends its user agent in `Safari`, so a phone
+  running Edge or Firefox was listed as "iPhone, Safari" in the sign-in
+  request, its toast and the device list. The name in front of it is read
+  now (`EdgiOS`, `FxiOS`), as `CriOS` for Chrome already was.
 
 ## [3.9.0] - 2026-09-13
 
