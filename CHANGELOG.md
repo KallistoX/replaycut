@@ -39,8 +39,12 @@ contract.
   Linux; without mDNS nothing changes. The bare name and the IP address
   stay in the list for a network without mDNS. And when a sign-in from this
   address has just worked and the page comes back without a cookie anyway,
-  the login page says so and offers the address that works. Safari on the
-  same phone was never affected; Android is not checked. (#47)
+  the login page says so: over a name without a dot it offers the address
+  that works, over any other address it points at the browser's own cookie
+  settings - on the phone this was found on, a browser that had stopped
+  keeping anything for the address worked again once its data for that
+  address was cleared. Safari on the same phone was never affected; Android
+  is not checked. (#47)
 
 ## [3.10.0] - 2026-09-19
 
