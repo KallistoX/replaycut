@@ -27,6 +27,20 @@ contract.
   still takes its clip out of the list, and now brings it back when the file
   returns. The first start after the update repairs what an earlier switch
   did. (#40)
+- **The address for a phone gets a dot in it.** On an iPhone whose browser
+  is Edge, every sign-in over `http://<pc>:<port>/` failed without saying
+  why: the service signed the device in, the phone came back to the login
+  page, and it kept neither its session nor its device - over an address
+  that is a computer name without a dot, some browsers keep no cookie.
+  Exactly that name was the first address replaycut handed out, the one in
+  the QR code and in the address box under Settings › Access. When this
+  machine resolves its own name over mDNS - which is how a phone finds it
+  too - `<pc>.local` now comes first, on Windows as it already did on
+  Linux; without mDNS nothing changes. The bare name and the IP address
+  stay in the list for a network without mDNS. And when a sign-in from this
+  address has just worked and the page comes back without a cookie anyway,
+  the login page says so and offers the address that works. Safari on the
+  same phone was never affected; Android is not checked. (#47)
 
 ## [3.10.0] - 2026-09-19
 
