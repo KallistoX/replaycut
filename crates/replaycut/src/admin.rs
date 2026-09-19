@@ -594,8 +594,17 @@ pub async fn session(
     let authenticated = auth::is_authenticated(&app, &addr, &headers);
     // since 3.10.1 (issue #47): a sign-in from this address worked minutes
     // ago and was never used again - the browser kept no cookie. The login
-    // page says so, with the address that does keep one.
+    // page says so, with the address that does keep one. Only over an
+    // address that has no dot in it: that is the one browsers drop the
+    // cookie for, and the page reached over the working address would
+    // otherwise warn about itself while the same sign-in is still fresh.
+    let over_a_dotless_name = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(auth::host_name)
+        .is_some_and(|h| !h.is_empty() && !h.contains(['.', ':']) && h != "localhost");
     let cookie_lost = !authenticated
+        && over_a_dotless_name
         && app
             .sessions
             .signed_in_but_never_seen(addr.ip(), std::time::Duration::from_secs(300));
