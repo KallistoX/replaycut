@@ -10,6 +10,14 @@ contract.
 
 ## [Unreleased]
 
+## [3.10.1] - 2026-09-19
+
+Two things that the stabilisation of 3.10 turned up and that were too big to
+fix along the way: a **change of the recording folder** took the clips of
+the old folder with it, and the **address handed to a phone** was one some
+browsers sign in over but keep no cookie for. Both are fixed below; nothing
+else changed.
+
 ### Fixed
 
 - **Changing the recording folder no longer loses the clips of the old
