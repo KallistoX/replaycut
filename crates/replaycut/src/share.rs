@@ -419,7 +419,7 @@ pub fn start_cut(state: &AppState, req: ShareRequest) -> Result<Started, ShareEr
         .cut_of_range(&req.base, start, end)
         .map_err(|e| ShareError::Invalid(format!("cannot read the cuts: {e:#}")))?
     {
-        if cut.state == CUT_READY && state.paths().cut_of(&cut.id).is_file() {
+        if cut.state == CUT_READY && state.paths_of_cut(&cut).cut_of(&cut.id).is_file() {
             return Err(ShareError::CutExists(cut.id));
         }
     }
@@ -497,7 +497,7 @@ pub fn start_render(
         .cut(cut_id)
         .map_err(|e| ShareError::Invalid(format!("cannot read the cut: {e:#}")))?
         .ok_or_else(|| ShareError::UnknownCut(cut_id.to_string()))?;
-    if !state.paths().cut_of(&cut.id).is_file() {
+    if !state.paths_of_cut(&cut).cut_of(&cut.id).is_file() {
         return Err(ShareError::Invalid(format!(
             "the file of cut {} is gone - cut the range again",
             cut.id
@@ -642,7 +642,7 @@ pub fn publish(state: &AppState, source: &str, target: &str) -> Result<Started, 
             "the source job has no finished file".to_string(),
         ));
     };
-    if !state.paths().shared_dir.join(&file).is_file() {
+    if !state.paths_for(&src.base).shared_dir.join(&file).is_file() {
         return Err(ShareError::Invalid("the shared file is gone".to_string()));
     }
     let runtime = state.runtime();
@@ -951,7 +951,8 @@ async fn make_cut(
         .db
         .cut(id)?
         .ok_or_else(|| anyhow!("cut {id} is no longer known"))?;
-    let out = state.paths().cut_of(&cut.id);
+    // since 3.10.1: beside the recording, wherever that is
+    let out = state.paths_of_cut(&cut).cut_of(&cut.id);
     if cut.state == CUT_READY && out.is_file() {
         tracing::info!("share [{}]: cut {} is there already", job.id, cut.id);
         recheck_cut_start(state, &mut cut).await;
@@ -1040,7 +1041,7 @@ pub fn start_preview(state: &AppState, base: &str, idle: bool) -> Result<Started
         .clips
         .get(base)
         .ok_or_else(|| ShareError::UnknownClip(base.to_string()))?;
-    if clip.preview_h264.is_some() || state.paths().preview_h264_of(base).is_file() {
+    if clip.preview_h264.is_some() || state.paths_for(base).preview_h264_of(base).is_file() {
         return Err(ShareError::Invalid(
             "the playable preview exists already".to_string(),
         ));
@@ -1100,7 +1101,7 @@ async fn preview_pipeline(state: &AppState, id: &str, token: &CancellationToken)
             .ok_or_else(|| anyhow!("unknown clip: {}", job.base))?;
         PathBuf::from(&clip.path)
     };
-    let out = state.paths().preview_h264_of(&job.base);
+    let out = state.paths_for(&job.base).preview_h264_of(&job.base);
     let tmp = out.with_extension("part.mp4");
     tracing::info!(
         "preview [{id}]: {} ({} s) -> {}{}",
@@ -1231,7 +1232,7 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
             free_file_name(state, id, &name)
         }
     };
-    let out = state.paths().shared_dir.join(&file_name);
+    let out = state.paths_for(&job.base).shared_dir.join(&file_name);
     // the storage this job goes to, or none for `file`
     let storage = if job.target == crate::integrations::TARGET_FILE {
         None
@@ -1294,7 +1295,7 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
             .db
             .cut(job.cut.as_deref().unwrap_or_default())?
             .ok_or_else(|| anyhow!("the cut of this render is no longer known"))?;
-        let file = state.paths().cut_of(&cut.id);
+        let file = state.paths_of_cut(&cut).cut_of(&cut.id);
         if !file.is_file() {
             bail!("the file of cut {} is gone - cut the range again", cut.id);
         }
@@ -1305,7 +1306,10 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         let clip_path = clip_path_of(state, &job.base)?;
         let cut = make_cut(state, &job, &clip_path, token).await?;
         state.with_job(id, |j| j.cut = Some(cut.id.clone()));
-        Some((state.paths().cut_of(&cut.id), seek_in_cut(&cut, job.start)))
+        Some((
+            state.paths_of_cut(&cut).cut_of(&cut.id),
+            seek_in_cut(&cut, job.start),
+        ))
     };
 
     // encode (skipped when the file already exists from the source job)

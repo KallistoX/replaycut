@@ -669,6 +669,44 @@ impl AppState {
         self.settings.read().clone()
     }
 
+    /// The paths of one clip (since 3.10.1, issue #40). A recording in a
+    /// folder the service no longer watches keeps its preview, its cuts and
+    /// its outputs where they are, so changing the folder moves nothing and
+    /// hides nothing. For everything in the current folder - which is every
+    /// clip until somebody changes it - this is the current `Paths`.
+    pub fn paths_for(&self, base: &str) -> Arc<Paths> {
+        let current = self.paths();
+        let of_clip = self
+            .inner
+            .lock()
+            .clips
+            .get(base)
+            .map(|c| PathBuf::from(&c.path));
+        let dir = of_clip
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .or_else(|| {
+                self.db
+                    .clip(base)
+                    .ok()
+                    .flatten()
+                    .and_then(|r| r.dir)
+                    .map(PathBuf::from)
+            });
+        match dir {
+            Some(d) if !util::same_folder(&d, &current.clip_dir) => {
+                Arc::new(Paths::new(&d, &current.data_dir, current.ui_file.clone()))
+            }
+            _ => current,
+        }
+    }
+
+    /// The paths of the clip a cut belongs to.
+    pub fn paths_of_cut(&self, cut: &crate::db::Cut) -> Arc<Paths> {
+        self.paths_for(&cut.base)
+    }
+
     pub fn paths(&self) -> Arc<Paths> {
         self.paths.read().clone()
     }
@@ -1119,16 +1157,20 @@ impl AppState {
         self.inner.lock().jobs.get(id).cloned()
     }
 
-    /// The finished file of a job, from the jobs or the store (since 2.6).
-    pub fn job_file(&self, id: &str) -> Option<String> {
+    /// The finished file of a job, from the jobs or the store (since 2.6),
+    /// with the clip it belongs to: since 3.10.1 the folder of that clip is
+    /// where the file is.
+    pub fn job_output(&self, id: &str) -> Option<(String, String)> {
         if let Some(j) = self.inner.lock().jobs.get(id) {
-            return j.file.clone().filter(|_| j.ok == Some(true));
+            return j
+                .file
+                .clone()
+                .filter(|_| j.ok == Some(true))
+                .map(|f| (j.base.clone(), f));
         }
-        self.db
-            .entry(id)
-            .ok()
-            .flatten()
-            .and_then(|e| e["file"].as_str().map(str::to_string))
+        let entry = self.db.entry(id).ok().flatten()?;
+        let file = entry["file"].as_str()?.to_string();
+        Some((entry["base"].as_str().unwrap_or_default().to_string(), file))
     }
 
     /// A finished job read back from its stored entry (since 2.6.1). The

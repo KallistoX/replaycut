@@ -425,7 +425,8 @@ fn shared_file_of(app: &AppState, id: &str) -> Result<std::path::PathBuf, ApiErr
             "this job has no finished file",
         ));
     };
-    let path = app.paths().shared_dir.join(file);
+    // since 3.10.1: the output is in the `shared\` of the clip's folder
+    let path = app.paths_for(&job.base).shared_dir.join(file);
     if !path.is_file() {
         return Err(ApiError::new(
             StatusCode::NOT_FOUND,
@@ -536,8 +537,8 @@ async fn delete_clip(
     let remote = remote && !keep_cuts;
 
     // The MKV plus, unless the cuts stay, every share derived from it and
-    // every cut file.
-    let paths = app.paths();
+    // every cut file. Since 3.10.1 all of it is in the clip's own folder.
+    let paths = app.paths_for(&base);
     let shared = if keep_cuts {
         Vec::new()
     } else {
@@ -671,7 +672,8 @@ async fn delete_cut(
         ));
     }
     let outputs = app.db.jobs_of_cut(&id).map_err(ApiError::internal)?;
-    let paths = app.paths();
+    // since 3.10.1: the cut and its outputs are in the clip's own folder
+    let paths = app.paths_of_cut(&cut);
     let mut files: Vec<std::path::PathBuf> = outputs
         .iter()
         .filter_map(|o| o["file"].as_str())
@@ -851,14 +853,15 @@ async fn cut_render(State(app): State<App>, Path(id): Path<String>, body: Bytes)
 /// `GET /api/jobs/<id>/file` (since 2.6): the finished MP4 as a download,
 /// so the phone puts it in its gallery and the PC in its downloads folder.
 async fn job_file(State(app): State<App>, Path(id): Path<String>, req: Request) -> Response {
-    let Some(file) = app.job_file(&id) else {
+    let Some((base, file)) = app.job_output(&id) else {
         return ApiError::new(
             StatusCode::NOT_FOUND,
             format!("no finished file for job {id}"),
         )
         .into_response();
     };
-    let path = app.paths().shared_dir.join(&file);
+    // since 3.10.1: the output is in the `shared\` of the clip's folder
+    let path = app.paths_for(&base).shared_dir.join(&file);
     if !path.is_file() {
         return ApiError::new(StatusCode::NOT_FOUND, "the shared file is gone").into_response();
     }
@@ -984,7 +987,8 @@ async fn media(State(app): State<App>, Path(file): Path<String>, req: Request) -
         if base.contains(['/', '\\']) {
             return ApiError::new(StatusCode::BAD_REQUEST, "bad path").into_response();
         }
-        let path = app.paths().thumb_of(base);
+        // since 3.10.1: whichever folder the recording is in
+        let path = app.paths_for(base).thumb_of(base);
         if !path.is_file() {
             return not_found().await;
         }
@@ -1006,7 +1010,10 @@ async fn media(State(app): State<App>, Path(file): Path<String>, req: Request) -
     if base.contains(['/', '\\']) {
         return ApiError::new(StatusCode::BAD_REQUEST, "bad path").into_response();
     }
-    let path = app.paths().preview_of(base);
+    // `<base>.h264.mp4` (since 2.6) is the playable copy of `<base>`; since
+    // 3.10.1 both are looked up in the folder that clip's recording is in
+    let of_clip = base.strip_suffix(".h264").unwrap_or(base);
+    let path = app.paths_for(of_clip).preview_of(base);
     if !path.is_file() {
         return not_found().await;
     }

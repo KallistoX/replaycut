@@ -360,6 +360,10 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
                 state.recording_lost(&base);
             }
         }
+        // The clips of every other folder, by their own file (since 3.10.1).
+        if other_folders(state, &rows, &paths.clip_dir) {
+            changed = true;
+        }
         let mut inner = state.inner.lock();
         let before = inner.seen.len();
         // A base the store still knows has been announced, wherever its
@@ -374,19 +378,26 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
         if seen_dirty {
             state.save_seen(&inner);
         }
-        // the first scan of this run: what the start found, in one line
+        // the first scan of this run, or the first after the folder changed:
+        // what is listed, in one line. Since 3.10.1 clips of other folders
+        // are counted apart - they are listed, but not in this folder.
         if inner.scan_at.is_none() {
-            tracing::info!(
-                "{} clip(s) in {}",
-                inner.clips.len(),
-                paths.clip_dir.display()
-            );
+            let elsewhere = inner
+                .clips
+                .values()
+                .filter(|c| !in_folder(std::path::Path::new(&c.path), &paths.clip_dir))
+                .count();
+            let here = inner.clips.len() - elsewhere;
+            match elsewhere {
+                0 => tracing::info!("{here} clip(s) in {}", paths.clip_dir.display()),
+                n => tracing::info!(
+                    "{here} clip(s) in {}, {n} in other folders",
+                    paths.clip_dir.display()
+                ),
+            }
         }
         inner.seen_ready = true;
         inner.scan_at = Some(util::now_local());
-    }
-    if other_folders(state, &rows, &paths.clip_dir) {
-        changed = true;
     }
     if changed {
         state.tray_changed();
@@ -496,7 +507,8 @@ async fn sweep_cuts(state: &Arc<AppState>) {
     };
     let paths = state.paths();
     for cut in &cuts {
-        let here = paths.cut_of(&cut.id).is_file();
+        // since 3.10.1: in the folder of the clip it belongs to
+        let here = state.paths_of_cut(cut).cut_of(&cut.id).is_file();
         if cut.state == crate::db::CUT_READY && !here {
             tracing::warn!("the file of cut {} is gone", cut.id);
             if let Err(e) = state.db.set_cut_state(&cut.id, crate::db::CUT_MISSING) {
