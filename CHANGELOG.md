@@ -10,6 +10,16 @@ contract.
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-09-19
+
+A release without a new feature, on purpose. Twenty everyday flows were
+played through from end to end - a replay from `F9` to the posted link, two
+shares at once, deleting, a restart in the middle of a job, an update, a
+phone over Wi-Fi, a storage that cannot be reached, OBS closing, half an
+hour of idling - and everything that did not behave as it should is fixed
+below. The one thing that grew is **"Mark done" and "Bring back"**: a clip
+can be put away without sharing it first.
+
 ### Added
 
 - **"Mark done" and "Bring back" next to "Delete".** A clip could only be
