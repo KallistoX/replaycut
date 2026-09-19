@@ -197,27 +197,42 @@ pub fn hostname() -> String {
         .unwrap_or_else(|| "localhost".to_string())
 }
 
-/// The host name other devices use in the address we hand out. Windows
-/// resolves computer names over the network (LLMNR, NetBIOS), so the name is
-/// the address; Linux does not, so the name is only advertised as
-/// `<host>.local` when this machine resolves it over mDNS (Avahi or
-/// systemd-resolved), and the IPv4 address stands in otherwise. Computed
-/// once, the resolution can take a moment.
+/// The host name other devices use in the address we hand out:
+/// `<host>.local` when this machine resolves that name over mDNS, which is
+/// the name a phone finds as well. Without mDNS the platforms differ -
+/// Windows resolves plain computer names over the network (LLMNR, NetBIOS)
+/// and keeps the bare name, Linux does not and hands out the IPv4 address
+/// instead. Computed once: the resolution can take a moment.
+///
+/// Since 3.10.1 (issue #47): a name without a dot is an address some
+/// browsers accept and then keep no cookie for, so a sign-in from such a
+/// phone never sticks. The bare name and the address stay in `urls`.
 pub fn lan_host() -> String {
-    #[cfg(target_os = "linux")]
-    {
-        linux::lan_host().to_string()
+    static HOST: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    HOST.get_or_init(|| {
+        let name = hostname();
+        let fallback = if cfg!(windows) { None } else { primary_ipv4() };
+        advertised_host(&name, resolves_over_mdns(&name), fallback)
+    })
+    .clone()
+}
+
+/// Whether `<name>.local` resolves here. A machine that answers mDNS for its
+/// own name resolves it too (Windows since 10, Avahi or systemd-resolved on
+/// Linux), so this is what says whether the name is worth handing out.
+fn resolves_over_mdns(name: &str) -> bool {
+    use std::net::ToSocketAddrs;
+    if name.is_empty() || name.contains('.') {
+        return false;
     }
-    #[cfg(not(target_os = "linux"))]
-    {
-        hostname()
-    }
+    (format!("{name}.local"), 80u16)
+        .to_socket_addrs()
+        .map(|mut a| a.next().is_some())
+        .unwrap_or(false)
 }
 
 /// The name to advertise, from what is known: `<host>.local` when mDNS
-/// resolves it, else the IPv4 address, else the bare name. Platform-neutral
-/// and tested everywhere; only the Linux `lan_host` calls it so far.
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+/// resolves it, else the IPv4 address, else the bare name.
 pub fn advertised_host(
     hostname: &str,
     mdns_resolves: bool,
@@ -677,23 +692,6 @@ pub mod linux {
         std::io::stdout().is_terminal() || std::io::stderr().is_terminal()
     }
 
-    /// `<host>.local` when this machine resolves it (mDNS through Avahi or
-    /// systemd-resolved, which also means the name is announced), else the
-    /// IPv4 address. Cached: the first resolution may take a second.
-    pub fn lan_host() -> &'static str {
-        use std::net::ToSocketAddrs;
-        use std::sync::OnceLock;
-        static HOST: OnceLock<String> = OnceLock::new();
-        HOST.get_or_init(|| {
-            let name = super::hostname();
-            let mdns = (format!("{name}.local").as_str(), 80u16)
-                .to_socket_addrs()
-                .map(|mut a| a.next().is_some())
-                .unwrap_or(false);
-            super::advertised_host(&name, mdns, super::primary_ipv4())
-        })
-    }
-
     /// The kernel's node name, lower-cased; `None` when it is empty.
     pub fn hostname() -> Option<String> {
         let uname = rustix::system::uname();
@@ -949,6 +947,34 @@ mod tests {
         assert_eq!(super::advertised_host("pc", false, ip), "192.0.2.7");
         assert_eq!(super::advertised_host("pc", false, None), "pc");
         assert_eq!(super::advertised_host("", true, None), "");
+    }
+
+    /// Since 3.10.1 (issue #47): the name this machine hands out. With mDNS
+    /// it is the same on both platforms; without it Windows keeps the plain
+    /// computer name, which it resolves over the network, and Linux falls
+    /// back to the address.
+    #[test]
+    fn the_advertised_name_falls_back_the_way_the_platform_resolves_names() {
+        let host = super::lan_host();
+        let name = super::hostname();
+        if host == format!("{name}.local") {
+            return; // mDNS answers here
+        }
+        if cfg!(windows) {
+            assert_eq!(host, name, "Windows keeps the bare name without mDNS");
+        } else {
+            assert!(
+                host == name || host.parse::<std::net::Ipv4Addr>().is_ok(),
+                "Linux hands out the address without mDNS: {host}"
+            );
+        }
+    }
+
+    /// A name that already carries a dot is nothing to look up as `.local`.
+    #[test]
+    fn a_dotted_name_is_not_asked_for_over_mdns() {
+        assert!(!super::resolves_over_mdns("pc.example.com"));
+        assert!(!super::resolves_over_mdns(""));
     }
 
     #[cfg(target_os = "linux")]

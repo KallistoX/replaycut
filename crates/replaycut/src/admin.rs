@@ -485,13 +485,24 @@ pub async fn addresses(
     let scheme = app.scheme();
     let mut urls = Vec::new();
     let local = settings.bind == "127.0.0.1" || settings.bind == "::1";
+    let mut add = |host: String| {
+        let url = format!("{scheme}://{host}:{port}/");
+        if !urls.contains(&url) {
+            urls.push(url);
+        }
+    };
     if !local {
-        urls.push(format!("{scheme}://{}:{port}/", platform::lan_host()));
+        // since 3.10.1: the name with a dot first, because the QR code and
+        // the address box take urls[0] and a name without one is an address
+        // some browsers keep no cookie for (issue #47). The bare name and
+        // the address follow, for a network without mDNS.
+        add(platform::lan_host());
+        add(platform::hostname());
         if let Some(ip) = platform::primary_ipv4() {
-            urls.push(format!("{scheme}://{ip}:{port}/"));
+            add(ip.to_string());
         }
     }
-    urls.push(format!("{scheme}://localhost:{port}/"));
+    add("localhost".to_string());
     let signs_in = !local && auth::is_authenticated(&app, &addr, &headers);
     // A QR code for localhost would only lead a phone to itself.
     let qr_svg = if local {
