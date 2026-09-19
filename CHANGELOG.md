@@ -136,6 +136,13 @@ contract.
   running Edge or Firefox was listed as "iPhone, Safari" in the sign-in
   request, its toast and the device list. The name in front of it is read
   now (`EdgiOS`, `FxiOS`), as `CriOS` for Chrome already was.
+- **A phone that loses the network no longer says the running share failed.**
+  Eight seconds after the connection broke, the page put the result card
+  "Share failed - Connection to the service lost" on top of the banner that
+  already said the service was out of reach - while the share ran through on
+  the PC undisturbed - and the card stayed until a real result replaced it.
+  The page lets go quietly now: the banner says what is wrong, and once the
+  service answers again the bar comes back, or the result of the job does.
 
 ## [3.9.0] - 2026-09-13
 

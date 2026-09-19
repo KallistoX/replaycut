@@ -3085,7 +3085,12 @@ async function watchJob(id, mine) {
       if (j.stage === 'done' || j.stage === 'error' || j.stage === 'cancelled') { watchingJob = null; showProgress(null); showResult(j); shownLast = id; cfg._lastFailed = j.ok === false && !j.cancelled; cfg._lastFailedId = id; setBusy(false); poll.now(); return; }
       if (j.error && j.ok === false && !j.stage) throw new Error(j.error);
       showProgress(j); misses = 0;
-    } catch (e) { if (++misses >= 8) { watchingJob = null; showProgress(null); showResult({ ok: false, error: 'Connection to the service lost: ' + e.message }); setBusy(false); return; } }
+    } catch (e) {
+      // Out of reach is not a failed share: the "Service not responding"
+      // banner says what is wrong, and the state document arms this watch
+      // again - with the running job, or with its outcome through `last`.
+      if (++misses >= 8) { watchingJob = null; showProgress(null); setBusy(false); return; }
+    }
     await new Promise(r => setTimeout(r, 1000));
   }
 }
