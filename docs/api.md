@@ -1696,6 +1696,15 @@ back to the login page (observed with Edge on iOS 26.6; Safari on the same
 phone is fine). The same name with `.local` works there, and so does the IP.
 Not checked on Android.
 
+### `GET /api/session` says when a sign-in vanished
+
+Two more fields, for the login page: `cookieLost` is true when this address
+signed a device in within the last five minutes, that session has never been
+used since (its `lastSeen` still equals `created`) and the caller is not
+signed in - what it looks like when the browser keeps no cookie. `bestUrl`
+is then the address worth trying instead (`urls[0]` of
+`GET /api/addresses`), and `""` otherwise.
+
 ## Behaviour
 
 ### Folder scan

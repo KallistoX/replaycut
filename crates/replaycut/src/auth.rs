@@ -472,6 +472,27 @@ impl Sessions {
         rows
     }
 
+    /// Whether a sign-in from this address just worked and was never used
+    /// (since 3.10.1, issue #47): a session created minutes ago whose
+    /// `lastSeen` never moved past `created`. That is what it looks like
+    /// when the browser drops the cookie - the service signed the device in,
+    /// the device came back knowing nothing about it.
+    pub fn signed_in_but_never_seen(&self, ip: IpAddr, within: Duration) -> bool {
+        let now = chrono::Local::now();
+        self.list.lock().iter().any(|s| {
+            s.ip == ip.to_string()
+                && s.last_seen == s.created
+                && chrono::NaiveDateTime::parse_from_str(&s.created, "%Y-%m-%dT%H:%M:%S")
+                    .ok()
+                    .and_then(|t| t.and_local_timezone(chrono::Local).single())
+                    .is_some_and(|t| {
+                        let age = now.signed_duration_since(t);
+                        age >= chrono::Duration::zero()
+                            && age <= chrono::Duration::from_std(within).unwrap_or_default()
+                    })
+        })
+    }
+
     /// Sign a device out by the id of its row (since 2.8); the name for the
     /// log. A row stands for a device, so every session behind it goes
     /// (since 3.5) - for a device from before 3.5 that is every session with
@@ -991,6 +1012,38 @@ mod tests {
         again.remove(&token);
         assert!(!again.is_valid(&token));
         assert!(!Sessions::load(&file).is_valid(&token));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Since 3.10.1 (issue #47): a sign-in that worked and was never used
+    /// again is what a dropped cookie looks like. A session that has been
+    /// seen since, and one from another address, say nothing.
+    #[test]
+    fn a_session_that_was_never_seen_again_is_a_lost_cookie() {
+        let dir = std::env::temp_dir().join(format!("rc-lost-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sessions = Sessions::load(&dir.join("sessions.json"));
+        let phone: IpAddr = "192.0.2.7".parse().unwrap();
+        let other: IpAddr = "192.0.2.8".parse().unwrap();
+        let five = Duration::from_secs(300);
+        assert!(!sessions.signed_in_but_never_seen(phone, five));
+
+        let token = sessions.create(NewSession::from_agent("Edge", phone, Via::Qr));
+        assert!(sessions.signed_in_but_never_seen(phone, five));
+        assert!(
+            !sessions.signed_in_but_never_seen(other, five),
+            "another address says nothing about this one"
+        );
+        // a session that is in use is no sign of a lost cookie
+        sessions.list.lock()[0].last_seen = "2099-01-01T00:00:00".into();
+        assert!(!sessions.signed_in_but_never_seen(phone, five));
+        // and neither is one from long ago
+        let mut list = sessions.list.lock();
+        list[0].last_seen = "2020-01-01T00:00:00".into();
+        list[0].created = "2020-01-01T00:00:00".into();
+        drop(list);
+        assert!(!sessions.signed_in_but_never_seen(phone, five));
+        sessions.remove(&token);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

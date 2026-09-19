@@ -591,8 +591,16 @@ pub async fn session(
 ) -> Json<Value> {
     let loopback = auth::is_loopback(&addr);
     let password_set = app.password_set();
+    let authenticated = auth::is_authenticated(&app, &addr, &headers);
+    // since 3.10.1 (issue #47): a sign-in from this address worked minutes
+    // ago and was never used again - the browser kept no cookie. The login
+    // page says so, with the address that does keep one.
+    let cookie_lost = !authenticated
+        && app
+            .sessions
+            .signed_in_but_never_seen(addr.ip(), std::time::Duration::from_secs(300));
     Json(json!({
-        "authenticated": auth::is_authenticated(&app, &addr, &headers),
+        "authenticated": authenticated,
         "loopback": loopback,
         "passwordSet": password_set,
         // since 2.8: the pages say the name of this PC instead of "this PC",
@@ -604,6 +612,10 @@ pub async fn session(
         // since 3.5: which device the browser says it is, empty until it has
         // signed in once. Not a credential - it names a row in the list.
         "device": auth::device_id(&headers).unwrap_or_default(),
+        "cookieLost": cookie_lost,
+        // the address to try instead - the one the QR code carries; only
+        // worth naming when this browser is dropping the cookie
+        "bestUrl": if cookie_lost { app.lan_url() } else { String::new() },
     }))
 }
 

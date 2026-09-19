@@ -1453,18 +1453,27 @@ async function initLogin() {
   showPage('login');
   $('nav').hidden = true; $('topRight').hidden = true;
   const next = new URLSearchParams(location.search).get('next') || '/';
-  let host = 'the PC', pairing = true;
+  let host = 'the PC', pairing = true, cookieLost = false, bestUrl = '';
   try {
     const s = await api('/api/session', {}, { retries: 0 });
     if (s.authenticated) { location.replace(next); return; }
     if (s.host) host = s.host;
     pairing = s.pairing !== false;
+    // since 3.10.1: the sign-in worked, this browser just kept nothing (#47)
+    cookieLost = !!s.cookieLost; bestUrl = s.bestUrl || '';
   } catch (e) {}
   $('loginTitle').textContent = `replaycut on ${host}`;
   $('askBtn').textContent = `Ask ${host}`;
   $('devName').value = guessDeviceName();
   if (new URLSearchParams(location.search).get('pair') === 'expired') note(`That QR code was already used or has run out. Ask ${host} instead, or use the password.`);
   if (!pairing) { note(`${host} pauses sign-in requests after too many tries. Use the password, or try again in a few minutes.`); showPassword(); }
+  // A sign-in from here worked a moment ago and this page came back knowing
+  // nothing about it: the browser kept no cookie for this address (#47).
+  if (cookieLost) {
+    const other = bestUrl && !location.href.startsWith(bestUrl) ? ` Try <a href="${esc(bestUrl)}">${esc(bestUrl)}</a> instead.` : '';
+    $('loginNote').innerHTML = `A sign-in from this device worked a moment ago, but this browser did not keep it - some browsers keep nothing for an address without a dot in it.${other}`;
+    $('loginNote').hidden = false;
+  }
 
   function note(text) { $('loginNote').textContent = text; $('loginNote').hidden = !text; }
   function showPassword() { $('loginAsk').hidden = true; $('loginWait').hidden = true; $('loginForm').hidden = false; $('pw').focus(); }
