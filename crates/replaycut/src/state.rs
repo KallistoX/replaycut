@@ -676,24 +676,16 @@ impl AppState {
     /// clip until somebody changes it - this is the current `Paths`.
     pub fn paths_for(&self, base: &str) -> Arc<Paths> {
         let current = self.paths();
-        let of_clip = self
-            .inner
-            .lock()
-            .clips
-            .get(base)
-            .map(|c| PathBuf::from(&c.path));
-        let dir = of_clip
-            .as_deref()
-            .and_then(Path::parent)
-            .map(Path::to_path_buf)
-            .or_else(|| {
-                self.db
-                    .clip(base)
-                    .ok()
-                    .flatten()
-                    .and_then(|r| r.dir)
-                    .map(PathBuf::from)
-            });
+        // The store, not the clip cache: this is called from places that
+        // already hold the cache lock, and the store is where the folder is
+        // written anyway.
+        let dir = self
+            .db
+            .clip(base)
+            .ok()
+            .flatten()
+            .and_then(|r| r.dir)
+            .map(PathBuf::from);
         match dir {
             Some(d) if !util::same_folder(&d, &current.clip_dir) => {
                 Arc::new(Paths::new(&d, &current.data_dir, current.ui_file.clone()))
@@ -1087,6 +1079,9 @@ impl AppState {
                 "encoder": runtime.encoder.name,
                 // since 3.2: the page words things for the platform
                 "platform": std::env::consts::OS,
+                // since 3.10.1: the folder being watched, so the page can
+                // say which clips are recorded somewhere else
+                "clipDir": settings.clip_dir.to_string_lossy(),
                 "audio": audio,
                 "webhook": webhook,
                 "nextcloud": nextcloud,

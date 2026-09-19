@@ -8,7 +8,7 @@
 //! that single-threaded runs execute them in this order; the delete test
 //! additionally waits for the others when the harness runs in parallel.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use replaycut_api_tests::*;
 use serde_json::json;
@@ -3775,5 +3775,149 @@ fn t67_recycle_afterwards_leaves_the_recording_to_a_share_that_waits() {
     assert!(
         !env().clip_dir.join(format!("{base}.mkv")).exists(),
         "the recording is still in the clip folder"
+    );
+}
+
+// -------------------------------------------------------------- since 3.10.1
+
+fn since_3101() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split(['.', '-']).map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor, patch) = (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    );
+    (major, minor, patch) >= (3, 10, 1)
+}
+
+/// Puts the recording folder back whatever happens to the test: the suite is
+/// serial and shares one service, so a folder left switched would take every
+/// test after this one with it.
+struct SwitchedFolder {
+    original: String,
+    temp: std::path::PathBuf,
+}
+
+impl Drop for SwitchedFolder {
+    fn drop(&mut self) {
+        let (status, v) = put_json("/api/settings", &json!({ "clipDir": self.original }));
+        if status != 200 {
+            eprintln!("could not put the clip folder back: {v}");
+        }
+        let _ = std::fs::remove_dir_all(&self.temp);
+    }
+}
+
+/// The scan that follows a change: `scanAt` is cleared by the change and set
+/// again when the folder has been read.
+fn wait_for_scan(after: Duration) {
+    let start = Instant::now();
+    while start.elapsed() < after {
+        if state()["scanAt"].is_string() {
+            std::thread::sleep(Duration::from_millis(500));
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+/// Issue #40: changing the recording folder changes what is watched, not
+/// which clips exist. The clips of the folder that was left keep their
+/// state, their cuts and their files, and everything about them still works.
+#[test]
+fn t68_switching_the_recording_folder_keeps_the_old_clips() {
+    let _g = serial();
+    if !since_3101() {
+        return;
+    }
+    let base = format!("{} folder", fixture().base);
+    make_clip(&base);
+    let clip = wait_for_clip(&base, Duration::from_secs(20));
+    let name = clip["name"].as_str().unwrap_or_default().to_string();
+
+    let (status, v) = post_json(
+        "/api/cuts",
+        &json!({ "base": base, "start": 2.0, "end": 6.0, "audio": "mix" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let cut = v["cut"].as_str().expect("cut").to_string();
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+
+    let settings = get_json("/api/settings").1;
+    let original = settings["clipDir"].as_str().expect("clipDir").to_string();
+    let temp = env()
+        .clip_dir
+        .parent()
+        .expect("the clip folder has a parent")
+        .join(format!(
+            "{}-switch",
+            env()
+                .clip_dir
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+        ));
+    std::fs::create_dir_all(&temp).expect("the second folder");
+    let guard = SwitchedFolder {
+        original: original.clone(),
+        temp: temp.clone(),
+    };
+
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "clipDir": temp.to_string_lossy() }),
+    );
+    assert_eq!(status, 200, "{v}");
+    wait_for_scan(Duration::from_secs(20));
+    assert_eq!(
+        state()["config"]["clipDir"].as_str(),
+        Some(temp.to_string_lossy().as_ref()),
+        "the service is watching the other folder now"
+    );
+
+    // the clip of the folder that was left is still there, and so is its cut
+    let listed = find_clip(&base).unwrap_or_else(|| {
+        panic!("the clip of the old folder is gone from the list after the switch")
+    });
+    assert_ne!(listed["state"], "done", "{listed}");
+    assert_eq!(listed["file"], name.as_str(), "{listed}");
+    let cut_doc = get_json(&format!("/api/cuts/{cut}")).1;
+    assert_eq!(cut_doc["state"], "ready", "{cut_doc}");
+    let preview = get(&format!("/media/{}.mp4", encode(&base)));
+    assert_eq!(
+        preview.status().as_u16(),
+        200,
+        "the preview of a clip in the old folder"
+    );
+
+    // and it can still be rendered - from its own folder
+    let (status, v) = post_json(
+        &format!("/api/cuts/{cut}/render"),
+        &json!({ "target": "file", "after": "keep" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+    let file = done["file"].as_str().expect("file");
+    assert!(
+        env().clip_dir.join("shared").join(file).is_file(),
+        "the output belongs beside its recording, not into the folder being watched"
+    );
+
+    // back again: nothing changed, and nothing was announced twice
+    drop(guard);
+    wait_for_scan(Duration::from_secs(20));
+    let listed = find_clip(&base).expect("the clip after switching back");
+    assert_ne!(listed["state"], "done", "{listed}");
+    let cut_doc = get_json(&format!("/api/cuts/{cut}")).1;
+    assert_eq!(cut_doc["state"], "ready", "{cut_doc}");
+    assert_eq!(
+        state()["config"]["clipDir"].as_str(),
+        Some(original.as_str())
     );
 }

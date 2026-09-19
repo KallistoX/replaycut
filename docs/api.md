@@ -200,8 +200,9 @@ reach OBS is not detectable and still answers `ok: true`.
 - `created` is the MKV's last-write time. `preview` is the URL-encoded path
   under `/media/`. `status` is always `ready` in 1.4 (clips only appear once
   the preview exists). `title` is the stored title or `""`.
-- `path` is the absolute path on the service host. The UI does not use it; a
-  later implementation may keep or drop it.
+- `path` is the absolute path on the service host. Since 3.10.1 it is what
+  says which folder a clip belongs to; the page reads it against
+  `config.clipDir`.
 
 ### Job
 
@@ -383,8 +384,8 @@ run `{ ok: true, dryRun: true }` without sending.
 `{ hostname, port, bind, urls: ["http://<host>:<port>/", "http://<ip>:<port>/", "http://localhost:<port>/"], qrSvg }`.
 `qrSvg` is an SVG document encoding `urls[0]`. `<host>` is the computer name
 on Windows; on Linux it is `<computer name>.local` when the machine
-announces itself over mDNS, else the IPv4 address (since 3.2). `hostname`
-stays the bare computer name. With `bind` set to loopback
+announces itself over mDNS, else the IPv4 address (since 3.2).
+`hostname` stays the bare computer name. With `bind` set to loopback
 only the localhost address is listed, `local` is true and `qrSvg` is empty
 (since 2.3): a code for localhost would only lead a phone to itself.
 Since 2.8 the code signs the scanning phone in and `qrSignsIn` says so -
@@ -1645,6 +1646,39 @@ storage it was meant for in `target`, no `link` or `direct`, and
 and a delete removes its file like any output's. A share that failed before
 its file existed leaves no entry, as before.
 
+## Since 3.10.1
+
+### A clip belongs to the folder its recording is in
+
+Changing the recording folder - `clipDir` in `PUT /api/settings` - changes
+what is scanned and watched, nothing else. The clips of the folder that was
+left stay in `GET /api/clips` with their state, their cuts and their
+outputs, and stay usable, as long as their recording is where it was: they
+can be trimmed, cut, rendered, published and deleted like any other clip.
+Only a recording that is really gone takes its clip out of the list, the way
+it always has, and when the file comes back so does the clip.
+
+Everything that belongs to a clip stays with its recording: `.preview\`,
+`.cuts\` and `shared\` of *that* folder, `GET /media/<base>.mp4` and
+`GET /api/jobs/<id>/file` serve from there, and a render started while
+another folder is being watched writes its cut and its output there as well.
+A folder that is no longer watched is never listed and never watched; each
+of its clips is checked by its own file.
+
+`path` in the [Clip](#clip) is the recording, absolute, as before - it now
+says which folder a clip belongs to, so the note in that section that the UI
+does not use it no longer holds.
+
+The name of a recording stays the key of everything. A recording of the same
+name in the folder being watched takes the name over from one in another
+folder, which is then no longer listed.
+
+### `config.clipDir`
+
+`config` in the [State](#state) carries `clipDir`, the folder the service
+watches right now. With `path` of a clip it is what tells a page that a clip
+is recorded somewhere else.
+
 ## Behaviour
 
 ### Folder scan
@@ -1659,7 +1693,9 @@ its file existed leaves no entry, as before.
   second; a new clip is expected to appear in `/api/clips` within 5 seconds
   of the file being complete.
 - Clips whose MKV disappeared are removed from the list, their previews and
-  seen entries are cleaned up. Previews without an MKV are deleted.
+  seen entries are cleaned up. Previews without an MKV are deleted. Since
+  3.10.1 only the clips of the folder being scanned are judged by its
+  listing; a clip of another folder is judged by its own file.
 - The scan is independent of HTTP traffic; a stalled scan is visible through
   `scanAt`.
 
@@ -1670,7 +1706,9 @@ its file existed leaves no entry, as before.
 - On the very first start (no seen-list yet) the existing files are recorded
   silently. From then on every unknown clip is announced, however old the
   file is or however long the service was down.
-- Seen entries whose MKV no longer exists are dropped.
+- Seen entries whose MKV no longer exists are dropped. Since 3.10.1 a base
+  the store still knows keeps its entry, whichever folder its recording is
+  in: changing the folder and changing back announces nothing again.
 
 ### Share pipeline
 
