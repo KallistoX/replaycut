@@ -3443,6 +3443,16 @@ function dayLabel(day) {
 function listedClips() { return clipFilter === 'done' ? doneClips : clips; }
 function allClips() { const seen = new Set(); return clips.concat(doneClips).filter(c => !seen.has(c.base) && seen.add(c.base)); }
 /// Where a clip's outputs went, for the badges in the list.
+// since 3.10.1: the folder of a recording that is not in the one being
+// watched - after a change of the recording folder those clips stay listed
+// and usable, and the card says where they are
+function otherFolder(c) {
+  const dir = String(c.path || '').replace(/[^\\/]+$/, '').replace(/[\\/]+$/, '');
+  const watched = String(cfg.clipDir || '').replace(/[\\/]+$/, '');
+  if (!dir || !watched) return '';
+  const norm = s => cfg.platform === 'windows' ? s.replace(/\//g, '\\').toLowerCase() : s;
+  return norm(dir) === norm(watched) ? '' : dir;
+}
 function clipTargets(c) {
   const out = [];
   (c.cuts || []).forEach(cut => (cut.outputs || []).forEach(o => { const t = o.uploadError ? 'file' : (o.target || 'nextcloud'); if (!out.includes(t)) out.push(t); }));
@@ -3450,7 +3460,7 @@ function clipTargets(c) {
 }
 function renderList() {
   const shown = listedClips();
-  const key = clipFilter + JSON.stringify(shown.map(c => [c.base, c.title, c.tracks, c.thumb, c.state, c.file === null, (c.cuts || []).length, clipTargets(c).join()])) + (cur ? cur.base : '') + JSON.stringify(counts); if (key === listKey) return; listKey = key;
+  const key = clipFilter + JSON.stringify(shown.map(c => [c.base, c.title, c.tracks, c.thumb, c.state, c.file === null, (c.cuts || []).length, clipTargets(c).join(), otherFolder(c)])) + (cur ? cur.base : '') + JSON.stringify(counts); if (key === listKey) return; listKey = key;
   const list = $('list'); list.innerHTML = '';
   if (!shown.length) {
     list.innerHTML = clipFilter === 'done'
@@ -3466,6 +3476,7 @@ function renderList() {
     // since 3.1: what is worth knowing, as words in one line - no badge wall
     const cuts = (c.cuts || []).length;
     const gone = c.file === null;
+    const elsewhere = gone ? '' : otherFolder(c);
     const meta = [
       esc((c.created || '').slice(11, 16)),
       gone ? '' : fmt(c.duration),
@@ -3473,6 +3484,7 @@ function renderList() {
       esc(clipTargets(c).map(targetLabel).join(', ')),
       c.state === 'done' ? '<svg class="icon icon-sm ok"><use href="#i-check"/></svg>done' : '',
       gone ? '<span class="faint">recording gone</span>' : '',
+      elsewhere ? `<span class="faint" title="${esc(elsewhere)}">another folder</span>` : '',
     ].filter(Boolean).map(s => `<span>${s}</span>`).join('');
     e.innerHTML = `${c.thumb ? `<img class="thumb" src="${esc(c.thumb)}" alt="" loading="lazy">` : `<div class="thumb none${gone ? ' gone' : ''}"><svg class="icon icon-sm"><use href="#i-film"/></svg></div>`}<div class="name"><span></span></div><div class="meta">${meta}</div>`;
     const n = e.querySelector('.name span'); if (c.title) { n.innerHTML = `<b></b>`; n.firstChild.textContent = c.title; n.title = short(c.base); } else n.textContent = short(c.base);
