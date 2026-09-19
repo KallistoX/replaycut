@@ -604,7 +604,6 @@ pub async fn session(
         .map(auth::host_name)
         .is_some_and(|h| !h.is_empty() && !h.contains(['.', ':']) && h != "localhost");
     let cookie_lost = !authenticated
-        && over_a_dotless_name
         && app
             .sessions
             .signed_in_but_never_seen(addr.ip(), std::time::Duration::from_secs(300));
@@ -622,9 +621,16 @@ pub async fn session(
         // signed in once. Not a credential - it names a row in the list.
         "device": auth::device_id(&headers).unwrap_or_default(),
         "cookieLost": cookie_lost,
-        // the address to try instead - the one the QR code carries; only
-        // worth naming when this browser is dropping the cookie
-        "bestUrl": if cookie_lost { app.lan_url() } else { String::new() },
+        // The address to try instead - the one the QR code carries. Only
+        // over a name without a dot: that is the case another address
+        // actually helps with. Over an address that keeps cookies for other
+        // sites the page says the same thing without pointing anywhere,
+        // because then it is this browser, not the address.
+        "bestUrl": if cookie_lost && over_a_dotless_name {
+            app.lan_url()
+        } else {
+            String::new()
+        },
     }))
 }
 

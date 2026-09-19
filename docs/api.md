@@ -1698,14 +1698,16 @@ Not checked on Android.
 
 ### `GET /api/session` says when a sign-in vanished
 
-Two more fields, for the login page: `cookieLost` is true when the request
-arrived over a host name without a dot (not `localhost`), this address
+Two more fields, for the login page: `cookieLost` is true when this address
 signed a device in within the last five minutes, that session has never been
 used since (its `lastSeen` still equals `created`) and the caller is not
 signed in - what it looks like when the browser keeps no cookie. `bestUrl`
-is then the address worth trying instead (`urls[0]` of
-`GET /api/addresses`), and `""` otherwise. Over the address that does keep a
-cookie the page says nothing, even while the same sign-in is still fresh.
+is the address worth trying instead (`urls[0]` of `GET /api/addresses`),
+and is set only when `cookieLost` is true *and* the request arrived over a
+host name without a dot (not `localhost`) - the one case where another
+address is the answer. Over an address with a dot, or an IP, the page still
+says that the sign-in was not kept, but points at the browser rather than
+at another address.
 
 ## Behaviour
 

@@ -1470,8 +1470,11 @@ async function initLogin() {
   // A sign-in from here worked a moment ago and this page came back knowing
   // nothing about it: the browser kept no cookie for this address (#47).
   if (cookieLost) {
-    const other = bestUrl && !location.href.startsWith(bestUrl) ? ` Try <a href="${esc(bestUrl)}">${esc(bestUrl)}</a> instead.` : '';
-    $('loginNote').innerHTML = `A sign-in from this device worked a moment ago, but this browser did not keep it - some browsers keep nothing for an address without a dot in it.${other}`;
+    // Over a name without a dot another address helps; over one with a dot
+    // it is this browser that keeps nothing, and the page says so instead.
+    $('loginNote').innerHTML = bestUrl && !location.href.startsWith(bestUrl)
+      ? `A sign-in from this device worked a moment ago, but this browser did not keep it - some browsers keep nothing for an address without a dot in it. Try <a href="${esc(bestUrl)}">${esc(bestUrl)}</a> instead.`
+      : 'A sign-in from this device worked a moment ago, but this browser did not keep it. Check whether it blocks cookies for this site, clear its data for it, or try a private tab.';
     $('loginNote').hidden = false;
   }
 
