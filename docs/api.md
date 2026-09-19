@@ -384,7 +384,9 @@ run `{ ok: true, dryRun: true }` without sending.
 `{ hostname, port, bind, urls: ["http://<host>:<port>/", "http://<ip>:<port>/", "http://localhost:<port>/"], qrSvg }`.
 `qrSvg` is an SVG document encoding `urls[0]`. `<host>` is the computer name
 on Windows; on Linux it is `<computer name>.local` when the machine
-announces itself over mDNS, else the IPv4 address (since 3.2).
+announces itself over mDNS, else the IPv4 address (since 3.2). Since 3.10.1
+`.local` is handed out on Windows too when the name resolves there, and the
+bare name follows in `urls` - see "The first address may carry `.local`".
 `hostname` stays the bare computer name. With `bind` set to loopback
 only the localhost address is listed, `local` is true and `qrSvg` is empty
 (since 2.3): a code for localhost would only lead a phone to itself.
@@ -1678,6 +1680,21 @@ folder, which is then no longer listed.
 `config` in the [State](#state) carries `clipDir`, the folder the service
 watches right now. With `path` of a clip it is what tells a page that a clip
 is recorded somewhere else.
+
+### The first address may carry `.local`
+
+`GET /api/addresses` puts `<hostname>.local` first when this machine
+resolves that name over mDNS - on Linux as before, on Windows as well since
+3.10.1. Without mDNS the first address is the bare computer name on Windows
+and the IPv4 address on Linux, as before. `urls` also carries the bare name
+and the IPv4 address, in that order, without duplicates, and `hostname`
+stays the bare name. `qrSvg` encodes `urls[0]`, unchanged.
+
+Why: over an address that is a computer name without a dot, some browsers
+keep no cookie, so a sign-in succeeds on the service and the phone comes
+back to the login page (observed with Edge on iOS 26.6; Safari on the same
+phone is fine). The same name with `.local` works there, and so does the IP.
+Not checked on Android.
 
 ## Behaviour
 

@@ -3921,3 +3921,87 @@ fn t68_switching_the_recording_folder_keeps_the_old_clips() {
         Some(original.as_str())
     );
 }
+
+/// Issue #47: the address a phone is handed has a dot in it when this
+/// machine resolves its own name over mDNS - a bare computer name is an
+/// address some browsers keep no cookie for. The bare name and the IP stay
+/// in the list, and the QR code keeps encoding the first address.
+#[test]
+fn t69_the_first_address_may_carry_local() {
+    let _g = serial();
+    if !since_3101() {
+        return;
+    }
+    let (_, settings) = get_json("/api/settings");
+    let bind = settings["bind"].as_str().unwrap_or("127.0.0.1").to_string();
+    // The addresses of a network bind are the point; a loopback service
+    // lists localhost only. Put back whatever happens.
+    struct Bind(String);
+    impl Drop for Bind {
+        fn drop(&mut self) {
+            let (status, v) = put_json("/api/settings", &json!({ "bind": self.0 }));
+            if status != 200 {
+                eprintln!("could not put the bind back: {v}");
+            }
+        }
+    }
+    let guard = Bind(bind.clone());
+    let (status, v) = put_json("/api/settings", &json!({ "bind": "0.0.0.0" }));
+    assert_eq!(status, 200, "{v}");
+
+    let (status, a) = get_json("/api/addresses");
+    assert_eq!(status, 200, "{a}");
+    let host = a["hostname"].as_str().expect("hostname").to_string();
+    assert!(!host.contains('.'), "hostname stays the bare name: {host}");
+    let urls: Vec<String> = a["urls"]
+        .as_array()
+        .expect("urls is a list")
+        .iter()
+        .map(|u| u.as_str().unwrap_or_default().to_string())
+        .collect();
+    let host_in = |u: &str| {
+        u.split("://")
+            .nth(1)
+            .and_then(|rest| rest.split(':').next())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let first = host_in(&urls[0]);
+    assert!(
+        first == host
+            || first == format!("{host}.local")
+            || first.parse::<std::net::Ipv4Addr>().is_ok(),
+        "the first address is the name, that name with .local, or the address: {first}"
+    );
+    // Where mDNS answers - which this machine can check for itself, since
+    // the service runs on it - the name with the dot is what is handed out.
+    use std::net::ToSocketAddrs;
+    let mdns = (format!("{host}.local"), 80u16)
+        .to_socket_addrs()
+        .map(|mut a| a.next().is_some())
+        .unwrap_or(false);
+    if mdns {
+        assert_eq!(
+            first,
+            format!("{host}.local"),
+            "this machine resolves its own name over mDNS, so that is the address to hand out: {urls:?}"
+        );
+    }
+    assert!(
+        urls.iter().any(|u| host_in(u) == host),
+        "the bare name stays reachable: {urls:?}"
+    );
+    let mut seen = urls.clone();
+    seen.sort();
+    seen.dedup();
+    assert_eq!(seen.len(), urls.len(), "no address twice: {urls:?}");
+    assert!(
+        urls.iter().any(|u| host_in(u) == "localhost"),
+        "localhost is always listed: {urls:?}"
+    );
+    assert!(
+        !a["qrSvg"].as_str().unwrap_or_default().is_empty(),
+        "a service in the network has a code"
+    );
+    drop(guard);
+}
