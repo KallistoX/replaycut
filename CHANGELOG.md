@@ -10,6 +10,15 @@ contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- **"What's new" shows bold text as bold, even when it wraps.** In the
+  release notes of 3.10.1 the first bullet displayed its literal asterisks:
+  the page rendered every line of a list item on its own, so a `**bold**`
+  passage split over two lines never found its other half. A list item is
+  now collected over its continuation lines and rendered once, which also
+  repairs `code`, *italics* and links whose text wraps. (#50)
+
 ## [3.10.1] - 2026-09-19
 
 Two things that the stabilisation of 3.10 turned up and that were too big to

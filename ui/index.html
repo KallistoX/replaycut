@@ -3518,18 +3518,23 @@ function md(src) {
     .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
     .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>')
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-  const out = []; let list = null, para = [], code = null;
-  const flush = () => { if (para.length) { out.push('<p>' + inline(para.join(' ')) + '</p>'); para = []; } if (list) { out.push(`</${list}>`); list = null; } };
+  const out = []; let list = null, para = [], code = null, item = null;
+  // A list item is collected over its continuation lines and rendered once
+  // it ends, the way a paragraph is (since 3.10.2): rendering each line on
+  // its own left the asterisks of a `**bold**` passage that wraps - and the
+  // backticks, stars and brackets of everything else - standing (#50).
+  const closeItem = () => { if (item) { out.push('<li>' + inline(item.join(' ')) + '</li>'); item = null; } };
+  const flush = () => { closeItem(); if (para.length) { out.push('<p>' + inline(para.join(' ')) + '</p>'); para = []; } if (list) { out.push(`</${list}>`); list = null; } };
   for (const raw of String(src || '').replace(/\r/g, '').split('\n')) {
     const line = raw.trimEnd();
     if (code !== null) { if (/^```/.test(line)) { out.push('<pre><code>' + esc(code.join('\n')) + '</code></pre>'); code = null; } else code.push(line); continue; }
     if (/^```/.test(line)) { flush(); code = []; continue; }
     let m;
     if ((m = line.match(/^(#{1,6})\s+(.*)$/))) { flush(); const l = Math.min(m[1].length, 4); out.push(`<h${l}>${inline(m[2])}</h${l}>`); }
-    else if ((m = line.match(/^\s*[-*+]\s+(.*)$/))) { if (list !== 'ul') { flush(); list = 'ul'; out.push('<ul>'); } out.push('<li>' + inline(m[1]) + '</li>'); }
-    else if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) { if (list !== 'ol') { flush(); list = 'ol'; out.push('<ol>'); } out.push('<li>' + inline(m[1]) + '</li>'); }
+    else if ((m = line.match(/^\s*[-*+]\s+(.*)$/))) { if (list !== 'ul') { flush(); list = 'ul'; out.push('<ul>'); } else closeItem(); item = [m[1]]; }
+    else if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) { if (list !== 'ol') { flush(); list = 'ol'; out.push('<ol>'); } else closeItem(); item = [m[1]]; }
     else if (!line.trim()) flush();
-    else if (list && /^\s+/.test(raw)) out[out.length - 1] = out[out.length - 1].replace(/<\/li>$/, ' ' + inline(line.trim()) + '</li>');
+    else if (item && /^\s+/.test(raw)) item.push(line.trim());
     else { if (list) flush(); para.push(line.trim()); }
   }
   if (code !== null) out.push('<pre><code>' + esc(code.join('\n')) + '</code></pre>');
