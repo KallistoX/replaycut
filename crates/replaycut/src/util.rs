@@ -51,9 +51,42 @@ pub fn normalize_title(name: &str) -> String {
     replaced.trim().chars().take(80).collect()
 }
 
+/// Whether two paths name the same folder. Windows spells a folder in
+/// whatever case and with whichever separator it was typed in, Linux does
+/// not, so the comparison follows the platform. Used wherever a stored
+/// folder meets the one the service watches (since 3.10.1).
+pub fn same_folder(a: impl AsRef<Path>, b: impl AsRef<Path>) -> bool {
+    let (a, b) = (a.as_ref(), b.as_ref());
+    if cfg!(windows) {
+        let norm = |p: &Path| {
+            p.to_string_lossy()
+                .replace('/', "\\")
+                .trim_end_matches('\\')
+                .to_ascii_lowercase()
+        };
+        norm(a) == norm(b)
+    } else {
+        let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        real(a) == real(b)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_folder_is_the_same_however_it_is_spelled() {
+        let dir = std::env::temp_dir();
+        assert!(same_folder(&dir, &dir));
+        if cfg!(windows) {
+            assert!(same_folder(r"C:\Users\me\Videos", r"c:/users/me/videos\"));
+            assert!(!same_folder(r"C:\Users\me\Videos", r"C:\Users\me\Clips"));
+        } else {
+            assert!(same_folder("/home/me/videos", "/home/me/videos"));
+            assert!(!same_folder("/home/me/videos", "/home/me/Videos"));
+        }
+    }
 
     #[test]
     fn timestamps_have_contract_shape() {

@@ -30,11 +30,18 @@ pub const BACKUP_DIR: &str = "backup-2.x";
 /// The state files of 1.4 and 2.x, in the order they are imported.
 pub const STATE_FILES: [&str; 3] = ["clip-names.json", "clip-seen.json", "clip-history.json"];
 
-const SCHEMA: i64 = 2;
+const SCHEMA: i64 = 3;
 
 /// Schema 2 (R11c): a clip keeps what the scanner knew about it, so a clip
 /// whose recording is gone can still be listed for its cuts.
 const UPGRADE_2: &str = "ALTER TABLE clips ADD COLUMN doc TEXT";
+
+/// Schema 3 (3.10.1, issue #40): a clip knows which folder its recording is
+/// in, and whether the service gave that recording up on its own.
+const UPGRADE_3: [&str; 2] = [
+    "ALTER TABLE clips ADD COLUMN dir TEXT",
+    "ALTER TABLE clips ADD COLUMN lost INTEGER NOT NULL DEFAULT 0",
+];
 
 const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
@@ -53,7 +60,13 @@ CREATE TABLE IF NOT EXISTS clips (
     has_file   INTEGER NOT NULL DEFAULT 1,
     -- the clip document as the scanner last saw it, so a recording that is
     -- gone can still be listed for its cuts
-    doc        TEXT
+    doc        TEXT,
+    -- the folder the recording is in (since 3.10.1); NULL means the folder
+    -- the service watches right now
+    dir        TEXT,
+    -- the service gave the recording up on its own, so finding it again
+    -- brings the clip back (since 3.10.1)
+    lost       INTEGER NOT NULL DEFAULT 0
 );
 -- The trimmed ranges with their own file (from R11b); the import puts one row
 -- here per range shared with 2.x so that its outputs hang under a cut.
@@ -92,6 +105,9 @@ CREATE INDEX IF NOT EXISTS jobs_by_cut  ON jobs (cut);
 
 pub struct Db {
     conn: Mutex<Connection>,
+    /// This start is the one that brought the store to schema 3: what 3.10
+    /// put away when the clip folder changed is healed once (issue #40).
+    upgraded_to_3: std::sync::atomic::AtomicBool,
 }
 
 /// What `import_2x` took over, for the log line.
@@ -132,6 +148,7 @@ impl Db {
         conn.execute_batch(SCHEMA_SQL)?;
         let db = Self {
             conn: Mutex::new(conn),
+            upgraded_to_3: std::sync::atomic::AtomicBool::new(false),
         };
         db.upgrade()?;
         db.set_meta("schema", &SCHEMA.to_string())?;
@@ -152,7 +169,67 @@ impl Db {
                 tracing::debug!("schema 2: {e}");
             }
         }
+        if from < 3 {
+            self.upgraded_to_3
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            for sql in UPGRADE_3 {
+                if let Err(e) = self.conn.lock().execute(sql, []) {
+                    tracing::debug!("schema 3: {e}");
+                }
+            }
+            // Until 3.10 the folder was only in the clip document; taking it
+            // from there is what keeps the clips of a folder that was
+            // switched away from where they belong.
+            match self.fill_dirs_from_doc() {
+                Ok(n) if n > 0 => tracing::info!("{n} clip(s) now know their folder"),
+                Ok(_) => {}
+                Err(e) => tracing::warn!("cannot tell where the recordings are: {e:#}"),
+            }
+        }
         Ok(())
+    }
+
+    /// Whether this start brought the store to schema 3 - the one start that
+    /// looks for what a folder change did before 3.10.1 (issue #40).
+    pub fn upgraded_to_3(&self) -> bool {
+        self.upgraded_to_3
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Schema 3: fill `dir` from `doc.path` for every row that has one.
+    fn fill_dirs_from_doc(&self) -> Result<usize> {
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        let rows: Vec<(String, String)> = {
+            let mut stmt =
+                tx.prepare("SELECT base, doc FROM clips WHERE doc IS NOT NULL AND dir IS NULL")?;
+            let found =
+                stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+            found.collect::<rusqlite::Result<_>>()?
+        };
+        let mut filled = 0;
+        for (base, doc) in rows {
+            let Some(dir) = serde_json::from_str::<Value>(&doc)
+                .ok()
+                .and_then(|d| text(&d, "path"))
+                .filter(|p| !p.is_empty())
+                .and_then(|p| {
+                    Path::new(&p)
+                        .parent()
+                        .map(|d| d.to_string_lossy().into_owned())
+                })
+                .filter(|d| !d.is_empty())
+            else {
+                continue;
+            };
+            tx.execute(
+                "UPDATE clips SET dir = ?2 WHERE base = ?1",
+                params![base, dir],
+            )?;
+            filled += 1;
+        }
+        tx.commit()?;
+        Ok(filled)
     }
 
     // --- meta ---
@@ -258,14 +335,22 @@ impl Db {
     }
 
     /// What the scanner sees: the clip document as it is now, the recording
-    /// is there, and when it was first noticed.
-    pub fn remember_clip(&self, base: &str, doc: &Value, first_seen: &str) -> Result<()> {
+    /// is there in `dir`, and when it was first noticed. Since 3.10.1 the
+    /// folder is stored, so a clip survives a change of the clip folder.
+    pub fn remember_clip(
+        &self,
+        base: &str,
+        doc: &Value,
+        first_seen: &str,
+        dir: &Path,
+    ) -> Result<()> {
         self.conn.lock().execute(
-            "INSERT INTO clips (base, doc, has_file, first_seen) VALUES (?1, ?2, 1, ?3)
+            "INSERT INTO clips (base, doc, has_file, first_seen, dir, lost)
+             VALUES (?1, ?2, 1, ?3, ?4, 0)
              ON CONFLICT(base) DO UPDATE SET
-                doc = excluded.doc, has_file = 1,
+                doc = excluded.doc, has_file = 1, dir = excluded.dir, lost = 0,
                 first_seen = COALESCE(clips.first_seen, excluded.first_seen)",
-            params![base, doc.to_string(), first_seen],
+            params![base, doc.to_string(), first_seen, dir.to_string_lossy()],
         )?;
         Ok(())
     }
@@ -280,11 +365,13 @@ impl Db {
         Ok(())
     }
 
-    /// Whether the recording is still there.
-    pub fn set_clip_file(&self, base: &str, has_file: bool) -> Result<()> {
+    /// Whether the recording is still there. `lost` says whether the service
+    /// found that out by itself (since 3.10.1): only then does finding the
+    /// recording again bring the clip back.
+    pub fn set_clip_file(&self, base: &str, has_file: bool, lost: bool) -> Result<()> {
         self.conn.lock().execute(
-            "UPDATE clips SET has_file = ?2 WHERE base = ?1",
-            params![base, has_file],
+            "UPDATE clips SET has_file = ?2, lost = ?3 WHERE base = ?1",
+            params![base, has_file, lost],
         )?;
         Ok(())
     }
@@ -712,9 +799,12 @@ impl Db {
             if clip_dir.join(format!("{base}.mkv")).is_file() {
                 continue;
             }
-            // it is done: nothing left to cut from, only what it produced
+            // it is done: nothing left to cut from, only what it produced.
+            // `lost = 1` since 3.10.1: a recording that turns up again after
+            // all brings its clip back.
             tx.execute(
-                "UPDATE clips SET has_file = 0, state = ?2, done_at = COALESCE(done_at, ?3), doc = ?4
+                "UPDATE clips SET has_file = 0, lost = 1, state = ?2,
+                    done_at = COALESCE(done_at, ?3), doc = ?4
                   WHERE base = ?1",
                 params![
                     base,
@@ -762,13 +852,21 @@ pub struct ClipRow {
     pub has_file: bool,
     /// The clip document as the scanner last saw it.
     pub doc: Option<Value>,
+    /// The folder the recording is in (since 3.10.1). `None` means the
+    /// folder the service watches right now.
+    pub dir: Option<String>,
+    /// The service gave the recording up on its own (since 3.10.1): finding
+    /// it again brings the clip back into the list. A clip somebody marked
+    /// done, or whose recording was recycled on purpose, stays done.
+    pub lost: bool,
 }
 
 pub const CLIP_NEW: &str = "new";
 pub const CLIP_ACTIVE: &str = "active";
 pub const CLIP_DONE: &str = "done";
 
-const CLIP_COLUMNS: &str = "SELECT base, state, done_at, first_seen, has_file, doc FROM clips";
+const CLIP_COLUMNS: &str =
+    "SELECT base, state, done_at, first_seen, has_file, doc, dir, lost FROM clips";
 
 fn clip_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ClipRow> {
     Ok(ClipRow {
@@ -780,6 +878,8 @@ fn clip_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ClipRow> {
         doc: r
             .get::<_, Option<String>>(5)?
             .and_then(|t| serde_json::from_str(&t).ok()),
+        dir: r.get::<_, Option<String>>(6)?.filter(|d| !d.is_empty()),
+        lost: r.get::<_, i64>(7)? != 0,
     })
 }
 
@@ -979,6 +1079,13 @@ fn read_json_file(path: &Path) -> Option<Value> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// A folder for the tests; nothing is written there.
+    const VIDEOS: &str = if cfg!(windows) {
+        r"C:\Users\me\Videos"
+    } else {
+        "/home/me/videos"
+    };
 
     fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("rc-db-{name}-{}", std::process::id()));
@@ -1230,7 +1337,7 @@ mod tests {
     fn a_clip_walks_from_new_over_active_to_done_and_back() {
         let db = Db::memory().unwrap();
         let doc = json!({ "base": "Replay A", "name": "Replay A.mkv", "duration": 20.0 });
-        db.remember_clip("Replay A", &doc, "2026-09-08T20:00:00")
+        db.remember_clip("Replay A", &doc, "2026-09-08T20:00:00", Path::new(VIDEOS))
             .unwrap();
         let row = db.clip("Replay A").unwrap().expect("the clip is known");
         assert_eq!(row.state, CLIP_NEW);
@@ -1277,7 +1384,7 @@ mod tests {
         // done and back, and a second scan does not undo the state
         db.set_clip_state("Replay A", CLIP_DONE, Some("2026-09-08T21:00:00"))
             .unwrap();
-        db.remember_clip("Replay A", &doc, "2026-09-08T22:00:00")
+        db.remember_clip("Replay A", &doc, "2026-09-08T22:00:00", Path::new(VIDEOS))
             .unwrap();
         let row = db.clip("Replay A").unwrap().unwrap();
         assert_eq!(row.state, CLIP_DONE);
@@ -1291,7 +1398,7 @@ mod tests {
         // the tidy-up finds it once it is old enough, and not before
         assert!(db.done_before("2026-09-08T20:30:00").unwrap().is_empty());
         assert_eq!(db.done_before("2026-09-09T21:00:00").unwrap(), ["Replay A"]);
-        db.set_clip_file("Replay A", false).unwrap();
+        db.set_clip_file("Replay A", false, false).unwrap();
         assert!(
             db.done_before("2026-09-09T21:00:00").unwrap().is_empty(),
             "a recording that is already gone is nothing to tidy up"
@@ -1302,6 +1409,65 @@ mod tests {
         db.delete_cuts_of("Replay A").unwrap();
         db.delete_clip("Replay A").unwrap();
         assert!(db.clip("Replay A").unwrap().is_none());
+    }
+
+    /// Since 3.10.1 (issue #40): the folder of a recording is part of what
+    /// the store knows, and a scan says whether the file is simply gone or
+    /// whether the service lost sight of it.
+    #[test]
+    fn a_clip_knows_its_folder_and_whether_it_was_lost() {
+        let db = Db::memory().unwrap();
+        let doc = json!({ "base": "Replay A", "name": "Replay A.mkv" });
+        db.remember_clip("Replay A", &doc, "2026-09-08T20:00:00", Path::new(VIDEOS))
+            .unwrap();
+        let row = db.clip("Replay A").unwrap().unwrap();
+        assert_eq!(row.dir.as_deref(), Some(VIDEOS));
+        assert!(!row.lost);
+
+        // the scan misses the file: lost, and the mark survives a restart
+        db.set_clip_file("Replay A", false, true).unwrap();
+        assert!(db.clip("Replay A").unwrap().unwrap().lost);
+        // it is there again: `remember_clip` takes the mark off
+        db.remember_clip("Replay A", &doc, "2026-09-08T21:00:00", Path::new(VIDEOS))
+            .unwrap();
+        let row = db.clip("Replay A").unwrap().unwrap();
+        assert!(!row.lost);
+        assert!(row.has_file);
+
+        // recycled on purpose: no mark, so nothing brings it back by itself
+        db.set_clip_file("Replay A", false, false).unwrap();
+        assert!(!db.clip("Replay A").unwrap().unwrap().lost);
+    }
+
+    /// A store written before 3.10.1 has no folder; it comes out of the clip
+    /// document, which has carried the absolute path since 3.0.
+    #[test]
+    fn the_upgrade_takes_the_folder_out_of_the_document() {
+        let db = Db::memory().unwrap();
+        let path = Path::new(VIDEOS).join("Replay A.mkv");
+        let doc = json!({ "base": "Replay A", "path": path.to_string_lossy() });
+        db.conn
+            .lock()
+            .execute(
+                "INSERT INTO clips (base, doc) VALUES ('Replay A', ?1)",
+                params![doc.to_string()],
+            )
+            .unwrap();
+        // a row of 2.x that never had a document keeps no folder: it belongs
+        // to whatever the service watches
+        db.conn
+            .lock()
+            .execute("INSERT INTO clips (base) VALUES ('Replay B')", [])
+            .unwrap();
+
+        assert_eq!(db.fill_dirs_from_doc().unwrap(), 1);
+        assert_eq!(
+            db.clip("Replay A").unwrap().unwrap().dir.as_deref(),
+            Some(VIDEOS)
+        );
+        assert!(db.clip("Replay B").unwrap().unwrap().dir.is_none());
+        // running it twice changes nothing
+        assert_eq!(db.fill_dirs_from_doc().unwrap(), 0);
     }
 
     #[test]

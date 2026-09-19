@@ -2,13 +2,14 @@
 //! check rows the OBS page, the wizard and the diagnostics derive from
 //! them. Read-only; every suggestion names the OBS menu path.
 
-use std::path::Path;
-
 use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::obs_ws::ObsHandle;
 use crate::settings::Settings;
+// OBS reports its recording folder as a string; it is compared with ours
+// the way the file system does (shared since 3.10.1).
+use crate::util::same_folder;
 
 /// The recording profile as OBS reports it.
 #[derive(Debug, Clone, Default, Serialize, PartialEq)]
@@ -103,23 +104,6 @@ pub fn codec_of_encoder(encoder: &str) -> &'static str {
         "av1"
     } else {
         "h264"
-    }
-}
-
-/// OBS reports its recording folder as a string; compare it with ours the
-/// way the file system does: Windows ignores case and slash direction,
-/// Linux does neither (symlinks are resolved where the folders exist).
-fn same_folder(a: &str, b: &Path) -> bool {
-    if cfg!(windows) {
-        let norm = |s: &str| {
-            s.replace('/', "\\")
-                .trim_end_matches('\\')
-                .to_ascii_lowercase()
-        };
-        norm(a) == norm(&b.to_string_lossy())
-    } else {
-        let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-        real(Path::new(a)) == real(b)
     }
 }
 
@@ -432,6 +416,7 @@ pub fn checks(facts: &Facts, replay_active: bool, settings: &Settings) -> Vec<Ch
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     fn facts() -> Facts {
         Facts {

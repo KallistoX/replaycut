@@ -118,7 +118,15 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
     }
     files.sort_by_key(|(_, mtime, _)| *mtime);
 
-    let known: Vec<String> = state.inner.lock().clips.keys().cloned().collect();
+    // base -> where its recording is, so a name that is now in this folder
+    // can take over from one in another (since 3.10.1)
+    let known: BTreeMap<String, PathBuf> = state
+        .inner
+        .lock()
+        .clips
+        .values()
+        .map(|c| (c.base.clone(), PathBuf::from(&c.path)))
+        .collect();
     let mut retry: Option<Duration> = None;
     let mut seen_dirty = false;
     // only a changed clip set wakes the tray and the event streams
@@ -132,8 +140,16 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
         else {
             continue;
         };
-        if known.contains(&base) {
-            continue;
+        if let Some(seen_at) = known.get(&base) {
+            if in_folder(seen_at, &paths.clip_dir) {
+                continue;
+            }
+            // The same name in two folders: `base` is the key of everything,
+            // so the recording in the folder we watch takes it over.
+            tracing::warn!(
+                "a recording named {base} is now in {} - the older one is no longer listed",
+                paths.clip_dir.display()
+            );
         }
         let age = SystemTime::now().duration_since(*mtime).unwrap_or_default();
         if age < MIN_AGE {
@@ -193,12 +209,20 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
             let wants_h264 = clip.preview_h264.is_none()
                 && state.settings().preview_h264 == "always"
                 && !state.dry_run;
+            // A recording the service had given up on is back (since
+            // 3.10.1): the clip returns to the list as it was. Asked before
+            // `remember_clip`, which clears the mark.
+            if state.recording_found(&base) {
+                tracing::info!("{base} is back in {}", paths.clip_dir.display());
+            }
             // since 3.0: the store keeps what we know, so the clip stays
-            // listed for its cuts once the recording is gone
+            // listed for its cuts once the recording is gone; since 3.10.1
+            // it also keeps the folder the recording is in
             if let Err(e) = state.db.remember_clip(
                 &base,
                 &serde_json::to_value(&clip).unwrap_or_default(),
                 &clip.created,
+                &paths.clip_dir,
             ) {
                 tracing::warn!("cannot remember {base}: {e:#}");
             }
@@ -287,15 +311,27 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
         .iter()
         .filter_map(|(p, _, _)| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
         .collect();
+    let rows = state.db.clips().unwrap_or_else(|e| {
+        tracing::warn!("cannot read the clips: {e:#}");
+        BTreeMap::new()
+    });
     {
         let mut inner = state.inner.lock();
+        // Only the clips of the folder we watch are judged by its listing;
+        // a clip that lives elsewhere is judged by its own file below
+        // (since 3.10.1).
         let gone: Vec<String> = inner
             .clips
-            .keys()
-            .filter(|b| !existing.contains(b))
-            .cloned()
+            .values()
+            .filter(|c| {
+                in_folder(std::path::Path::new(&c.path), &paths.clip_dir)
+                    && !existing.contains(&c.base)
+            })
+            .map(|c| c.base.clone())
             .collect();
-        inner.clips.retain(|base, _| existing.contains(base));
+        for base in &gone {
+            inner.clips.remove(base);
+        }
         if !gone.is_empty() {
             changed = true;
         }
@@ -305,7 +341,7 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
         for base in gone {
             if state.has_cuts(&base) {
                 tracing::info!("{base} is gone from the folder - its cuts stay");
-                state.recording_recycled(&base);
+                state.recording_lost(&base);
             } else {
                 state.forget_clip(&base);
             }
@@ -318,15 +354,20 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
         // next start (since 3.8). Rows without cuts are left as they are:
         // nothing lists them either way, and forgetting reaches into the
         // store on the strength of one folder listing.
-        for base in stale_rows(&state.db.clips().unwrap_or_default(), &existing) {
+        for base in stale_rows(&rows, &existing, &paths.clip_dir) {
             if state.has_cuts(&base) {
                 tracing::info!("{base} went before this start - its cuts stay");
-                state.recording_recycled(&base);
+                state.recording_lost(&base);
             }
         }
         let mut inner = state.inner.lock();
         let before = inner.seen.len();
-        inner.seen.retain(|base| existing.contains(base));
+        // A base the store still knows has been announced, wherever its
+        // recording is: until 3.10 a change of the folder pruned the list
+        // and announced every clip of the old folder again.
+        inner
+            .seen
+            .retain(|base| existing.contains(base) || rows.contains_key(base));
         if inner.seen.len() != before {
             seen_dirty = true;
         }
@@ -344,18 +385,18 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
         inner.seen_ready = true;
         inner.scan_at = Some(util::now_local());
     }
+    if other_folders(state, &rows, &paths.clip_dir) {
+        changed = true;
+    }
     if changed {
         state.tray_changed();
     }
     // Clips the store still lists although their recording is gone (since
     // 3.0): their thumbnail is what the page shows for them, so it stays.
-    let listed: Vec<String> = state
-        .db
-        .clips()
-        .unwrap_or_default()
-        .into_values()
+    let listed: Vec<String> = rows
+        .values()
         .filter(|r| !r.has_file)
-        .map(|r| r.base)
+        .map(|r| r.base.clone())
         .collect();
     if let Ok(previews) = std::fs::read_dir(&paths.preview_dir) {
         for p in previews.flatten() {
@@ -384,6 +425,65 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
     Ok(retry)
 }
 
+/// Whether a recording lies in `dir`.
+fn in_folder(recording: &Path, dir: &Path) -> bool {
+    recording
+        .parent()
+        .is_some_and(|d| crate::util::same_folder(d, dir))
+}
+
+/// The clips whose recording is in another folder than the one we watch
+/// (since 3.10.1, issue #40). They stay in the list as long as their file is
+/// there, so changing the folder in the settings loses nothing and changing
+/// it back finds everything as it was. Only the file of each such clip is
+/// looked at - no second folder is listed, and none is watched.
+fn other_folders(
+    state: &Arc<AppState>,
+    rows: &BTreeMap<String, crate::db::ClipRow>,
+    dir: &Path,
+) -> bool {
+    let mut changed = false;
+    for (base, row) in rows {
+        let Some(row_dir) = row
+            .dir
+            .as_deref()
+            .filter(|d| !crate::util::same_folder(d, dir))
+        else {
+            continue;
+        };
+        let Some(clip) = row
+            .doc
+            .clone()
+            .and_then(|d| serde_json::from_value::<Clip>(d).ok())
+            .filter(|c| !c.path.is_empty())
+        else {
+            continue;
+        };
+        if std::path::Path::new(&clip.path).is_file() {
+            if state.recording_found(base) {
+                tracing::info!("{base} is back in {row_dir}");
+                changed = true;
+            }
+            let mut inner = state.inner.lock();
+            if !inner.clips.contains_key(base) {
+                inner.clips.insert(base.clone(), clip);
+                changed = true;
+            }
+        } else if row.has_file {
+            tracing::info!("{base} is gone from {row_dir} - its cuts stay");
+            if state.has_cuts(base) {
+                state.recording_lost(base);
+            } else {
+                state.forget_clip(base);
+            }
+            changed = true;
+        } else {
+            state.inner.lock().clips.remove(base);
+        }
+    }
+    changed
+}
+
 /// The cut files against the store (since 3.0): a file nobody knows about
 /// goes to the recycle bin, a cut whose file is gone becomes `missing`.
 async fn sweep_cuts(state: &Arc<AppState>) {
@@ -396,10 +496,20 @@ async fn sweep_cuts(state: &Arc<AppState>) {
     };
     let paths = state.paths();
     for cut in &cuts {
-        if cut.state == crate::db::CUT_READY && !paths.cut_of(&cut.id).is_file() {
+        let here = paths.cut_of(&cut.id).is_file();
+        if cut.state == crate::db::CUT_READY && !here {
             tracing::warn!("the file of cut {} is gone", cut.id);
             if let Err(e) = state.db.set_cut_state(&cut.id, crate::db::CUT_MISSING) {
                 tracing::warn!("cannot mark cut {} as missing: {e:#}", cut.id);
+            }
+            state.tray_changed();
+        }
+        // The file is back - a folder that was switched away from and
+        // returned to is the usual reason (since 3.10.1, issue #40).
+        if cut.state == crate::db::CUT_MISSING && here {
+            tracing::info!("the file of cut {} is there again", cut.id);
+            if let Err(e) = state.db.set_cut_state(&cut.id, crate::db::CUT_READY) {
+                tracing::warn!("cannot mark cut {} as ready: {e:#}", cut.id);
             }
             state.tray_changed();
         }
@@ -467,19 +577,42 @@ fn file_ready(path: &Path) -> bool {
 /// Clip rows whose recording the store still believes in although the folder
 /// listing does not carry it. The scan reconciles them so that a clip whose
 /// recording went while the service was down is listed for its cuts again.
-fn stale_rows(rows: &BTreeMap<String, crate::db::ClipRow>, existing: &[String]) -> Vec<String> {
+/// Only rows of the folder we watch: a row that belongs to another one is
+/// judged by its own file in `other_folders` (since 3.10.1).
+fn stale_rows(
+    rows: &BTreeMap<String, crate::db::ClipRow>,
+    existing: &[String],
+    dir: &Path,
+) -> Vec<String> {
     rows.values()
         .filter(|r| r.has_file && !existing.iter().any(|e| e == &r.base))
+        .filter(|r| {
+            r.dir
+                .as_deref()
+                .is_none_or(|d| crate::util::same_folder(d, dir))
+        })
         .map(|r| r.base.clone())
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::stale_rows;
+    use super::{in_folder, stale_rows};
     use std::collections::BTreeMap;
+    use std::path::Path;
 
-    fn row(base: &str, has_file: bool) -> crate::db::ClipRow {
+    const DIR: &str = if cfg!(windows) {
+        r"C:\Users\me\Videos"
+    } else {
+        "/home/me/videos"
+    };
+    const OTHER: &str = if cfg!(windows) {
+        r"C:\Users\me\Clips"
+    } else {
+        "/home/me/clips"
+    };
+
+    fn row(base: &str, has_file: bool, dir: Option<&str>) -> crate::db::ClipRow {
         crate::db::ClipRow {
             base: base.to_string(),
             state: "active".into(),
@@ -487,6 +620,8 @@ mod tests {
             first_seen: None,
             has_file,
             doc: None,
+            dir: dir.map(str::to_string),
+            lost: false,
         }
     }
 
@@ -494,12 +629,36 @@ mod tests {
     fn a_row_whose_recording_is_not_in_the_folder_is_stale() {
         let rows: BTreeMap<String, crate::db::ClipRow> = ["here", "gone", "known-gone"]
             .iter()
-            .map(|b| (b.to_string(), row(b, *b != "known-gone")))
+            .map(|b| (b.to_string(), row(b, *b != "known-gone", Some(DIR))))
             .collect();
         let existing = vec!["here".to_string()];
-        assert_eq!(stale_rows(&rows, &existing), vec!["gone".to_string()]);
+        assert_eq!(
+            stale_rows(&rows, &existing, Path::new(DIR)),
+            vec!["gone".to_string()]
+        );
         // nothing is stale while every recording is there
         let all = vec!["here".to_string(), "gone".to_string()];
-        assert!(stale_rows(&rows, &all).is_empty());
+        assert!(stale_rows(&rows, &all, Path::new(DIR)).is_empty());
+    }
+
+    /// Since 3.10.1: the listing of one folder says nothing about the clips
+    /// of another - those are judged by their own file.
+    #[test]
+    fn a_row_of_another_folder_is_never_stale() {
+        let mut rows = BTreeMap::new();
+        rows.insert("elsewhere".to_string(), row("elsewhere", true, Some(OTHER)));
+        // a row from before 3.10.1 has no folder and belongs to this one
+        rows.insert("old".to_string(), row("old", true, None));
+        assert_eq!(
+            stale_rows(&rows, &[], Path::new(DIR)),
+            vec!["old".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_recording_is_in_the_folder_it_lies_in() {
+        let dir = Path::new(DIR);
+        assert!(in_folder(&dir.join("Replay.mkv"), dir));
+        assert!(!in_folder(&Path::new(OTHER).join("Replay.mkv"), dir));
     }
 }

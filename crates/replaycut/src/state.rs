@@ -63,28 +63,49 @@ pub const AUDIO_MODES: [AudioMode; 4] = [
     },
 ];
 
-#[derive(Debug, Clone, Serialize)]
+/// Since 3.10.1 a clip can also be read back from the document the store
+/// kept for it: that is how a recording in a folder the service no longer
+/// watches stays in the list. Everything the scanner measures has a default,
+/// so a document written by an older build still reads.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Clip {
     pub name: String,
     pub base: String,
     pub path: String,
+    #[serde(default)]
     pub size: u64,
+    #[serde(default)]
     pub duration: f64,
+    #[serde(default)]
     pub tracks: u32,
+    #[serde(default)]
     pub created: String,
+    #[serde(default)]
     pub preview: String,
+    #[serde(skip_deserializing, default = "ready")]
     pub status: &'static str,
     // since 2.1: what the video is, for the setup wizard and browser hints
+    #[serde(default)]
     pub codec: String,
+    #[serde(default)]
     pub width: u32,
+    #[serde(default)]
     pub height: u32,
+    #[serde(default)]
     pub fps: f64,
     // since 2.4: `/media/<base>.jpg`, null until the thumbnail exists
+    #[serde(default)]
     pub thumb: Option<String>,
     // since 2.6: `/media/<base>.h264.mp4`, the playable copy for browsers
     // that cannot decode the recording's codec; null until it was made
-    #[serde(rename = "previewH264")]
+    #[serde(rename = "previewH264", default)]
     pub preview_h264: Option<String>,
+}
+
+/// The only status a clip in the list has ever had; the store keeps it in
+/// the document, reading one back always means the recording is there.
+fn ready() -> &'static str {
+    "ready"
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -486,6 +507,69 @@ pub struct Boot {
     pub obs: Arc<crate::obs_ws::ObsHandle>,
 }
 
+/// What a change of the clip folder did before 3.10.1 (issue #40), undone
+/// once, on the start that brings the store to schema 3: every clip it put
+/// away although its recording is still there comes back.
+///
+/// Two shapes of the same damage. A clip the scan never met again is simply
+/// marked as having no recording - if the file is there, it was the folder
+/// that changed, not the file that went. A clip the scan did meet again
+/// stayed `done` with its cuts `missing`; that pair - recording there, cut
+/// file there, store saying otherwise - is what only this bug produced.
+fn heal_after_a_folder_change(db: &Db, clip_dir: &Path) {
+    let rows = match db.clips() {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("cannot look for clips to bring back: {e:#}");
+            return;
+        }
+    };
+    let cuts = db.cuts().unwrap_or_default();
+    let mut back = 0usize;
+    for (base, row) in &rows {
+        let dir = row
+            .dir
+            .as_deref()
+            .map_or_else(|| clip_dir.to_path_buf(), std::path::PathBuf::from);
+        let recording = row
+            .doc
+            .as_ref()
+            .and_then(|d| d.get("path").and_then(|p| p.as_str()))
+            .filter(|p| !p.is_empty())
+            .map_or_else(|| dir.join(format!("{base}.mkv")), std::path::PathBuf::from);
+        if !recording.is_file() {
+            continue;
+        }
+        let own_cuts: Vec<_> = cuts.iter().filter(|c| &c.base == base).collect();
+        let cut_is_there = own_cuts.iter().any(|c| {
+            c.state == crate::db::CUT_MISSING
+                && dir.join(".cuts").join(cut_file_name(&c.id)).is_file()
+        });
+        if row.has_file && !cut_is_there {
+            continue;
+        }
+        if let Err(e) = db.set_clip_file(base, true, false) {
+            tracing::warn!("cannot bring {base} back: {e:#}");
+            continue;
+        }
+        if row.state == crate::db::CLIP_DONE {
+            let state = if own_cuts.is_empty() {
+                crate::db::CLIP_NEW
+            } else {
+                crate::db::CLIP_ACTIVE
+            };
+            if let Err(e) = db.set_clip_state(base, state, None) {
+                tracing::warn!("cannot bring {base} back into the list: {e:#}");
+                continue;
+            }
+        }
+        back += 1;
+    }
+    if back > 0 {
+        tracing::info!("{back} clip(s) brought back: their recording was never gone, the clip folder had changed");
+    }
+}
+
 /// The folders a start needs. `.cuts\` and `shared\` come with the first cut
 /// and the first share (since 3.10): a first start, before the setup chose
 /// a folder, put both into the default one - `shared` visibly into Videos.
@@ -526,6 +610,9 @@ impl AppState {
             ),
             Ok(None) => {}
             Err(e) => tracing::warn!("cannot import the state files of 2.x: {e:#}"),
+        }
+        if db.upgraded_to_3() {
+            heal_after_a_folder_change(&db, &paths.clip_dir);
         }
         let inner = Inner {
             names: db.titles().unwrap_or_else(|e| {
@@ -645,8 +732,12 @@ impl AppState {
             let paths = Paths::new(&next.clip_dir, &old.data_dir, old.ui_file.clone());
             create_dirs(&paths)?;
             *self.paths.write() = Arc::new(paths);
+            // The clips of the old folder stay in the list (since 3.10.1,
+            // issue #40): each one knows where its recording is, and the
+            // next scan checks that file instead of the folder listing.
+            // Until 3.10 the cache was emptied here, which made every one of
+            // them look like a recording that had disappeared.
             let mut inner = self.inner.lock();
-            inner.clips.clear();
             inner.scan_at = None;
             tracing::info!("clip folder is now {}", next.clip_dir.display());
         }
@@ -1193,8 +1284,19 @@ impl AppState {
     /// `after: recycle` and the cleanup rule, all since 3.0). The clip keeps
     /// its row - it is done, and its cuts are still there to render.
     pub fn recording_recycled(&self, base: &str) {
+        self.recording_gone(base, false);
+    }
+
+    /// The recording is not where it should be and nobody asked for that
+    /// (since 3.10.1): the clip is done like a recycled one, but it is
+    /// marked `lost`, so finding the file again brings it back.
+    pub fn recording_lost(&self, base: &str) {
+        self.recording_gone(base, true);
+    }
+
+    fn recording_gone(&self, base: &str, lost: bool) {
         self.inner.lock().clips.remove(base);
-        if let Err(e) = self.db.set_clip_file(base, false) {
+        if let Err(e) = self.db.set_clip_file(base, false, lost) {
             tracing::warn!("cannot mark {base} as recycled: {e:#}");
         }
         if let Err(e) = self
@@ -1204,6 +1306,35 @@ impl AppState {
             tracing::warn!("cannot mark {base} done: {e:#}");
         }
         self.tray_changed();
+    }
+
+    /// A recording the service had given up on is back (since 3.10.1, issue
+    /// #40): the clip returns to the list exactly as it was. A clip somebody
+    /// marked done, or whose recording was recycled on purpose, is left
+    /// alone. Returns whether anything was brought back.
+    pub fn recording_found(&self, base: &str) -> bool {
+        let Ok(Some(row)) = self.db.clip(base) else {
+            return false;
+        };
+        if !row.lost {
+            return false;
+        }
+        if let Err(e) = self.db.set_clip_file(base, true, false) {
+            tracing::warn!("cannot mark the recording of {base} as back: {e:#}");
+            return false;
+        }
+        if row.state == crate::db::CLIP_DONE {
+            let state = if self.has_cuts(base) {
+                crate::db::CLIP_ACTIVE
+            } else {
+                crate::db::CLIP_NEW
+            };
+            if let Err(e) = self.db.set_clip_state(base, state, None) {
+                tracing::warn!("cannot bring {base} back into the list: {e:#}");
+            }
+        }
+        self.tray_changed();
+        true
     }
 }
 
@@ -1511,6 +1642,87 @@ pub async fn quota_loop(state: Arc<AppState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The one-off repair of issue #40: what a change of the clip folder put
+    /// away before 3.10.1 comes back, and nothing else does.
+    #[test]
+    fn the_repair_brings_back_what_the_folder_change_put_away() {
+        let dir = std::env::temp_dir().join(format!("rc-heal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".cuts")).unwrap();
+        let db = Db::memory().unwrap();
+
+        let clip = |base: &str, with_file: bool| {
+            let path = dir.join(format!("{base}.mkv"));
+            if with_file {
+                std::fs::write(&path, b"x").unwrap();
+            }
+            let doc = json!({ "base": base, "name": format!("{base}.mkv"), "path": path });
+            db.remember_clip(base, &doc, "2026-09-19T10:00:00", &dir)
+                .unwrap();
+        };
+        let cut = |id: &str, base: &str, state: &str, with_file: bool| {
+            if with_file {
+                std::fs::write(dir.join(".cuts").join(cut_file_name(id)), b"x").unwrap();
+            }
+            db.put_cut(&crate::db::Cut {
+                id: id.into(),
+                base: base.into(),
+                start: 1.0,
+                end: 5.0,
+                audio: "mix".into(),
+                vertical: false,
+                vertical_pos: None,
+                file: Some(cut_file_name(id)),
+                actual_start: None,
+                created: "2026-09-19T10:01:00".into(),
+                state: state.into(),
+            })
+            .unwrap();
+        };
+
+        // the damage: the scan met the recording again, but the clip stayed
+        // done and its cut missing although both files are there
+        clip("hurt", true);
+        cut("aaaa0001", "hurt", crate::db::CUT_MISSING, true);
+        db.set_clip_state("hurt", crate::db::CLIP_DONE, Some("2026-09-19T11:00:00"))
+            .unwrap();
+        // the other shape: the store says the recording is gone, it is not
+        clip("away", true);
+        cut("aaaa0002", "away", crate::db::CUT_READY, true);
+        db.set_clip_file("away", false, false).unwrap();
+        db.set_clip_state("away", crate::db::CLIP_DONE, Some("2026-09-19T11:00:00"))
+            .unwrap();
+        // done by hand, everything where it belongs: not our business
+        clip("byhand", true);
+        cut("aaaa0003", "byhand", crate::db::CUT_READY, true);
+        db.set_clip_state("byhand", crate::db::CLIP_DONE, Some("2026-09-19T11:00:00"))
+            .unwrap();
+        // really gone, with a cut that is really missing: stays done
+        clip("gone", false);
+        cut("aaaa0004", "gone", crate::db::CUT_MISSING, false);
+        db.set_clip_file("gone", false, false).unwrap();
+        db.set_clip_state("gone", crate::db::CLIP_DONE, Some("2026-09-19T11:00:00"))
+            .unwrap();
+
+        heal_after_a_folder_change(&db, &dir);
+
+        for base in ["hurt", "away"] {
+            let row = db.clip(base).unwrap().unwrap();
+            assert_eq!(row.state, crate::db::CLIP_ACTIVE, "{base} is back");
+            assert!(row.has_file, "{base} has its recording");
+            assert!(!row.lost);
+        }
+        for base in ["byhand", "gone"] {
+            assert_eq!(
+                db.clip(base).unwrap().unwrap().state,
+                crate::db::CLIP_DONE,
+                "{base} was left alone"
+            );
+        }
+        assert!(!db.clip("gone").unwrap().unwrap().has_file);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn history_entry_reads_back_as_a_job() {
