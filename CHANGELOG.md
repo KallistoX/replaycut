@@ -22,6 +22,9 @@ contract.
   the CPU, because the graphics card belongs to the game.
   This is the first half: reading the speech, keeping it, exporting it as
   SRT or VTT. The editor and burned-in subtitles follow.
+  The model is `small` (about 465 MiB) unless you choose otherwise: on a
+  real recording it read game jargon far better than the smaller `base` for
+  nine percent more time.
   **It is switched off** - Settings › Subtitles - and off means off: no
   model is downloaded, no connection to anywhere is made, and nothing in the
   page changes. A share or a render that does not ask for subtitles produces

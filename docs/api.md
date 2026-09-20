@@ -1885,7 +1885,7 @@ once its checksum has been confirmed.
 ### Settings `subtitles`
 
 ```json
-"subtitles": { "enabled": false, "model": "base", "language": "auto",
+"subtitles": { "enabled": false, "model": "small", "language": "auto",
                "source": "auto", "gpu": false }
 ```
 

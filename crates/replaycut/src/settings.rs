@@ -147,7 +147,7 @@ impl Default for SubtitleSettings {
     fn default() -> Self {
         Self {
             enabled: false,
-            model: "base".into(),
+            model: "small".into(),
             language: "auto".into(),
             source: "auto".into(),
             gpu: false,
@@ -168,7 +168,7 @@ mod subtitle_tests {
         let fresh = Settings::default();
         assert!(!fresh.subtitles.enabled);
         assert!(!fresh.subtitles.gpu);
-        assert_eq!(fresh.subtitles.model, "base");
+        assert_eq!(fresh.subtitles.model, "small");
         assert_eq!(fresh.subtitles.language, "auto");
 
         // a settings file written before 3.11 has no `subtitles` at all

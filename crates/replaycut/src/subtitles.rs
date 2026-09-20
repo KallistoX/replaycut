@@ -24,9 +24,13 @@ pub struct Model {
     pub sha256: &'static str,
 }
 
-/// The three sizes the UI offers, smallest first. Anything else - the
-/// quantised builds, `large` - can be put into the models folder by hand;
-/// `docs/settings.md` says so.
+/// The three sizes the UI offers, smallest first. `small` is the default:
+/// measured against `base` on a real recording it reads game jargon far
+/// better ("FOB platziert" instead of "Bi-plaziert", "Supplies" instead of
+/// "bleibes") for nine percent more time - only the download and the
+/// memory during the run are larger. Anything else - the quantised builds,
+/// `large` - can be put into the models folder by hand; `docs/settings.md`
+/// says so.
 pub const MODELS: [Model; 3] = [
     Model {
         name: "base",

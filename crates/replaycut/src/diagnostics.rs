@@ -904,7 +904,7 @@ pub async fn run(state: &AppState) -> Report {
                 "on (beta), but no model is on this PC yet".to_string(),
             )
             .with_fix(
-                "Settings › Subtitles: download a model. 'base' is about 141 MiB and enough for most callouts."
+                "Settings › Subtitles: download a model. 'small' is the default, about 465 MiB; 'base' is a third of that and reads game jargon less well."
                     .to_string(),
             )
         } else {
