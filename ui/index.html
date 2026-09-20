@@ -477,6 +477,24 @@ details.limits summary { cursor: pointer; list-style: none; } details.limits sum
 .cutrow .body { border-top: 1px solid var(--line); padding: var(--space-1) var(--space-2) var(--space-2) 30px; display: flex; flex-direction: column; }
 .cutrow .body .note { color: var(--fg-muted); font-size: var(--text-sm); padding: var(--space-2) 0; }
 @media (min-width: 700px) { .cutrow .where { flex-basis: auto; margin-left: auto; } }
+/* subtitles on a cut (3.11, beta). On a phone every row is two lines: the
+   times and the counter above, the text below at full width - side by side
+   there is no room left to type in. */
+.subs { border-top: 1px solid var(--line); margin-top: var(--space-1); padding-top: var(--space-2); }
+.subs-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-height: var(--touch); }
+.subs-head .grow { flex: 1 1 auto; }
+.subs-head .summary { flex-basis: 100%; }
+@media (min-width: 700px) { .subs-head .summary { flex-basis: auto; } }
+.subs-list { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); max-height: 420px; overflow-y: auto; padding-right: var(--space-1); }
+.subrow { display: flex; flex-direction: column; gap: var(--space-1); }
+.subrow.is-playing .time { color: var(--accent); }
+.subrow-top { display: flex; align-items: center; gap: var(--space-1); }
+.subrow .time { font-family: var(--font-mono); font-size: var(--text-sm); white-space: nowrap; padding: 0 var(--space-1); }
+.subrow .count { margin-left: auto; color: var(--fg-faint); font-size: var(--text-xs); font-family: var(--font-mono); }
+.subrow .count.warn { color: var(--warn); }
+.subrow textarea { width: 100%; resize: none; overflow: hidden; min-height: 34px; font-size: var(--text-sm); line-height: 1.35; }
+.subs-foot { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
+.subs-foot .muted { font-size: var(--text-sm); }
 .outrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: center; min-height: 40px; font-size: var(--text-sm); }
 .outrow + .outrow { border-top: 1px solid var(--line); }
 .outrow .meta { display: flex; flex-wrap: wrap; gap: 0 var(--space-2); color: var(--fg-muted); min-width: 0; }
@@ -653,6 +671,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5l3 2"/></symbol>
   <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12M2.5 8h3.5M14 8h3.5M2.5 12h3.5M14 12h3.5"/></symbol>
   <symbol id="i-skip" viewBox="0 0 20 20"><path d="M5 5l7 5-7 5zM14 5v10"/></symbol>
+  <symbol id="i-subtitles" viewBox="0 0 20 20"><rect x="2.5" y="4.5" width="15" height="11" rx="1.5"/><path d="M5.5 9h4M12 9h2.5M5.5 12h2.5M11 12h3.5"/></symbol>
   <symbol id="i-more" viewBox="0 0 20 20"><circle cx="4.5" cy="10" r="1.25"/><circle cx="10" cy="10" r="1.25"/><circle cx="15.5" cy="10" r="1.25"/></symbol>
   <symbol id="i-send" viewBox="0 0 20 20"><path d="M17 3 3 9l6 2 2 6z"/><path d="m9 11 8-8"/></symbol>
   <symbol id="i-undo" viewBox="0 0 20 20"><path d="M4 8h8a4 4 0 0 1 0 8H8"/><path d="M7 5 4 8l3 3"/></symbol>
@@ -2826,13 +2845,13 @@ function showResult(r) {
   const note = text => { const n = document.createElement('div'); n.className = 'muted sm'; n.textContent = text; box.appendChild(n); };
 
   if (r.cancelled) {
-    head('close', `${r.kind === 'preview' ? 'Preview' : r.kind === 'cut' ? 'Cut' : 'Share'} cancelled`);
+    head('close', `${r.kind === 'preview' ? 'Preview' : r.kind === 'cut' ? 'Cut' : r.kind === 'transcribe' ? 'Subtitles' : 'Share'} cancelled`);
     note(`${short(r.base)} · ${fmt(r.start)} - ${fmt(r.end)}`);
     return;
   }
   if (!r.ok) {
     box.className = 'result err';
-    head('error', r.kind === 'cut' ? 'Cut failed' : r.kind === 'preview' ? 'Playable preview failed' : 'Share failed');
+    head('error', r.kind === 'cut' ? 'Cut failed' : r.kind === 'preview' ? 'Playable preview failed' : r.kind === 'transcribe' ? 'Reading the speech failed' : 'Share failed');
     note(r.error || 'unknown error');
     if (r.uploadError && r.file) {
       // since 3.10: the file is there, only sending it failed - send it, do not encode again
@@ -2841,7 +2860,7 @@ function showResult(r) {
       row.innerHTML = `<button class="btn btn-sm" id="rRetry"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Upload again</button>`;
       box.appendChild(row);
       $('rRetry').onclick = () => publishTo(r.id, r.target);
-    } else if (r.id && r.kind !== 'cut' && r.kind !== 'preview') {
+    } else if (r.id && r.kind !== 'cut' && r.kind !== 'preview' && r.kind !== 'transcribe') {
       // only a job that ran can be tried again; a refused request (no id, e.g.
       // "selection too short") would get the same answer (#46)
       const row = document.createElement('div'); row.className = 'row';
@@ -2860,6 +2879,11 @@ function showResult(r) {
   if (r.kind === 'cut') {
     head('check', `Cut saved - ${fmt(r.start)} - ${fmt(r.end)}, ${Number(r.seconds).toFixed(1)} s`);
     note('Picture and every audio track, copied. Render it below whenever you like.');
+    return;
+  }
+  if (r.kind === 'transcribe') {
+    head('check', 'Subtitles read');
+    note(`${fmt(r.start)} - ${fmt(r.end)} · from the ${r.track === 'mic' ? 'microphone' : 'mix'}. Open "Edit" under the cut to correct them.`);
     return;
   }
   const postFailed = lastPostFailed(r.discord);
@@ -3061,7 +3085,8 @@ const otherClip = j => j && j.base && !(cur && cur.base === j.base) ? (j.title |
 function jobWords(j) {
   if (!j || !j.base) return '…';
   const what = j.kind === 'preview' ? 'playable preview'
-    : `${fmt(j.start)} - ${fmt(j.end)} ${j.kind === 'cut' ? '· save cut' : '→ ' + targetLabel(j.target || 'file')}`;
+    : j.kind === 'transcribe' ? `${fmt(j.start)} - ${fmt(j.end)} · subtitles`
+      : `${fmt(j.start)} - ${fmt(j.end)} ${j.kind === 'cut' ? '· save cut' : '→ ' + targetLabel(j.target || 'file')}`;
   return otherClip(j) ? `${otherClip(j)} · ${what}` : what;
 }
 /// Under the progress bar: what waits behind the running job, a line each
@@ -3313,7 +3338,13 @@ function renderCuts() {
   box.hidden = !cur || !cuts.length;
   if (box.hidden) { cutsKey = ''; return; }
   const open = new Set([...list.querySelectorAll('details[open]')].map(d => d.dataset.cut));
-  const key = cur.base + JSON.stringify(cuts.map(c => [c.id, c.state, (c.outputs || []).map(o => o.id + (o.discord || '')).join()])); if (key === cutsKey) return; cutsKey = key;
+  // Since 3.11: a correction that has not been saved holds the list still.
+  // Rebuilding it would throw away what is in the field under the cursor.
+  if (subsDirty()) return;
+  // the subtitle switch is part of the key: turning the beta off has to take
+  // the block away here and now, not at the next change of something else
+  const key = cur.base + (cfg.subtitles ? '+s' : '') + JSON.stringify(cuts.map(c => [c.id, c.state, subsKey(c),
+    (c.outputs || []).map(o => o.id + (o.discord || '')).join()])); if (key === cutsKey) return; cutsKey = key;
   $('cutCount').textContent = cuts.length;
   list.innerHTML = '';
   cuts.forEach(c => {
@@ -3370,12 +3401,14 @@ function renderCuts() {
       note.textContent = 'Saved, not rendered yet.';
       body.appendChild(note);
     }
+    renderSubs(c, body);
     outs.forEach(o => body.appendChild(outputRow(o, 'clip')));
     // a cut being made says so with the spinner in its row; the bar that
     // stood under it had no style and sat in the closed row (#46)
     if (c.state !== 'pending') el.appendChild(body);
     list.appendChild(el);
   });
+  growSubs(list);
 }
 function putMarks(c) {
   if (!cur) return;
@@ -3437,6 +3470,298 @@ async function saveCut() {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+
+// ------------------------------------------------ subtitles on a cut (3.11)
+// Beta, and off unless `config.subtitles` says otherwise - then none of this
+// is built at all.
+//
+// What is being typed lives here and not in the DOM: the clip list rebuilds
+// itself whenever a job moves, and a correction has to survive that. While
+// anything is unsaved the list holds still (see `renderCuts`), so the text
+// under the cursor is never pulled away.
+const subsEdit = new Map();
+const subsOf = id => subsEdit.get(id) || null;
+const subsDirty = () => [...subsEdit.values()].some(s => s.dirty);
+function subsSet(id, patch) {
+  const s = Object.assign({ open: false, loading: false, segments: [], dirty: false }, subsEdit.get(id), patch);
+  subsEdit.set(id, s);
+  return s;
+}
+/// What makes the block redraw: the summary the list carries, and whether
+/// the editor under it is open.
+function subsKey(c) {
+  const s = subsOf(c.id), sum = c.subtitles;
+  return (sum ? `${sum.at}/${sum.count}/${sum.language}/${sum.model}/${sum.edited}` : '-')
+    + (s && s.open ? `+${s.loading ? 'loading' : 'open'}` : '');
+}
+
+/// The longest line of a segment - what the counter warns about. A subtitle
+/// wider than this runs past the picture on a phone.
+const SUB_LINE = 42;
+const longestLine = t => Math.max(...String(t || '').split('\n').map(l => l.length), 0);
+
+function subsSummaryText(sum) {
+  if (!sum) return 'not transcribed yet';
+  const parts = [sum.language || 'language not set', sum.model || 'typed by hand',
+    `${sum.count} segment${sum.count === 1 ? '' : 's'}`];
+  if (sum.source) parts.push(sum.source === 'mic' ? 'microphone' : 'mix');
+  if (sum.edited) parts.push('edited');
+  return parts.join(' · ');
+}
+
+/// The block under a cut. `sum` is the summary the clip list carries; the
+/// segments themselves are fetched when the editor opens.
+function renderSubs(c, body) {
+  if (!cfg.subtitles || c.state === 'missing') return;
+  const s = subsOf(c.id), sum = c.subtitles, open = !!(s && s.open);
+  const sec = document.createElement('section'); sec.className = 'subs';
+  const head = document.createElement('div'); head.className = 'subs-head';
+  head.innerHTML = `<svg class="icon icon-sm"><use href="#i-subtitles"/></svg><b>Subtitles</b>`
+    + `<span class="badge">Beta</span><span class="muted sm summary"></span><div class="grow"></div>`;
+  head.querySelector('.summary').textContent = subsSummaryText(sum);
+  const primary = document.createElement('button'); primary.className = 'btn btn-sm';
+  if (sum) {
+    primary.textContent = open ? 'Hide' : 'Edit';
+    primary.onclick = e => { e.preventDefault(); toggleSubs(c); };
+  } else {
+    primary.textContent = 'Transcribe';
+    primary.title = 'Read the speech of this cut on this PC';
+    primary.onclick = e => { e.preventDefault(); transcribeCut(c); };
+  }
+  head.appendChild(primary);
+  head.appendChild(moreButton(() => subsMenu(c, sum)));
+  sec.appendChild(head);
+  if (open) sec.appendChild(subsEditor(c, s));
+  body.appendChild(sec);
+}
+
+function subsMenu(c, sum) {
+  const items = [{ heading: 'Subtitles' }];
+  items.push({
+    label: sum ? 'Transcribe again' : 'Transcribe', icon: 'i-refresh',
+    title: 'Read the speech of this cut again, with the model and language from Settings',
+    onclick: () => transcribeCut(c, sum && sum.edited)
+  });
+  if (sum) {
+    const name = encodeURIComponent(c.id);
+    items.push('hr');
+    items.push({ label: 'Export as SRT', icon: 'i-download', href: `/api/cuts/${name}/subtitles?format=srt`, download: '' });
+    items.push({ label: 'Export as VTT', icon: 'i-download', href: `/api/cuts/${name}/subtitles?format=vtt`, download: '' });
+    items.push('hr');
+    items.push({ label: 'Delete the subtitles', icon: 'i-trash', danger: true, onclick: () => deleteSubs(c) });
+  }
+  return items;
+}
+
+async function toggleSubs(c) {
+  const s = subsOf(c.id);
+  if (s && s.open) {
+    if (s.dirty && !confirm('Close and lose the corrections that are not saved?')) return;
+    subsEdit.delete(c.id); cutsKey = ''; renderCuts(); return;
+  }
+  subsSet(c.id, { open: true, loading: true, error: '' });
+  cutsKey = ''; renderCuts();
+  try {
+    const r = await api(`/api/cuts/${encodeURIComponent(c.id)}/subtitles`, {}, { retries: 0 });
+    if (r.ok === false) subsSet(c.id, { loading: false, error: r.error, segments: [] });
+    else subsSet(c.id, { loading: false, error: '', doc: r, segments: (r.segments || []).map(x => Object.assign({}, x)), dirty: false });
+  } catch (e) { subsSet(c.id, { loading: false, error: e.message }); }
+  cutsKey = ''; renderCuts();
+}
+
+/// Redraw the list in place. A full `renderCuts` would take the focus out of
+/// the field somebody is typing in.
+function redrawSubs(c) {
+  const row = $('cuts') && $('cuts').querySelector(`details[data-cut="${CSS.escape(c.id)}"]`);
+  const sec = row && row.querySelector('.subs');
+  const s = subsOf(c.id);
+  if (!sec || !s) return;
+  const old = sec.querySelector('.subs-editor');
+  const next = subsEditor(c, s);
+  old ? sec.replaceChild(next, old) : sec.appendChild(next);
+  growSubs(sec);
+}
+
+function subsEditor(c, s) {
+  const box = document.createElement('div'); box.className = 'subs-editor';
+  if (s.loading) { box.innerHTML = '<div class="note"><span class="spinner"></span> reading …</div>'; return box; }
+  if (s.error) { const n = document.createElement('div'); n.className = 'note'; n.textContent = s.error; box.appendChild(n); return box; }
+
+  const list = document.createElement('div'); list.className = 'subs-list';
+  s.segments.forEach((seg, i) => list.appendChild(subsRow(c, s, seg, i)));
+  if (!s.segments.length) {
+    const n = document.createElement('div'); n.className = 'note';
+    n.textContent = 'No segments. "Transcribe again" reads the speech once more.';
+    list.appendChild(n);
+  }
+  box.appendChild(list);
+
+  const foot = document.createElement('div'); foot.className = 'subs-foot';
+  const save = document.createElement('button'); save.className = 'btn btn-sm btn-primary';
+  save.textContent = s.saving ? 'Saving …' : 'Save';
+  save.disabled = !s.dirty || s.saving;
+  save.onclick = e => { e.preventDefault(); saveSubs(c); };
+  foot.appendChild(save);
+  if (s.dirty) {
+    const undo = document.createElement('button'); undo.className = 'btn btn-sm btn-ghost';
+    undo.textContent = 'Discard';
+    undo.onclick = e => { e.preventDefault(); subsSet(c.id, { segments: (s.doc && s.doc.segments || []).map(x => Object.assign({}, x)), dirty: false }); redrawSubs(c); };
+    foot.appendChild(undo);
+  }
+  const hint = document.createElement('span'); hint.className = 'muted';
+  hint.textContent = s.dirty ? 'not saved yet' : `${s.segments.length} segment${s.segments.length === 1 ? '' : 's'}`;
+  foot.appendChild(hint);
+  box.appendChild(foot);
+  return box;
+}
+
+/// Size every subtitle field to its text. A field can only measure itself
+/// once it is on the page, so this runs after the list has been built - not
+/// from inside the builder, whose element a second rebuild may already have
+/// replaced.
+function growSubs(root) {
+  (root || document).querySelectorAll('.subs textarea').forEach(grow);
+}
+
+function subsRow(c, s, seg, i) {
+  const row = document.createElement('div'); row.className = 'subrow'; row.dataset.i = String(i);
+  const top = document.createElement('div'); top.className = 'subrow-top';
+  const time = document.createElement('button'); time.className = 'btn btn-ghost btn-sm time';
+  time.textContent = `${fmt(seg.start)} → ${fmt(seg.end)}`;
+  time.title = 'Play this segment';
+  time.onclick = e => { e.preventDefault(); playSegment(c, seg, row); };
+  top.appendChild(time);
+  const count = document.createElement('span'); count.className = 'count';
+  const setCount = t => { const n = longestLine(t); count.textContent = String(n); count.classList.toggle('warn', n > SUB_LINE); };
+  setCount(seg.text);
+  top.appendChild(count);
+  top.appendChild(moreButton(() => [
+    { heading: `Segment ${i + 1}` },
+    { label: 'Split at the cursor', icon: 'i-cut-in', onclick: () => splitSegment(c, i) },
+    { label: 'Merge with the next', icon: 'i-undo', disabled: i >= s.segments.length - 1, onclick: () => mergeSegment(c, i) },
+    'hr',
+    { label: 'Delete this segment', icon: 'i-trash', danger: true, onclick: () => removeSegment(c, i) },
+  ]));
+  row.appendChild(top);
+
+  const text = document.createElement('textarea');
+  text.className = 'input sub-text'; text.rows = 1; text.value = seg.text;
+  text.spellcheck = false;
+  text.oninput = () => { seg.text = text.value; setCount(text.value); grow(text); if (!s.dirty) { subsSet(c.id, { dirty: true }); redrawFoot(c); } };
+  row.appendChild(text);
+  return row;
+}
+
+/// A subtitle is one to three lines and the field shows all of them. A fixed
+/// height would cut the end off a long line on a phone, which is exactly
+/// where the long ones are hardest to read.
+function grow(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.max(el.scrollHeight, 34) + 'px';
+}
+
+/// Only the footer, so that the Save button lights up without the field
+/// under the cursor being rebuilt.
+function redrawFoot(c) {
+  const row = $('cuts') && $('cuts').querySelector(`details[data-cut="${CSS.escape(c.id)}"]`);
+  const box = row && row.querySelector('.subs-editor');
+  const s = subsOf(c.id);
+  if (!box || !s) return;
+  const old = box.querySelector('.subs-foot');
+  const next = subsEditor(c, s).querySelector('.subs-foot');
+  if (old && next) box.replaceChild(next, old);
+}
+
+/// Play from the start of a segment and stop where it ends.
+let subsStop = null;
+function playSegment(c, seg, row) {
+  if (!v || !v.getAttribute('src') || !cur || cur.base !== c.base) { toast('The recording is not on screen', 'err'); return; }
+  document.querySelectorAll('.subrow.is-playing').forEach(r => r.classList.remove('is-playing'));
+  row.classList.add('is-playing');
+  if (subsStop) { v.removeEventListener('timeupdate', subsStop); subsStop = null; }
+  seek(seg.start);
+  subsStop = () => {
+    if (v.currentTime < seg.end) return;
+    v.pause(); v.removeEventListener('timeupdate', subsStop); subsStop = null;
+    row.classList.remove('is-playing');
+  };
+  v.addEventListener('timeupdate', subsStop);
+  v.play().catch(() => {});
+}
+
+function splitSegment(c, i) {
+  const s = subsOf(c.id); if (!s) return;
+  const row = $('cuts').querySelector(`details[data-cut="${CSS.escape(c.id)}"] .subrow[data-i="${i}"] textarea`);
+  const seg = s.segments[i];
+  const at = row && row.selectionStart > 0 && row.selectionStart < seg.text.length ? row.selectionStart : Math.floor(seg.text.length / 2);
+  const head = seg.text.slice(0, at).trim(), tail = seg.text.slice(at).trim();
+  if (!head || !tail) { toast('Put the cursor where the line should break', 'err'); return; }
+  // the time is shared out the way the characters are
+  const cutAt = Math.round((seg.start + (seg.end - seg.start) * (at / seg.text.length)) * 1000) / 1000;
+  s.segments.splice(i, 1,
+    { start: seg.start, end: cutAt, text: head },
+    { start: cutAt, end: seg.end, text: tail });
+  subsSet(c.id, { dirty: true }); redrawSubs(c);
+}
+
+function mergeSegment(c, i) {
+  const s = subsOf(c.id); if (!s || i >= s.segments.length - 1) return;
+  const a = s.segments[i], b = s.segments[i + 1];
+  s.segments.splice(i, 2, { start: a.start, end: b.end, text: `${a.text.trim()} ${b.text.trim()}`.trim() });
+  subsSet(c.id, { dirty: true }); redrawSubs(c);
+}
+
+function removeSegment(c, i) {
+  const s = subsOf(c.id); if (!s) return;
+  s.segments.splice(i, 1);
+  subsSet(c.id, { dirty: true }); redrawSubs(c);
+}
+
+async function saveSubs(c) {
+  const s = subsOf(c.id); if (!s) return;
+  const segments = s.segments
+    .map(x => ({ start: x.start, end: x.end, text: String(x.text || '').trim() }))
+    .filter(x => x.text);
+  subsSet(c.id, { saving: true }); redrawFoot(c);
+  try {
+    const body = { segments };
+    if (s.doc && s.doc.language) body.language = s.doc.language;
+    const r = await api(`/api/cuts/${encodeURIComponent(c.id)}/subtitles`, jsonOpts('PUT', body), { retries: 0, timeout: 10000 });
+    if (!r.ok) { toast(r.error, 'err'); subsSet(c.id, { saving: false }); redrawFoot(c); return; }
+    const doc = r.subtitles;
+    subsSet(c.id, { saving: false, dirty: false, doc, segments: ((doc && doc.segments) || []).map(x => Object.assign({}, x)) });
+    toast(segments.length ? 'Subtitles saved' : 'Subtitles removed', 'ok');
+  } catch (e) { toast(e.message, 'err'); subsSet(c.id, { saving: false }); }
+  cutsKey = ''; poll.now();
+}
+
+async function deleteSubs(c) {
+  if (!confirm('Delete the subtitles of this cut?\n\nThe cut and everything it produced stay.')) return;
+  try {
+    const r = await api(`/api/cuts/${encodeURIComponent(c.id)}/subtitles`, { method: 'DELETE' }, { retries: 0 });
+    if (!r.ok) { toast(r.error, 'err'); return; }
+    subsEdit.delete(c.id); toast('Subtitles deleted', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+  cutsKey = ''; poll.now();
+}
+
+async function transcribeCut(c, warn) {
+  if (warn && !confirm('Read the speech again and replace the corrections you made?')) return;
+  try {
+    const r = await api(`/api/cuts/${encodeURIComponent(c.id)}/transcribe`, jsonOpts('POST', {}), { retries: 0, timeout: 10000 });
+    if (!r.ok) {
+      // the answer says what is missing, so the page can offer the way out
+      if (r.reason === 'model') toast('No model on this PC yet - Settings › Subtitles', 'err');
+      else if (r.reason === 'filter') toast('This ffmpeg cannot transcribe - see Diagnostics', 'err');
+      else if (r.reason === 'disabled') toast('Subtitles are switched off - Settings › Subtitles', 'err');
+      else toast(r.error, 'err');
+      return;
+    }
+    subsEdit.delete(c.id);
+    toast(r.position > 0 ? `Queued - ${r.position} job${r.position === 1 ? '' : 's'} ahead` : 'Reading the speech …');
+    followJob(r);
+  } catch (e) { toast(e.message, 'err'); }
+}
 // ------------------------------------------------------------ the clip list (3.0)
 // One list with a filter: "Active" is what is still to do, "Done" what has
 // been put away. Days group it, because an evening of clips is a day's work.

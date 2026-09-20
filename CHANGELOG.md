@@ -20,8 +20,10 @@ contract.
   fetched once into the data folder and checked against its checksum;
   nothing else leaves this PC, and a transcription runs at idle priority on
   the CPU, because the graphics card belongs to the game.
-  This is the first half: reading the speech, keeping it, exporting it as
-  SRT or VTT. The editor and burned-in subtitles follow.
+  Under each cut sits a small editor: the segments with their times, a click
+  plays one, the text is corrected in place, and lines can be split, merged
+  or removed before anything is rendered. It works on a phone. Burned-in
+  subtitles and a subtitle track follow.
   The model is `small` (about 465 MiB) unless you choose otherwise: on a
   real recording it read game jargon far better than the smaller `base` for
   nine percent more time.
