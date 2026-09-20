@@ -104,12 +104,11 @@ scanning, **Pause scanning** keeps new replays out of the list for a while,
 what they say. Double-click the shortcut to start it again; if it is already
 running, that opens the page.
 
-Windows SmartScreen may warn about an unsigned download the first time: click
-"More info", then "Run anyway". replaycut has applied to the [SignPath
-Foundation](https://signpath.org/) for free code signing; once granted, the
-Windows executable of every release will be signed by SignPath.io with a
-SignPath Foundation certificate, and this section will carry the code
-signing policy.
+Windows SmartScreen may warn about the download the first time: click "More
+info", then "Run anyway". The executable carries no Authenticode signature,
+so Windows has no publisher to name; what you can check instead is the
+release's `SHA256SUMS` and its minisign signature, and that is the same
+signature the built-in updater verifies before it installs anything.
 
 ### Linux
 

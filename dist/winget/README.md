@@ -132,7 +132,7 @@ the three files under
 
 A bot validates the manifest, installs the package in a sandbox and comments;
 a moderator merges. Expect a day or two, and expect SmartScreen to be a topic
-until the executable is signed (see the SignPath note in the wardogs repo).
+for as long as the executable is unsigned.
 
 Once the package is in, the README's Install section gets its sentence:
 
