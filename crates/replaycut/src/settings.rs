@@ -132,7 +132,12 @@ pub struct SubtitleSettings {
     /// Which model a transcription uses: `base`, `small` or `medium`, or
     /// the name of a file put into the models folder by hand.
     pub model: String,
-    /// `auto` or an ISO 639-1 code.
+    /// `auto` or an ISO 639-1 code. `auto` works, but whisper decides again
+    /// for every window it looks at: measured on a real German recording,
+    /// two quiet passages came back as "And" and "Yeah" where a fixed `de`
+    /// read "Und" and "Ja". It also never says which language it settled
+    /// on - neither the SRT nor the JSON it writes carries one - so a
+    /// transcript read with `auto` leaves its subtitle track untagged.
     pub language: String,
     /// Which track to read: `auto` (the microphone when there is one),
     /// `mic` or `mix`.
