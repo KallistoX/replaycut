@@ -1236,10 +1236,17 @@ pub const PREVIEW_KBPS: u32 = 2000;
 /// applies: 0 the mix, 1 the microphone, 2 the game, 3 the voice chat.
 /// Anything less than four tracks is a simple recording, and that is the
 /// mix.
-async fn speech_stream(state: &AppState, file: &Path, wanted: &str) -> (u32, &'static str) {
+async fn speech_stream(
+    state: &AppState,
+    file: &Path,
+    wanted: &str,
+) -> (u32, &'static str, &'static str) {
     let tracks = state.runtime().media.audio_tracks(file).await;
-    if wanted == crate::db::SOURCE_MIX || tracks < 2 {
-        return (0, crate::db::SOURCE_MIX);
+    if wanted == crate::db::SOURCE_MIX {
+        return (0, crate::db::SOURCE_MIX, "asked for");
+    }
+    if tracks < 2 {
+        return (0, crate::db::SOURCE_MIX, "one track only");
     }
     if let Some(facts) = state.obs.status().facts.as_ref() {
         // OBS counts tracks from 1, ffmpeg counts streams from 0
@@ -1247,14 +1254,14 @@ async fn speech_stream(state: &AppState, file: &Path, wanted: &str) -> (u32, &'s
             .map(|t| t.saturating_sub(1))
             .filter(|s| *s < tracks)
         {
-            return (stream, crate::db::SOURCE_MIC);
+            return (stream, crate::db::SOURCE_MIC, "OBS says so");
         }
     }
     if tracks >= 4 {
-        return (1, crate::db::SOURCE_MIC);
+        return (1, crate::db::SOURCE_MIC, "the usual layout");
     }
     // asked for the microphone, but this recording has no separate one
-    (0, crate::db::SOURCE_MIX)
+    (0, crate::db::SOURCE_MIX, "no separate microphone")
 }
 
 /// The `transcribe` pipeline (since 3.11): run the speech of the cut
@@ -1287,7 +1294,7 @@ async fn transcribe_pipeline(state: &AppState, id: &str, token: &CancellationTok
     if crate::subtitles::ready(&state.data_dir, model).is_none() {
         bail!("the model {} is not in the models folder", model.name);
     }
-    let (stream, source) = speech_stream(state, &input, &job.track).await;
+    let (stream, source, why) = speech_stream(state, &input, &job.track).await;
     state.with_job(id, |j| {
         j.stage = "transcribe".into();
         j.track = source.to_string();
@@ -1332,7 +1339,7 @@ async fn transcribe_pipeline(state: &AppState, id: &str, token: &CancellationTok
         "-",
     ];
     tracing::info!(
-        "transcribe [{id}]: cut {} from track {stream} ({source}) with {} in '{}'",
+        "transcribe [{id}]: cut {} from track {stream} ({source}, {why}) with {} in '{}'",
         cut.id,
         model.name,
         job.language
