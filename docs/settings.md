@@ -15,6 +15,7 @@ sensitive is ever written to disk in plain text.
 | State of 2.x | `<data-dir>\backup-2.x\clip-names.json`, `clip-seen.json`, `clip-history.json` - the first start of 3.0 imports these three files and moves them here |
 | Browser sessions | `<data-dir>\sessions.json` (hashes of the login cookies, 30 days; since 2.8 with the device's name, browser, address, when it was made and last seen, and how it got in; since 3.4 also whether a browser or a client of its own holds it; since 3.5 the device id from the `rc_device` cookie, so one device is one row however it signs in) |
 | TLS certificates | `<data-dir>\tls\` (since 3.4, only with `https.enabled` and no own PEM pair): `ca.crt` and `ca.key`, the authority this installation is known by, made once and never replaced; `server.crt` and `server.key`, re-issued whenever the machine's names or addresses change or less than 30 days are left. On Linux the private keys are `0600`; on Windows the folder is under `%LOCALAPPDATA%` and therefore already bound to your account, as `settings.json` and `sessions.json` are. |
+| Subtitle models | `<data-dir>\models\ggml-<name>.bin` (since 3.11): fetched once when you press Download in Settings › Subtitles, checked against a checksum the build carries, and used again after every update. A file put there by hand is used too, once its checksum has been confirmed; `<file>.ok` remembers that it was. The models the page offers are `base`, `small` (the default) and `medium`; anything else whisper.cpp reads works if you name it in `subtitles.model`. |
 | Themes | `<data-dir>\themes\<name>.css` (see `docs/themes.md`) |
 | Logs | `<data-dir>\logs\replaycut.<date>.log`, daily rotation, 7 files kept |
 | Previews | `<clipDir>\.preview\` |
@@ -48,6 +49,20 @@ fine.
   "ffmpegPriority": "belowNormal",
   "ffmpegThreads": 0,
   "logLevel": "info",
+  "subtitles": {
+    "enabled": false,
+    "model": "small",
+    "language": "auto",
+    "source": "auto",
+    "gpu": false,
+    "style": {
+      "color": "#ffffff",
+      "outline": 3,
+      "box": false,
+      "wide": { "size": 4.5, "margin": 5 },
+      "vertical": { "size": 3.5, "margin": 22 }
+    }
+  },
   "integrations": {
     "nextcloud": {
       "enabled": false,
@@ -115,6 +130,7 @@ fine.
 | `passwordHash` | Set through the settings page or `PUT /api/settings` with `password`; an argon2id hash, never the password. Since 2.8 a password is 8 to 128 characters, and "Generate one for me" offers four words from a built-in list. Absent means no password - which is why network access cannot be turned on without setting one first. This PC (loopback) never needs the password unless `requireLoginOnLoopback` is set. |
 | `obs` | Since 2.2: `{ "enabled": true, "host": "localhost", "port": 4455 }` - where obs-websocket listens (OBS: Tools › WebSocket Server Settings). With `enabled` the service connects on its own and retries quietly while OBS is closed. The password is a credential, see below. |
 | `cleanup` | Since 3.0: `{ "afterShare": "done", "recycleDoneAfterDays": 0 }` - what happens to a clip once it has been shared. `afterShare` is the default of the "Afterwards" menu in the share row: `keep` leaves the clip in the list, `done` (the default) takes it out (one click brings it back), `recycle` also moves the recording to the recycle bin. The share may say otherwise per job (`after` in `POST /api/share`). `recycleDoneAfterDays` moves the recordings of clips that have been done that long to the recycle bin; `0` never does. **Cuts and shared files are never removed automatically** - the cut is what every later rendering is made from. |
+| `subtitles` | Since 3.11, **beta and off**: `{ "enabled": false, "model": "small", "language": "auto", "source": "auto", "gpu": false, "style": { … } }`. With `enabled` false nothing here runs: no cut shows a subtitle block, the share row shows no choice, no model is downloaded and no request goes to Hugging Face. `model` is `base`, `small` (the default - it reads game jargon far better for about nine percent more time) or `medium`, or the name of a file you put in the models folder yourself. `language` is `auto` or an ISO 639-1 code; `auto` lets whisper decide, which on a short clip with little speech it does less reliably than you would like. `source` is `auto` (ask OBS which track carries the microphone, else track 2 of a four-track recording), `mic` or `mix`. `gpu` is off: the card belongs to the game, and in the ffmpeg builds this was measured on the filter runs on the CPU whatever this says. `style` is how burned-in subtitles look - `color`, `outline` (pixels at 1080p, scaled with the picture), `box`, and `wide`/`vertical` with `size` and `margin` as percentages of the picture height. The text is drawn in a font that comes with the build (Inter Bold, SIL Open Font License 1.1), so a rendering looks the same on every machine. |
 
 Since 2.1 the settings page and `PUT /api/settings` change the file at
 runtime; everything but `port`, `bind` and `uiFile` takes effect without a

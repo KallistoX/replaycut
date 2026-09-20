@@ -22,8 +22,17 @@ contract.
   the CPU, because the graphics card belongs to the game.
   Under each cut sits a small editor: the segments with their times, a click
   plays one, the text is corrected in place, and lines can be split, merged
-  or removed before anything is rendered. It works on a phone. Burned-in
-  subtitles and a subtitle track follow.
+  or removed before anything is rendered. It works on a phone.
+  A rendering then does one of three things with them, chosen in the share
+  row: nothing, **burned into the picture** - the only way they show in a
+  Discord preview, on a phone and in a Short - or **as a track** the player
+  can switch on, which also works in the "As recorded" quality that touches
+  no frame. Burned-in lines are drawn after the 9:16 crop, so a Short
+  carries them inside its own frame, above the space its title and buttons
+  take. Size, colour, outline and placement are in Settings, and the font
+  comes with the build so a clip looks the same on every machine.
+  A cut that has no subtitles yet gets them read first, as a stage before
+  the encode.
   The model is `small` (about 465 MiB) unless you choose otherwise: on a
   real recording it read game jargon far better than the smaller `base` for
   nine percent more time.

@@ -1893,6 +1893,71 @@ once its checksum has been confirmed.
 was measured on, the whisper filter runs on the CPU whatever it says, and
 the graphics card belongs to the game.
 
+### Subtitles on a rendering
+
+`POST /api/share` and `POST /api/cuts/<id>/render` take `subtitles`:
+
+- `none` (the default) - the rendering is byte for byte what it was before
+  3.11. The ffmpeg command line is unchanged, and a unit test holds it to
+  that.
+- `burn` - drawn into the picture. It shows in a Discord preview, on a
+  phone and in a Short, because it is the picture.
+- `track` - carried along as an MP4 `mov_text` track, tagged with its
+  language and marked as the default so a player that honours it shows the
+  subtitles without being asked.
+
+Left out, the rendering does what this cut's subtitles remember from last
+time (`subtitles.mode`); a rendering writes that back, so the next one
+starts where the last one left off.
+
+The finished job carries `subtitles` with what it did.
+
+- `400` for a mode other than those three, and for `burn` together with
+  `mode: "copy"`: "As recorded" copies the picture untouched, so nothing
+  can be drawn into it - the track is the way there.
+- `412 { reason }`: `disabled` (the switch is off), or, for a cut that has
+  no transcript yet and would need one read first, `filter` or `model`.
+
+**A cut that has no subtitles yet gets them here**, as a stage before the
+encode: asking for subtitles on a cut that has none is a request to read
+them, not a mistake. The job then runs `queued -> transcribe -> encode ->
+...`. A cut whose speech yields nothing is an error rather than a silent
+rendering without subtitles.
+
+Burned-in subtitles are drawn **after** the crop and the scale, so a 9:16
+rendering carries them inside its own frame, and **before** the encoder, so
+they are in the picture and not in a stream. Where the frames would
+otherwise stay on the graphics card (cuda, qsv, VAAPI) the rendering falls
+back to software decoding, the same way a vertical cut has since 2.6.
+
+### Settings `subtitles.style`
+
+```json
+"style": {
+  "color": "#ffffff",
+  "outline": 3,
+  "box": false,
+  "wide":     { "size": 4.5, "margin": 5 },
+  "vertical": { "size": 3.5, "margin": 22 }
+}
+```
+
+`size` and `margin` are shares of the **picture height**, so one setting
+fits a 720p clip and a 1440p one; `outline` is pixels at 1080p and scales
+with the picture. `wide` is used for a 16:9 rendering, `vertical` for a
+9:16 one - where 22 % keeps the line above the title, the channel and the
+buttons a Short draws over its lower fifth.
+
+`PUT /api/settings` folds a style patch in rather than replacing it: a
+request that names only `subtitles.style.wide.size` leaves the colour and
+the other placement alone. `400` for a size outside 1 to 20 percent, a
+margin outside 0 to 80, an outline outside 0 to 20, or a name that is not
+one of these.
+
+The text is drawn in a font that comes with the build (Inter Bold, SIL Open
+Font License 1.1), so a rendering looks the same on Windows and on a Linux
+machine with no fonts installed.
+
 ### Diagnostics of 3.11
 
 One more line, `subtitles`, which names whichever of the three is missing:

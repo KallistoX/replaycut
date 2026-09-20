@@ -209,6 +209,124 @@ pub fn known_language(code: &str) -> bool {
 pub const MAX_SEGMENTS: usize = 2000;
 pub const MAX_TEXT: usize = 500;
 
+/// The font that travels with the build (Inter Bold, SIL Open Font License
+/// 1.1 - the licence is beside it in `assets/`). libass is pointed at the
+/// folder it is written to, so a burned-in subtitle looks the same on
+/// Windows and on a Linux box that has no fonts installed at all.
+pub const FONT: &[u8] = include_bytes!("../assets/Inter-Bold.ttf");
+pub const FONT_FILE: &str = "Inter-Bold.ttf";
+const FONT_NAME: &str = "Inter";
+/// What the burned-in subtitles and the attached track are called on disk.
+pub const ASS_FILE: &str = "subs.ass";
+pub const TRACK_FILE: &str = "subs.srt";
+
+/// ISO 639-1 to the three letters an MP4 subtitle track is tagged with.
+/// Only the languages the menu offers; anything else goes untagged rather
+/// than wrongly tagged.
+pub fn iso639_2(code: &str) -> Option<&'static str> {
+    Some(match code {
+        "de" => "deu",
+        "en" => "eng",
+        "fr" => "fra",
+        "es" => "spa",
+        "it" => "ita",
+        "nl" => "nld",
+        "pl" => "pol",
+        "pt" => "por",
+        "tr" => "tur",
+        _ => return None,
+    })
+}
+
+/// `#rrggbb` as ASS wants it: `&HAABBGGRR`, alpha first and the channels
+/// the other way round. A colour that is not a colour falls back to white,
+/// because a render that stops over a typo in a settings field helps nobody.
+fn ass_colour(hex: &str, alpha: u8) -> String {
+    let h = hex.trim().trim_start_matches('#');
+    let v = u32::from_str_radix(h, 16).ok().filter(|_| h.len() == 6);
+    let (r, g, b) = match v {
+        Some(v) => ((v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff),
+        None => (0xff, 0xff, 0xff),
+    };
+    format!("&H{alpha:02X}{b:02X}{g:02X}{r:02X}")
+}
+
+/// `H:MM:SS.cc` - ASS counts in hundredths.
+fn ass_time(seconds: f64) -> String {
+    let cs = (seconds.max(0.0) * 100.0).round() as u64;
+    format!(
+        "{}:{:02}:{:02}.{:02}",
+        cs / 360_000,
+        cs / 6_000 % 60,
+        cs / 100 % 60,
+        cs % 100
+    )
+}
+
+/// The subtitle file that is burned into a rendering.
+///
+/// Sizes and margins are shares of the picture height, so the same style
+/// fits a 720p clip and a 1440p one. `PlayResX`/`PlayResY` are the real
+/// output size, which is what libass scales everything against.
+pub fn to_ass(
+    segments: &[Segment],
+    offset: f64,
+    style: &crate::settings::Placement,
+    common: &crate::settings::SubtitleStyle,
+    width: u32,
+    height: u32,
+) -> String {
+    let h = height.max(1) as f32;
+    let size = (h * style.size / 100.0).round().max(8.0) as u32;
+    let margin = (h * style.margin / 100.0).round() as u32;
+    // the outline is given at 1080p and scales with the picture
+    let outline = (common.outline * h / 1080.0 * 10.0).round() / 10.0;
+    let mut out = format!(
+        "[Script Info]\n\
+         ScriptType: v4.00+\n\
+         PlayResX: {width}\n\
+         PlayResY: {height}\n\
+         WrapStyle: 0\n\
+         ScaledBorderAndShadow: yes\n\
+         YCbCr Matrix: None\n\n\
+         [V4+ Styles]\n\
+         Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, \
+         BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, \
+         BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n\
+         Style: rc,{FONT_NAME},{size},{},&H000000FF,{},{},-1,0,0,0,100,100,0,0,{},{outline},{},2,{},{},{margin},1\n\n\
+         [Events]\n\
+         Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
+        ass_colour(&common.color, 0),
+        ass_colour("#000000", 0),
+        // the box, when it is on, is the back colour at three quarters
+        ass_colour("#000000", if common.box_bg { 0x40 } else { 0x80 }),
+        if common.box_bg { 3 } else { 1 },
+        if common.box_bg { 0 } else { 1 },
+        // left and right margins keep a line off the edge of a phone
+        (h * 0.03).round() as u32,
+        (h * 0.03).round() as u32,
+    );
+    for s in segments {
+        out.push_str(&format!(
+            "Dialogue: 0,{},{},rc,,0,0,0,,{}\n",
+            ass_time(s.start - offset),
+            ass_time(s.end - offset),
+            ass_text(&s.text)
+        ));
+    }
+    out
+}
+
+/// A line of dialogue: the newline becomes `\N`, and the characters ASS
+/// reads as markup are taken out rather than escaped - a callout is not
+/// going to miss a brace.
+fn ass_text(text: &str) -> String {
+    text.trim()
+        .replace('\\', "/")
+        .replace(['{', '}'], "")
+        .replace('\n', "\\N")
+}
+
 /// Read the SRT the `whisper` filter wrote. `offset` is added to every
 /// time, which turns the cut file's own time base into the recording's.
 ///

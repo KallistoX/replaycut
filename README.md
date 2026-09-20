@@ -37,6 +37,12 @@ your phone, link in Discord.](docs/design/icons/social.png)
   would be billed to whoever registered the app.
 - **The link posts itself.** Discord, Telegram or any webhook right after the
   quick share; every other share offers "Post to ..." when you want it.
+- **Subtitles, read on your own PC** (beta, off until you switch it on).
+  ffmpeg's `whisper` filter reads the microphone track of a cut, you correct
+  the lines under it, and a rendering burns them into the picture - the only
+  way they show in a Discord preview or a Short - or carries them as a
+  track. The speech never leaves the machine; only the model is fetched,
+  once. A distribution whose ffmpeg lacks the filter says so in Diagnostics.
 - **Closed until you open it.** A new installation listens on this PC only;
   a phone gets in with one click on your PC or by scanning the QR code, without
   typing a password.

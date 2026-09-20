@@ -4289,3 +4289,177 @@ fn t70_subtitles_are_off_until_they_are_switched_on() {
     let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
     assert_eq!(status, 200, "{v}");
 }
+
+/// Burned-in subtitles change the picture and nothing else: the rendering
+/// is as long as it was, it carries no subtitle stream, and its bytes
+/// differ from the same rendering without them. The segments are put there
+/// by this test, so no model is needed and the whole thing runs in CI.
+#[test]
+fn t71_subtitles_can_be_burned_into_a_rendering() {
+    let _g = serial();
+    if !since_311() {
+        eprintln!("skipped: needs replaycut 3.11");
+        return;
+    }
+    let (_, settings) = get_json("/api/settings");
+    let _guard = Subtitles(settings["subtitles"].clone());
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "subtitles": { "enabled": true } }),
+    );
+    assert_eq!(status, 200, "{v}");
+
+    let base = format!("{} burn", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let (status, v) = post_json(
+        "/api/cuts",
+        &json!({ "base": base, "start": 2.0, "end": 8.0, "audio": "mix", "after": "keep" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let cut = v["cut"].as_str().expect("cut").to_string();
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+
+    // two lines that fill most of the range, so the picture really changes
+    let (status, v) = put_json(
+        &format!("/api/cuts/{cut}/subtitles"),
+        &json!({ "language": "en", "segments": [
+            { "start": 2.2, "end": 5.0, "text": "he is coming from the left side" },
+            { "start": 5.2, "end": 7.8, "text": "nice shot, that was clean" },
+        ] }),
+    );
+    assert_eq!(status, 200, "{v}");
+
+    let render = |subs: &str| -> serde_json::Value {
+        let (status, v) = post_json(
+            &format!("/api/cuts/{cut}/render"),
+            &json!({ "target": "file", "after": "keep", "subtitles": subs }),
+        );
+        assert_eq!(status, 202, "render {subs}: {v}");
+        let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+        assert_eq!(done["ok"], true, "render {subs}: {done}");
+        done
+    };
+
+    let plain = render("none");
+    let burned = render("burn");
+    assert_eq!(burned["subtitles"], "burn", "{burned}");
+    assert_eq!(plain["subtitles"].as_str().unwrap_or("none"), "none");
+
+    // the same range, the same encoder, the same target - what differs is
+    // what was drawn into the frames
+    let (a, b) = (
+        plain["sizeMB"].as_f64().unwrap_or(0.0),
+        burned["sizeMB"].as_f64().unwrap_or(0.0),
+    );
+    assert!(a > 0.0 && b > 0.0, "{plain} {burned}");
+    assert!(
+        (a - b).abs() > 0.0001,
+        "a burned-in subtitle changes the picture: {a} MB against {b} MB"
+    );
+    // and it stays a picture: no subtitle stream, same running time
+    let burned_file = burned["file"].as_str().expect("file");
+    let streams = probe_shared(burned_file, &["-show_entries", "stream=codec_type"]);
+    assert!(
+        !streams.contains("subtitle"),
+        "burned in means in the picture, not in a stream: {streams:?}"
+    );
+    assert!(
+        (shared_duration(burned_file) - shared_duration(plain["file"].as_str().expect("file")))
+            .abs()
+            < 0.3,
+        "the running time is untouched"
+    );
+
+    // "As recorded" copies the picture, so nothing can be drawn into it
+    let (status, v) = post_json(
+        &format!("/api/cuts/{cut}/render"),
+        &json!({ "target": "file", "after": "keep", "mode": "copy", "subtitles": "burn" }),
+    );
+    assert_eq!(status, 400, "{v}");
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}
+
+/// A subtitle track rides along without touching the picture, which is why
+/// it also works in the copy mode that touches no frame.
+#[test]
+fn t72_subtitles_can_ride_along_as_a_track() {
+    let _g = serial();
+    if !since_311() {
+        eprintln!("skipped: needs replaycut 3.11");
+        return;
+    }
+    let (_, settings) = get_json("/api/settings");
+    let _guard = Subtitles(settings["subtitles"].clone());
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "subtitles": { "enabled": true } }),
+    );
+    assert_eq!(status, 200, "{v}");
+
+    let base = format!("{} track", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let (status, v) = post_json(
+        "/api/cuts",
+        &json!({ "base": base, "start": 2.0, "end": 8.0, "audio": "mix", "after": "keep" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let cut = v["cut"].as_str().expect("cut").to_string();
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+
+    let (status, v) = put_json(
+        &format!("/api/cuts/{cut}/subtitles"),
+        &json!({ "language": "de", "segments": [
+            { "start": 2.5, "end": 4.5, "text": "der kommt von links" },
+            { "start": 5.0, "end": 7.0, "text": "nimm den Rauch" },
+        ] }),
+    );
+    assert_eq!(status, 200, "{v}");
+
+    // the copy mode re-encodes nothing, and the track still gets there
+    let (status, v) = post_json(
+        &format!("/api/cuts/{cut}/render"),
+        &json!({ "target": "file", "after": "keep", "mode": "copy", "subtitles": "track" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(done["subtitles"], "track", "{done}");
+
+    let file = done["file"].as_str().expect("file");
+    let streams = probe_shared(
+        file,
+        &[
+            "-show_entries",
+            "stream=codec_type,codec_name:stream_tags=language",
+        ],
+    );
+    assert!(
+        streams.contains("mov_text"),
+        "the track is there, as timed text: {streams:?}"
+    );
+    assert!(
+        streams.contains("deu"),
+        "and it says which language it is in: {streams:?}"
+    );
+
+    // the cut remembers what the last rendering did with them
+    let (status, v) = get_json(&format!("/api/cuts/{cut}"));
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["subtitles"]["mode"], "track", "{v}");
+
+    // a mode nobody knows is refused before anything runs
+    let (status, v) = post_json(
+        &format!("/api/cuts/{cut}/render"),
+        &json!({ "target": "file", "after": "keep", "subtitles": "sideways" }),
+    );
+    assert_eq!(status, 400, "{v}");
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}

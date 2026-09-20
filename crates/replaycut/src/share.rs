@@ -40,6 +40,9 @@ pub struct ShareRequest {
     /// What happens to the clip afterwards (since 3.0): `keep`, `done` or
     /// `recycle`; empty takes `cleanup.afterShare` from the settings.
     pub after: String,
+    /// What this rendering does with the subtitles of its cut (since 3.11):
+    /// `none` (the default), `burn` or `track`.
+    pub subtitles: String,
 }
 
 /// The "Afterwards" of a job: what the body said, or the settings default.
@@ -76,6 +79,9 @@ pub enum ShareError {
     /// This range is already a cut of this clip; carries the cut id (since 3.0).
     CutExists(String),
     Invalid(String),
+    /// Something this service cannot do right now, with the one word that
+    /// says which (since 3.11): `disabled`, `filter` or `model`.
+    Unmet(&'static str, String),
     /// `MAX_QUEUE` jobs are waiting already.
     QueueFull,
 }
@@ -347,8 +353,24 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<Started, ShareError>
     // since 2.7: best quality unless the target has limits
     let limits = state.settings().limits(&target);
     let after = after_of(state, &req.after)?;
+    // Since 3.11. A share cuts its range on the way, so the transcript this
+    // will use is the one of the cut that range already is - if it is one.
+    let existing = state
+        .db
+        .cut_of_range(&clip.base, start, end)
+        .ok()
+        .flatten()
+        .and_then(|c| state.db.subtitles(&c.id).ok().flatten());
+    let subtitles = subtitles_for(
+        state,
+        Some(req.subtitles.as_str()),
+        existing.as_ref().map(|s| s.mode.as_str()),
+        existing.as_ref().is_some_and(|s| !s.segments.is_empty()),
+        share_mode == "copy",
+    )?;
     let mut job = Job {
         id: id.clone(),
+        subtitles,
         base: clip.base.clone(),
         target,
         start,
@@ -484,6 +506,69 @@ pub struct RenderRequest {
     pub vertical_pos: Option<f64>,
     /// What happens to the clip afterwards, as in `POST /api/share`.
     pub after: String,
+    /// What this rendering does with the subtitles of the cut (since 3.11):
+    /// `none`, `burn` or `track`. Empty takes what the cut remembers.
+    pub subtitles: Option<String>,
+}
+
+/// What a rendering may do about subtitles. `cut` is the transcript the cut
+/// has, if any; `None` means the rendering would have to read the speech
+/// first, which it can only do when everything is in place for it.
+pub fn subtitles_for(
+    state: &AppState,
+    wanted: Option<&str>,
+    remembered: Option<&str>,
+    has_subtitles: bool,
+    copy_mode: bool,
+) -> Result<String, ShareError> {
+    let mode = match wanted {
+        Some(m) if !m.is_empty() => m.to_string(),
+        _ => remembered.unwrap_or(crate::db::SUBS_NONE).to_string(),
+    };
+    if mode == crate::db::SUBS_NONE {
+        return Ok(mode);
+    }
+    if !crate::db::SUBS_MODES.contains(&mode.as_str()) {
+        return Err(ShareError::Invalid(format!(
+            "unknown subtitles: {mode} (none, burn or track)"
+        )));
+    }
+    let settings = state.settings();
+    if !settings.subtitles.enabled {
+        return Err(ShareError::Unmet(
+            "disabled",
+            "subtitles are switched off - turn them on under Settings › Subtitles".into(),
+        ));
+    }
+    if mode == crate::db::SUBS_BURN && copy_mode {
+        return Err(ShareError::Invalid(
+            "burned-in subtitles need the h264 mode - 'As recorded' copies the picture untouched, \
+             so nothing can be drawn into it. Take the track instead."
+                .into(),
+        ));
+    }
+    if !has_subtitles {
+        // the rendering would read the speech first; it may only promise
+        // that when it can actually do it
+        if !state.runtime().whisper {
+            return Err(ShareError::Unmet(
+                "filter",
+                "subtitles: not in this ffmpeg build - it was built without the whisper filter"
+                    .into(),
+            ));
+        }
+        let model = crate::subtitles::model(&settings.subtitles.model);
+        if model.is_none_or(|m| crate::subtitles::ready(&state.data_dir, m).is_none()) {
+            return Err(ShareError::Unmet(
+                "model",
+                format!(
+                    "this cut has no subtitles yet and the model {} is not on this PC",
+                    settings.subtitles.model
+                ),
+            ));
+        }
+    }
+    Ok(mode)
 }
 
 /// `POST /api/cuts/<id>/render` (since 3.0): encode a cut that exists and
@@ -580,10 +665,21 @@ pub fn start_render(
     }
     let limits = state.settings().limits(&target);
     let after = after_of(state, &req.after)?;
+    // since 3.11: what this rendering does about subtitles, and whether it
+    // can do it at all
+    let remembered = state.db.subtitles(&cut.id).ok().flatten();
+    let subtitles = subtitles_for(
+        state,
+        req.subtitles.as_deref(),
+        remembered.as_ref().map(|s| s.mode.as_str()),
+        remembered.as_ref().is_some_and(|s| !s.segments.is_empty()),
+        share_mode == "copy",
+    )?;
     let clip = inner.clips.get(&cut.base);
     let job = Job {
         id: id.clone(),
         kind: KIND_RENDER.to_string(),
+        subtitles,
         base: cut.base.clone(),
         cut: Some(cut.id.clone()),
         target,
@@ -739,6 +835,8 @@ pub fn publish(state: &AppState, source: &str, target: &str) -> Result<Started, 
                 vertical_pos: src.vertical_pos.unwrap_or(0.5),
                 // a publish never changes the state of the clip itself
                 after: crate::settings::AFTER_KEEP.to_string(),
+                // and it carries over what the file it re-cuts already had
+                subtitles: src.subtitles.clone(),
             },
         );
     }
@@ -1185,7 +1283,11 @@ async fn preview_pipeline(state: &AppState, id: &str, token: &CancellationToken)
     state.with_job(id, |j| j.stage = "encode".into());
     let started = Instant::now();
     let profile = runtime.encoder.clone();
-    if let Err(e) = encode(state, id, &job, &clip_path, 0.0, &tmp, token, &profile).await {
+    if let Err(e) = encode(
+        state, id, &job, &clip_path, 0.0, &tmp, token, &profile, None,
+    )
+    .await
+    {
         if token.is_cancelled() || !profile.is_gpu_path() {
             let _ = std::fs::remove_file(&tmp);
             return Err(e);
@@ -1204,6 +1306,7 @@ async fn preview_pipeline(state: &AppState, id: &str, token: &CancellationToken)
             &tmp,
             token,
             &profile.software_fallback(),
+            None,
         )
         .await?;
     }
@@ -1264,11 +1367,169 @@ async fn speech_stream(
     (0, crate::db::SOURCE_MIX, "no separate microphone")
 }
 
+/// A folder that goes when the rendering is over, whichever way it ends.
+struct TempDir(PathBuf);
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Lay out what a rendering needs to show subtitles (since 3.11): the ASS
+/// file for burning in, the SRT for the track, and the bundled font beside
+/// them. `None` when this rendering was not asked for any.
+///
+/// A cut that has no transcript yet gets one here, as a stage before the
+/// encode: asking for subtitles on a cut that has none is a request to read
+/// them, not a mistake.
+async fn prepare_subtitles(
+    state: &AppState,
+    id: &str,
+    job: &Job,
+    token: &CancellationToken,
+) -> Result<Option<RenderSubs>> {
+    let mode = job.subtitles.as_str();
+    if mode.is_empty() || mode == crate::db::SUBS_NONE {
+        return Ok(None);
+    }
+    let cut_id = job
+        .cut
+        .clone()
+        .ok_or_else(|| anyhow!("subtitles need a cut"))?;
+    let mut cut = state
+        .db
+        .cut(&cut_id)?
+        .ok_or_else(|| anyhow!("the cut of this rendering is no longer known"))?;
+    let subs = match state.db.subtitles(&cut_id)? {
+        Some(s) => s,
+        None => {
+            // read them now, in front of the encode
+            recheck_cut_start(state, &mut cut).await;
+            let input = state.paths_of_cut(&cut).cut_of(&cut.id);
+            let settings = state.settings();
+            transcribe_into(
+                state,
+                id,
+                &cut,
+                &input,
+                &settings.subtitles.model,
+                &settings.subtitles.language,
+                &settings.subtitles.source,
+                token,
+            )
+            .await?
+        }
+    };
+    if subs.segments.is_empty() {
+        bail!("there is no speech in this cut to put on the picture");
+    }
+
+    let dir = state.data_dir.join("tmp").join(id);
+    std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    // the rendering starts where the job starts, so that is time zero
+    let offset = job.start;
+    if mode == crate::db::SUBS_BURN {
+        let settings = state.settings();
+        let style = &settings.subtitles.style;
+        // the picture the subtitles are drawn into: a vertical rendering is
+        // always 1080x1920, everything else keeps the recording's frame
+        // unless the target caps its height
+        let (w, h) = if job.vertical {
+            (1080, 1920)
+        } else {
+            let clip = state.inner.lock().clips.get(&job.base).cloned();
+            let (cw, ch) = clip.map(|c| (c.width, c.height)).unwrap_or((1920, 1080));
+            let (cw, ch) = (cw.max(16), ch.max(16));
+            if job.max_height > 0 && ch > job.max_height {
+                (cw * job.max_height / ch, job.max_height)
+            } else {
+                (cw, ch)
+            }
+        };
+        std::fs::write(
+            dir.join(crate::subtitles::ASS_FILE),
+            crate::subtitles::to_ass(
+                &subs.segments,
+                offset,
+                style.placement(job.vertical),
+                style,
+                w,
+                h,
+            ),
+        )?;
+        std::fs::write(
+            dir.join(crate::subtitles::FONT_FILE),
+            crate::subtitles::FONT,
+        )?;
+    }
+    if mode == crate::db::SUBS_TRACK {
+        std::fs::write(
+            dir.join(crate::subtitles::TRACK_FILE),
+            crate::subtitles::to_srt(&subs.segments, offset),
+        )?;
+    }
+    tracing::info!(
+        "{} [{id}]: {} subtitle(s) {}",
+        job.kind,
+        subs.segments.len(),
+        if mode == crate::db::SUBS_BURN {
+            "burned into the picture"
+        } else {
+            "as a track"
+        }
+    );
+    // remember what this cut was rendered with, for the next time
+    let mut remember = subs.clone();
+    remember.mode = mode.to_string();
+    let _ = state.db.put_subtitles(&cut_id, Some(&remember));
+    Ok(Some(RenderSubs {
+        dir,
+        burn: mode == crate::db::SUBS_BURN,
+        track: mode == crate::db::SUBS_TRACK,
+        language: subs.language.clone(),
+    }))
+}
+
 /// The `transcribe` pipeline (since 3.11): run the speech of the cut
 /// through whisper and put the segments on the cut. Writes no file, sends
 /// nothing anywhere, and leaves no entry in the history.
 async fn transcribe_pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Result<()> {
     let job = state.job(id).ok_or_else(|| anyhow!("job vanished"))?;
+    let mut cut = state
+        .db
+        .cut(job.cut.as_deref().unwrap_or_default())?
+        .ok_or_else(|| anyhow!("the cut of this transcription is no longer known"))?;
+    let input = state.paths_of_cut(&cut).cut_of(&cut.id);
+    recheck_cut_start(state, &mut cut).await;
+    transcribe_into(
+        state,
+        id,
+        &cut,
+        &input,
+        &job.model,
+        &job.language,
+        &job.track,
+        token,
+    )
+    .await?;
+    Ok(())
+}
+
+/// Read the speech of a cut and put the segments on it. The `transcribe`
+/// job is one caller; a rendering that was asked for subtitles on a cut
+/// that has none is the other (since 3.11).
+#[allow(clippy::too_many_arguments)]
+async fn transcribe_into(
+    state: &AppState,
+    id: &str,
+    cut: &Cut,
+    input: &Path,
+    model: &str,
+    language: &str,
+    want_track: &str,
+    token: &CancellationToken,
+) -> Result<crate::db::Subtitles> {
     let settings = state.settings();
     if !settings.subtitles.enabled {
         bail!("subtitles are switched off");
@@ -1277,26 +1538,19 @@ async fn transcribe_pipeline(state: &AppState, id: &str, token: &CancellationTok
     if !runtime.whisper {
         bail!("this ffmpeg was built without the whisper filter");
     }
-    let mut cut = state
-        .db
-        .cut(job.cut.as_deref().unwrap_or_default())?
-        .ok_or_else(|| anyhow!("the cut of this transcription is no longer known"))?;
-    let input = state.paths_of_cut(&cut).cut_of(&cut.id);
     if !input.is_file() {
         bail!("the file of cut {} is gone - cut the range again", cut.id);
     }
-    recheck_cut_start(state, &mut cut).await;
-
-    let model = crate::subtitles::model(&job.model)
-        .ok_or_else(|| anyhow!("unknown model: {}", job.model))?;
+    let model = crate::subtitles::model(model).ok_or_else(|| anyhow!("unknown model: {model}"))?;
     // the filter is given the bare file name and ffmpeg runs in that folder,
     // so all this needs is that the file is there and is the right one
     if crate::subtitles::ready(&state.data_dir, model).is_none() {
         bail!("the model {} is not in the models folder", model.name);
     }
-    let (stream, source, why) = speech_stream(state, &input, &job.track).await;
+    let (stream, source, why) = speech_stream(state, input, want_track).await;
     state.with_job(id, |j| {
         j.stage = "transcribe".into();
+        j.percent = 0;
         j.track = source.to_string();
     });
 
@@ -1323,7 +1577,7 @@ async fn transcribe_pipeline(state: &AppState, id: &str, token: &CancellationTok
          whisper=model={}:language={}{vad}:queue=30:max_len=0:use_gpu={}:\
          format=srt:destination={out_name}",
         model.file,
-        job.language,
+        language,
         u8::from(settings.subtitles.gpu),
     );
     let input_s = input.to_string_lossy().into_owned();
@@ -1350,7 +1604,7 @@ async fn transcribe_pipeline(state: &AppState, id: &str, token: &CancellationTok
         "transcribe [{id}]: cut {} from track {stream} ({source}, {why}) with {} in '{}'",
         cut.id,
         model.name,
-        job.language
+        language
     );
     let media = runtime
         .media
@@ -1359,18 +1613,18 @@ async fn transcribe_pipeline(state: &AppState, id: &str, token: &CancellationTok
     let mut cmd = media.ffmpeg_command();
     cmd.current_dir(&dir);
     cmd.args(args);
-    run_with_progress(state, id, cmd, job.seconds, token).await?;
+    run_with_progress(state, id, cmd, cut.end - cut.start, token).await?;
 
     let text = std::fs::read_to_string(&out).unwrap_or_default();
     let _ = std::fs::remove_file(&out);
     let offset = cut.actual_start.unwrap_or(cut.start);
     let segments = crate::subtitles::tidy(crate::subtitles::parse_srt(&text, offset));
-    let language = if job.language == "auto" {
+    let language = if language == "auto" {
         // whisper detected one; the SRT does not say which, so the honest
         // answer until the editor is told otherwise is that we do not know
         String::new()
     } else {
-        job.language.clone()
+        language.to_string()
     };
     tracing::info!("transcribe [{id}]: {} segment(s)", segments.len());
     let subs = crate::db::Subtitles {
@@ -1390,7 +1644,7 @@ async fn transcribe_pipeline(state: &AppState, id: &str, token: &CancellationTok
     };
     state.db.put_subtitles(&cut.id, Some(&subs))?;
     state.tray_changed();
-    Ok(())
+    Ok(subs)
 }
 
 pub async fn post_now(state: &AppState, id: &str, target: &str) -> Result<String, ShareError> {
@@ -1560,9 +1814,11 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
         let started = Instant::now();
         // The GPU path may fail on a driver quirk: try once more with software
         // decoding and CPU scaling before giving up (since 2.4).
-        // A vertical cut crops on the CPU, so frames that a GPU filter would
-        // keep on the card (cuda, qsv) are decoded in software instead.
-        let profile = if job.vertical && runtime.encoder.gpu_frames() {
+        // A vertical cut crops on the CPU, and since 3.11 burned-in subtitles
+        // are drawn on the CPU too, so frames that a GPU filter would keep on
+        // the card (cuda, qsv) are decoded in software instead.
+        let burning = job.subtitles == crate::db::SUBS_BURN;
+        let profile = if (job.vertical || burning) && runtime.encoder.gpu_frames() {
             runtime.encoder.software_fallback()
         } else {
             runtime.encoder.clone()
@@ -1577,7 +1833,23 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
             std::fs::create_dir_all(dir)
                 .with_context(|| format!("cannot create {}", dir.display()))?;
         }
-        if let Err(e) = encode(state, id, &job, &input, seek, &part, token, &profile).await {
+        // since 3.11: the subtitle files of this rendering, written into a
+        // folder of their own and removed with it
+        let subs = prepare_subtitles(state, id, &job, token).await?;
+        let _sweep = subs.as_ref().map(|s| TempDir(s.dir.clone()));
+        if let Err(e) = encode(
+            state,
+            id,
+            &job,
+            &input,
+            seek,
+            &part,
+            token,
+            &profile,
+            subs.as_ref(),
+        )
+        .await
+        {
             let _ = std::fs::remove_file(&part);
             if token.is_cancelled() || job.mode == "copy" || !profile.is_gpu_path() {
                 return Err(e);
@@ -1598,6 +1870,7 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
                 &part,
                 token,
                 &profile.software_fallback(),
+                subs.as_ref(),
             )
             .await;
             if let Err(e) = retry {
@@ -1750,6 +2023,14 @@ pub struct Encode<'a> {
     /// How far into `input` the rendering starts.
     pub seek: f64,
     pub out: &'a Path,
+    /// Since 3.11: the ASS file to render into the picture, as a bare name
+    /// in the folder ffmpeg is started in. A path would have to be escaped
+    /// twice over for the filter graph, and on Windows that is a fight
+    /// nobody wins - so the working directory does the pointing instead.
+    pub burn: Option<&'a str>,
+    /// Since 3.11: a subtitle file to carry along as a track, with the
+    /// language it is in.
+    pub track: Option<(&'a str, &'a str)>,
 }
 
 /// The ffmpeg command line of an encode, in order and complete.
@@ -1784,13 +2065,34 @@ pub fn encode_args(e: &Encode<'_>) -> Result<Vec<String>> {
         &job.seconds.to_string(),
         "-i",
         &e.input.to_string_lossy(),
-        "-map",
-        "0:v:0",
     ] {
+        push(v);
+    }
+    // a subtitle track is a second input; `-ss` and `-t` above belong to the
+    // first one, so it comes in whole and is cut by the output's length
+    if let Some((file, _)) = e.track {
+        push("-i");
+        push(file);
+    }
+    for v in ["-map", "0:v:0"] {
         push(v);
     }
     for v in audio_args(&job.audio).ok_or_else(|| anyhow!("unknown audio mode {}", job.audio))? {
         push(v);
+    }
+    if let Some((_, language)) = e.track {
+        // MP4 carries timed text; marked as the default so a player that
+        // honours it shows the subtitles without being asked
+        for v in ["-map", "1:0", "-c:s", "mov_text"] {
+            push(v);
+        }
+        if let Some(iso) = crate::subtitles::iso639_2(language) {
+            push("-metadata:s:s:0");
+            push(&format!("language={iso}"));
+        }
+        for v in ["-disposition:s:0", "default"] {
+            push(v);
+        }
     }
     if copy {
         // The OBS video stream as it is; audio only re-encoded when tracks are
@@ -1820,6 +2122,20 @@ pub fn encode_args(e: &Encode<'_>) -> Result<Vec<String>> {
             Some(enc.scale.replace("{h}", &job.max_height.to_string()))
         } else {
             None
+        };
+        // Since 3.11: the subtitles go into the finished picture - after the
+        // crop and the scale, so a 9:16 rendering carries them inside its own
+        // frame instead of losing them with the sides, and before the upload,
+        // because libass draws on frames in main memory.
+        let base_filter = match e.burn {
+            Some(file) => {
+                let ass = format!("ass={file}:fontsdir=.");
+                Some(match base_filter {
+                    Some(b) => format!("{b},{ass}"),
+                    None => ass,
+                })
+            }
+            None => base_filter,
         };
         // plus the upload an encoder needs when the frames reach it in software
         if let Some(vf) = enc.filters(base_filter) {
@@ -1865,6 +2181,15 @@ pub fn encode_args(e: &Encode<'_>) -> Result<Vec<String>> {
     Ok(args)
 }
 
+/// The subtitle files of a rendering (since 3.11) and the folder ffmpeg is
+/// started in so that it can name them without a path.
+pub struct RenderSubs {
+    pub dir: PathBuf,
+    pub burn: bool,
+    pub track: bool,
+    pub language: String,
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn encode(
     state: &AppState,
@@ -1875,6 +2200,7 @@ async fn encode(
     out: &Path,
     token: &CancellationToken,
     enc: &crate::media::Encoder,
+    subs: Option<&RenderSubs>,
 ) -> Result<()> {
     let runtime = state.runtime();
     let args = encode_args(&Encode {
@@ -1884,6 +2210,10 @@ async fn encode(
         input,
         seek,
         out,
+        burn: subs.filter(|s| s.burn).map(|_| crate::subtitles::ASS_FILE),
+        track: subs
+            .filter(|s| s.track)
+            .map(|s| (crate::subtitles::TRACK_FILE, s.language.as_str())),
     })?;
 
     // a scan-time preview must not compete with the game: idle priority
@@ -1897,6 +2227,11 @@ async fn encode(
         .as_ref()
         .unwrap_or(&runtime.media)
         .ffmpeg_command();
+    // the subtitle files are named without a path, so ffmpeg is started
+    // where they are; everything else on the line is absolute
+    if let Some(s) = subs {
+        cmd.current_dir(&s.dir);
+    }
     cmd.args(&args);
     run_with_progress(state, id, cmd, job.seconds, token)
         .await
@@ -2016,9 +2351,11 @@ mod tests {
             job,
             enc,
             threads: 4,
-            input: Path::new("C:\\clips\\.cuts\\24af8830.mkv"),
+            input: Path::new(r"C:\clips\.cuts\24af8830.mkv"),
             seek: 1.0,
-            out: Path::new("C:\\clips\\shared\\out.mp4"),
+            out: Path::new(r"C:\clips\shared\out.mp4"),
+            burn: None,
+            track: None,
         })
         .expect("the audio mode is known")
     }
@@ -2093,6 +2430,85 @@ mod tests {
         assert!(!args.iter().any(|a| a == "-vf"), "copy re-encodes nothing");
         assert!(args.windows(2).any(|w| w == ["-c:v", "copy"]));
         assert!(args.windows(2).any(|w| w == ["-c:a", "copy"]));
+    }
+
+    /// Where the subtitles sit in the chain decides whether they survive a
+    /// 9:16 rendering: after the crop and the scale they are inside the
+    /// frame, before them they would be cut off with the sides.
+    #[test]
+    fn burned_in_subtitles_are_drawn_into_the_finished_picture() {
+        let mut job = a_share_job();
+        job.vertical = true;
+        job.vertical_pos = Some(0.5);
+        let args = encode_args(&Encode {
+            job: &job,
+            enc: &x264(),
+            threads: 4,
+            input: Path::new("in.mkv"),
+            seek: 1.0,
+            out: Path::new("out.mp4"),
+            burn: Some("subs.ass"),
+            track: None,
+        })
+        .unwrap();
+        let vf = args.iter().position(|a| a == "-vf").expect("a filter");
+        assert_eq!(
+            args[vf + 1],
+            "crop=ih*9/16:ih:(iw-ih*9/16)*0.500:0,scale=1080:1920,ass=subs.ass:fontsdir=.",
+            "the crop comes first, then the subtitles"
+        );
+        // a plain share with no subtitles asked for has no filter at all
+        let plain = args_of(&a_share_job(), &x264());
+        assert!(!plain.iter().any(|a| a.contains("ass=")));
+    }
+
+    /// A track is a second input and a stream of its own; the picture is
+    /// not touched, which is why it works in copy mode too.
+    #[test]
+    fn a_subtitle_track_rides_along_without_touching_the_picture() {
+        let mut job = a_share_job();
+        job.mode = "copy".into();
+        let args = encode_args(&Encode {
+            job: &job,
+            enc: &x264(),
+            threads: 4,
+            input: Path::new("in.mkv"),
+            seek: 1.0,
+            out: Path::new("out.mp4"),
+            burn: None,
+            track: Some(("subs.srt", "de")),
+        })
+        .unwrap();
+        assert!(args.windows(2).any(|w| w == ["-i", "subs.srt"]));
+        assert!(args.windows(2).any(|w| w == ["-map", "1:0"]));
+        assert!(args.windows(2).any(|w| w == ["-c:s", "mov_text"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["-metadata:s:s:0", "language=deu"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["-disposition:s:0", "default"]));
+        assert!(!args.iter().any(|a| a == "-vf"), "copy touches no frame");
+        // the second input comes after the first, so -ss and -t stay with it
+        let first = args.iter().position(|a| a == "in.mkv").unwrap();
+        let second = args.iter().position(|a| a == "subs.srt").unwrap();
+        assert!(first < second);
+
+        // a language nobody has a three-letter code for goes untagged
+        let mut job = a_share_job();
+        job.mode = "copy".into();
+        let args = encode_args(&Encode {
+            job: &job,
+            enc: &x264(),
+            threads: 4,
+            input: Path::new("in.mkv"),
+            seek: 1.0,
+            out: Path::new("out.mp4"),
+            burn: None,
+            track: Some(("subs.srt", "")),
+        })
+        .unwrap();
+        assert!(!args.iter().any(|a| a.starts_with("language=")));
     }
 
     #[test]

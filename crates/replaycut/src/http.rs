@@ -816,6 +816,7 @@ fn share_error(e: ShareError, busy: &str) -> Response {
             ApiError::new(StatusCode::NOT_FOUND, format!("unknown cut: {id}")).into_response()
         }
         ShareError::Invalid(msg) => ApiError::new(StatusCode::BAD_REQUEST, msg).into_response(),
+        ShareError::Unmet(reason, msg) => ApiError::unmet(reason, msg).into_response(),
     }
 }
 
@@ -831,6 +832,7 @@ fn share_request(v: &Value) -> ShareRequest {
         vertical: v["vertical"].as_bool().unwrap_or(false),
         vertical_pos: v["verticalPos"].as_f64().unwrap_or(0.5),
         after: v["after"].as_str().unwrap_or("").to_string(),
+        subtitles: v["subtitles"].as_str().unwrap_or("").to_string(),
     }
 }
 
@@ -869,6 +871,7 @@ async fn cut_render(State(app): State<App>, Path(id): Path<String>, body: Bytes)
         vertical: v["vertical"].as_bool(),
         vertical_pos: v["verticalPos"].as_f64(),
         after: v["after"].as_str().unwrap_or("").to_string(),
+        subtitles: v["subtitles"].as_str().map(str::to_string),
     };
     match share::start_render(&app, &id, req) {
         Ok(started) => accepted(&app, started, Value::Null),

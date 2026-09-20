@@ -29,6 +29,13 @@ chose and posts the link to the notify integrations you switched on. The
 optional update check asks GitHub once a day for the newest release and
 sends nothing about you.
 
+**Subtitles are read on your own PC.** The speech of a clip is transcribed
+by ffmpeg's `whisper` filter, which runs locally; neither the audio nor the
+text ever leaves the machine, and there is no service behind it. The one
+thing that is fetched is the model file itself - once, from Hugging Face,
+when you press Download in Settings › Subtitles. Until you do, and with the
+feature switched off, replaycut makes no request for it at all.
+
 ## Google user data
 
 This section is about the YouTube integration alone. It applies only once

@@ -1004,8 +1004,13 @@ pub const CUT_READY: &str = "ready";
 pub const CUT_MISSING: &str = "missing";
 
 /// What a rendering does with the subtitles of its cut (since 3.11).
-/// `burn` and `track` arrive with the rendering that can do them.
 pub const SUBS_NONE: &str = "none";
+/// Drawn into the picture - the only way that works on a phone, in a
+/// Discord preview and in a Short.
+pub const SUBS_BURN: &str = "burn";
+/// Carried along as a track the player can switch on.
+pub const SUBS_TRACK: &str = "track";
+pub const SUBS_MODES: [&str; 3] = [SUBS_NONE, SUBS_BURN, SUBS_TRACK];
 
 /// Which track a transcript was read from (since 3.11).
 pub const SOURCE_MIC: &str = "mic";
