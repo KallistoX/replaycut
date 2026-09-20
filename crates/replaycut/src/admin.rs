@@ -1735,18 +1735,20 @@ pub async fn subtitle_model_download(
     State(app): State<App>,
     Path(name): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    if !app.settings().subtitles.enabled {
-        return Err(ApiError::unmet(
-            "disabled",
-            "subtitles are switched off - turn them on under Settings › Subtitles",
-        ));
-    }
+    // a name nobody knows is a 400 before the switch is consulted, the same
+    // way an unknown cut is a 404 first
     let model = crate::subtitles::model(&name).ok_or_else(|| {
         ApiError::new(
             StatusCode::BAD_REQUEST,
             format!("unknown model: {name} (base, small or medium)"),
         )
     })?;
+    if !app.settings().subtitles.enabled {
+        return Err(ApiError::unmet(
+            "disabled",
+            "subtitles are switched off - turn them on under Settings › Subtitles",
+        ));
+    }
     {
         let mut running = app.model_downloads.lock();
         if running.get(&name).is_some_and(|d| d.error.is_none()) {

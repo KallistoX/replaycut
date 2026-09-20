@@ -1800,6 +1800,13 @@ done`, `kind: "transcribe"`, run with idle priority. It writes no file, is
   was built without the whisper filter) or `model` (that model is not on
   this PC yet).
 
+**In that order.** What a thing is comes before what this service can do
+with it: a cut nobody knows is `404` whether or not subtitles are switched
+on and whether or not this ffmpeg could transcribe. The same holds for
+`PUT`/`DELETE /api/cuts/<id>/subtitles` (`404` before `412`) and for
+`POST /api/subtitles/models/<name>` (an unknown name is `400` before the
+switch is consulted).
+
 Which track is read is not guessed from how many there are. OBS is asked
 first - the facts behind the diagnostics line "Audio tracks" know which OBS
 track is fed by a microphone and nothing else. Without OBS the layout the

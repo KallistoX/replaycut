@@ -880,17 +880,23 @@ async fn cut_render(State(app): State<App>, Path(id): Path<String>, body: Bytes)
 /// Subtitles are beta and off by default; `write` is what the switch
 /// guards, because reading one that is already there costs nothing and
 /// hiding it would only lose an export.
+/// A cut that is not there is `404` before anything else is considered:
+/// what the service can or cannot do says nothing about whether that id
+/// exists, and a client that asks about a cut deserves the answer about
+/// the cut. Only then does the switch decide.
 fn cut_for_subtitles(app: &App, id: &str, write: bool) -> Result<crate::db::Cut, ApiError> {
+    let cut = app
+        .db
+        .cut(id)
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown cut: {id}")))?;
     if write && !app.settings().subtitles.enabled {
         return Err(ApiError::unmet(
             "disabled",
             "subtitles are switched off - turn them on under Settings › Subtitles",
         ));
     }
-    app.db
-        .cut(id)
-        .map_err(ApiError::internal)?
-        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown cut: {id}")))
+    Ok(cut)
 }
 
 /// `GET /api/cuts/<id>/subtitles[?format=srt|vtt]` (since 3.11): the whole
@@ -1034,6 +1040,10 @@ async fn cut_transcribe(State(app): State<App>, Path(id): Path<String>, body: By
         .as_str()
         .unwrap_or(&settings.subtitles.source)
         .to_string();
+    // the cut first: an id nobody knows is a 404 whatever this ffmpeg can do
+    if let Err(e) = cut_for_subtitles(&app, &id, false) {
+        return e.into_response();
+    }
     match transcribe_checks(&app, &settings, &model, &language, &source) {
         Err(e) => e.into_response(),
         Ok(()) => match share::start_transcribe(&app, &id, &model, &language, &source) {

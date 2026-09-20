@@ -4098,6 +4098,22 @@ fn t70_subtitles_are_off_until_they_are_switched_on() {
     let (status, v) = post_json("/api/subtitles/models/base", &json!({}));
     assert_eq!(status, 412, "a model is never fetched while off: {v}");
     assert_eq!(v["reason"], "disabled", "{v}");
+
+    // what a thing is comes before what the service can do with it: an id
+    // nobody knows is answered as unknown, switch or no switch, filter or
+    // no filter
+    let (status, v) = post_json("/api/cuts/deadbeef/transcribe", &json!({}));
+    assert_eq!(status, 404, "an unknown cut is unknown even while off: {v}");
+    let (status, v) = put_json(
+        "/api/cuts/deadbeef/subtitles",
+        &json!({ "segments": [{ "start": 1.0, "end": 2.0, "text": "x" }] }),
+    );
+    assert_eq!(status, 404, "{v}");
+    let (status, v) = post_json("/api/subtitles/models/enormous", &json!({}));
+    assert_eq!(
+        status, 400,
+        "an unknown model is unknown even while off: {v}"
+    );
     let (status, v) = put_json(
         &format!("/api/cuts/{cut}/subtitles"),
         &json!({ "segments": [{ "start": 3.0, "end": 4.0, "text": "nope" }] }),
