@@ -1310,9 +1310,17 @@ async fn transcribe_pipeline(state: &AppState, id: &str, token: &CancellationTok
     let vad = crate::subtitles::ready(&state.data_dir, &crate::subtitles::VAD)
         .map(|_| format!(":vad_model={}", crate::subtitles::VAD.file))
         .unwrap_or_default();
+    // `queue` is the window whisper gets to look at, and it decides how the
+    // text reads. Measured on a real recording (2026-09-20): at 10 s a
+    // sentence is cut wherever the window ends, and `max_len` cut it again
+    // by character count, so half the lines broke mid-phrase. At 30 s -
+    // whisper's own window - the sentences come out whole and the words are
+    // recognised better. It costs time: 0.9x real time instead of 1.5x.
+    // Line length is the editor's and the renderer's business, not the
+    // transcription's, so `max_len` is off.
     let filter = format!(
         "aresample=16000,aformat=sample_fmts=s16:channel_layouts=mono,\
-         whisper=model={}:language={}{vad}:queue=10:max_len=42:use_gpu={}:\
+         whisper=model={}:language={}{vad}:queue=30:max_len=0:use_gpu={}:\
          format=srt:destination={out_name}",
         model.file,
         job.language,

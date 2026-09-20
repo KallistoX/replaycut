@@ -262,6 +262,30 @@ fn round_ms(v: f64) -> f64 {
 /// Words that end up in such a sliver belong to the line before them.
 const MIN_SEGMENT: f64 = 0.15;
 
+/// Whisper marks a stretch it heard but could not read as speech with a
+/// placeholder of its own - `[Musik]`, `* Musik *`, `(Applaus)`, `[BLANK_AUDIO]`.
+/// In a game clip that is every pause between two callouts, and none of it
+/// is a subtitle: seen on a real recording, a silence of ten seconds came
+/// back as four of them. A segment that is nothing but such a marker goes.
+///
+/// Only the whole line counts. A callout that happens to contain brackets
+/// is kept, marker and all.
+fn is_non_speech(text: &str) -> bool {
+    let t = text.trim();
+    let inner = t
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .or_else(|| t.strip_prefix('(').and_then(|s| s.strip_suffix(')')))
+        .or_else(|| t.strip_prefix('*').and_then(|s| s.strip_suffix('*')))
+        .or_else(|| t.strip_prefix('♪').and_then(|s| s.strip_suffix('♪')));
+    match inner {
+        // brackets around something that is itself bracketed is still one
+        // marker; anything else inside means this is a line with brackets
+        Some(i) => !i.contains('[') && !i.contains('('),
+        None => t.chars().all(|c| c == '♪' || c.is_whitespace()) && !t.is_empty(),
+    }
+}
+
 /// Make a transcript out of what the filter produced: in order, without
 /// overlaps, and with nothing too short to read.
 ///
@@ -271,7 +295,7 @@ const MIN_SEGMENT: f64 = 0.15;
 /// The filter does produce this: a segment cut back to ten milliseconds
 /// carried the word "back." that belonged to the sentence before it.
 pub fn tidy(mut segments: Vec<Segment>) -> Vec<Segment> {
-    segments.retain(|s| !s.text.trim().is_empty());
+    segments.retain(|s| !s.text.trim().is_empty() && !is_non_speech(&s.text));
     segments.sort_by(|a, b| a.start.total_cmp(&b.start));
     // in order and side by side: nobody ends after the next one begins
     for i in 0..segments.len() {
@@ -457,6 +481,43 @@ mod tests {
     /// A segment the next one swallows whole keeps no room of its own, and
     /// a segment without text is not one. Neither loses a word: what was
     /// said moves into the line that has the room.
+    /// What a silence really came back as, on a recording of 2026-09-20:
+    /// four placeholders and no speech. None of them is a subtitle.
+    #[test]
+    fn what_whisper_puts_in_a_silence_is_not_a_subtitle() {
+        for marker in [
+            "[Musik]",
+            "* Musik *",
+            "(Applaus)",
+            "[BLANK_AUDIO]",
+            "  [ Music ]  ",
+            "♪",
+            "♪♪♪",
+            "♪ ♪",
+        ] {
+            assert!(is_non_speech(marker), "{marker:?} is not speech");
+        }
+        // a callout that happens to carry brackets stays
+        for spoken in [
+            "nimm den Rauch [jetzt]",
+            "(er) kommt von links",
+            "B ist frei",
+            "*schnauft* er kommt",
+        ] {
+            assert!(!is_non_speech(spoken), "{spoken:?} is speech");
+        }
+
+        let segments = tidy(vec![
+            seg(1.0, 3.0, "er kommt von links"),
+            seg(4.0, 6.0, "[Musik]"),
+            seg(7.0, 9.0, "* Musik *"),
+            seg(10.0, 12.0, "nice shot"),
+        ]);
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].text, "er kommt von links");
+        assert_eq!(segments[1].text, "nice shot");
+    }
+
     #[test]
     fn a_segment_with_no_room_left_hands_its_words_on() {
         let segments = tidy(vec![
