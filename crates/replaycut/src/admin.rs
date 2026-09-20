@@ -1687,3 +1687,132 @@ pub async fn test_webdav(
         Err(e) => json!({ "ok": false, "error": format!("{e:#}") }),
     }))
 }
+
+// ----------------------------------------------------------- subtitles (3.11)
+
+/// `GET /api/subtitles/models` (since 3.11): what can be used, what is on
+/// this PC, and what a download is doing. Reading this list talks to
+/// nobody: it is the models folder plus the catalogue in the build.
+pub async fn subtitle_models(State(app): State<App>) -> Json<Value> {
+    let settings = app.settings();
+    let downloads = app.model_downloads.lock().clone();
+    let models: Vec<Value> = crate::subtitles::MODELS
+        .iter()
+        .map(|m| {
+            let (state, percent, error) = match downloads.get(m.name) {
+                Some(d) if d.error.is_some() => (crate::subtitles::ABSENT, None, d.error.clone()),
+                Some(d) => (crate::subtitles::DOWNLOADING, Some(d.percent), None),
+                None if crate::subtitles::ready(&app.data_dir, m).is_some() => {
+                    (crate::subtitles::READY, None, None)
+                }
+                None => (crate::subtitles::ABSENT, None, None),
+            };
+            let mut v = json!({ "name": m.name, "bytes": m.bytes, "state": state });
+            if let Some(p) = percent {
+                v["percent"] = json!(p);
+            }
+            if let Some(e) = error {
+                v["error"] = json!(e);
+            }
+            v
+        })
+        .collect();
+    Json(json!({
+        "enabled": settings.subtitles.enabled,
+        "available": app.runtime().whisper,
+        "models": models,
+        "languages": crate::subtitles::LANGUAGES
+            .iter()
+            .map(|(id, label)| json!({ "id": id, "label": label }))
+            .collect::<Vec<_>>(),
+    }))
+}
+
+/// `POST /api/subtitles/models/<name>` (since 3.11): fetch a model. This is
+/// the one place where replaycut talks to Hugging Face, and it does so only
+/// when subtitles are switched on and somebody presses the button.
+pub async fn subtitle_model_download(
+    State(app): State<App>,
+    Path(name): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    if !app.settings().subtitles.enabled {
+        return Err(ApiError::unmet(
+            "disabled",
+            "subtitles are switched off - turn them on under Settings › Subtitles",
+        ));
+    }
+    let model = crate::subtitles::model(&name).ok_or_else(|| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("unknown model: {name} (base, small or medium)"),
+        )
+    })?;
+    {
+        let mut running = app.model_downloads.lock();
+        if running.get(&name).is_some_and(|d| d.error.is_none()) {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                format!("the model {name} is already being downloaded"),
+            ));
+        }
+        running.insert(name.clone(), crate::subtitles::Download::default());
+    }
+    let state = app.clone();
+    tokio::spawn(async move {
+        // the voice activity detector comes along: under a megabyte, and
+        // without it whisper invents sentences in the silence
+        if crate::subtitles::ready(&state.data_dir, &crate::subtitles::VAD).is_none() {
+            if let Err(e) =
+                crate::subtitles::fetch(&state.data_dir, &crate::subtitles::VAD, |_| {}).await
+            {
+                tracing::warn!("cannot fetch the voice activity model: {e:#}");
+            }
+        }
+        let result = {
+            let s = state.clone();
+            let n = name.clone();
+            crate::subtitles::fetch(&state.data_dir, model, move |pct| {
+                if let Some(d) = s.model_downloads.lock().get_mut(&n) {
+                    d.percent = pct;
+                }
+            })
+            .await
+        };
+        match result {
+            Ok(path) => {
+                tracing::info!("model {name} is ready at {}", path.display());
+                state.model_downloads.lock().remove(&name);
+            }
+            Err(e) => {
+                tracing::warn!("cannot fetch the model {name}: {e:#}");
+                if let Some(d) = state.model_downloads.lock().get_mut(&name) {
+                    d.error = Some(format!("{e:#}"));
+                }
+            }
+        }
+        state.tray_changed();
+    });
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `DELETE /api/subtitles/models/<name>` (since 3.11): take a model off
+/// this PC. Nothing that was transcribed with it is touched.
+pub async fn subtitle_model_delete(
+    State(app): State<App>,
+    Path(name): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let model = crate::subtitles::model(&name).ok_or_else(|| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("unknown model: {name} (base, small or medium)"),
+        )
+    })?;
+    let path = crate::subtitles::file_of(&app.data_dir, model);
+    let _ = std::fs::remove_file(path.with_extension("ok"));
+    let _ = std::fs::remove_file(path.with_extension("part"));
+    if path.is_file() {
+        std::fs::remove_file(&path).map_err(ApiError::internal)?;
+    }
+    app.model_downloads.lock().remove(&name);
+    Ok(Json(json!({ "ok": true })))
+}

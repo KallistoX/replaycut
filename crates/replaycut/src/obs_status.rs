@@ -75,6 +75,23 @@ pub fn role_of(kind: &str) -> Role {
     }
 }
 
+/// Which OBS track carries the microphone and nothing else (since 3.11):
+/// what a transcription reads when OBS is there to ask. The same facts the
+/// diagnostics line "Audio tracks" is built from, so the two can never
+/// disagree. `None` when no track is a microphone alone - then the caller
+/// falls back to the layout the audio modes assume.
+pub fn microphone_track(facts: &Facts) -> Option<u32> {
+    let written = tracks_from_mask(facts.profile.rec_tracks);
+    written.into_iter().find(|t| {
+        let on: Vec<&Input> = facts
+            .inputs
+            .iter()
+            .filter(|i| i.tracks.contains(t))
+            .collect();
+        !on.is_empty() && on.iter().all(|i| role_of(&i.kind) == Role::Microphone)
+    })
+}
+
 /// Bitmask `RecTracks` -> the track numbers that are written.
 pub fn tracks_from_mask(mask: u32) -> Vec<u32> {
     (1..=6).filter(|t| mask & (1 << (t - 1)) != 0).collect()

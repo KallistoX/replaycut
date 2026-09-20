@@ -211,7 +211,7 @@ pub fn is_newer(tag: &str, current: &str) -> bool {
     }
 }
 
-fn client(timeout: Duration) -> Result<reqwest::Client> {
+pub fn client(timeout: Duration) -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
         .user_agent(format!("replaycut/{VERSION}"))
         .timeout(timeout)

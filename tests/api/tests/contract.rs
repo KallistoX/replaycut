@@ -4011,3 +4011,250 @@ fn t69_the_first_address_may_carry_local() {
     );
     drop(guard);
 }
+
+// ---------------------------------------------------------------- since 3.11
+
+fn since_311() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split(['.', '-']).map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (3, 11)
+}
+
+/// Puts the subtitle settings back whatever happens: the suite is serial
+/// and shares one service, so a switch left on would follow every test
+/// after this one.
+struct Subtitles(serde_json::Value);
+
+impl Drop for Subtitles {
+    fn drop(&mut self) {
+        let (status, v) = put_json("/api/settings", &json!({ "subtitles": self.0 }));
+        if status != 200 {
+            eprintln!("could not put the subtitle settings back: {v}");
+        }
+    }
+}
+
+/// Subtitles are beta and ship switched off. Everything that would read
+/// speech, fetch a model or change a transcript says so with `412` and the
+/// word `disabled`; what is already there can still be read and exported.
+#[test]
+fn t70_subtitles_are_off_until_they_are_switched_on() {
+    let _g = serial();
+    if !since_311() {
+        eprintln!("skipped: needs replaycut 3.11");
+        return;
+    }
+    let (_, settings) = get_json("/api/settings");
+    let before = settings["subtitles"].clone();
+    assert_eq!(
+        before["enabled"], false,
+        "a service that has never been told otherwise ships with subtitles off: {before}"
+    );
+    let _guard = Subtitles(before);
+
+    // the list is information, not a connection: it answers with the switch off
+    let (status, models) = get_json("/api/subtitles/models");
+    assert_eq!(status, 200, "{models}");
+    assert_eq!(models["enabled"], false, "{models}");
+    assert!(models["available"].is_boolean(), "{models}");
+    let names: Vec<&str> = models["models"]
+        .as_array()
+        .expect("models")
+        .iter()
+        .map(|m| m["name"].as_str().unwrap_or(""))
+        .collect();
+    assert_eq!(names, ["base", "small", "medium"], "{models}");
+
+    let base = format!("{} subs", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let (status, v) = post_json(
+        "/api/cuts",
+        &json!({ "base": base, "start": 2.0, "end": 9.0, "audio": "mix", "after": "keep" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let cut = v["cut"].as_str().expect("cut").to_string();
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+
+    // off: nothing transcribes and nothing downloads
+    let (status, v) = post_json(&format!("/api/cuts/{cut}/transcribe"), &json!({}));
+    assert_eq!(status, 412, "{v}");
+    assert_eq!(v["reason"], "disabled", "{v}");
+    let (status, v) = post_json("/api/subtitles/models/base", &json!({}));
+    assert_eq!(status, 412, "a model is never fetched while off: {v}");
+    assert_eq!(v["reason"], "disabled", "{v}");
+    let (status, v) = put_json(
+        &format!("/api/cuts/{cut}/subtitles"),
+        &json!({ "segments": [{ "start": 3.0, "end": 4.0, "text": "nope" }] }),
+    );
+    assert_eq!(status, 412, "{v}");
+    assert_eq!(v["reason"], "disabled", "{v}");
+
+    // on: the same calls are answered on their own merits again
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "subtitles": { "enabled": true, "language": "en", "model": "base" } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(state()["config"]["subtitles"], true, "the page is told");
+
+    // a cut without a transcript has none - and says so rather than lying
+    let (status, v) = get_json(&format!("/api/cuts/{cut}/subtitles"));
+    assert_eq!(status, 404, "{v}");
+
+    // corrections are the same list, whole; they come back as they went in
+    let segments = json!([
+        { "start": 3.0, "end": 4.5, "text": "he is coming from the left" },
+        { "start": 5.0, "end": 6.25, "text": "nice shot" },
+    ]);
+    let (status, v) = put_json(
+        &format!("/api/cuts/{cut}/subtitles"),
+        &json!({ "segments": segments, "language": "en" }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["subtitles"]["edited"], true, "{v}");
+    assert_eq!(v["subtitles"]["segments"], segments, "{v}");
+
+    let (status, v) = get_json(&format!("/api/cuts/{cut}/subtitles"));
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["segments"], segments, "{v}");
+
+    // the clip list carries the summary, never the text: it is polled and
+    // pushed, and a transcript would make it grow without end
+    let clip = find_clip(&base).expect("the clip is listed");
+    let listed = clip["cuts"]
+        .as_array()
+        .expect("cuts")
+        .iter()
+        .find(|c| c["id"] == cut.as_str())
+        .expect("the cut is listed")
+        .clone();
+    assert_eq!(listed["subtitles"]["count"], 2, "{listed}");
+    assert_eq!(listed["subtitles"]["language"], "en", "{listed}");
+    assert!(
+        listed["subtitles"]["segments"].is_null(),
+        "the list must not carry the text: {listed}"
+    );
+
+    // an export is a file to keep, with the times of the rendering
+    let resp = get(&format!("/api/cuts/{cut}/subtitles?format=srt"));
+    assert_eq!(resp.status().as_u16(), 200);
+    let disposition = resp
+        .headers()
+        .get("content-disposition")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    assert!(disposition.contains("attachment"), "{disposition}");
+    assert!(disposition.contains(".srt"), "{disposition}");
+    let srt = resp.text().unwrap_or_default();
+    assert!(
+        srt.starts_with("1\n00:00:01,000 --> 00:00:02,500\nhe is coming from the left"),
+        "a cut that starts at 2 s puts its first subtitle at 1 s: {srt:?}"
+    );
+    assert!(
+        srt.contains("2\n00:00:03,000 --> 00:00:04,250\nnice shot"),
+        "{srt:?}"
+    );
+
+    // what a transcript may not be
+    for (name, bad) in [
+        (
+            "ends before it starts",
+            json!([{ "start": 4.0, "end": 4.0, "text": "x" }]),
+        ),
+        (
+            "outside the cut",
+            json!([{ "start": 0.5, "end": 1.0, "text": "x" }]),
+        ),
+        (
+            "overlapping",
+            json!([
+                { "start": 3.0, "end": 5.0, "text": "a" },
+                { "start": 4.0, "end": 6.0, "text": "b" },
+            ]),
+        ),
+        (
+            "no text",
+            json!([{ "start": 3.0, "end": 4.0, "text": "  " }]),
+        ),
+    ] {
+        let (status, v) = put_json(
+            &format!("/api/cuts/{cut}/subtitles"),
+            &json!({ "segments": bad }),
+        );
+        assert_eq!(status, 400, "{name}: {v}");
+    }
+
+    // a transcription needs a model; without one the answer names what is
+    // missing so the page can offer the download instead of a dead button
+    let (_, models) = get_json("/api/subtitles/models");
+    let ready = models["models"]
+        .as_array()
+        .map(|m| {
+            m.iter()
+                .any(|e| e["state"] == "ready" && e["name"] == "base")
+        })
+        .unwrap_or(false);
+    let (status, v) = post_json(&format!("/api/cuts/{cut}/transcribe"), &json!({}));
+    if ready {
+        assert_eq!(status, 202, "{v}");
+        assert_eq!(v["cut"], cut.as_str(), "{v}");
+        let (stages, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+        assert_eq!(done["ok"], true, "{done}");
+        assert_eq!(done["kind"], "transcribe", "{done}");
+        assert_stages_monotonic(&stages);
+        assert!(
+            !stages.iter().any(|s| s == "encode" || s == "upload"),
+            "a transcription encodes and sends nothing: {stages:?}"
+        );
+        // it is no output: it makes no file and leaves no history entry
+        assert!(done["file"].is_null(), "{done}");
+        let (_, history) = get_json("/api/history");
+        assert!(
+            !history["history"]
+                .as_array()
+                .map(|h| h.iter().any(|e| e["kind"] == "transcribe"))
+                .unwrap_or(false),
+            "a transcription is no output: {history}"
+        );
+        // the fixture is a sine tone, so the result is empty or nearly so -
+        // that the way through is sound is the point, not what it heard
+        let (status, v) = get_json(&format!("/api/cuts/{cut}/subtitles"));
+        assert!(status == 200 || status == 404, "{v}");
+        if status == 200 {
+            assert_eq!(v["model"], "base", "{v}");
+            assert!(
+                v["segments"].as_array().map(Vec::len).unwrap_or(0) < 10,
+                "a sine tone is not speech: {v}"
+            );
+        }
+    } else {
+        assert_eq!(status, 412, "{v}");
+        assert_eq!(v["reason"], "model", "{v}");
+        eprintln!("no model on this machine: the transcription itself was not run");
+    }
+
+    // an unknown cut is an unknown cut, whatever is asked of it
+    let (status, v) = post_json("/api/cuts/deadbeef/transcribe", &json!({}));
+    assert_eq!(status, 404, "{v}");
+    let (status, v) = get_json("/api/cuts/deadbeef/subtitles");
+    assert_eq!(status, 404, "{v}");
+
+    // and an empty list is how a transcript is taken back
+    let (status, v) = put_json(
+        &format!("/api/cuts/{cut}/subtitles"),
+        &json!({ "segments": [] }),
+    );
+    assert_eq!(status, 200, "{v}");
+    let (status, _) = get_json(&format!("/api/cuts/{cut}/subtitles"));
+    assert_eq!(status, 404, "a transcript that was taken back is gone");
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}

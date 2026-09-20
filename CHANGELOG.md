@@ -10,6 +10,26 @@ contract.
 
 ## [Unreleased]
 
+### Added
+
+- **Subtitles (beta).** A cut can now be transcribed on this PC and the
+  result corrected before it is used. replaycut runs the speech through the
+  `whisper` filter of ffmpeg, reads the microphone track when the recording
+  has one, and keeps the segments with the cut - so the same transcript
+  serves every rendering of it, and it outlives the recording. The model is
+  fetched once into the data folder and checked against its checksum;
+  nothing else leaves this PC, and a transcription runs at idle priority on
+  the CPU, because the graphics card belongs to the game.
+  This is the first half: reading the speech, keeping it, exporting it as
+  SRT or VTT. The editor and burned-in subtitles follow.
+  **It is switched off** - Settings › Subtitles - and off means off: no
+  model is downloaded, no connection to anywhere is made, and nothing in the
+  page changes. A share or a render that does not ask for subtitles produces
+  exactly the file it did before, down to the ffmpeg command line, and a
+  test holds it to that.
+  Distributions that build ffmpeg without the filter say so in the
+  diagnostics instead of failing halfway.
+
 ### Fixed
 
 - **"What's new" shows bold text as bold, even when it wraps.** In the

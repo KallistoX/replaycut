@@ -1709,6 +1709,189 @@ address is the answer. Over an address with a dot, or an IP, the page still
 says that the sign-in was not kept, but points at the browser rather than
 at another address.
 
+## Since 3.11
+
+### Subtitles on a cut (beta, off by default)
+
+A cut can carry a transcript of its speech: read once with the `whisper`
+filter of ffmpeg, corrected by hand, and from 3.11c burned into a rendering
+or attached to it as a track. Everything happens on this PC; the only
+request that leaves it is the one that fetches a model, and only when
+somebody presses the button.
+
+The feature is **beta and ships switched off** (`settings.subtitles.enabled`
+is `false` in a new installation and after an update). Off means off:
+
+- `POST /api/cuts/<id>/transcribe`, `PUT`/`DELETE /api/cuts/<id>/subtitles`
+  and `POST /api/subtitles/models/<name>` answer
+  `412 { ok: false, error, reason: "disabled" }`.
+- **No model is fetched and no request goes to Hugging Face.**
+- `config.subtitles` in the state document is `false`, and the page shows
+  neither the block at the cut row nor the choice in the share row.
+- `GET /api/cuts/<id>/subtitles` still answers. A transcript that is already
+  there is never hidden, and an export stays possible.
+
+### Subtitles
+
+The transcript of a cut. Times are **seconds in the recording** - the same
+time base as `cut.start`/`cut.end` and as the player - so a subtitle can be
+pointed at on the timeline without arithmetic.
+
+```json
+{
+  "language": "de",
+  "model": "base",
+  "source": "mic",
+  "at": "2026-09-20T14:02:11",
+  "mode": "none",
+  "edited": true,
+  "segments": [
+    { "start": 6.42, "end": 8.10, "text": "der kommt von links" },
+    { "start": 8.40, "end": 10.95, "text": "nimm den Rauch,\nich geh rum" }
+  ]
+}
+```
+
+- `language`: what whisper was told to expect, or what a `PUT` said. Empty
+  when the transcription was run with `auto` and nobody has said since.
+- `model`: `base`, `small` or `medium`; empty when the list was only typed.
+- `source`: `mic` or `mix`, the track the speech was read from.
+- `mode`: what the next rendering of this cut does with them - `none`,
+  `burn` or `track`.
+- `edited`: somebody corrected them by hand.
+- `segments`: in order, never overlapping, each at least 150 ms long and at
+  most 500 characters. A `\n` in `text` is a line break in the subtitle;
+  there is no other markup.
+
+### Additions to the Cut
+
+A [Cut](#cut) gains `subtitles`: the same document **without** `segments`
+and with `count` instead.
+
+```json
+"subtitles": { "language": "de", "model": "base", "source": "mic",
+               "at": "2026-09-20T14:02:11", "mode": "none",
+               "edited": true, "count": 18 }
+```
+
+`null` when the cut has none. This is deliberate: the clip list is polled
+and pushed over the event stream, and the text belongs in a request of its
+own. The segments come from `GET /api/cuts/<id>/subtitles`.
+
+### `POST /api/cuts/<id>/transcribe`
+
+```json
+{ "model": "base", "language": "de", "source": "auto" }
+```
+
+Reads the speech of a cut. Everything the body leaves out comes from
+`settings.subtitles`. `source` is `auto` (the microphone when the recording
+has one), `mic` or `mix`.
+
+`202 { ok: true, job, position, cut }`. Stages `queued -> transcribe ->
+done`, `kind: "transcribe"`, run with idle priority. It writes no file, is
+**no output** and never appears in the history. The finished job carries
+`model`, `language` and `track` - the track it really read.
+
+- `404` unknown cut.
+- `400` unknown model, language or source, or the cut has no file any more.
+- `409` this cut is already being transcribed.
+- `412 { reason }`: `disabled` (the switch is off), `filter` (this ffmpeg
+  was built without the whisper filter) or `model` (that model is not on
+  this PC yet).
+
+Which track is read is not guessed from how many there are. OBS is asked
+first - the facts behind the diagnostics line "Audio tracks" know which OBS
+track is fed by a microphone and nothing else. Without OBS the layout the
+audio modes have assumed since 1.4 applies (0 mix, 1 microphone, 2 game,
+3 voice chat), and a recording with fewer than four tracks is the mix.
+
+### `GET /api/cuts/<id>/subtitles[?format=srt|vtt]`
+
+`200` with the [Subtitles](#subtitles), segments and all.
+
+With `format=srt` or `vtt` the answer is `text/plain; charset=utf-8` as an
+attachment instead, named after the clip and the range. **The times in that
+file start where the rendering starts**, not where the recording does: a
+subtitle at 8.0 s of a cut that begins at 6.0 s is written at 2.0 s.
+
+`404` when the cut is unknown or has no subtitles. `400` for another format.
+
+### `PUT /api/cuts/<id>/subtitles`
+
+```json
+{ "language": "de", "segments": [{ "start": 6.42, "end": 8.10, "text": "..." }] }
+```
+
+Replaces the whole list and sets `edited: true`. `200 { ok: true,
+subtitles }`. An **empty list takes the transcript away**, as `DELETE` does.
+
+`400` when a segment ends before it starts, lies outside the cut's range,
+overlaps the one before it, has no text, is longer than 500 characters, or
+when there are more than 2000 of them. `412 { reason: "disabled" }` while
+the feature is off, `404` unknown cut.
+
+### `DELETE /api/cuts/<id>/subtitles`
+
+`200 { ok: true }`, also when there was nothing to delete.
+
+### `GET /api/subtitles/models`
+
+```json
+{
+  "enabled": false,
+  "available": true,
+  "models": [
+    { "name": "base", "bytes": 147951465, "state": "ready" },
+    { "name": "small", "bytes": 487601967, "state": "downloading", "percent": 41 },
+    { "name": "medium", "bytes": 1533763059, "state": "absent" }
+  ],
+  "languages": [{ "id": "auto", "label": "Detect" }, ...]
+}
+```
+
+- `enabled`: the switch; `available`: whether this ffmpeg has the filter.
+- `state`: `absent`, `downloading` (then `percent`) or `ready`. A download
+  that failed is `absent` again and carries `error`.
+
+Reading this list talks to nobody: it is the models folder plus the
+catalogue in the build. It answers with the feature switched off.
+
+### `POST /api/subtitles/models/<name>`
+
+Fetches that model into `<data-dir>/models`, with the voice activity model
+the first time. `202 { ok: true }`; the progress is this model's entry in
+the list above, not a job - a model takes no place in the share queue.
+
+The size and the SHA-256 of every model are in the build. A download that
+does not match is deleted rather than used, and there is no resuming: a
+broken one is fetched again. A file put into the folder by hand is used
+once its checksum has been confirmed.
+
+`400` unknown model, `409` already running,
+`412 { reason: "disabled" }` while the feature is off.
+
+### `DELETE /api/subtitles/models/<name>`
+
+`200 { ok: true }`. Nothing that was transcribed with it is touched.
+
+### Settings `subtitles`
+
+```json
+"subtitles": { "enabled": false, "model": "base", "language": "auto",
+               "source": "auto", "gpu": false }
+```
+
+`gpu` is off, and that costs nothing worth having: in the ffmpeg builds this
+was measured on, the whisper filter runs on the CPU whatever it says, and
+the graphics card belongs to the game.
+
+### Diagnostics of 3.11
+
+One more line, `subtitles`, which names whichever of the three is missing:
+the ffmpeg filter (`fail`/`warn` with the fix for this platform), the switch,
+or a model.
+
 ## Behaviour
 
 ### Folder scan

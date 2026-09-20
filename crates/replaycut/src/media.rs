@@ -496,6 +496,22 @@ impl Media {
         self.command(&self.ffmpeg)
     }
 
+    /// Whether this ffmpeg was built with a filter (since 3.11). The one we
+    /// ask about is `whisper`: the Windows full builds have it, most Linux
+    /// distributions do not, and without it subtitles stay switched off
+    /// instead of failing halfway through a job.
+    pub async fn has_filter(&self, name: &str) -> bool {
+        let Ok(out) = self
+            .ffmpeg(&["-hide_banner", "-filters"], Duration::from_secs(60))
+            .await
+        else {
+            return false;
+        };
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .any(|l| l.split_whitespace().nth(1) == Some(name))
+    }
+
     pub async fn ffmpeg(&self, args: &[&str], timeout: Duration) -> Result<Output> {
         self.run(&self.ffmpeg, args, timeout).await
     }

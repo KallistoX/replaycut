@@ -355,8 +355,10 @@ pub fn wait_job(id: &str, timeout: Duration) -> (Vec<String>, Value) {
     }
 }
 
-pub const STAGE_ORDER: [&str; 9] = [
+pub const STAGE_ORDER: [&str; 10] = [
     "queued",
+    // since 3.11: a transcription reads the speech of a cut and stops there
+    "transcribe",
     // since 3.0: the range becomes its own file before anything is encoded
     "cut",
     "encode",

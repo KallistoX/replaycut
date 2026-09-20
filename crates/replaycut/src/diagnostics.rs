@@ -859,6 +859,68 @@ pub async fn run(state: &AppState) -> Report {
         );
     }
     checks.push(encoder);
+    // subtitles (since 3.11, beta): three things have to line up - the
+    // switch, the ffmpeg build and a model on this PC - and the line says
+    // which one is missing rather than leaving a dead button in the page.
+    checks.push({
+        let subs = &settings.subtitles;
+        let ready: Vec<&str> = crate::subtitles::MODELS
+            .iter()
+            .filter(|m| crate::subtitles::ready(&state.data_dir, m).is_some())
+            .map(|m| m.name)
+            .collect();
+        if !runtime.whisper {
+            Check::new(
+                "subtitles",
+                "Subtitles",
+                if subs.enabled { "warn" } else { "ok" },
+                "not in this ffmpeg build - it was built without the whisper filter".to_string(),
+            )
+            .with_fix(if cfg!(windows) {
+                "Install a full ffmpeg build (winget install Gyan.FFmpeg) and restart replaycut."
+                    .to_string()
+            } else {
+                "Most distributions build ffmpeg without the whisper filter. Use a build that has it (check with 'ffmpeg -filters | grep whisper') and restart replaycut.".to_string()
+            })
+        } else if !subs.enabled {
+            Check::new(
+                "subtitles",
+                "Subtitles",
+                "ok",
+                format!(
+                    "off (beta) · this ffmpeg can transcribe · {}",
+                    if ready.is_empty() {
+                        "no model downloaded".to_string()
+                    } else {
+                        format!("model(s) {} on this PC", ready.join(", "))
+                    }
+                ),
+            )
+        } else if ready.is_empty() {
+            Check::new(
+                "subtitles",
+                "Subtitles",
+                "warn",
+                "on (beta), but no model is on this PC yet".to_string(),
+            )
+            .with_fix(
+                "Settings › Subtitles: download a model. 'base' is about 141 MiB and enough for most callouts."
+                    .to_string(),
+            )
+        } else {
+            Check::new(
+                "subtitles",
+                "Subtitles",
+                "ok",
+                format!(
+                    "on (beta) · model(s) {} · language {} · runs on the {}",
+                    ready.join(", "),
+                    subs.language,
+                    if subs.gpu { "graphics card" } else { "CPU" }
+                ),
+            )
+        }
+    });
     checks.push(folder);
     checks.push(cuts);
     checks.push(scan);

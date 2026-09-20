@@ -193,6 +193,19 @@ pub struct Job {
     // output "on this PC" and this is why it went nowhere
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upload_error: Option<String>,
+    // since 3.11, a `transcribe` job: which model read the speech, which
+    // language it was told to expect (`auto` for detection) and which track
+    // it was asked for (`auto`, `mic` or `mix`). Empty on every other kind.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub model: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub language: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub track: String,
+    // since 3.11: what a rendering does with the subtitles of its cut -
+    // `none` (and then absent), `burn` or `track`
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub subtitles: String,
 }
 
 fn default_mode() -> String {
@@ -221,6 +234,9 @@ pub const KIND_RENDER: &str = "render";
 /// Since 3.0: the finished file of a job to another target (`publish`); it
 /// was a share with a `source` until 2.8.
 pub const KIND_PUBLISH: &str = "publish";
+/// Since 3.11: read the speech of a cut (`POST /api/cuts/<id>/transcribe`).
+/// Like a preview it produces no output and never reaches the history.
+pub const KIND_TRANSCRIBE: &str = "transcribe";
 
 impl Job {
     pub fn is_preview(&self) -> bool {
@@ -230,7 +246,7 @@ impl Job {
     /// Housekeeping jobs leave nothing behind that the history should list:
     /// the playable preview and the cut file are not outputs.
     pub fn is_output(&self) -> bool {
-        !self.is_preview() && self.kind != KIND_CUT
+        !self.is_preview() && self.kind != KIND_CUT && self.kind != KIND_TRANSCRIBE
     }
 }
 
@@ -332,6 +348,9 @@ pub struct Runtime {
     /// The `encoder` and `hwaccel` settings the detection ran for.
     pub encoder_setting: String,
     pub integrations: Integrations,
+    /// Whether this ffmpeg can transcribe (since 3.11): it is a property of
+    /// the binary, so it is found once and carried along.
+    pub whisper: bool,
 }
 
 impl Runtime {
@@ -361,11 +380,16 @@ impl Runtime {
             }
         };
         let integrations = Integrations::build(settings, dry_run)?;
+        let whisper = match previous {
+            Some(p) => p.whisper,
+            None => media.has_filter("whisper").await,
+        };
         Ok(Self {
             media,
             encoder,
             encoder_setting,
             integrations,
+            whisper,
         })
     }
 }
@@ -456,6 +480,9 @@ pub struct AppState {
     pub tray: std::sync::OnceLock<TrayHandle>,
     /// The update check and the one-click update (see `update.rs`).
     pub update: Mutex<UpdateStatus>,
+    /// Model downloads in flight (since 3.11), by model name. A model is
+    /// not a job: it takes no place in the queue and the UI polls the list.
+    pub model_downloads: Mutex<HashMap<String, crate::subtitles::Download>>,
 }
 
 #[derive(Debug)]
@@ -661,6 +688,7 @@ impl AppState {
             scanning_paused: std::sync::atomic::AtomicBool::new(false),
             tray: std::sync::OnceLock::new(),
             update: Mutex::new(UpdateStatus::default()),
+            model_downloads: Mutex::new(HashMap::new()),
         })
     }
 
@@ -977,10 +1005,19 @@ impl AppState {
             tracing::warn!("cannot read the outputs: {e:#}");
             BTreeMap::new()
         });
+        // since 3.11: what a cut says about its subtitles here is the
+        // summary, never the text - this document is polled and pushed
+        let mut subtitles = self.db.subtitle_summaries().unwrap_or_else(|e| {
+            tracing::warn!("cannot read the subtitle summaries: {e:#}");
+            BTreeMap::new()
+        });
         let mut by_base: BTreeMap<String, Vec<Value>> = BTreeMap::new();
         for cut in cuts {
             let mut v = serde_json::to_value(&cut).unwrap_or(Value::Null);
             v["outputs"] = Value::Array(outputs.remove(&cut.id).unwrap_or_default());
+            if let Some(s) = subtitles.remove(&cut.id) {
+                v["subtitles"] = serde_json::to_value(s).unwrap_or(Value::Null);
+            }
             by_base.entry(cut.base).or_default().push(v);
         }
         by_base
@@ -1105,6 +1142,9 @@ impl AppState {
                 "targets": targets,
                 // since 3.0: what the "Afterwards" menu of the share row starts with
                 "cleanup": settings.cleanup,
+                // since 3.11 (beta, off by default): with this false the page
+                // shows no subtitle block and no subtitle choice at all
+                "subtitles": settings.subtitles.enabled,
                 // since 2.8: with `lan` and no password every device in the
                 // network may use this replaycut - the page says so
                 "network": match settings.bind.as_str() {
@@ -1133,6 +1173,11 @@ impl AppState {
             .unwrap_or_default();
         let mut v = serde_json::to_value(&cut).unwrap_or(Value::Null);
         v["outputs"] = Value::Array(outputs);
+        // the summary, as in the clip list; the segments have their own
+        // endpoint (since 3.11)
+        if let Ok(Some(s)) = self.db.subtitles(&cut.id).map(|s| s.map(|s| s.summary())) {
+            v["subtitles"] = serde_json::to_value(s).unwrap_or(Value::Null);
+        }
         Some(v)
     }
 

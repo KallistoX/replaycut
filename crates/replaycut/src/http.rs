@@ -66,6 +66,18 @@ pub fn router(state: App) -> Router {
         .route("/api/cuts", post(cuts_create))
         .route("/api/cuts/{id}", get(cut).delete(delete_cut))
         .route("/api/cuts/{id}/render", post(cut_render))
+        .route(
+            "/api/cuts/{id}/subtitles",
+            get(cut_subtitles)
+                .put(cut_subtitles_put)
+                .delete(cut_subtitles_delete),
+        )
+        .route("/api/cuts/{id}/transcribe", post(cut_transcribe))
+        .route("/api/subtitles/models", get(admin::subtitle_models))
+        .route(
+            "/api/subtitles/models/{name}",
+            post(admin::subtitle_model_download).delete(admin::subtitle_model_delete),
+        )
         .route("/api/share", post(share))
         .route("/api/save", post(save))
         .route("/media/{file}", get(media))
@@ -147,6 +159,11 @@ pub fn router(state: App) -> Router {
 pub struct ApiError {
     pub status: StatusCode,
     pub message: String,
+    /// One word the page can act on instead of reading the sentence (since
+    /// 3.11): a `412` on a transcription says `filter`, `model` or
+    /// `disabled`, and the page offers the download, the switch, or
+    /// nothing at all.
+    pub reason: Option<&'static str>,
 }
 
 impl ApiError {
@@ -154,10 +171,19 @@ impl ApiError {
         Self {
             status,
             message: message.into(),
+            reason: None,
         }
     }
     pub fn internal(e: impl std::fmt::Display) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+    }
+    /// `412` with the word that says what is missing.
+    pub fn unmet(reason: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::PRECONDITION_FAILED,
+            message: message.into(),
+            reason: Some(reason),
+        }
     }
 }
 
@@ -175,11 +201,11 @@ impl From<StateError> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (
-            self.status,
-            Json(json!({ "ok": false, "error": self.message })),
-        )
-            .into_response()
+        let mut body = json!({ "ok": false, "error": self.message });
+        if let Some(reason) = self.reason {
+            body["reason"] = json!(reason);
+        }
+        (self.status, Json(body)).into_response()
     }
 }
 
@@ -848,6 +874,222 @@ async fn cut_render(State(app): State<App>, Path(id): Path<String>, body: Bytes)
         Ok(started) => accepted(&app, started, Value::Null),
         Err(e) => share_error(e, "this render is already running or waiting"),
     }
+}
+
+/// The cut a subtitle request is about, or the error that says why not.
+/// Subtitles are beta and off by default; `write` is what the switch
+/// guards, because reading one that is already there costs nothing and
+/// hiding it would only lose an export.
+fn cut_for_subtitles(app: &App, id: &str, write: bool) -> Result<crate::db::Cut, ApiError> {
+    if write && !app.settings().subtitles.enabled {
+        return Err(ApiError::unmet(
+            "disabled",
+            "subtitles are switched off - turn them on under Settings › Subtitles",
+        ));
+    }
+    app.db
+        .cut(id)
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown cut: {id}")))
+}
+
+/// `GET /api/cuts/<id>/subtitles[?format=srt|vtt]` (since 3.11): the whole
+/// transcript, or a subtitle file to keep.
+async fn cut_subtitles(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Response, ApiError> {
+    let cut = cut_for_subtitles(&app, &id, false)?;
+    let subs = app
+        .db
+        .subtitles(&id)
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| {
+            ApiError::new(
+                StatusCode::NOT_FOUND,
+                format!("cut {id} has no subtitles yet"),
+            )
+        })?;
+    let format = query.get("format").map(String::as_str).unwrap_or("json");
+    if format == "json" {
+        return Ok(Json(serde_json::to_value(&subs).unwrap_or(Value::Null)).into_response());
+    }
+    // a subtitle file starts where the rendering starts, not where the
+    // recording does
+    let body = match format {
+        "srt" => crate::subtitles::to_srt(&subs.segments, cut.start),
+        "vtt" => crate::subtitles::to_vtt(&subs.segments, cut.start),
+        other => {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                format!("unknown format: {other} (json, srt or vtt)"),
+            ))
+        }
+    };
+    let title = {
+        let inner = app.inner.lock();
+        inner.names.get(&cut.base).cloned().unwrap_or_default()
+    };
+    let stem = share::share_file_name(&cut.base, cut.start, cut.end, &share::slug(&title));
+    let name = format!("{}.{format}", stem.trim_end_matches(".mp4"));
+    Ok((
+        [
+            (CONTENT_TYPE, "text/plain; charset=utf-8".to_string()),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{}\"", name.replace('"', "")),
+            ),
+        ],
+        body,
+    )
+        .into_response())
+}
+
+/// `PUT /api/cuts/<id>/subtitles` (since 3.11): the corrected list, whole.
+async fn cut_subtitles_put(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    let cut = cut_for_subtitles(&app, &id, true)?;
+    let v = parse_body(&body);
+    let segments: Vec<crate::db::Segment> = serde_json::from_value(v["segments"].clone())
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, format!("segments: {e}")))?;
+    if segments.is_empty() {
+        app.db
+            .put_subtitles(&id, None)
+            .map_err(ApiError::internal)?;
+        app.tray_changed();
+        return Ok(Json(json!({ "ok": true, "subtitles": Value::Null })));
+    }
+    crate::subtitles::check(&segments, cut.start, cut.end)
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, e.to_string()))?;
+    let before = app.db.subtitles(&id).map_err(ApiError::internal)?;
+    let language = match v["language"].as_str() {
+        Some(l) if !crate::subtitles::known_language(l) => {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                format!("unknown language: {l}"),
+            ))
+        }
+        Some(l) => l.to_string(),
+        None => before
+            .as_ref()
+            .map(|s| s.language.clone())
+            .unwrap_or_default(),
+    };
+    let subs = crate::db::Subtitles {
+        language,
+        model: before.as_ref().map(|s| s.model.clone()).unwrap_or_default(),
+        source: before
+            .as_ref()
+            .map(|s| s.source.clone())
+            .unwrap_or_default(),
+        at: crate::util::now_local(),
+        mode: before
+            .as_ref()
+            .map(|s| s.mode.clone())
+            .unwrap_or_else(|| crate::db::SUBS_NONE.to_string()),
+        // somebody typed here, so a second transcription asks before it
+        // throws the corrections away
+        edited: true,
+        segments,
+    };
+    app.db
+        .put_subtitles(&id, Some(&subs))
+        .map_err(ApiError::internal)?;
+    app.tray_changed();
+    Ok(Json(
+        json!({ "ok": true, "subtitles": serde_json::to_value(&subs).unwrap_or(Value::Null) }),
+    ))
+}
+
+/// `DELETE /api/cuts/<id>/subtitles` (since 3.11).
+async fn cut_subtitles_delete(
+    State(app): State<App>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    cut_for_subtitles(&app, &id, true)?;
+    app.db
+        .put_subtitles(&id, None)
+        .map_err(ApiError::internal)?;
+    app.tray_changed();
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// `POST /api/cuts/<id>/transcribe` (since 3.11): read the speech of a cut.
+async fn cut_transcribe(State(app): State<App>, Path(id): Path<String>, body: Bytes) -> Response {
+    let v = parse_body(&body);
+    let settings = app.settings();
+    let model = v["model"]
+        .as_str()
+        .unwrap_or(&settings.subtitles.model)
+        .to_string();
+    let language = v["language"]
+        .as_str()
+        .unwrap_or(&settings.subtitles.language)
+        .to_string();
+    let source = v["source"]
+        .as_str()
+        .unwrap_or(&settings.subtitles.source)
+        .to_string();
+    match transcribe_checks(&app, &settings, &model, &language, &source) {
+        Err(e) => e.into_response(),
+        Ok(()) => match share::start_transcribe(&app, &id, &model, &language, &source) {
+            Ok(started) => accepted(&app, started, Value::Null),
+            Err(e) => share_error(e, "this cut is already being transcribed"),
+        },
+    }
+}
+
+/// Everything that has to be true before a transcription is worth starting.
+fn transcribe_checks(
+    app: &App,
+    settings: &crate::settings::Settings,
+    model: &str,
+    language: &str,
+    source: &str,
+) -> Result<(), ApiError> {
+    if !settings.subtitles.enabled {
+        return Err(ApiError::unmet(
+            "disabled",
+            "subtitles are switched off - turn them on under Settings › Subtitles",
+        ));
+    }
+    if !app.runtime().whisper {
+        return Err(ApiError::unmet(
+            "filter",
+            "subtitles: not in this ffmpeg build - it was built without the whisper filter",
+        ));
+    }
+    if !crate::subtitles::known_language(language) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("unknown language: {language}"),
+        ));
+    }
+    if !crate::settings::SOURCE_VALUES.contains(&source) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("unknown source: {source} (auto, mic or mix)"),
+        ));
+    }
+    let m = crate::subtitles::model(model).ok_or_else(|| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("unknown model: {model} (base, small or medium)"),
+        )
+    })?;
+    if crate::subtitles::ready(&app.data_dir, m).is_none() {
+        return Err(ApiError::unmet(
+            "model",
+            format!(
+                "the model {model} is not on this PC yet - download it under Settings › Subtitles"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// `GET /api/jobs/<id>/file` (since 2.6): the finished MP4 as a download,

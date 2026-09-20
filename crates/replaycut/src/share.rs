@@ -16,7 +16,8 @@ use crate::db::{Cut, CUT_PENDING, CUT_READY};
 use crate::integrations::random_token;
 use crate::platform;
 use crate::state::{
-    cut_file_name, AppState, Job, AUDIO_MODES, KIND_CUT, KIND_PUBLISH, KIND_RENDER, MAX_QUEUE,
+    cut_file_name, AppState, Job, AUDIO_MODES, KIND_CUT, KIND_PUBLISH, KIND_RENDER,
+    KIND_TRANSCRIBE, MAX_QUEUE,
 };
 use crate::toast::{self, Toast};
 use crate::util;
@@ -614,6 +615,72 @@ pub fn start_render(
     })
 }
 
+/// `POST /api/cuts/<id>/transcribe` (since 3.11): read the speech of a cut.
+/// Stages `queued -> transcribe -> done`; it is no output and never appears
+/// in the history.
+pub fn start_transcribe(
+    state: &AppState,
+    cut_id: &str,
+    model: &str,
+    language: &str,
+    source: &str,
+) -> Result<Started, ShareError> {
+    let cut = state
+        .db
+        .cut(cut_id)
+        .map_err(|e| ShareError::Invalid(format!("cannot read the cut: {e:#}")))?
+        .ok_or_else(|| ShareError::UnknownCut(cut_id.to_string()))?;
+    if !state.paths_of_cut(&cut).cut_of(&cut.id).is_file() {
+        return Err(ShareError::Invalid(format!(
+            "the file of cut {} is gone - cut the range again",
+            cut.id
+        )));
+    }
+    let mut inner = state.inner.lock();
+    let running = inner
+        .current_job
+        .iter()
+        .chain(inner.queue.iter())
+        .filter_map(|id| inner.jobs.get(id))
+        .find(|j| j.cut.as_deref() == Some(&cut.id) && j.kind == KIND_TRANSCRIBE)
+        .map(|j| j.id.clone());
+    if let Some(id) = running {
+        return Err(ShareError::Busy(id));
+    }
+    if inner.queue.len() >= MAX_QUEUE {
+        return Err(ShareError::QueueFull);
+    }
+    let mut id = random_token(8);
+    while inner.jobs.contains_key(&id) {
+        id = random_token(8);
+    }
+    let job = Job {
+        id: id.clone(),
+        kind: KIND_TRANSCRIBE.to_string(),
+        base: cut.base.clone(),
+        cut: Some(cut.id.clone()),
+        start: cut.start,
+        end: cut.end,
+        seconds: ((cut.end - cut.start) * 100.0).round() / 100.0,
+        audio: cut.audio.clone(),
+        // the transcription belongs to the game, not the other way round
+        idle: true,
+        model: model.to_string(),
+        language: language.to_string(),
+        track: source.to_string(),
+        stage: "queued".into(),
+        percent: 0,
+        at: util::now_local(),
+        ..Job::default()
+    };
+    let position = state.register_job(&mut inner, job);
+    Ok(Started {
+        job: id,
+        position,
+        cut: Some(cut.id),
+    })
+}
+
 /// `POST /api/jobs/<id>/publish` (since 2.5): send the file of a finished
 /// job to another target without cutting again. Returns id and position.
 pub fn publish(state: &AppState, source: &str, target: &str) -> Result<Started, ShareError> {
@@ -756,16 +823,20 @@ async fn run_inner(state: Arc<AppState>, id: String) {
     let token = state.cancel_token(&id);
     let kind = state.job(&id).map(|j| j.kind).unwrap_or_default();
     let (preview, cut_only) = (kind == crate::state::KIND_PREVIEW, kind == KIND_CUT);
+    let transcribe = kind == KIND_TRANSCRIBE;
     let result = if preview {
         preview_pipeline(&state, &id, &token).await
     } else if cut_only {
         cut_pipeline(&state, &id, &token).await
+    } else if transcribe {
+        transcribe_pipeline(&state, &id, &token).await
     } else {
         pipeline(&state, &id, &token).await
     };
-    let what = match (preview, cut_only) {
-        (true, _) => "preview",
-        (_, true) => "cut",
+    let what = match (preview, cut_only, transcribe) {
+        (true, _, _) => "preview",
+        (_, true, _) => "cut",
+        (_, _, true) => "transcribe",
         _ => "share",
     };
     if let Err(e) = &result {
@@ -778,16 +849,17 @@ async fn run_inner(state: Arc<AppState>, id: String) {
     let failed = result.is_err();
     let next = state.complete_job(&id, result.map_err(|e| format!("{e:#}")));
     if let Some(job) = state.job(&id) {
-        // a cut that never got its file leaves no half-cut behind
-        if failed {
+        // a cut that never got its file leaves no half-cut behind; a
+        // transcription never made one, so it must not drop one either
+        if failed && !transcribe {
             if let Some(cut) = job.cut.as_deref() {
                 state.drop_pending_cut(cut);
             }
         }
-        if !failed {
+        if !failed && !transcribe {
             apply_after(&state, &job).await;
         }
-        if !job.cancelled && !preview && !cut_only {
+        if !job.cancelled && !preview && !cut_only && !transcribe {
             let uploaded = job.direct.is_some();
             toast::show(&state, Toast::share_result(&job, uploaded, &state.ui_url()));
         }
@@ -1154,6 +1226,158 @@ pub const PREVIEW_KBPS: u32 = 2000;
 
 /// `POST /api/jobs/<id>/post { target }` (since 2.7): post the link of a
 /// finished job to one notify integration now. Returns the status text.
+/// Which audio stream of a cut file carries the speech (since 3.11).
+///
+/// Not guessed from the number of tracks: replaycut already knows how they
+/// are laid out. OBS is asked first - the check behind the diagnostics line
+/// "Audio tracks" knows which OBS track is fed by a microphone and nothing
+/// else. If OBS is not connected, or its configuration has moved on since
+/// the recording, the layout that `audio_args` has asserted since 1.4
+/// applies: 0 the mix, 1 the microphone, 2 the game, 3 the voice chat.
+/// Anything less than four tracks is a simple recording, and that is the
+/// mix.
+async fn speech_stream(state: &AppState, file: &Path, wanted: &str) -> (u32, &'static str) {
+    let tracks = state.runtime().media.audio_tracks(file).await;
+    if wanted == crate::db::SOURCE_MIX || tracks < 2 {
+        return (0, crate::db::SOURCE_MIX);
+    }
+    if let Some(facts) = state.obs.status().facts.as_ref() {
+        // OBS counts tracks from 1, ffmpeg counts streams from 0
+        if let Some(stream) = crate::obs_status::microphone_track(facts)
+            .map(|t| t.saturating_sub(1))
+            .filter(|s| *s < tracks)
+        {
+            return (stream, crate::db::SOURCE_MIC);
+        }
+    }
+    if tracks >= 4 {
+        return (1, crate::db::SOURCE_MIC);
+    }
+    // asked for the microphone, but this recording has no separate one
+    (0, crate::db::SOURCE_MIX)
+}
+
+/// The `transcribe` pipeline (since 3.11): run the speech of the cut
+/// through whisper and put the segments on the cut. Writes no file, sends
+/// nothing anywhere, and leaves no entry in the history.
+async fn transcribe_pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Result<()> {
+    let job = state.job(id).ok_or_else(|| anyhow!("job vanished"))?;
+    let settings = state.settings();
+    if !settings.subtitles.enabled {
+        bail!("subtitles are switched off");
+    }
+    let runtime = state.runtime();
+    if !runtime.whisper {
+        bail!("this ffmpeg was built without the whisper filter");
+    }
+    let mut cut = state
+        .db
+        .cut(job.cut.as_deref().unwrap_or_default())?
+        .ok_or_else(|| anyhow!("the cut of this transcription is no longer known"))?;
+    let input = state.paths_of_cut(&cut).cut_of(&cut.id);
+    if !input.is_file() {
+        bail!("the file of cut {} is gone - cut the range again", cut.id);
+    }
+    recheck_cut_start(state, &mut cut).await;
+
+    let model = crate::subtitles::model(&job.model)
+        .ok_or_else(|| anyhow!("unknown model: {}", job.model))?;
+    // the filter is given the bare file name and ffmpeg runs in that folder,
+    // so all this needs is that the file is there and is the right one
+    if crate::subtitles::ready(&state.data_dir, model).is_none() {
+        bail!("the model {} is not in the models folder", model.name);
+    }
+    let (stream, source) = speech_stream(state, &input, &job.track).await;
+    state.with_job(id, |j| {
+        j.stage = "transcribe".into();
+        j.track = source.to_string();
+    });
+
+    // libavfilter parses `:` and `\` inside a filter argument, so a Windows
+    // path in there is a fight nobody wins. Everything the filter names is
+    // a bare file name and ffmpeg runs in the folder that holds them.
+    let dir = crate::subtitles::models_dir(&state.data_dir);
+    let out_name = format!("{id}.srt");
+    let out = dir.join(&out_name);
+    let _ = std::fs::remove_file(&out);
+    let vad = crate::subtitles::ready(&state.data_dir, &crate::subtitles::VAD)
+        .map(|_| format!(":vad_model={}", crate::subtitles::VAD.file))
+        .unwrap_or_default();
+    let filter = format!(
+        "aresample=16000,aformat=sample_fmts=s16:channel_layouts=mono,\
+         whisper=model={}:language={}{vad}:queue=10:max_len=42:use_gpu={}:\
+         format=srt:destination={out_name}",
+        model.file,
+        job.language,
+        u8::from(settings.subtitles.gpu),
+    );
+    let input_s = input.to_string_lossy().into_owned();
+    let map = format!("0:a:{stream}");
+    let args = [
+        "-nostats",
+        "-progress",
+        "pipe:1",
+        "-y",
+        "-v",
+        "error",
+        "-i",
+        &input_s,
+        "-vn",
+        "-map",
+        &map,
+        "-af",
+        &filter,
+        "-f",
+        "null",
+        "-",
+    ];
+    tracing::info!(
+        "transcribe [{id}]: cut {} from track {stream} ({source}) with {} in '{}'",
+        cut.id,
+        model.name,
+        job.language
+    );
+    let media = runtime
+        .media
+        .clone()
+        .with_resource_limits(crate::settings::FfmpegPriority::Idle, runtime.media.threads);
+    let mut cmd = media.ffmpeg_command();
+    cmd.current_dir(&dir);
+    cmd.args(args);
+    run_with_progress(state, id, cmd, job.seconds, token).await?;
+
+    let text = std::fs::read_to_string(&out).unwrap_or_default();
+    let _ = std::fs::remove_file(&out);
+    let offset = cut.actual_start.unwrap_or(cut.start);
+    let segments = crate::subtitles::tidy(crate::subtitles::parse_srt(&text, offset));
+    let language = if job.language == "auto" {
+        // whisper detected one; the SRT does not say which, so the honest
+        // answer until the editor is told otherwise is that we do not know
+        String::new()
+    } else {
+        job.language.clone()
+    };
+    tracing::info!("transcribe [{id}]: {} segment(s)", segments.len());
+    let subs = crate::db::Subtitles {
+        language,
+        model: model.name.to_string(),
+        source: source.to_string(),
+        at: util::now_local(),
+        mode: state
+            .db
+            .subtitles(&cut.id)
+            .ok()
+            .flatten()
+            .map(|s| s.mode)
+            .unwrap_or_else(|| crate::db::SUBS_NONE.to_string()),
+        edited: false,
+        segments,
+    };
+    state.db.put_subtitles(&cut.id, Some(&subs))?;
+    state.tray_changed();
+    Ok(())
+}
+
 pub async fn post_now(state: &AppState, id: &str, target: &str) -> Result<String, ShareError> {
     let job = state
         .job(id)
@@ -1626,6 +1850,7 @@ pub fn encode_args(e: &Encode<'_>) -> Result<Vec<String>> {
     Ok(args)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn encode(
     state: &AppState,
     id: &str,
@@ -1658,6 +1883,26 @@ async fn encode(
         .unwrap_or(&runtime.media)
         .ffmpeg_command();
     cmd.args(&args);
+    run_with_progress(state, id, cmd, job.seconds, token)
+        .await
+        .inspect_err(|_| {
+            let _ = std::fs::remove_file(out);
+        })
+}
+
+/// Run an ffmpeg that reports `-progress` on stdout, turning `out_time_us`
+/// into the job's percent, and give up on a timeout or a cancel. Shared by
+/// the encode and, since 3.11, the transcription: both are one long ffmpeg
+/// whose progress is the only thing the page has to look at.
+///
+/// The caller owns whatever ffmpeg was writing - this does not remove it.
+async fn run_with_progress(
+    state: &AppState,
+    id: &str,
+    mut cmd: tokio::process::Command,
+    seconds: f64,
+    token: &CancellationToken,
+) -> Result<()> {
     let mut child = cmd.spawn().context("cannot start ffmpeg")?;
     let stdout = child
         .stdout
@@ -1673,7 +1918,7 @@ async fn encode(
         String::from_utf8_lossy(&buf).trim().to_string()
     });
 
-    let total_us = job.seconds * 1_000_000.0;
+    let total_us = seconds * 1_000_000.0;
     let progress = async {
         let mut lines = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = lines.next_line().await {
@@ -1692,14 +1937,12 @@ async fn encode(
         r = tokio::time::timeout(ENCODE_TIMEOUT, progress) => {
             if r.is_err() {
                 let _ = child.kill().await;
-                let _ = std::fs::remove_file(out);
                 bail!("ffmpeg timed out after {} s", ENCODE_TIMEOUT.as_secs());
             }
         }
         _ = token.cancelled() => {
             let _ = child.kill().await;
             let _ = stderr_task.await;
-            let _ = std::fs::remove_file(out);
             bail!("cancelled during encode");
         }
     }

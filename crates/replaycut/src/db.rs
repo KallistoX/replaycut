@@ -6,6 +6,11 @@
 //! that it was announced, from R11c its state), `cuts` the trimmed ranges and
 //! `jobs` every finished job - the share history.
 //!
+//! Since 3.11 a cut can carry a transcript, in one nullable column. The clip
+//! list is built on every poll and every push, so it never reads that column
+//! as a whole: `subtitle_summaries` asks SQLite for the few fields it shows
+//! and leaves the text on disk.
+//!
 //! A job is stored as the JSON document the API serves, with the fields we
 //! query on (base, cut, kind, target, time) as columns beside it. That way a
 //! new field in the contract needs no schema change and an entry written by
@@ -30,7 +35,7 @@ pub const BACKUP_DIR: &str = "backup-2.x";
 /// The state files of 1.4 and 2.x, in the order they are imported.
 pub const STATE_FILES: [&str; 3] = ["clip-names.json", "clip-seen.json", "clip-history.json"];
 
-const SCHEMA: i64 = 3;
+const SCHEMA: i64 = 4;
 
 /// Schema 2 (R11c): a clip keeps what the scanner knew about it, so a clip
 /// whose recording is gone can still be listed for its cuts.
@@ -42,6 +47,14 @@ const UPGRADE_3: [&str; 2] = [
     "ALTER TABLE clips ADD COLUMN dir TEXT",
     "ALTER TABLE clips ADD COLUMN lost INTEGER NOT NULL DEFAULT 0",
 ];
+
+/// Schema 4 (R15, since 3.11): a cut can carry a transcript. One nullable
+/// column and nothing else, so the way back is free: a 3.10.x opening this
+/// store finds every table and every column it knows, unchanged, and simply
+/// never looks at `cuts.subtitles`. Its `INSERT ... ON CONFLICT DO UPDATE`
+/// names the columns it writes, so an older build editing a cut leaves the
+/// transcript where it is instead of dropping it.
+const UPGRADE_4: [&str; 1] = ["ALTER TABLE cuts ADD COLUMN subtitles TEXT"];
 
 const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
@@ -81,7 +94,10 @@ CREATE TABLE IF NOT EXISTS cuts (
     file         TEXT,
     actual_start REAL,
     created      TEXT NOT NULL DEFAULT '',
-    state        TEXT NOT NULL DEFAULT 'pending'
+    state        TEXT NOT NULL DEFAULT 'pending',
+    -- the transcript as one JSON document (schema 4, since 3.11);
+    -- NULL means this cut has none
+    subtitles    TEXT
 );
 CREATE INDEX IF NOT EXISTS cuts_by_base ON cuts (base);
 -- Every finished job: `entry` is the history document of the contract.
@@ -184,6 +200,13 @@ impl Db {
                 Ok(n) if n > 0 => tracing::info!("{n} clip(s) now know their folder"),
                 Ok(_) => {}
                 Err(e) => tracing::warn!("cannot tell where the recordings are: {e:#}"),
+            }
+        }
+        if from < 4 {
+            for sql in UPGRADE_4 {
+                if let Err(e) = self.conn.lock().execute(sql, []) {
+                    tracing::debug!("schema 4: {e}");
+                }
             }
         }
         Ok(())
@@ -661,6 +684,73 @@ impl Db {
     }
 
     /// Mark a cut whose file is no longer there.
+    /// The transcript of one cut, segments and all (since 3.11).
+    pub fn subtitles(&self, cut: &str) -> Result<Option<Subtitles>> {
+        let conn = self.conn.lock();
+        let text: Option<String> = conn
+            .query_row("SELECT subtitles FROM cuts WHERE id = ?1", [cut], |r| {
+                r.get(0)
+            })
+            .optional()?
+            .flatten();
+        match text {
+            Some(t) => Ok(serde_json::from_str(&t).ok()),
+            None => Ok(None),
+        }
+    }
+
+    /// What every cut says about its subtitles, for the clip list: the few
+    /// fields it shows, asked of SQLite so that the text stays on disk.
+    pub fn subtitle_summaries(&self) -> Result<BTreeMap<String, SubtitleSummary>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id,
+                    json_extract(subtitles, '$.language'),
+                    json_extract(subtitles, '$.model'),
+                    json_extract(subtitles, '$.source'),
+                    json_extract(subtitles, '$.at'),
+                    json_extract(subtitles, '$.mode'),
+                    json_extract(subtitles, '$.edited'),
+                    json_array_length(subtitles, '$.segments')
+             FROM cuts WHERE subtitles IS NOT NULL",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                SubtitleSummary {
+                    language: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    model: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    source: r.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                    at: r.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                    mode: r
+                        .get::<_, Option<String>>(5)?
+                        .unwrap_or_else(|| SUBS_NONE.to_string()),
+                    edited: r.get::<_, Option<i64>>(6)?.unwrap_or(0) != 0,
+                    count: r.get::<_, Option<i64>>(7)?.unwrap_or(0).max(0) as usize,
+                },
+            ))
+        })?;
+        let mut out = BTreeMap::new();
+        for row in rows {
+            let (id, summary) = row?;
+            out.insert(id, summary);
+        }
+        Ok(out)
+    }
+
+    /// Write the transcript of a cut, or take it away with `None`.
+    pub fn put_subtitles(&self, cut: &str, subs: Option<&Subtitles>) -> Result<()> {
+        let text = match subs {
+            Some(s) => Some(serde_json::to_string(s)?),
+            None => None,
+        };
+        self.conn.lock().execute(
+            "UPDATE cuts SET subtitles = ?2 WHERE id = ?1",
+            params![cut, text],
+        )?;
+        Ok(())
+    }
+
     pub fn set_cut_state(&self, id: &str, state: &str) -> Result<()> {
         self.conn.lock().execute(
             "UPDATE cuts SET state = ?2, file = NULL WHERE id = ?1",
@@ -912,6 +1002,72 @@ pub struct Cut {
 pub const CUT_PENDING: &str = "pending";
 pub const CUT_READY: &str = "ready";
 pub const CUT_MISSING: &str = "missing";
+
+/// What a rendering does with the subtitles of its cut (since 3.11).
+/// `burn` and `track` arrive with the rendering that can do them.
+pub const SUBS_NONE: &str = "none";
+
+/// Which track a transcript was read from (since 3.11).
+pub const SOURCE_MIC: &str = "mic";
+pub const SOURCE_MIX: &str = "mix";
+
+/// One subtitle: a range of the **recording** - the same time base as
+/// `cut.start`/`cut.end` and as the player in the browser - and its text.
+/// A `\n` in the text is a line break in the subtitle; there is no other
+/// markup.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Segment {
+    pub start: f64,
+    pub end: f64,
+    pub text: String,
+}
+
+/// The transcript of a cut (since 3.11).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Subtitles {
+    /// The language whisper was told to use, or the one it detected.
+    pub language: String,
+    /// The model that produced them, empty when they were only ever typed.
+    pub model: String,
+    /// `mic` or `mix`.
+    pub source: String,
+    pub at: String,
+    /// What the next rendering of this cut does with them.
+    pub mode: String,
+    /// Somebody corrected them, so a second transcription asks first.
+    pub edited: bool,
+    pub segments: Vec<Segment>,
+}
+
+/// What the clip list and `GET /api/cuts/<id>` say about a cut's subtitles:
+/// everything but the text. The segments come from
+/// `GET /api/cuts/<id>/subtitles`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleSummary {
+    pub language: String,
+    pub model: String,
+    pub source: String,
+    pub at: String,
+    pub mode: String,
+    pub edited: bool,
+    pub count: usize,
+}
+
+impl Subtitles {
+    pub fn summary(&self) -> SubtitleSummary {
+        SubtitleSummary {
+            language: self.language.clone(),
+            model: self.model.clone(),
+            source: self.source.clone(),
+            at: self.at.clone(),
+            mode: self.mode.clone(),
+            edited: self.edited,
+            count: self.segments.len(),
+        }
+    }
+}
 
 /// Two ranges are the same cut when they agree to within a frame or two.
 const TOLERANCE: f64 = 0.005;
@@ -1559,5 +1715,113 @@ mod tests {
         );
         assert_eq!(created_from_base("no time here"), "");
         assert_eq!(created_from_base("2026-09-05"), "");
+    }
+
+    fn a_cut(id: &str) -> Cut {
+        Cut {
+            id: id.into(),
+            base: "Replay S".into(),
+            start: 6.0,
+            end: 12.0,
+            audio: "mix".into(),
+            vertical: false,
+            vertical_pos: None,
+            file: Some(format!("{id}.mkv")),
+            actual_start: Some(5.0),
+            created: "2026-09-20T13:00:00".into(),
+            state: CUT_READY.into(),
+        }
+    }
+
+    fn some_subtitles() -> Subtitles {
+        Subtitles {
+            language: "de".into(),
+            model: "base".into(),
+            source: SOURCE_MIC.into(),
+            at: "2026-09-20T13:02:00".into(),
+            mode: "burn".into(),
+            edited: true,
+            segments: vec![
+                Segment {
+                    start: 6.42,
+                    end: 8.10,
+                    text: "der kommt von links".into(),
+                },
+                Segment {
+                    start: 8.40,
+                    end: 10.95,
+                    text: "nimm den Rauch,\nich geh rum".into(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn a_cut_carries_its_transcript_and_gives_a_summary_without_the_text() {
+        let db = Db::memory().unwrap();
+        db.put_cut(&a_cut("5ub7174e")).unwrap();
+        assert!(db.subtitles("5ub7174e").unwrap().is_none());
+        assert!(db.subtitle_summaries().unwrap().is_empty());
+
+        let subs = some_subtitles();
+        db.put_subtitles("5ub7174e", Some(&subs)).unwrap();
+        assert_eq!(db.subtitles("5ub7174e").unwrap().unwrap(), subs);
+
+        // the clip list reads this, and it never touches the segments
+        let summaries = db.subtitle_summaries().unwrap();
+        let s = summaries
+            .get("5ub7174e")
+            .expect("the cut is in the summary");
+        assert_eq!(s, &subs.summary());
+        assert_eq!(s.count, 2);
+        assert_eq!(s.language, "de");
+        assert!(s.edited);
+
+        // the mode travels with the document and reaches the summary
+        let mut as_track = subs.clone();
+        as_track.mode = "track".into();
+        db.put_subtitles("5ub7174e", Some(&as_track)).unwrap();
+        assert_eq!(db.subtitles("5ub7174e").unwrap().unwrap().mode, "track");
+        assert_eq!(
+            db.subtitle_summaries().unwrap()["5ub7174e"].mode,
+            "track",
+            "the list shows what the next rendering will do"
+        );
+
+        db.put_subtitles("5ub7174e", None).unwrap();
+        assert!(db.subtitles("5ub7174e").unwrap().is_none());
+        assert!(db.subtitle_summaries().unwrap().is_empty());
+    }
+
+    /// The way back to 3.10.x: that build writes a cut with the column list
+    /// it knows, which leaves `subtitles` alone. `put_cut` is that same
+    /// statement, so editing a cut must not drop its transcript.
+    #[test]
+    fn writing_a_cut_again_leaves_its_transcript_alone() {
+        let db = Db::memory().unwrap();
+        db.put_cut(&a_cut("5ub7174f")).unwrap();
+        db.put_subtitles("5ub7174f", Some(&some_subtitles()))
+            .unwrap();
+
+        let mut again = a_cut("5ub7174f");
+        again.audio = "game".into();
+        again.state = CUT_MISSING.into();
+        db.put_cut(&again).unwrap();
+
+        let back = db.subtitles("5ub7174f").unwrap().expect("still there");
+        assert_eq!(back.segments.len(), 2);
+        assert_eq!(db.cut("5ub7174f").unwrap().unwrap().audio, "game");
+    }
+
+    /// A transcript belongs to its cut and goes with it.
+    #[test]
+    fn deleting_a_cut_takes_its_transcript() {
+        let db = Db::memory().unwrap();
+        db.put_cut(&a_cut("5ub71750")).unwrap();
+        db.put_subtitles("5ub71750", Some(&some_subtitles()))
+            .unwrap();
+        db.delete_cut("5ub71750").unwrap();
+        assert!(db.subtitles("5ub71750").unwrap().is_none());
+        assert!(db.subtitle_summaries().unwrap().is_empty());
     }
 }

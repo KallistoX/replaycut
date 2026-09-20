@@ -40,6 +40,7 @@ mod settings;
 mod setup;
 mod share;
 mod state;
+mod subtitles;
 mod themes;
 mod tls;
 mod toast;

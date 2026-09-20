@@ -56,6 +56,8 @@ pub struct Settings {
     pub obs: Obs,
     /// What happens to a recording once its clip has been shared (since 3.0).
     pub cleanup: Cleanup,
+    /// Subtitles on a cut (since 3.11, beta - off by default).
+    pub subtitles: SubtitleSettings,
 }
 
 /// TLS on the port (since 3.4). Off by default: in a home network HTTP is
@@ -119,6 +121,45 @@ impl Default for Cleanup {
         }
     }
 }
+
+/// Subtitles on a cut (since 3.11). Shipped **off**: the feature is beta,
+/// and off means off - no block at the cut row, no choice in the share row,
+/// no model download, and no request to Hugging Face or anywhere else.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SubtitleSettings {
+    pub enabled: bool,
+    /// Which model a transcription uses: `base`, `small` or `medium`, or
+    /// the name of a file put into the models folder by hand.
+    pub model: String,
+    /// `auto` or an ISO 639-1 code.
+    pub language: String,
+    /// Which track to read: `auto` (the microphone when there is one),
+    /// `mic` or `mix`.
+    pub source: String,
+    /// Let whisper use the graphics card. Off, and that is not a
+    /// compromise: the card belongs to the game, and in the ffmpeg builds
+    /// we have seen the filter runs on the CPU whatever this says.
+    pub gpu: bool,
+}
+
+impl Default for SubtitleSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            model: "base".into(),
+            language: "auto".into(),
+            source: "auto".into(),
+            gpu: false,
+        }
+    }
+}
+
+/// What `subtitles.source` can be. The two track names are `db::SOURCE_MIC`
+/// and `db::SOURCE_MIX`; they are spelled out here because the UI
+/// invariants build this file on its own.
+pub const SOURCE_AUTO: &str = "auto";
+pub const SOURCE_VALUES: [&str; 3] = [SOURCE_AUTO, "mic", "mix"];
 
 /// What "Afterwards" can be, in `POST /api/share` and in the settings.
 pub const AFTER_KEEP: &str = "keep";
@@ -444,6 +485,7 @@ impl Default for Settings {
             integrations: Integrations::default(),
             obs: Obs::default(),
             cleanup: Cleanup::default(),
+            subtitles: SubtitleSettings::default(),
         }
     }
 }
@@ -525,9 +567,10 @@ pub fn is_theme_name(name: &str) -> bool {
 /// half added until its name is in here (3.4.0 shipped `https` without it and
 /// the switch in the UI could not be saved). `ui_invariants` checks that
 /// every field the page binds is reachable through this list.
-pub const PATCH_KEYS: [&str; 20] = [
+pub const PATCH_KEYS: [&str; 21] = [
     "obs",
     "cleanup",
+    "subtitles",
     "https",
     "allowedHosts",
     "requireLoginOnLoopback",
@@ -639,6 +682,7 @@ impl Settings {
 const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
 const CLEANUP_KEYS: [&str; 2] = ["afterShare", "recycleDoneAfterDays"];
 const HTTPS_KEYS: [&str; 3] = ["enabled", "cert", "key"];
+const SUBTITLE_KEYS: [&str; 5] = ["enabled", "model", "language", "source", "gpu"];
 
 /// Whether `PUT /api/settings` would accept a field at this dotted path
 /// (`https.enabled`, `integrations.s3.bucket`, `port`). It answers from the
@@ -663,6 +707,7 @@ pub fn patch_accepts(path: &str) -> bool {
     match top {
         "obs" => OBS_KEYS.contains(&second),
         "cleanup" => CLEANUP_KEYS.contains(&second),
+        "subtitles" => SUBTITLE_KEYS.contains(&second),
         "https" => HTTPS_KEYS.contains(&second),
         "integrations" => {
             let allowed: &[&str] = match second {
@@ -734,6 +779,16 @@ impl Settings {
                         return Err(format!("unknown field: cleanup.{field}"));
                     }
                     current["cleanup"][field] = v.clone();
+                }
+            } else if key == "subtitles" {
+                let Some(fields) = value.as_object() else {
+                    return Err("subtitles must be an object".into());
+                };
+                for (field, v) in fields {
+                    if !SUBTITLE_KEYS.contains(&field.as_str()) {
+                        return Err(format!("unknown field: subtitles.{field}"));
+                    }
+                    current["subtitles"][field] = v.clone();
                 }
             } else if key == "integrations" {
                 let Some(groups) = value.as_object() else {
