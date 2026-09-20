@@ -1500,6 +1500,132 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
 /// `seek` is where in `input` the range begins: zero for the preview copy of
 /// a whole clip, the offset into the cut file for everything else (since 3.0).
 #[allow(clippy::too_many_arguments)]
+/// Everything an encode needs to know, so that [`encode_args`] can be a
+/// plain function a test can pin down.
+pub struct Encode<'a> {
+    pub job: &'a Job,
+    pub enc: &'a crate::media::Encoder,
+    /// `-threads` for ffmpeg; 0 leaves it to ffmpeg.
+    pub threads: u32,
+    pub input: &'a Path,
+    /// How far into `input` the rendering starts.
+    pub seek: f64,
+    pub out: &'a Path,
+}
+
+/// The ffmpeg command line of an encode, in order and complete.
+///
+/// This is where the picture is decided, so it is a function of its own:
+/// the test `the_arguments_of_a_plain_share_are_what_they_have_always_been`
+/// holds it to what 3.10 produced. A feature that changes the chain has to
+/// change that test with it, in the open, rather than by accident.
+pub fn encode_args(e: &Encode<'_>) -> Result<Vec<String>> {
+    let (job, enc) = (e.job, e.enc);
+    let kbps = job.kbps;
+    let mut args: Vec<String> = ["-nostats", "-progress", "pipe:1", "-y", "-v", "error"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let mut push = |v: &str| args.push(v.to_string());
+    let threads = e.threads.to_string();
+    let copy = job.mode == "copy";
+    if !copy && enc.decode.is_empty() && e.threads > 0 {
+        // decoder (dav1d takes every core otherwise)
+        push("-threads");
+        push(&threads);
+    }
+    if !copy {
+        enc.global.iter().for_each(|v| push(v));
+        enc.decode.iter().for_each(|v| push(v));
+    }
+    for v in [
+        "-ss",
+        &e.seek.to_string(),
+        "-t",
+        &job.seconds.to_string(),
+        "-i",
+        &e.input.to_string_lossy(),
+        "-map",
+        "0:v:0",
+    ] {
+        push(v);
+    }
+    for v in audio_args(&job.audio).ok_or_else(|| anyhow!("unknown audio mode {}", job.audio))? {
+        push(v);
+    }
+    if copy {
+        // The OBS video stream as it is; audio only re-encoded when tracks are
+        // mixed. The keyframe before `start` comes along, and its frames are
+        // shifted to time zero instead of hidden behind an edit list, so every
+        // player shows the same thing (the job says where the file really begins).
+        for v in ["-c:v", "copy", "-avoid_negative_ts", "make_zero"] {
+            push(v);
+        }
+        if job.audio == "mix" {
+            for v in ["-c:a", "copy"] {
+                push(v);
+            }
+        } else {
+            for v in ["-c:a", "aac", "-b:a", "128k"] {
+                push(v);
+            }
+        }
+    } else {
+        // since 2.7 the recording's resolution stays unless the target caps it;
+        // the preview copy is 720p, a vertical cut its own crop
+        let base_filter: Option<String> = if job.vertical {
+            Some(vertical_filter(job.vertical_pos.unwrap_or(0.5)))
+        } else if job.is_preview() {
+            Some(enc.scale.replace("{h}", "720"))
+        } else if job.max_height > 0 {
+            Some(enc.scale.replace("{h}", &job.max_height.to_string()))
+        } else {
+            None
+        };
+        // plus the upload an encoder needs when the frames reach it in software
+        if let Some(vf) = enc.filters(base_filter) {
+            push("-vf");
+            push(&vf);
+        }
+        push("-c:v");
+        push(&enc.name);
+        if e.threads > 0 {
+            // encoder and filters
+            push("-threads");
+            push(&threads);
+        }
+        if kbps > 0 {
+            // a bitrate cap: constant bitrate as before 2.7
+            enc.opts.iter().for_each(|v| push(v));
+            for v in [
+                "-b:v",
+                &format!("{kbps}k"),
+                "-maxrate",
+                &format!("{kbps}k"),
+                "-bufsize",
+                &format!("{}k", kbps * 2),
+            ] {
+                push(v);
+            }
+        } else {
+            // best quality: the encoder's quality mode, no bitrate
+            enc.quality.iter().for_each(|v| push(v));
+        }
+        if enc.pix_fmt {
+            for v in ["-pix_fmt", "yuv420p"] {
+                push(v);
+            }
+        }
+        for v in ["-c:a", "aac", "-b:a", "128k"] {
+            push(v);
+        }
+    }
+    for v in ["-movflags", "+faststart", &e.out.to_string_lossy()] {
+        push(v);
+    }
+    Ok(args)
+}
+
 async fn encode(
     state: &AppState,
     id: &str,
@@ -1510,76 +1636,15 @@ async fn encode(
     token: &CancellationToken,
     enc: &crate::media::Encoder,
 ) -> Result<()> {
-    let kbps = job.kbps;
-    let (b, maxrate, bufsize) = (
-        format!("{kbps}k"),
-        format!("{kbps}k"),
-        format!("{}k", kbps * 2),
-    );
-    let (start, seconds) = (seek.to_string(), job.seconds.to_string());
-    let input_s = input.to_string_lossy().into_owned();
-    let out_s = out.to_string_lossy().into_owned();
-    // since 2.7 the recording's resolution stays unless the target caps it;
-    // the preview copy is 720p, a vertical cut its own crop
-    let base_filter: Option<String> = if job.vertical {
-        Some(vertical_filter(job.vertical_pos.unwrap_or(0.5)))
-    } else if job.is_preview() {
-        Some(enc.scale.replace("{h}", "720"))
-    } else if job.max_height > 0 {
-        Some(enc.scale.replace("{h}", &job.max_height.to_string()))
-    } else {
-        None
-    };
-    // plus the upload an encoder needs when the frames reach it in software
-    let vf = enc.filters(base_filter);
-    let mut args: Vec<&str> = vec!["-nostats", "-progress", "pipe:1", "-y", "-v", "error"];
     let runtime = state.runtime();
-    let threads = runtime.media.threads.to_string();
-    let copy = job.mode == "copy";
-    if !copy && enc.decode.is_empty() && runtime.media.threads > 0 {
-        args.extend(["-threads", &threads]); // decoder (dav1d takes every core otherwise)
-    }
-    if !copy {
-        args.extend(enc.global.iter().copied());
-        args.extend(enc.decode.iter().copied());
-    }
-    args.extend([
-        "-ss", &start, "-t", &seconds, "-i", &input_s, "-map", "0:v:0",
-    ]);
-    args.extend(audio_args(&job.audio).ok_or_else(|| anyhow!("unknown audio mode {}", job.audio))?);
-    if copy {
-        // The OBS video stream as it is; audio only re-encoded when tracks are
-        // mixed. The keyframe before `start` comes along, and its frames are
-        // shifted to time zero instead of hidden behind an edit list, so every
-        // player shows the same thing (the job says where the file really begins).
-        args.extend(["-c:v", "copy", "-avoid_negative_ts", "make_zero"]);
-        if job.audio == "mix" {
-            args.extend(["-c:a", "copy"]);
-        } else {
-            args.extend(["-c:a", "aac", "-b:a", "128k"]);
-        }
-    } else {
-        if let Some(vf) = &vf {
-            args.extend(["-vf", vf]);
-        }
-        args.extend(["-c:v", &enc.name]);
-        if runtime.media.threads > 0 {
-            args.extend(["-threads", &threads]); // encoder and filters
-        }
-        if kbps > 0 {
-            // a bitrate cap: constant bitrate as before 2.7
-            args.extend(enc.opts.iter().copied());
-            args.extend(["-b:v", &b, "-maxrate", &maxrate, "-bufsize", &bufsize]);
-        } else {
-            // best quality: the encoder's quality mode, no bitrate
-            args.extend(enc.quality.iter().copied());
-        }
-        if enc.pix_fmt {
-            args.extend(["-pix_fmt", "yuv420p"]);
-        }
-        args.extend(["-c:a", "aac", "-b:a", "128k"]);
-    }
-    args.extend(["-movflags", "+faststart", &out_s]);
+    let args = encode_args(&Encode {
+        job,
+        enc,
+        threads: runtime.media.threads,
+        input,
+        seek,
+        out,
+    })?;
 
     // a scan-time preview must not compete with the game: idle priority
     let idle_media = job.idle.then(|| {
@@ -1656,6 +1721,121 @@ async fn encode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// libx264 at best quality, the profile every machine falls back to.
+    /// Written out rather than taken from the table so that this test says
+    /// what it expects instead of asking the code.
+    fn x264() -> crate::media::Encoder {
+        crate::media::Encoder {
+            label: "libx264",
+            name: "libx264".into(),
+            global: Vec::new(),
+            decode: Vec::new(),
+            scale: crate::media::SW_SCALE,
+            upload: "",
+            opts: vec!["-preset", "veryfast"],
+            quality: vec!["-preset", "veryfast", "-crf", "18"],
+            pix_fmt: true,
+        }
+    }
+
+    fn a_share_job() -> Job {
+        Job {
+            id: "abcd1234".into(),
+            base: "Replay A".into(),
+            start: 6.0,
+            end: 12.0,
+            seconds: 6.0,
+            audio: "mix".into(),
+            mode: "h264".into(),
+            stage: "encode".into(),
+            ..Job::default()
+        }
+    }
+
+    fn args_of(job: &Job, enc: &crate::media::Encoder) -> Vec<String> {
+        encode_args(&Encode {
+            job,
+            enc,
+            threads: 4,
+            input: Path::new("C:\\clips\\.cuts\\24af8830.mkv"),
+            seek: 1.0,
+            out: Path::new("C:\\clips\\shared\\out.mp4"),
+        })
+        .expect("the audio mode is known")
+    }
+
+    /// The invariant of R15: subtitles change nothing for a share that does
+    /// not ask for them. This is the command line of 3.10, written out. If
+    /// a change makes this test fail, the picture changed - say so in the
+    /// changelog rather than adjusting the numbers.
+    #[test]
+    fn the_arguments_of_a_plain_share_are_what_they_have_always_been() {
+        let expected: Vec<&str> = vec![
+            "-nostats",
+            "-progress",
+            "pipe:1",
+            "-y",
+            "-v",
+            "error",
+            "-threads",
+            "4",
+            "-ss",
+            "1",
+            "-t",
+            "6",
+            "-i",
+            "C:\\clips\\.cuts\\24af8830.mkv",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0",
+            "-c:v",
+            "libx264",
+            "-threads",
+            "4",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-movflags",
+            "+faststart",
+            "C:\\clips\\shared\\out.mp4",
+        ];
+        assert_eq!(args_of(&a_share_job(), &x264()), expected);
+    }
+
+    /// The same for the two shapes that do touch the chain today, so that a
+    /// filter added later cannot slip in front of the crop unnoticed.
+    #[test]
+    fn a_vertical_share_crops_before_anything_else_and_a_copy_has_no_filter() {
+        let mut vertical = a_share_job();
+        vertical.vertical = true;
+        vertical.vertical_pos = Some(0.5);
+        vertical.max_height = 1080;
+        let args = args_of(&vertical, &x264());
+        let vf = args.iter().position(|a| a == "-vf").expect("a filter");
+        assert_eq!(
+            args[vf + 1],
+            "crop=ih*9/16:ih:(iw-ih*9/16)*0.500:0,scale=1080:1920"
+        );
+        // the filter comes before the encoder, and the height cap loses to
+        // the crop - a vertical share is 1080x1920 whatever the target caps
+        assert!(args[vf + 2] == "-c:v");
+
+        let mut copy = a_share_job();
+        copy.mode = "copy".into();
+        let args = args_of(&copy, &x264());
+        assert!(!args.iter().any(|a| a == "-vf"), "copy re-encodes nothing");
+        assert!(args.windows(2).any(|w| w == ["-c:v", "copy"]));
+        assert!(args.windows(2).any(|w| w == ["-c:a", "copy"]));
+    }
 
     #[test]
     fn an_unfinished_encode_has_a_name_of_its_own() {
