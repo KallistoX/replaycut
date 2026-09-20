@@ -155,6 +155,32 @@ impl Default for SubtitleSettings {
     }
 }
 
+#[cfg(test)]
+mod subtitle_tests {
+    use super::*;
+
+    /// What a new installation ships with, and what an update leaves alone:
+    /// the beta is off, and the card belongs to the game. The contract suite
+    /// cannot check this - it runs against a service somebody may have
+    /// switched on - so it is pinned here.
+    #[test]
+    fn subtitles_ship_switched_off_and_on_the_cpu() {
+        let fresh = Settings::default();
+        assert!(!fresh.subtitles.enabled);
+        assert!(!fresh.subtitles.gpu);
+        assert_eq!(fresh.subtitles.model, "base");
+        assert_eq!(fresh.subtitles.language, "auto");
+
+        // a settings file written before 3.11 has no `subtitles` at all
+        let old = serde_json::json!({ "port": 8420, "displayName": "replaycut" });
+        let loaded: Settings = serde_json::from_value(old).expect("an older file still reads");
+        assert!(
+            !loaded.subtitles.enabled,
+            "an update must not switch a beta on"
+        );
+    }
+}
+
 /// What `subtitles.source` can be. The two track names are `db::SOURCE_MIC`
 /// and `db::SOURCE_MIX`; they are spelled out here because the UI
 /// invariants build this file on its own.

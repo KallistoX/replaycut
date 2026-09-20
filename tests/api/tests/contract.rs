@@ -4050,11 +4050,21 @@ fn t70_subtitles_are_off_until_they_are_switched_on() {
     }
     let (_, settings) = get_json("/api/settings");
     let before = settings["subtitles"].clone();
-    assert_eq!(
-        before["enabled"], false,
-        "a service that has never been told otherwise ships with subtitles off: {before}"
+    assert!(
+        before["enabled"].is_boolean(),
+        "the switch is part of the settings: {before}"
     );
     let _guard = Subtitles(before);
+
+    // What a new installation ships with is `SubtitleSettings::default()`
+    // and a unit test; this bench may have been switched on by hand, so the
+    // off behaviour is asked for rather than assumed.
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "subtitles": { "enabled": false } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(state()["config"]["subtitles"], false, "the page is told");
 
     // the list is information, not a connection: it answers with the switch off
     let (status, models) = get_json("/api/subtitles/models");
@@ -4194,6 +4204,7 @@ fn t70_subtitles_are_off_until_they_are_switched_on() {
     // a transcription needs a model; without one the answer names what is
     // missing so the page can offer the download instead of a dead button
     let (_, models) = get_json("/api/subtitles/models");
+    let available = models["available"] == true;
     let ready = models["models"]
         .as_array()
         .map(|m| {
@@ -4202,7 +4213,7 @@ fn t70_subtitles_are_off_until_they_are_switched_on() {
         })
         .unwrap_or(false);
     let (status, v) = post_json(&format!("/api/cuts/{cut}/transcribe"), &json!({}));
-    if ready {
+    if available && ready {
         assert_eq!(status, 202, "{v}");
         assert_eq!(v["cut"], cut.as_str(), "{v}");
         let (stages, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
@@ -4235,9 +4246,13 @@ fn t70_subtitles_are_off_until_they_are_switched_on() {
             );
         }
     } else {
+        // Two ways to be unable to transcribe, and the answer says which:
+        // this ffmpeg has no whisper filter (every CI runner, and most
+        // Linux distributions), or the model is not on this machine.
         assert_eq!(status, 412, "{v}");
-        assert_eq!(v["reason"], "model", "{v}");
-        eprintln!("no model on this machine: the transcription itself was not run");
+        let expected = if available { "model" } else { "filter" };
+        assert_eq!(v["reason"], expected, "{v}");
+        eprintln!("cannot transcribe here ({expected}): that part was not run");
     }
 
     // an unknown cut is an unknown cut, whatever is asked of it
