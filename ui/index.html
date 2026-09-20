@@ -3513,6 +3513,7 @@ function subsSummaryText(sum) {
 /// segments themselves are fetched when the editor opens.
 function renderSubs(c, body) {
   if (!cfg.subtitles || c.state === 'missing') return;
+  if (!subsModels) loadSubsModels();
   const s = subsOf(c.id), sum = c.subtitles, open = !!(s && s.open);
   const sec = document.createElement('section'); sec.className = 'subs';
   const head = document.createElement('div'); head.className = 'subs-head';
@@ -3535,6 +3536,17 @@ function renderSubs(c, body) {
   body.appendChild(sec);
 }
 
+/// What can be transcribed with, asked once and kept. The menu offers only
+/// models that are on this PC: downloading one belongs in Settings, not in
+/// a menu that is open for two seconds.
+let subsModels = null;
+async function loadSubsModels() {
+  if (subsModels) return subsModels;
+  try { subsModels = await api('/api/subtitles/models', {}, { retries: 0 }); }
+  catch (e) { subsModels = { models: [], languages: [] }; }
+  return subsModels;
+}
+
 function subsMenu(c, sum) {
   const items = [{ heading: 'Subtitles' }];
   items.push({
@@ -3542,6 +3554,33 @@ function subsMenu(c, sum) {
     title: 'Read the speech of this cut again, with the model and language from Settings',
     onclick: () => transcribeCut(c, sum && sum.edited)
   });
+  // the choices of a re-run, filled in from the models the service knows;
+  // the first time the menu is opened it has them a moment later
+  const m = subsModels;
+  if (m) {
+    const ready = (m.models || []).filter(x => x.state === 'ready');
+    if (ready.length > 1 || (ready.length === 1 && sum && sum.model !== ready[0].name)) {
+      items.push({ heading: 'With another model' });
+      ready.forEach(x => items.push({
+        label: x.name, icon: 'i-refresh', note: sum && sum.model === x.name ? 'used' : '',
+        onclick: () => transcribeCut(c, sum && sum.edited, { model: x.name })
+      }));
+    }
+    if ((m.languages || []).length) {
+      items.push({ heading: 'In another language' });
+      m.languages.forEach(l => items.push({
+        label: l.label, icon: 'i-subtitles', note: sum && sum.language === l.id ? 'used' : '',
+        onclick: () => transcribeCut(c, sum && sum.edited, { language: l.id })
+      }));
+    }
+    items.push({ heading: 'From another track' });
+    [['mic', 'Microphone'], ['mix', 'Mix (all)']].forEach(([id, label]) => items.push({
+      label, icon: 'i-subtitles', note: sum && sum.source === id ? 'used' : '',
+      onclick: () => transcribeCut(c, sum && sum.edited, { source: id })
+    }));
+  } else {
+    loadSubsModels().then(() => {});
+  }
   if (sum) {
     const name = encodeURIComponent(c.id);
     items.push('hr');
@@ -3745,10 +3784,10 @@ async function deleteSubs(c) {
   cutsKey = ''; poll.now();
 }
 
-async function transcribeCut(c, warn) {
+async function transcribeCut(c, warn, how) {
   if (warn && !confirm('Read the speech again and replace the corrections you made?')) return;
   try {
-    const r = await api(`/api/cuts/${encodeURIComponent(c.id)}/transcribe`, jsonOpts('POST', {}), { retries: 0, timeout: 10000 });
+    const r = await api(`/api/cuts/${encodeURIComponent(c.id)}/transcribe`, jsonOpts('POST', how || {}), { retries: 0, timeout: 10000 });
     if (!r.ok) {
       // the answer says what is missing, so the page can offer the way out
       if (r.reason === 'model') toast('No model on this PC yet - Settings › Subtitles', 'err');
