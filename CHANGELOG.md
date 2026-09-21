@@ -73,6 +73,16 @@ it was.
   Subtitles of a cut (beta) are edited there too, for now in the same
   block as before.
 
+### Fixed
+
+- **A transcription can be cancelled while it runs** (beta). "Cancel"
+  answered "too late" once the speech was being read, so a long cut read
+  on for minutes; now it stops, and a cut that had no subtitles still has
+  none. The same goes for a rendering that reads the speech first.
+- **A job cancelled in its very first moment stops.** Right after it
+  started it was taken for a waiting one: it showed as cancelled while it
+  went on, and a transcription wrote its subtitles anyway.
+
 ## [3.11.1] - 2026-09-21
 
 **Small repairs to the subtitle beta of 3.11**: a model downloads on the

@@ -1724,7 +1724,21 @@ impl AppState {
         let Some(job) = inner.jobs.get(id).cloned() else {
             return Err(StateError::UnknownJob);
         };
+        // A job that has just been taken off the queue - or was never on it,
+        // because nothing ran - says `queued` until its pipeline names the
+        // first stage. It is running: taking it "off the queue" marked it
+        // cancelled while it went on and wrote its result anyway (seen on a
+        // transcription that was cancelled in its first instant).
+        let running = inner.current_job.as_deref() == Some(id);
         match job.stage.as_str() {
+            "queued" if running => {
+                drop(inner);
+                if let Some(t) = self.cancels.lock().get(id) {
+                    t.cancel();
+                }
+                tracing::info!("{} [{id}] cancel requested as it starts", job.kind);
+                Ok(false)
+            }
             "queued" => {
                 inner.queue.retain(|q| q != id);
                 Self::renumber_queue(&mut inner);
@@ -1750,12 +1764,15 @@ impl AppState {
                 tracing::info!("share [{id}] cancelled while queued");
                 Ok(true)
             }
-            "encode" | "upload" => {
+            // since 3.12 also while the speech is read: a transcription of
+            // a long cut runs for minutes, and a rendering that reads first
+            // spends most of its time there
+            "encode" | "upload" | "transcribe" => {
                 drop(inner);
                 if let Some(t) = self.cancels.lock().get(id) {
                     t.cancel();
                 }
-                tracing::info!("share [{id}] cancel requested");
+                tracing::info!("{} [{id}] cancel requested", job.kind);
                 Ok(false)
             }
             stage => Err(StateError::TooLate(stage.to_string())),

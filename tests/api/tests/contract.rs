@@ -5116,3 +5116,72 @@ fn t78_a_cut_has_a_look_the_settings_the_default() {
     let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
     assert_eq!(status, 200, "{v}");
 }
+
+/// A transcription can be cancelled while it runs (since 3.12): the stage
+/// `transcribe` takes a cancel like `encode` does - ffmpeg is stopped, the
+/// half transcript is thrown away, the job ends `cancelled` and the cut has
+/// no subtitles. 3.11 answered `409`, and a long cut read on for minutes.
+#[test]
+fn t79_a_transcription_can_be_cancelled_while_it_runs() {
+    let _g = serial();
+    if !since_312() {
+        eprintln!("skipped: needs replaycut 3.12");
+        return;
+    }
+    let Some((base, cut, _guard)) = transcribable_cut("cancel reading") else {
+        return;
+    };
+    let (status, v) = post_json(&format!("/api/cuts/{cut}/transcribe"), &json!({}));
+    assert_eq!(status, 202, "{v}");
+    let job = v["job"].as_str().expect("job").to_string();
+
+    // cancelled as soon as it reads - polled fast, a short cut is quick
+    let start = Instant::now();
+    loop {
+        let (_, j) = get_json(&format!("/api/jobs/{job}"));
+        match j["stage"].as_str().unwrap_or("") {
+            "transcribe" => break,
+            "done" | "error" | "cancelled" => {
+                panic!("the transcription ended before it could be cancelled: {j}")
+            }
+            _ => {}
+        }
+        assert!(start.elapsed() < JOB_TIMEOUT, "never started reading: {j}");
+        std::thread::sleep(Duration::from_millis(30));
+    }
+    let (status, v) = post_json(&format!("/api/jobs/{job}/cancel"), &json!({}));
+    assert_eq!(status, 200, "a running transcription takes a cancel: {v}");
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(v["stopped"], false, "it stops on its way, not at once: {v}");
+
+    let (_, done) = wait_job(&job, JOB_TIMEOUT);
+    assert_eq!(done["stage"], "cancelled", "{done}");
+    assert_eq!(done["cancelled"], true, "{done}");
+    let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+    assert!(
+        c["subtitles"].is_null(),
+        "half a transcript is not kept: {c}"
+    );
+
+    // cancelled in its first instant, before it names a stage: a job that
+    // runs says `queued` until then, and taking it "off the queue" marked it
+    // cancelled while it went on and wrote its transcript anyway
+    let (status, v) = post_json(&format!("/api/cuts/{cut}/transcribe"), &json!({}));
+    assert_eq!(status, 202, "{v}");
+    let job = v["job"].as_str().expect("job").to_string();
+    let (status, v) = post_json(&format!("/api/jobs/{job}/cancel"), &json!({}));
+    assert_eq!(status, 200, "{v}");
+    let (_, done) = wait_job(&job, JOB_TIMEOUT);
+    assert_eq!(done["stage"], "cancelled", "{done}");
+    let (status, v) = get_json("/api/clips");
+    assert_eq!(status, 200, "{v}");
+    assert!(
+        v["queue"].as_array().is_some_and(|q| q.is_empty()) && v["busy"] == false,
+        "a cancelled job is really over: {v}"
+    );
+    let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+    assert!(c["subtitles"].is_null(), "and wrote nothing: {c}");
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}

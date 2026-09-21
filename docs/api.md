@@ -655,7 +655,8 @@ The [Job](#job) carries `position` while `queued` (dropped once it runs) and
 
 Ends a job: a waiting one leaves the queue at once (`{ ok: true, stopped:
 true }`, its stage is `cancelled` immediately); a job in `encode` or `upload`
-is stopped (`{ ok: true, stopped: false }`): ffmpeg is killed and the partial
+is stopped (`{ ok: true, stopped: false }`, since 3.12 also one in
+`transcribe`, [below](#a-transcription-can-be-cancelled-while-it-runs)): ffmpeg is killed and the partial
 file removed, an upload in flight is dropped and the started remote file
 deleted, then the job ends with stage `cancelled`, `ok: false`, `error:
 "cancelled"`, `cancelled: true`. A job in `discord`, `done`, `error` or
@@ -2212,6 +2213,21 @@ with the feature switched off as well.
 The font a rendering burns in (Inter Bold, SIL Open Font License 1.1), for
 the overlay. `font/ttf`, `Cache-Control: max-age=86400`, open without a
 session like the page itself.
+
+### A transcription can be cancelled while it runs
+
+`POST /api/jobs/<id>/cancel` takes a job in the stage `transcribe` like one
+in `encode`: `{ ok: true, stopped: false }`, ffmpeg is stopped, the half
+transcript is thrown away, and the job ends `cancelled`. A cut that had no
+subtitles still has none. That holds for a transcription and for a
+rendering that reads the speech before it encodes. 3.11 answered `409`, and
+a long cut read on for minutes.
+
+A job that has just started - it runs, but has not named its first stage
+yet - still says `queued`. A cancel in that moment stops it the same way,
+`stopped: false`. Before 3.12 it was answered as if the job were waiting:
+`stopped: true` and `cancelled` at once, while the job went on and wrote
+its result.
 
 ## Behaviour
 

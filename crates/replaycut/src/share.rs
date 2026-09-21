@@ -1796,7 +1796,11 @@ async fn transcribe_into(
     let mut cmd = media.ffmpeg_command();
     cmd.current_dir(&dir);
     cmd.args(args);
-    run_with_progress(state, id, cmd, cut.end - cut.start, token).await?;
+    if let Err(e) = run_with_progress(state, id, cmd, cut.end - cut.start, token).await {
+        // a cancelled or failed run leaves half an SRT, which is nobody's
+        let _ = std::fs::remove_file(&out);
+        return Err(e);
+    }
 
     let text = std::fs::read_to_string(&out).unwrap_or_default();
     let _ = std::fs::remove_file(&out);
