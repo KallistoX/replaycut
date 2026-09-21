@@ -3328,6 +3328,10 @@ function load(c, keepSel) {
   ['bShare', 'bShareMenu', 'bCut', 'bIn', 'bOut', 'bAll', 'bPrev'].forEach(id => { $(id).disabled = gone; });
   $('tl').style.display = gone ? 'none' : '';
   ticks(c.duration); buildAudio(); render(); renderCuts();
+  // the loaded row opens into its shelf (since 3.12): the list is drawn
+  // again - its key names the loaded clip - instead of waiting for the next
+  // change of the state to do it
+  renderList();
 }
 function unload() {
   leaveWorkshop();

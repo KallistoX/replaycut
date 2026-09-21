@@ -24,6 +24,13 @@ contract.
   get the language chosen on the card; with "Detect" the track goes
   untagged, and the card says so.
 
+### Fixed
+
+- **A clip opens into its cuts when you click it.** The row of the loaded
+  recording has its shelf - "Full recording" and its cuts - but clicking a
+  row only highlighted it; the shelf appeared on the next change of the
+  page or once a cut was loaded from the timeline.
+
 ## [3.12.1] - 2026-09-21
 
 **One repair to the subtitle beta of 3.12**: a cut in which whisper heard
