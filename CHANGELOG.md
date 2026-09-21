@@ -8,10 +8,10 @@ replaycut 2.0 is a rewrite of a PowerShell service (1.x) that was never
 published. The 2.0 line keeps that service's HTTP API; `docs/api.md` is the
 contract.
 
-## [Unreleased]
+## [3.14.1] - 2026-09-21
 
-**One repair to the workshop**: in Firefox, the picture of a cut from a
-large recording could stand still after a few seconds.
+**One repair**: in Firefox, a cut stopped playing in the workshop after the
+recording had played in cutting mode.
 
 ### Fixed
 
