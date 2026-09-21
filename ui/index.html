@@ -790,13 +790,16 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <span class="plan" id="planInfo"></span>
       <div class="vpos-row" id="vposRow" hidden><span>Window position</span><input type="range" id="vpos" min="0" max="100" value="50" title="Where the 9:16 window sits: left edge, centre, right edge"><span id="vposText">centre</span></div>
       <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>I</kbd><kbd>O</kbd> marks</span><span><kbd>Enter</kbd> share</span></div>
-      <div class="progress" id="prog" hidden><div class="row nowrap"><span class="grow" id="progText"></span><span class="muted sm" id="progPct"></span><button class="btn btn-sm btn-ghost" id="progCancel" title="Stop this share" hidden><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div><div class="bar"><i id="progBar"></i></div><div class="stages" id="stages"></div><div class="queued" id="progQueue" hidden></div></div>
-      <div class="result" id="result" hidden></div>
       <section class="cuts-box" id="cutsBox" hidden>
         <div class="section-title">Cuts<span class="n" id="cutCount"></span></div>
         <div class="cuts" id="cuts"></div>
       </section>
     </div>
+
+    <!-- since 3.12: what runs and what came out of it sits at the foot of the
+         tools in both modes, until the job strip takes it -->
+    <div class="progress" id="prog" hidden><div class="row nowrap"><span class="grow" id="progText"></span><span class="muted sm" id="progPct"></span><button class="btn btn-sm btn-ghost" id="progCancel" title="Stop this share" hidden><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div><div class="bar"><i id="progBar"></i></div><div class="stages" id="stages"></div><div class="queued" id="progQueue" hidden></div></div>
+    <div class="result" id="result" hidden></div>
   </main>
 </div>
 
