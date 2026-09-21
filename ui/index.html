@@ -2077,6 +2077,30 @@ async function initSettings() {
     clearTimeout(subsPoll);
     if (busy) subsPoll = setTimeout(subsLoad, 1000);
   }
+  /// Fetch a model. Pressing Download is a clear enough "switch them on":
+  /// a ticked switch that is not saved yet is saved first, on its own, and
+  /// whatever else is unsaved on the page stays so. Until 3.11.1 the request
+  /// went to a service that still had them off, and the refusal pointed at
+  /// the very card it came from (#53). Answers why nothing was fetched, or
+  /// nothing.
+  let subsRefused = {};
+  async function subsFetch(name) {
+    if (!(orig.subtitles && orig.subtitles.enabled)) {
+      const s = await api('/api/settings', jsonOpts('PUT', { subtitles: { enabled: true } }), { retries: 0, timeout: 20000 }).catch(e => ({ ok: false, error: e.message }));
+      if (!s.ok) return `subtitles could not be switched on, so nothing was downloaded: ${s.error}`;
+      orig = s.settings;
+      toast('Subtitles switched on', 'ok');
+    }
+    const r = await api('/api/subtitles/models/' + name, jsonOpts('POST', {}), { retries: 0 }).catch(e => ({ ok: false, error: e.message }));
+    if (r.ok) return '';
+    // switched off again behind this page's back - another tab, settings.json:
+    // the switch on this page is unsaved after all, and the save bar says so
+    if (r.reason === 'disabled') {
+      orig.subtitles.enabled = false;
+      return 'subtitles are off in the saved settings, so nothing was downloaded - press Save, then Download again';
+    }
+    return r.error;
+  }
   function subsRender() {
     const box = $('sSubsModels'); if (!box || !subsInfo) return;
     box.innerHTML = '';
@@ -2085,7 +2109,8 @@ async function initSettings() {
       const name = document.createElement('span');
       name.innerHTML = `<b></b> <span class="muted sm"></span>`;
       name.querySelector('b').textContent = m.name + (m.name === 'small' ? ' (recommended)' : '');
-      name.querySelector('.muted').textContent = fmtSize(m.bytes) + (m.error ? ' · ' + m.error : '');
+      const err = subsRefused[m.name] || m.error;
+      name.querySelector('.muted').textContent = fmtSize(m.bytes) + (err ? ' · ' + err : '');
       row.appendChild(name);
       const grow = document.createElement('span'); grow.className = 'grow'; row.appendChild(grow);
       if (m.state === 'downloading') {
@@ -2109,9 +2134,10 @@ async function initSettings() {
         get.disabled = !gv('subtitles.enabled');
         get.title = get.disabled ? 'Switch subtitles on first' : `Fetch ${m.name} from Hugging Face, once`;
         get.onclick = async () => {
-          get.disabled = true;
-          try { const r = await api('/api/subtitles/models/' + m.name, jsonOpts('POST', {}), { retries: 0 }); if (!r.ok) { toast(r.error, 'err'); get.disabled = false; return; } } catch (e) { toast(e.message, 'err'); get.disabled = false; return; }
-          subsLoad();
+          get.disabled = true; delete subsRefused[m.name];
+          const err = await subsFetch(m.name);
+          if (err) { subsRefused[m.name] = err; toast(err, 'err'); get.disabled = false; }
+          dirty(); subsLoad();
         };
         row.appendChild(get);
       }

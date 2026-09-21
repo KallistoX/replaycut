@@ -24,6 +24,16 @@ contract.
 
 ### Fixed
 
+- **Download fetches a model the first time.** On an installation where
+  subtitles had never been on, ticking "Read the speech of a cut on this
+  PC" and pressing Download on a model was refused: the switch was only a
+  field until Save, the service still had subtitles off, and the page
+  answered with a short-lived message pointing at the very card it came
+  from. Pressing Download now saves the switch first - on its own, so
+  whatever else is unsaved on the page stays that way - and then fetches.
+  If the switch cannot be saved, or the service still says subtitles are
+  off, nothing is downloaded and the line of that model says why until the
+  next try. (#53)
 - **The progress bar follows a transcription.** Reading the speech of a cut
   is the slowest thing replaycut does - about real time, so a minute for a
   one-minute cut - and the bar under the player stood at 100 % from the
