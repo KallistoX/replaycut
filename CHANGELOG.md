@@ -8,7 +8,12 @@ replaycut 2.0 is a rewrite of a PowerShell service (1.x) that was never
 published. The 2.0 line keeps that service's HTTP API; `docs/api.md` is the
 contract.
 
-## [Unreleased]
+## [3.12.1] - 2026-09-21
+
+**One repair to the subtitle beta of 3.12**: a cut in which whisper heard
+no speech said "none yet" and "Subtitles read". Next is the rest of the
+workshop - adding lines and typing them yourself, dragging edges, zoom,
+the phone.
 
 ### Fixed
 
