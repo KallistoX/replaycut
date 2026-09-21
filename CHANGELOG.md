@@ -10,6 +10,18 @@ contract.
 
 ## [Unreleased]
 
+### Changed
+
+- **The menu of a cut's subtitles is five rows instead of over twenty.**
+  It offered every model on this PC and all ten languages as ways to read
+  the speech again - a choice made once, in Settings › Subtitles, where
+  both already are. It keeps "Transcribe again", "From the other track"
+  (the mix when it was the microphone, and back; not shown for a recording
+  with one track), the two exports and "Delete". A cut without subtitles
+  has no menu at all, because it would only repeat the "Transcribe" button
+  beside it. The API still takes a model and a language for a single run.
+  (#54)
+
 ### Fixed
 
 - **The progress bar follows a transcription.** Reading the speech of a cut

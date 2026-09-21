@@ -3647,7 +3647,6 @@ function subsSummaryText(sum) {
 /// segments themselves are fetched when the editor opens.
 function renderSubs(c, body) {
   if (!cfg.subtitles || c.state === 'missing') return;
-  if (!subsModels) loadSubsModels();
   const s = subsOf(c.id), sum = c.subtitles, open = !!(s && s.open);
   const sec = document.createElement('section'); sec.className = 'subs';
   const head = document.createElement('div'); head.className = 'subs-head';
@@ -3664,65 +3663,40 @@ function renderSubs(c, body) {
     primary.onclick = e => { e.preventDefault(); transcribeCut(c); };
   }
   head.appendChild(primary);
-  head.appendChild(moreButton(() => subsMenu(c, sum)));
+  // without a transcript the menu would only repeat the button beside it
+  if (sum) head.appendChild(moreButton(() => subsMenu(c, sum)));
   sec.appendChild(head);
   if (open) sec.appendChild(subsEditor(c, s));
   body.appendChild(sec);
 }
 
-/// What can be transcribed with, asked once and kept. The menu offers only
-/// models that are on this PC: downloading one belongs in Settings, not in
-/// a menu that is open for two seconds.
-let subsModels = null;
-async function loadSubsModels() {
-  if (subsModels) return subsModels;
-  try { subsModels = await api('/api/subtitles/models', {}, { retries: 0 }); }
-  catch (e) { subsModels = { models: [], languages: [] }; }
-  return subsModels;
-}
-
+/// The menu of a transcript: read it again, or from the other track, and
+/// take it along or away. Model and language are chosen once, in Settings;
+/// until 3.11.1 the menu offered every model and all ten languages as well,
+/// over twenty rows for a choice nobody makes twice (#54). The API still
+/// takes both.
 function subsMenu(c, sum) {
   const items = [{ heading: 'Subtitles' }];
   items.push({
-    label: sum ? 'Transcribe again' : 'Transcribe', icon: 'i-refresh',
+    label: 'Transcribe again', icon: 'i-refresh',
     title: 'Read the speech of this cut again, with the model and language from Settings',
-    onclick: () => transcribeCut(c, sum && sum.edited)
+    onclick: () => transcribeCut(c, sum.edited)
   });
-  // the choices of a re-run, filled in from the models the service knows;
-  // the first time the menu is opened it has them a moment later
-  const m = subsModels;
-  if (m) {
-    const ready = (m.models || []).filter(x => x.state === 'ready');
-    if (ready.length > 1 || (ready.length === 1 && sum && sum.model !== ready[0].name)) {
-      items.push({ heading: 'With another model' });
-      ready.forEach(x => items.push({
-        label: x.name, icon: 'i-refresh', note: sum && sum.model === x.name ? 'used' : '',
-        onclick: () => transcribeCut(c, sum && sum.edited, { model: x.name })
-      }));
-    }
-    if ((m.languages || []).length) {
-      items.push({ heading: 'In another language' });
-      m.languages.forEach(l => items.push({
-        label: l.label, icon: 'i-subtitles', note: sum && sum.language === l.id ? 'used' : '',
-        onclick: () => transcribeCut(c, sum && sum.edited, { language: l.id })
-      }));
-    }
-    items.push({ heading: 'From another track' });
-    [['mic', 'Microphone'], ['mix', 'Mix (all)']].forEach(([id, label]) => items.push({
-      label, icon: 'i-subtitles', note: sum && sum.source === id ? 'used' : '',
-      onclick: () => transcribeCut(c, sum && sum.edited, { source: id })
-    }));
-  } else {
-    loadSubsModels().then(() => {});
-  }
-  if (sum) {
-    const name = encodeURIComponent(c.id);
-    items.push('hr');
-    items.push({ label: 'Export as SRT', icon: 'i-download', href: `/api/cuts/${name}/subtitles?format=srt`, download: '' });
-    items.push({ label: 'Export as VTT', icon: 'i-download', href: `/api/cuts/${name}/subtitles?format=vtt`, download: '' });
-    items.push('hr');
-    items.push({ label: 'Delete the subtitles', icon: 'i-trash', danger: true, onclick: () => deleteSubs(c) });
-  }
+  // the other of the two tracks speech is read from - unless the recording
+  // has only the one, or the lines were typed and came from no track
+  const other = sum.source === 'mic' ? 'mix' : sum.source === 'mix' ? 'mic' : '';
+  const tracks = cur && cur.base === c.base ? cur.tracks : 0;
+  if (other && tracks !== 1) items.push({
+    label: 'From the other track', icon: 'i-subtitles', note: other === 'mic' ? 'microphone' : 'mix',
+    title: `Read the speech of this cut again, from the ${other === 'mic' ? 'microphone' : 'mix of all tracks'}`,
+    onclick: () => transcribeCut(c, sum.edited, { source: other })
+  });
+  const name = encodeURIComponent(c.id);
+  items.push('hr');
+  items.push({ label: 'Export as SRT', icon: 'i-download', href: `/api/cuts/${name}/subtitles?format=srt`, download: '' });
+  items.push({ label: 'Export as VTT', icon: 'i-download', href: `/api/cuts/${name}/subtitles?format=vtt`, download: '' });
+  items.push('hr');
+  items.push({ label: 'Delete the subtitles', icon: 'i-trash', danger: true, onclick: () => deleteSubs(c) });
   return items;
 }
 
