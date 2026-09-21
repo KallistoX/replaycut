@@ -700,6 +700,21 @@ impl Db {
         Ok(())
     }
 
+    /// Give a cut a look of its own, or take it away (since 3.12). A look
+    /// with neither frame set is stored as none.
+    pub fn set_cut_look(&self, id: &str, look: &CutLook) -> Result<()> {
+        let value = if look.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(look)?)
+        };
+        self.conn.lock().execute(
+            "UPDATE cuts SET look = ?2 WHERE id = ?1",
+            params![id, value],
+        )?;
+        Ok(())
+    }
+
     /// Forget one cut. The caller removes its file and its outputs.
     pub fn delete_cut(&self, id: &str) -> Result<()> {
         self.conn
@@ -876,6 +891,7 @@ impl Db {
                     actual_start: None,
                     state: CUT_MISSING.into(),
                     title: String::new(),
+                    look: CutLook::default(),
                     created: text(entry, "at").unwrap_or_default(),
                 };
                 insert_cut(&tx, &row)?;
@@ -1035,6 +1051,35 @@ pub struct Cut {
     /// cut was made; empty means the recording's title applies.
     #[serde(default)]
     pub title: String,
+    /// How its burned-in subtitles look (since 3.12), per frame; a frame
+    /// without one takes the look of the settings.
+    #[serde(default)]
+    pub look: CutLook,
+}
+
+/// A cut's own look (since 3.12). Kept in a column of its own rather than
+/// in the subtitle document: a 3.11 writes that document back on every
+/// rendering and would drop a field it does not know.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CutLook {
+    pub wide: Option<crate::settings::Look>,
+    pub vertical: Option<crate::settings::Look>,
+}
+
+impl CutLook {
+    /// The look of one frame: the cut's own, or the one of the settings.
+    pub fn of<'a>(
+        &'a self,
+        vertical: bool,
+        defaults: &'a crate::settings::Looks,
+    ) -> &'a crate::settings::Look {
+        let own = if vertical { &self.vertical } else { &self.wide };
+        own.as_ref().unwrap_or_else(|| defaults.of(vertical))
+    }
+
+    fn is_empty(&self) -> bool {
+        self.wide.is_none() && self.vertical.is_none()
+    }
 }
 
 pub const CUT_PENDING: &str = "pending";
@@ -1116,7 +1161,7 @@ impl Subtitles {
 const TOLERANCE: f64 = 0.005;
 
 const CUT_COLUMNS: &str = "SELECT id, base, start, \"end\", audio, vertical, vertical_pos,
-                                  file, actual_start, created, state, title FROM cuts";
+                                  file, actual_start, created, state, title, look FROM cuts";
 
 fn cut_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Cut> {
     Ok(Cut {
@@ -1132,6 +1177,11 @@ fn cut_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Cut> {
         created: r.get(9)?,
         state: r.get(10)?,
         title: r.get::<_, Option<String>>(11)?.unwrap_or_default(),
+        // a look that no longer reads is no look: the settings' applies
+        look: r
+            .get::<_, Option<String>>(12)?
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default(),
     })
 }
 
@@ -1564,6 +1614,7 @@ mod tests {
             created: "2026-09-08T20:00:30".into(),
             state: CUT_PENDING.into(),
             title: String::new(),
+            look: CutLook::default(),
         })
         .unwrap();
         db.put_cut(&Cut {
@@ -1579,6 +1630,7 @@ mod tests {
             created: "2026-09-08T20:01:00".into(),
             state: CUT_READY.into(),
             title: String::new(),
+            look: CutLook::default(),
         })
         .unwrap();
         assert_eq!(db.clip("Replay A").unwrap().unwrap().state, CLIP_ACTIVE);
@@ -1781,6 +1833,7 @@ mod tests {
             created: "2026-09-20T13:00:00".into(),
             state: CUT_READY.into(),
             title: String::new(),
+            look: CutLook::default(),
         }
     }
 
@@ -1877,21 +1930,30 @@ mod tests {
             db.cut("717e0001").unwrap().unwrap().title,
             "Drei mit einem Schuss"
         );
-        db.conn
-            .lock()
-            .execute(
-                "UPDATE cuts SET look = '{\"wide\":null}' WHERE id = '717e0001'",
-                [],
-            )
-            .unwrap();
+        let short = CutLook {
+            wide: None,
+            vertical: Some(crate::settings::Look {
+                position: "middle".into(),
+                size: "l".into(),
+                color: "box".into(),
+            }),
+        };
+        db.set_cut_look("717e0001", &short).unwrap();
 
         let mut again = a_cut("717e0001");
         again.state = CUT_MISSING.into();
         db.put_cut(&again).unwrap();
-        assert_eq!(
-            db.cut("717e0001").unwrap().unwrap().title,
-            "Drei mit einem Schuss"
-        );
+        let read = db.cut("717e0001").unwrap().unwrap();
+        assert_eq!(read.title, "Drei mit einem Schuss");
+        assert_eq!(read.look, short);
+
+        // the settings fill in the frame the cut leaves open
+        let defaults = crate::settings::Looks::default();
+        assert_eq!(read.look.of(false, &defaults), &defaults.wide);
+        assert_eq!(read.look.of(true, &defaults).size, "l");
+
+        // no frame of its own is no look at all, not an empty one
+        db.set_cut_look("717e0001", &CutLook::default()).unwrap();
         let look: Option<String> = db
             .conn
             .lock()
@@ -1899,7 +1961,7 @@ mod tests {
                 r.get(0)
             })
             .unwrap();
-        assert_eq!(look.as_deref(), Some("{\"wide\":null}"));
+        assert_eq!(look, None);
 
         // an empty title gives the cut back to the recording's
         db.set_cut_title("717e0001", "").unwrap();

@@ -79,6 +79,9 @@ pub fn router(state: App) -> Router {
         )
         .route("/api/cuts/{id}/transcribe", post(cut_transcribe))
         .route("/api/subtitles/models", get(admin::subtitle_models))
+        // since 3.12: the overlay and the rendering from one table
+        .route("/api/subtitles/looks", get(admin::subtitle_looks))
+        .route("/fonts/subtitles.ttf", get(admin::subtitle_font))
         .route(
             "/api/subtitles/models/{name}",
             post(admin::subtitle_model_download).delete(admin::subtitle_model_delete),
@@ -888,33 +891,124 @@ async fn cut_update(
             "the body is a JSON object",
         ));
     };
-    if app.db.cut(&id).map_err(ApiError::internal)?.is_none() {
+    let Some(existing) = app.db.cut(&id).map_err(ApiError::internal)? else {
         return Err(ApiError::new(
             StatusCode::NOT_FOUND,
             format!("unknown cut: {id}"),
         ));
-    }
-    if let Some(unknown) = fields.keys().find(|k| k.as_str() != "title") {
+    };
+    if let Some(unknown) = fields.keys().find(|k| !CUT_FIELDS.contains(&k.as_str())) {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
-            format!("unknown field: {unknown} (title)"),
+            format!("unknown field: {unknown} ({})", CUT_FIELDS.join(", ")),
         ));
     }
-    if let Some(title) = fields.get("title") {
-        let Some(title) = title.as_str() else {
+    // everything is checked before anything is written, so a request that
+    // is refused changes nothing
+    let title = match fields.get("title") {
+        None => None,
+        Some(Value::String(t)) => Some(crate::util::normalize_title(t)),
+        Some(_) => {
             return Err(ApiError::new(StatusCode::BAD_REQUEST, "title is a string"));
-        };
-        let title = crate::util::normalize_title(title);
+        }
+    };
+    let look = match fields.get("look") {
+        None => None,
+        Some(v) => {
+            let mut look = existing.look.clone();
+            for (vertical, value) in look_patch(v)? {
+                *(if vertical {
+                    &mut look.vertical
+                } else {
+                    &mut look.wide
+                }) = value;
+            }
+            Some(look)
+        }
+    };
+
+    if let Some(title) = title {
         app.db
             .set_cut_title(&id, &title)
             .map_err(ApiError::internal)?;
         tracing::info!("title for cut {id}: {title:?}");
+    }
+    if let Some(look) = look {
+        app.db
+            .set_cut_look(&id, &look)
+            .map_err(ApiError::internal)?;
+        tracing::info!("look for cut {id}: {look:?}");
     }
     app.tray_changed();
     let cut = app
         .cut_document(&id)
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown cut: {id}")))?;
     Ok(Json(json!({ "ok": true, "cut": cut })))
+}
+
+/// What `PUT /api/cuts/<id>` takes (since 3.12).
+const CUT_FIELDS: [&str; 2] = ["title", "look"];
+
+/// The `look` of a `PUT /api/cuts/<id>`: per frame, a whole look or `null`
+/// for the settings' one; a frame the body leaves out keeps what it had,
+/// and `look: null` gives both frames back to the settings. A look is all
+/// three steps or none - half a look would be filled in from somewhere the
+/// page cannot see.
+fn look_patch(v: &Value) -> Result<Vec<(bool, Option<crate::settings::Look>)>, ApiError> {
+    let bad = |m: String| ApiError::new(StatusCode::BAD_REQUEST, m);
+    if v.is_null() {
+        return Ok(vec![(false, None), (true, None)]);
+    }
+    let Some(frames) = v.as_object() else {
+        return Err(bad("look is an object with wide and vertical".into()));
+    };
+    let mut out = Vec::new();
+    for (frame, value) in frames {
+        let vertical = match frame.as_str() {
+            "wide" => false,
+            "vertical" => true,
+            _ => {
+                return Err(bad(format!(
+                    "unknown field: look.{frame} (wide or vertical)"
+                )))
+            }
+        };
+        if value.is_null() {
+            out.push((vertical, None));
+            continue;
+        }
+        let Some(steps) = value.as_object() else {
+            return Err(bad(format!("look.{frame} is an object or null")));
+        };
+        if let Some(unknown) = steps
+            .keys()
+            .find(|k| !["position", "size", "color"].contains(&k.as_str()))
+        {
+            return Err(bad(format!(
+                "unknown field: look.{frame}.{unknown} (position, size, color)"
+            )));
+        }
+        let step = |name: &str| -> Result<String, ApiError> {
+            steps
+                .get(name)
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    bad(format!(
+                        "look.{frame} needs position, size and color - {name} is missing"
+                    ))
+                })
+        };
+        let look = crate::settings::Look {
+            position: step("position")?,
+            size: step("size")?,
+            color: step("color")?,
+        };
+        look.check(&format!("look.{frame}"))
+            .map_err(|e| bad(e.to_string()))?;
+        out.push((vertical, Some(look)));
+    }
+    Ok(out)
 }
 
 /// `POST /api/cuts/<id>/preview` (since 3.12): a copy of the cut a browser

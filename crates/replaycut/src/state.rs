@@ -1913,6 +1913,7 @@ mod tests {
                 created: "2026-09-19T10:01:00".into(),
                 state: state.into(),
                 title: String::new(),
+                look: Default::default(),
             })
             .unwrap();
         };

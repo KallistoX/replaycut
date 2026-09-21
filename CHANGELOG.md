@@ -58,6 +58,15 @@ it was.
   lines burns them in - or carries them as a track in "As recorded" - and
   leaving them out is the choice you make, for that one rendering. The API
   does the same when `subtitles` is left out.
+- **Burned-in subtitles look like named steps now** (beta): position
+  (lower third, middle, top), size (S, M, L) and colour (white, white on a
+  box, yellow), for 16:9 and 9:16 each, in Settings → Subtitles. A new
+  installation starts with lower · M · white in both, which is how 3.11
+  looked. The numbers of 3.11 - colour, outline, size and margin - are not
+  carried over. In 9:16 the lower third stays clear of what a Short draws
+  over its picture. A cut can have a look of its own; the table behind the
+  steps is served to the page (`GET /api/subtitles/looks`), so what the
+  workshop shows and what is rendered come from the same numbers.
 - **The list of cuts at the foot of the clips page is gone.** Its cuts are
   in the shelf of their recording and on its timeline now, and what the
   list offered - render, the outputs, delete - is in the workshop.

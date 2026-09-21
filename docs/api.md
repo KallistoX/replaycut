@@ -1937,6 +1937,9 @@ back to software decoding, the same way a vertical cut has since 2.6.
 
 ### Settings `subtitles.style`
 
+Replaced in 3.12 by named steps, and refused since: see
+[Settings `subtitles.look`](#settings-subtitleslook). What 3.11 took:
+
 ```json
 "style": {
   "color": "#ffffff",
@@ -2001,6 +2004,8 @@ the recording's title. `200 { ok: true, cut }` with the [Cut](#cut) as
 - `400` for a field this service does not know, and for a `title` that is
   not a string. A typo is refused rather than answered with a success that
   changed nothing.
+
+The same request takes `look` ([below](#a-cut-has-a-look-the-settings-the-default)).
 
 ### A cut plays in the browser
 
@@ -2090,6 +2095,123 @@ that has to be made.
 `subtitles.mode` in the transcript stays and is still written - by every
 rendering, and as `burn` by a transcription - for a 3.11 that opens the
 store after a way back. This service no longer reads it.
+
+### A cut has a look, the settings the default
+
+How burned-in subtitles look is three **named steps** per frame rather than
+numbers - `wide` for 16:9, `vertical` for 9:16:
+
+| Step | Values |
+| --- | --- |
+| `position` | `lower` (the lower third), `middle`, `top` |
+| `size` | `s`, `m`, `l` |
+| `color` | `white` (outline and shadow), `box` (white on a dark box), `yellow` (outline and shadow) |
+
+The workshop draws the line over the picture while it is corrected, in
+HTML, and the rendering burns it in with libass. The two can be close but
+never pixel-identical; a step is a promise both keep, because both take
+their numbers from the same table (`GET /api/subtitles/looks`, below). In
+9:16 `lower` sits 22 % over the lower edge and 11 % in from each side,
+clear of the title, the channel and the buttons a Short draws over its
+picture.
+
+A [Cut](#cut) gains `look`:
+
+```json
+"look": {
+  "wide": null,
+  "vertical": { "position": "middle", "size": "l", "color": "box" }
+}
+```
+
+A frame that is `null` takes the look of the settings. Cuts made before 3.12
+have none in either frame.
+
+`PUT /api/cuts/<id>` takes `look` next to `title`:
+
+- `{ "look": { "vertical": { ... } } }` sets that frame and leaves the other
+  alone; a frame is **all three steps or `null`** - half a look would be
+  filled in from somewhere the page cannot see.
+- `{ "look": { "vertical": null } }` gives that frame back to the settings,
+  `{ "look": null }` both.
+- It works with the feature switched off: a look is appearance, not a run,
+  and nothing leaves the PC.
+- `400` for a step the table does not have, half a look, a frame other than
+  `wide` or `vertical`. The whole body is checked before anything is
+  written, so a refused request changes nothing - also not its `title`.
+
+A rendering that burns subtitles in uses the cut's look for its frame, else
+the settings' one.
+
+### Settings `subtitles.look`
+
+```json
+"look": {
+  "wide":     { "position": "lower", "size": "m", "color": "white" },
+  "vertical": { "position": "lower", "size": "m", "color": "white" }
+}
+```
+
+What every cut without a look of its own uses; a new installation starts
+with lower · M · white in both frames, which is 3.11's look to within
+rounding. `PUT /api/settings` folds a patch in: a request that names only
+`subtitles.look.vertical.size` leaves the other steps alone. `400` for a
+step or a name the table does not have.
+
+**`subtitles.style` is gone.** Its numbers are not carried over; a settings
+file that still has them reads, and they are dropped the next time the
+settings are saved. `PUT /api/settings` with `subtitles.style` is a `400`,
+because a page that sends it would believe it had changed something.
+
+### `GET /api/subtitles/looks`
+
+The table the rendering is made from, for a page that draws an overlay
+from it, and the defaults of the settings. It talks to nobody and answers
+with the feature switched off as well.
+
+```json
+{
+  "font": "/fonts/subtitles.ttf",
+  "emPerSize": 0.8265,
+  "positions": ["lower", "middle", "top"],
+  "sizes": ["s", "m", "l"],
+  "colors": ["white", "box", "yellow"],
+  "frames": {
+    "wide": {
+      "size": { "s": 3.5, "m": 4.5, "l": 6.0 },
+      "position": { "lower": { "align": "bottom", "margin": 5.0 }, "middle": { "align": "middle", "margin": 0.0 }, "top": { "align": "top", "margin": 5.0 } },
+      "side": 2.0
+    },
+    "vertical": { "size": { ... }, "position": { ... }, "side": 11.0,
+                  "shortsUi": { "top": 6.0, "bottom": 21.0, "right": 10.0 } }
+  },
+  "color": {
+    "white":  { "text": "#ffffff", "outline": 0.065, "shadow": 0.03 },
+    "box":    { "text": "#ffffff", "box": 0.75, "pad": 0.18 },
+    "yellow": { "text": "#ffd400", "outline": 0.065, "shadow": 0.03 }
+  },
+  "defaults": { "wide": { ... }, "vertical": { ... } }
+}
+```
+
+- `size` is the font size and `margin` the distance from the edge named by
+  `align`, both in percent of the **height** of the picture that is
+  rendered; `side` is the margin left and right, in percent of its
+  **width**. So one table fits a 1080p and a 1440p rendering and a preview
+  of 604 pixels.
+- `outline`, `shadow` and `pad` are shares of the font size; `box` is the
+  opacity of the box.
+- The size is libass's font size, which is the font's ascender plus
+  descender. `emPerSize` turns it into the em a browser sizes by:
+  `font-size = size × emPerSize`, `line-height = size`.
+- `shortsUi` is where a Short draws its own interface over a 9:16 picture,
+  in percent, for a page that shows it.
+
+### `GET /fonts/subtitles.ttf`
+
+The font a rendering burns in (Inter Bold, SIL Open Font License 1.1), for
+the overlay. `font/ttf`, `Cache-Control: max-age=86400`, open without a
+session like the page itself.
 
 ## Behaviour
 

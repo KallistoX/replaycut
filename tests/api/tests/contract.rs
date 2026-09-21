@@ -4945,3 +4945,174 @@ fn t77_a_rendering_follows_its_cuts_subtitles() {
     let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
     assert_eq!(status, 200, "{v}");
 }
+
+/// A cut has a look of its own, and the settings the default (since 3.12):
+/// three named steps per frame, from one table the page draws its overlay
+/// from and the rendering burns in. A look is appearance, so it can be set
+/// with the feature switched off; `style` of 3.11 is gone and refused.
+#[test]
+fn t78_a_cut_has_a_look_the_settings_the_default() {
+    let _g = serial();
+    if !since_312() {
+        eprintln!("skipped: needs replaycut 3.12");
+        return;
+    }
+    let (_, settings) = get_json("/api/settings");
+    let _guard = Subtitles(settings["subtitles"].clone());
+
+    // the table: every step of both frames, the font and the defaults
+    let (status, t) = get_json("/api/subtitles/looks");
+    assert_eq!(status, 200, "{t}");
+    for frame in ["wide", "vertical"] {
+        for size in ["s", "m", "l"] {
+            assert!(
+                t["frames"][frame]["size"][size].is_number(),
+                "{frame} {size}: {t}"
+            );
+        }
+        for position in ["lower", "middle", "top"] {
+            let p = &t["frames"][frame]["position"][position];
+            assert!(
+                p["margin"].is_number() && p["align"].is_string(),
+                "{frame} {position}: {t}"
+            );
+        }
+        assert!(t["defaults"][frame]["position"].is_string(), "{t}");
+    }
+    for color in ["white", "box", "yellow"] {
+        assert!(t["color"][color]["text"].is_string(), "{color}: {t}");
+    }
+    assert!(t["emPerSize"].is_number(), "{t}");
+    let font = t["font"].as_str().expect("font").to_string();
+    let resp = get(&font);
+    assert_eq!(resp.status().as_u16(), 200, "{font}");
+    assert_eq!(
+        resp.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok()),
+        Some("font/ttf")
+    );
+    let bytes = resp.bytes().expect("font bytes");
+    assert_eq!(&bytes[..4], &[0, 1, 0, 0], "a TrueType font");
+
+    // off is no reason to refuse: nothing runs and nothing leaves the PC
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "subtitles": { "enabled": false } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    let (base, cut) = a_ready_cut("look", 2.0, 6.0);
+    let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+    assert!(
+        c["look"]["wide"].is_null() && c["look"]["vertical"].is_null(),
+        "{c}"
+    );
+
+    let short = json!({ "position": "middle", "size": "l", "color": "box" });
+    let (status, v) = put_json(
+        &format!("/api/cuts/{cut}"),
+        &json!({ "look": { "vertical": short } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["cut"]["look"]["vertical"], short, "{v}");
+    assert!(v["cut"]["look"]["wide"].is_null(), "{v}");
+
+    // a frame left out keeps what it had
+    let wide = json!({ "position": "top", "size": "s", "color": "yellow" });
+    let (status, v) = put_json(
+        &format!("/api/cuts/{cut}"),
+        &json!({ "look": { "wide": wide } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+    assert_eq!(c["look"]["wide"], wide, "{c}");
+    assert_eq!(c["look"]["vertical"], short, "{c}");
+
+    // half a look, a step the table does not have, a frame nobody knows:
+    // refused, and nothing changes
+    for bad in [
+        json!({ "look": { "wide": { "position": "lower" } } }),
+        json!({ "look": { "wide": { "position": "bottom", "size": "m", "color": "white" } } }),
+        json!({ "look": { "wide": { "position": "lower", "size": "xl", "color": "white" } } }),
+        json!({ "look": { "square": null } }),
+        json!({ "look": "lower" }),
+        json!({ "look": { "vertical": null }, "title": 5 }),
+    ] {
+        let (status, v) = put_json(&format!("/api/cuts/{cut}"), &bad);
+        assert_eq!(status, 400, "{bad}: {v}");
+    }
+    let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+    assert_eq!(c["look"]["wide"], wide, "{c}");
+    assert_eq!(
+        c["look"]["vertical"], short,
+        "a refused request changes nothing: {c}"
+    );
+
+    // null gives a frame back to the settings, and both at once
+    let (status, v) = put_json(
+        &format!("/api/cuts/{cut}"),
+        &json!({ "look": { "vertical": null } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert!(v["cut"]["look"]["vertical"].is_null(), "{v}");
+    assert_eq!(v["cut"]["look"]["wide"], wide, "{v}");
+    let (status, v) = put_json(&format!("/api/cuts/{cut}"), &json!({ "look": null }));
+    assert_eq!(status, 200, "{v}");
+    assert!(v["cut"]["look"]["wide"].is_null(), "{v}");
+
+    // the settings: named steps, folded in; 3.11's numbers are refused
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "subtitles": { "look": { "vertical": { "size": "l" } } } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    let (_, s) = get_json("/api/settings");
+    assert_eq!(s["subtitles"]["look"]["vertical"]["size"], "l", "{s}");
+    assert_eq!(
+        s["subtitles"]["look"]["vertical"]["position"],
+        settings["subtitles"]["look"]["vertical"]["position"],
+        "a step left out keeps what it had: {s}"
+    );
+    assert!(s["subtitles"].get("style").is_none(), "{s}");
+    let (_, t) = get_json("/api/subtitles/looks");
+    assert_eq!(t["defaults"]["vertical"]["size"], "l", "{t}");
+    for bad in [
+        json!({ "subtitles": { "style": { "color": "#ffffff" } } }),
+        json!({ "subtitles": { "look": { "wide": { "size": "xl" } } } }),
+        json!({ "subtitles": { "look": { "wide": { "margin": 5 } } } }),
+    ] {
+        let (status, v) = put_json("/api/settings", &bad);
+        assert_eq!(status, 400, "{bad}: {v}");
+    }
+
+    // and a rendering burns in the cut's look: box in 9:16 takes the
+    // path with the padded box, and it has to come out
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "subtitles": { "enabled": true } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    let (status, v) = put_json(
+        &format!("/api/cuts/{cut}"),
+        &json!({ "look": { "vertical": short } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    let (status, v) = put_json(
+        &format!("/api/cuts/{cut}/subtitles"),
+        &json!({ "language": "en", "segments": [
+            { "start": 2.4, "end": 4.8, "text": "he is coming from the left" },
+        ] }),
+    );
+    assert_eq!(status, 200, "{v}");
+    let (status, v) = post_json(
+        &format!("/api/cuts/{cut}/render"),
+        &json!({ "target": "file", "after": "keep", "vertical": true }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(done["subtitles"], "burn", "{done}");
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}

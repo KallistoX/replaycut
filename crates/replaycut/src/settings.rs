@@ -146,71 +146,76 @@ pub struct SubtitleSettings {
     /// compromise: the card belongs to the game, and in the ffmpeg builds
     /// we have seen the filter runs on the CPU whatever this says.
     pub gpu: bool,
-    /// How burned-in subtitles look (since 3.11).
-    pub style: SubtitleStyle,
+    /// How burned-in subtitles look unless a cut says otherwise (since
+    /// 3.12; the numbers of 3.11's `style` are gone without a successor).
+    pub look: Looks,
 }
 
-/// The look of a burned-in subtitle. Four values and two placements - every
-/// further knob is an ASS field nobody goes looking for.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// The look of a subtitle in one frame (since 3.12): three named steps
+/// rather than numbers. The overlay in the browser is HTML and the
+/// rendering is libass, so the two can be close but never pixel-identical;
+/// a step is a promise both can keep. What each step means in pixels is
+/// the table in `subtitles.rs`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
-pub struct SubtitleStyle {
-    /// `#rrggbb` of the text.
+pub struct Look {
+    /// `lower`, `middle` or `top`.
+    pub position: String,
+    /// `s`, `m` or `l`.
+    pub size: String,
+    /// `white` (with outline and shadow), `box` (white on a dark box) or
+    /// `yellow` (with outline and shadow).
     pub color: String,
-    /// Width of the black outline, in pixels at 1080p; it scales with the
-    /// picture.
-    pub outline: f32,
-    /// A box behind the text instead of an outline.
-    #[serde(rename = "box")]
-    pub box_bg: bool,
-    /// 16:9, where nothing covers the picture.
-    pub wide: Placement,
-    /// 9:16, where the lower fifth belongs to Shorts and Reels.
-    pub vertical: Placement,
 }
 
-/// Size and distance from the bottom edge, both as a share of the picture
-/// height so that one setting fits every resolution.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub const LOOK_POSITIONS: [&str; 3] = ["lower", "middle", "top"];
+pub const LOOK_SIZES: [&str; 3] = ["s", "m", "l"];
+pub const LOOK_COLORS: [&str; 3] = ["white", "box", "yellow"];
+
+impl Default for Look {
+    /// The lower third, M, white - the look of 3.11, in both frames. In
+    /// 9:16 "lower" keeps the 22 % a Short needs for its title, channel and
+    /// buttons; the middle of the picture is where a shooter has its
+    /// crosshair.
+    fn default() -> Self {
+        Self {
+            position: "lower".into(),
+            size: "m".into(),
+            color: "white".into(),
+        }
+    }
+}
+
+impl Look {
+    /// Every step one the table has. `what` names the look in the message.
+    pub fn check(&self, what: &str) -> Result<()> {
+        anyhow::ensure!(
+            LOOK_POSITIONS.contains(&self.position.as_str()),
+            "{what}.position must be lower, middle or top"
+        );
+        anyhow::ensure!(
+            LOOK_SIZES.contains(&self.size.as_str()),
+            "{what}.size must be s, m or l"
+        );
+        anyhow::ensure!(
+            LOOK_COLORS.contains(&self.color.as_str()),
+            "{what}.color must be white, box or yellow"
+        );
+        Ok(())
+    }
+}
+
+/// A look for each frame: `wide` for 16:9, `vertical` for 9:16.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase", default)]
-pub struct Placement {
-    pub size: f32,
-    pub margin: f32,
+pub struct Looks {
+    pub wide: Look,
+    pub vertical: Look,
 }
 
-impl Default for SubtitleStyle {
-    fn default() -> Self {
-        Self {
-            color: "#ffffff".into(),
-            outline: 3.0,
-            box_bg: false,
-            wide: Placement {
-                size: 4.5,
-                margin: 5.0,
-            },
-            // A Short carries its title, its channel and its buttons over
-            // the lower fifth of the picture. 22 % keeps the line above all
-            // of it and still in the lower third, where a subtitle belongs.
-            vertical: Placement {
-                size: 3.5,
-                margin: 22.0,
-            },
-        }
-    }
-}
-
-impl Default for Placement {
-    fn default() -> Self {
-        Self {
-            size: 4.5,
-            margin: 5.0,
-        }
-    }
-}
-
-impl SubtitleStyle {
-    /// The placement a rendering uses.
-    pub fn placement(&self, vertical: bool) -> &Placement {
+impl Looks {
+    /// The look a rendering uses.
+    pub fn of(&self, vertical: bool) -> &Look {
         if vertical {
             &self.vertical
         } else {
@@ -218,21 +223,9 @@ impl SubtitleStyle {
         }
     }
 
-    /// Values a render can live with; a size of zero would make libass draw
-    /// nothing and a margin past the picture would push the line off it.
     pub fn check(&self) -> Result<()> {
-        for (what, p) in [("wide", &self.wide), ("vertical", &self.vertical)] {
-            if !(1.0..=20.0).contains(&p.size) {
-                anyhow::bail!("subtitles.style.{what}.size: use between 1 and 20 percent of the picture height");
-            }
-            if !(0.0..=80.0).contains(&p.margin) {
-                anyhow::bail!("subtitles.style.{what}.margin: use between 0 and 80 percent");
-            }
-        }
-        if !(0.0..=20.0).contains(&self.outline) {
-            anyhow::bail!("subtitles.style.outline: use between 0 and 20 pixels");
-        }
-        Ok(())
+        self.wide.check("subtitles.look.wide")?;
+        self.vertical.check("subtitles.look.vertical")
     }
 }
 
@@ -244,7 +237,7 @@ impl Default for SubtitleSettings {
             language: "auto".into(),
             source: "auto".into(),
             gpu: false,
-            style: SubtitleStyle::default(),
+            look: Looks::default(),
         }
     }
 }
@@ -274,53 +267,84 @@ mod subtitle_tests {
         );
     }
 
-    /// The settings page sends only the field somebody touched. A style is
+    /// The settings page sends only the field somebody touched. A look is
     /// a tree, so a patch has to be folded in: assigning it would reset
-    /// every value the page left out to its default, and the colour would
-    /// go white because the size changed.
+    /// every step the page left out to its default, and the colour would go
+    /// white because the size changed.
     #[test]
-    fn one_style_value_does_not_reset_the_others() {
+    fn one_look_step_does_not_reset_the_others() {
         let mut s = Settings::default();
-        s.subtitles.style.color = "#f2b632".into();
-        s.subtitles.style.outline = 5.0;
-        s.subtitles.style.vertical.margin = 30.0;
+        s.subtitles.look.wide.color = "yellow".into();
+        s.subtitles.look.vertical.position = "top".into();
 
         let patched = s
             .with_patch(&serde_json::json!({
-                "subtitles": { "style": { "wide": { "size": 6.0 } } }
+                "subtitles": { "look": { "wide": { "size": "l" } } }
             }))
-            .expect("a style patch is accepted");
+            .expect("a look patch is accepted");
 
-        assert_eq!(patched.subtitles.style.wide.size, 6.0, "what was sent");
-        assert_eq!(patched.subtitles.style.color, "#f2b632", "and nothing else");
-        assert_eq!(patched.subtitles.style.outline, 5.0);
-        assert_eq!(patched.subtitles.style.vertical.margin, 30.0);
-        assert_eq!(patched.subtitles.style.wide.margin, 5.0);
+        assert_eq!(patched.subtitles.look.wide.size, "l", "what was sent");
+        assert_eq!(
+            patched.subtitles.look.wide.color, "yellow",
+            "and nothing else"
+        );
+        assert_eq!(patched.subtitles.look.wide.position, "lower");
+        assert_eq!(patched.subtitles.look.vertical.position, "top");
 
-        // and a name nobody knows is refused rather than dropped
-        assert!(s
-            .with_patch(&serde_json::json!({ "subtitles": { "style": { "shadow": 2 } } }))
-            .is_err());
-        assert!(s
-            .with_patch(&serde_json::json!({ "subtitles": { "style": { "wide": { "top": 2 } } } }))
-            .is_err());
-        assert!(patch_accepts("subtitles.style.wide.size"));
-        assert!(patch_accepts("subtitles.style.color"));
-        assert!(!patch_accepts("subtitles.style.shadow"));
-        assert!(!patch_accepts("subtitles.style.color.red"));
+        // a name nobody knows is refused rather than dropped, and so is a
+        // step the table does not have
+        for bad in [
+            serde_json::json!({ "subtitles": { "look": { "square": {} } } }),
+            serde_json::json!({ "subtitles": { "look": { "wide": { "shadow": "m" } } } }),
+            serde_json::json!({ "subtitles": { "look": { "wide": { "size": "xl" } } } }),
+            serde_json::json!({ "subtitles": { "look": { "wide": { "position": "bottom" } } } }),
+        ] {
+            assert!(s.with_patch(&bad).is_err(), "{bad} is refused");
+        }
+        assert!(patch_accepts("subtitles.look.wide.size"));
+        assert!(patch_accepts("subtitles.look.vertical.color"));
+        assert!(!patch_accepts("subtitles.look.wide.margin"));
+        assert!(!patch_accepts("subtitles.look.square.size"));
     }
 
-    /// Values a render cannot work with are refused where they are set, not
-    /// where they would break.
+    /// 3.11's numbers are gone without a successor (decision 4 of 3.12): a
+    /// settings file that still has them reads, and they are dropped; a
+    /// request that names them is refused, because a page that sends them
+    /// would believe it had changed something.
     #[test]
-    fn a_style_that_would_draw_nothing_is_refused() {
-        let mut s = Settings::default();
-        assert!(s.subtitles.style.check().is_ok());
-        s.subtitles.style.wide.size = 0.0;
-        assert!(s.subtitles.style.check().is_err());
-        s.subtitles.style.wide.size = 4.5;
-        s.subtitles.style.vertical.margin = 95.0;
-        assert!(s.subtitles.style.check().is_err());
+    fn the_style_of_3_11_is_read_past_and_refused_when_sent() {
+        let old = serde_json::json!({
+            "subtitles": { "enabled": true, "style": { "color": "#f2b632", "wide": { "size": 6 } } }
+        });
+        let loaded: Settings = serde_json::from_value(old).expect("a 3.11 file still reads");
+        assert!(loaded.subtitles.enabled);
+        assert_eq!(loaded.subtitles.look, Looks::default());
+        assert!(!serde_json::to_value(&loaded).unwrap()["subtitles"]
+            .as_object()
+            .unwrap()
+            .contains_key("style"));
+
+        let err = Settings::default()
+            .with_patch(&serde_json::json!({ "subtitles": { "style": { "color": "#fff" } } }))
+            .expect_err("style is refused");
+        assert!(err.contains("subtitles.style"), "{err}");
+        assert!(!patch_accepts("subtitles.style.color"));
+    }
+
+    #[test]
+    fn a_new_installation_looks_like_3_11() {
+        let s = Settings::default();
+        for look in [&s.subtitles.look.wide, &s.subtitles.look.vertical] {
+            assert_eq!(
+                (
+                    look.position.as_str(),
+                    look.size.as_str(),
+                    look.color.as_str()
+                ),
+                ("lower", "m", "white")
+            );
+        }
+        assert!(s.subtitles.look.check().is_ok());
     }
 }
 
@@ -851,9 +875,9 @@ impl Settings {
 const OBS_KEYS: [&str; 3] = ["enabled", "host", "port"];
 const CLEANUP_KEYS: [&str; 2] = ["afterShare", "recycleDoneAfterDays"];
 const HTTPS_KEYS: [&str; 3] = ["enabled", "cert", "key"];
-const SUBTITLE_KEYS: [&str; 6] = ["enabled", "model", "language", "source", "gpu", "style"];
-const STYLE_KEYS: [&str; 5] = ["color", "outline", "box", "wide", "vertical"];
-const PLACEMENT_KEYS: [&str; 2] = ["size", "margin"];
+const SUBTITLE_KEYS: [&str; 6] = ["enabled", "model", "language", "source", "gpu", "look"];
+const LOOK_FRAMES: [&str; 2] = ["wide", "vertical"];
+const LOOK_KEYS: [&str; 3] = ["position", "size", "color"];
 
 /// Fold a patch into a value, object by object: a field the patch does not
 /// name keeps what it had.
@@ -871,23 +895,27 @@ fn merge(into: &mut serde_json::Value, patch: &serde_json::Value) {
     }
 }
 
-/// The names `subtitles.style` knows, at both of its levels.
-fn check_style(value: &serde_json::Value) -> std::result::Result<(), String> {
-    let Some(fields) = value.as_object() else {
-        return Err("subtitles.style must be an object".into());
+/// The names `subtitles.look` knows, at both of its levels. The steps
+/// themselves are checked once the patch is folded in.
+fn check_look(value: &serde_json::Value) -> std::result::Result<(), String> {
+    let Some(frames) = value.as_object() else {
+        return Err("subtitles.look must be an object".into());
     };
-    for (field, v) in fields {
-        if !STYLE_KEYS.contains(&field.as_str()) {
-            return Err(format!("unknown field: subtitles.style.{field}"));
+    for (frame, v) in frames {
+        if !LOOK_FRAMES.contains(&frame.as_str()) {
+            return Err(format!(
+                "unknown field: subtitles.look.{frame} (wide or vertical)"
+            ));
         }
-        if field == "wide" || field == "vertical" {
-            let Some(inner) = v.as_object() else {
-                return Err(format!("subtitles.style.{field} must be an object"));
-            };
-            for name in inner.keys() {
-                if !PLACEMENT_KEYS.contains(&name.as_str()) {
-                    return Err(format!("unknown field: subtitles.style.{field}.{name}"));
-                }
+        let Some(steps) = v.as_object() else {
+            return Err(format!("subtitles.look.{frame} must be an object"));
+        };
+        for (name, step) in steps {
+            if !LOOK_KEYS.contains(&name.as_str()) {
+                return Err(format!("unknown field: subtitles.look.{frame}.{name}"));
+            }
+            if !step.is_string() {
+                return Err(format!("subtitles.look.{frame}.{name} must be a string"));
             }
         }
     }
@@ -918,18 +946,16 @@ pub fn patch_accepts(path: &str) -> bool {
         "obs" => OBS_KEYS.contains(&second),
         "cleanup" => CLEANUP_KEYS.contains(&second),
         "subtitles" => {
-            if second != "style" {
+            if second != "look" {
                 return SUBTITLE_KEYS.contains(&second);
             }
-            match parts.next() {
-                None => true,
-                Some(third) if !STYLE_KEYS.contains(&third) => false,
-                Some(third) => match parts.next() {
-                    None => true,
-                    Some(fourth) => {
-                        (third == "wide" || third == "vertical") && PLACEMENT_KEYS.contains(&fourth)
-                    }
-                },
+            match (parts.next(), parts.next(), parts.next()) {
+                (None, _, _) => true,
+                (Some(frame), None, _) => LOOK_FRAMES.contains(&frame),
+                (Some(frame), Some(step), None) => {
+                    LOOK_FRAMES.contains(&frame) && LOOK_KEYS.contains(&step)
+                }
+                _ => false,
             }
         }
         "https" => HTTPS_KEYS.contains(&second),
@@ -1009,15 +1035,20 @@ impl Settings {
                     return Err("subtitles must be an object".into());
                 };
                 for (field, v) in fields {
+                    if field == "style" {
+                        return Err("subtitles.style is gone since 3.12: \
+                                    use subtitles.look with named steps"
+                            .into());
+                    }
                     if !SUBTITLE_KEYS.contains(&field.as_str()) {
                         return Err(format!("unknown field: subtitles.{field}"));
                     }
-                    // `style` is a tree, and the page sends only what
-                    // changed: assigning would reset every value it left
+                    // `look` is a tree, and the page sends only what
+                    // changed: assigning would reset every step it left
                     // out to its default.
-                    if field == "style" {
-                        check_style(v)?;
-                        merge(&mut current["subtitles"]["style"], v);
+                    if field == "look" {
+                        check_look(v)?;
+                        merge(&mut current["subtitles"]["look"], v);
                     } else {
                         current["subtitles"][field] = v.clone();
                     }
@@ -1189,7 +1220,7 @@ impl Settings {
             "cleanup.recycleDoneAfterDays must be 0 (never) or at most 3650"
         );
         self.https.check()?;
-        self.subtitles.style.check()?;
+        self.subtitles.look.check()?;
         anyhow::ensure!(
             SOURCE_VALUES.contains(&self.subtitles.source.as_str()),
             "subtitles.source must be auto, mic or mix"

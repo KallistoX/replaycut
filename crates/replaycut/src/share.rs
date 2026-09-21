@@ -259,6 +259,7 @@ fn cut_for(state: &AppState, job: &Job, title: &str) -> Result<Cut, ShareError> 
         created: util::now_local(),
         state: CUT_PENDING.to_string(),
         title: title.to_string(),
+        look: Default::default(),
     };
     state
         .db
@@ -1618,7 +1619,7 @@ async fn prepare_subtitles(
     let offset = job.start;
     if mode == crate::db::SUBS_BURN {
         let settings = state.settings();
-        let style = &settings.subtitles.style;
+        let look = cut.look.of(job.vertical, &settings.subtitles.look);
         // the picture the subtitles are drawn into: a vertical rendering is
         // always 1080x1920, everything else keeps the recording's frame
         // unless the target caps its height
@@ -1636,14 +1637,7 @@ async fn prepare_subtitles(
         };
         std::fs::write(
             dir.join(crate::subtitles::ASS_FILE),
-            crate::subtitles::to_ass(
-                &subs.segments,
-                offset,
-                style.placement(job.vertical),
-                style,
-                w,
-                h,
-            ),
+            crate::subtitles::to_ass(&subs.segments, offset, look, job.vertical, w, h),
         )?;
         std::fs::write(
             dir.join(crate::subtitles::FONT_FILE),

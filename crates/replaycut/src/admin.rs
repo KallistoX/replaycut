@@ -1690,6 +1690,27 @@ pub async fn test_webdav(
 
 // ----------------------------------------------------------- subtitles (3.11)
 
+/// `GET /api/subtitles/looks` (since 3.12): the steps a look is made of,
+/// with the numbers the rendering uses, so the page draws its overlay from
+/// the same table - and the defaults of the settings. Talks to nobody, and
+/// answers with the feature switched off as well: a look is appearance.
+pub async fn subtitle_looks(State(app): State<App>) -> Json<Value> {
+    Json(crate::subtitles::looks_document(
+        &app.settings().subtitles.look,
+    ))
+}
+
+/// `GET /fonts/subtitles.ttf` (since 3.12): the font a rendering burns in,
+/// for the overlay of the page. Open like the page itself - it is part of
+/// the build and says nothing about anybody.
+pub async fn subtitle_font() -> Response {
+    (
+        [(CONTENT_TYPE, "font/ttf"), (CACHE_CONTROL, "max-age=86400")],
+        crate::subtitles::FONT,
+    )
+        .into_response()
+}
+
 /// `GET /api/subtitles/models` (since 3.11): what can be used, what is on
 /// this PC, and what a download is doing. Reading this list talks to
 /// nobody: it is the models folder plus the catalogue in the build.

@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Result};
 
 use crate::db::Segment;
+use crate::settings::{Look, Looks, LOOK_COLORS, LOOK_POSITIONS, LOOK_SIZES};
 
 /// A model the UI offers. `sha256` is the file's own hash, which Hugging
 /// Face publishes as the LFS object id of that file; it is checked once
@@ -263,24 +264,196 @@ fn ass_time(seconds: f64) -> String {
     )
 }
 
-/// The subtitle file that is burned into a rendering.
-///
-/// Sizes and margins are shares of the picture height, so the same style
-/// fits a 720p clip and a 1440p one. `PlayResX`/`PlayResY` are the real
-/// output size, which is what libass scales everything against.
+// ------------------------------------------------------------ the look (since 3.12)
+//
+// How burned-in subtitles look, per named step. The overlay in the browser
+// is HTML and the rendering is libass, so they can be close but never
+// pixel-identical; steps are a promise both can keep. This table is the one
+// source of numbers: `to_ass` builds the ASS style from it, and
+// `GET /api/subtitles/looks` hands the same numbers to the page, which draws
+// its overlay from them. Measured against libass on two real recordings for
+// the spec of 3.12: the widths agree to a few pixels, the line breaks agree,
+// the height differs by about the outline.
+//
+// Every size is a share of the picture that is rendered: font size and
+// vertical margin of its height, the side margin of its width.
+
+/// The steps of one frame.
+struct FrameSteps {
+    /// Font size per `s`, `m`, `l`, in percent of the picture height.
+    size: [f64; 3],
+    /// ASS alignment and vertical margin (percent of the height) per
+    /// `lower`, `middle`, `top`.
+    position: [(u8, f64); 3],
+    /// Left and right margin, each, in percent of the picture width.
+    side: f64,
+}
+
+const WIDE: FrameSteps = FrameSteps {
+    size: [3.5, 4.5, 6.0],
+    position: [(2, 5.0), (5, 0.0), (8, 5.0)],
+    side: 2.0,
+};
+const VERTICAL: FrameSteps = FrameSteps {
+    size: [2.8, 3.5, 4.5],
+    // 22 % over the lower edge clears the title, the channel and the
+    // description of a Short; 12 % under the upper edge its search and
+    // camera buttons
+    position: [(2, 22.0), (5, 0.0), (8, 12.0)],
+    // the column of buttons on the right of a Short, and the same on the
+    // left so the line stays centred
+    side: 11.0,
+};
+/// Where a Short draws its own interface over a 9:16 picture, in percent
+/// (top, bottom, right), for the band the page lays over its preview.
+const SHORTS_UI: (f64, f64, f64) = (6.0, 21.0, 10.0);
+
+/// One colour: the text, and either an outline with a shadow or a box.
+struct ColourStep {
+    text: &'static str,
+    /// Outline width as a share of the font size (0 with a box).
+    outline: f64,
+    /// Shadow offset as a share of the font size (0 with a box).
+    shadow: f64,
+    /// Opacity of the box behind the text; 0 for none.
+    box_alpha: f64,
+    /// Padding of the box as a share of the font size.
+    pad: f64,
+}
+const COLOUR_STEPS: [ColourStep; 3] = [
+    ColourStep {
+        text: "#ffffff",
+        outline: 0.065,
+        shadow: 0.03,
+        box_alpha: 0.0,
+        pad: 0.0,
+    },
+    ColourStep {
+        text: "#ffffff",
+        outline: 0.0,
+        shadow: 0.0,
+        box_alpha: 0.75,
+        pad: 0.18,
+    },
+    ColourStep {
+        text: "#ffd400",
+        outline: 0.065,
+        shadow: 0.03,
+        box_alpha: 0.0,
+        pad: 0.0,
+    },
+];
+
+/// Inter Bold: units per em against ascender plus descender. libass sets
+/// its font size to ascender plus descender, CSS to the em, so this is the
+/// factor from one to the other: 2048 / (1984 + 494).
+const EM_PER_SIZE: f64 = 2048.0 / 2478.0;
+
+/// Where the page loads the font from (`GET /fonts/subtitles.ttf`).
+pub const FONT_URL: &str = "/fonts/subtitles.ttf";
+
+fn steps(vertical: bool) -> &'static FrameSteps {
+    if vertical {
+        &VERTICAL
+    } else {
+        &WIDE
+    }
+}
+
+/// A step's place in its list. A name the list does not have is the middle
+/// one, because a render that stops over a hand-edited settings file helps
+/// nobody; the API refuses such names before they get here.
+fn index_of(list: &[&str], name: &str) -> usize {
+    list.iter().position(|n| *n == name).unwrap_or(1)
+}
+
+/// The table as the page gets it from `GET /api/subtitles/looks`, with the
+/// defaults of the settings beside it.
+pub fn looks_document(defaults: &Looks) -> serde_json::Value {
+    use serde_json::json;
+    let frame = |f: &FrameSteps, vertical: bool| {
+        let mut v = json!({
+            "size": { "s": f.size[0], "m": f.size[1], "l": f.size[2] },
+            "position": {},
+            "side": f.side,
+        });
+        for (i, name) in LOOK_POSITIONS.iter().enumerate() {
+            let (align, margin) = f.position[i];
+            let align = match align {
+                2 => "bottom",
+                8 => "top",
+                _ => "middle",
+            };
+            v["position"][*name] = json!({ "align": align, "margin": margin });
+        }
+        if vertical {
+            v["shortsUi"] =
+                json!({ "top": SHORTS_UI.0, "bottom": SHORTS_UI.1, "right": SHORTS_UI.2 });
+        }
+        v
+    };
+    let mut colors = json!({});
+    for (i, name) in LOOK_COLORS.iter().enumerate() {
+        let c = &COLOUR_STEPS[i];
+        colors[*name] = if c.box_alpha > 0.0 {
+            json!({ "text": c.text, "box": c.box_alpha, "pad": c.pad })
+        } else {
+            json!({ "text": c.text, "outline": c.outline, "shadow": c.shadow })
+        };
+    }
+    json!({
+        "font": FONT_URL,
+        "emPerSize": (EM_PER_SIZE * 10_000.0).round() / 10_000.0,
+        "positions": LOOK_POSITIONS,
+        "sizes": LOOK_SIZES,
+        "colors": LOOK_COLORS,
+        "frames": { "wide": frame(&WIDE, false), "vertical": frame(&VERTICAL, true) },
+        "color": colors,
+        "defaults": defaults,
+    })
+}
+
+/// The subtitle file that is burned into a rendering, from the look table
+/// (since 3.12). `PlayResX`/`PlayResY` are the real output size, which is
+/// what libass scales everything against. The font size is not rounded to a
+/// whole pixel: libass takes fractions, and rounding cost up to 1 % of the
+/// width against the overlay the page draws from the same numbers.
 pub fn to_ass(
     segments: &[Segment],
     offset: f64,
-    style: &crate::settings::Placement,
-    common: &crate::settings::SubtitleStyle,
+    look: &Look,
+    vertical: bool,
     width: u32,
     height: u32,
 ) -> String {
-    let h = height.max(1) as f32;
-    let size = (h * style.size / 100.0).round().max(8.0) as u32;
-    let margin = (h * style.margin / 100.0).round() as u32;
-    // the outline is given at 1080p and scales with the picture
-    let outline = (common.outline * h / 1080.0 * 10.0).round() / 10.0;
+    let f = steps(vertical);
+    let (w, h) = (f64::from(width.max(1)), f64::from(height.max(1)));
+    // two decimals are plenty; libass takes them as they come
+    let fs = (h * f.size[index_of(&LOOK_SIZES, &look.size)]).round() / 100.0;
+    let (align, margin) = f.position[index_of(&LOOK_POSITIONS, &look.position)];
+    let margin_v = (h * margin / 100.0).round() as u32;
+    let side = (w * f.side / 100.0).round() as u32;
+    let c = &COLOUR_STEPS[index_of(&LOOK_COLORS, &look.color)];
+    let tenth = |x: f64| (x * 10.0).round() / 10.0;
+    let (border_style, outline, shadow, outline_colour, back_colour) = if c.box_alpha > 0.0 {
+        // a box is drawn in the outline colour and grows out of the margin
+        let alpha = ((1.0 - c.box_alpha) * 255.0).round() as u8;
+        (
+            3,
+            tenth(fs * c.pad),
+            0.0,
+            ass_colour("#000000", alpha),
+            ass_colour("#000000", alpha),
+        )
+    } else {
+        (
+            1,
+            tenth(fs * c.outline),
+            tenth(fs * c.shadow),
+            ass_colour("#000000", 0),
+            ass_colour("#000000", 0x80),
+        )
+    };
     let mut out = format!(
         "[Script Info]\n\
          ScriptType: v4.00+\n\
@@ -293,18 +466,11 @@ pub fn to_ass(
          Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, \
          BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, \
          BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n\
-         Style: rc,{FONT_NAME},{size},{},&H000000FF,{},{},-1,0,0,0,100,100,0,0,{},{outline},{},2,{},{},{margin},1\n\n\
+         Style: rc,{FONT_NAME},{fs},{},&H000000FF,{outline_colour},{back_colour},-1,0,0,0,100,100,0,0,\
+         {border_style},{outline},{shadow},{align},{side},{side},{margin_v},1\n\n\
          [Events]\n\
          Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
-        ass_colour(&common.color, 0),
-        ass_colour("#000000", 0),
-        // the box, when it is on, is the back colour at three quarters
-        ass_colour("#000000", if common.box_bg { 0x40 } else { 0x80 }),
-        if common.box_bg { 3 } else { 1 },
-        if common.box_bg { 0 } else { 1 },
-        // left and right margins keep a line off the edge of a phone
-        (h * 0.03).round() as u32,
-        (h * 0.03).round() as u32,
+        ass_colour(c.text, 0),
     );
     for s in segments {
         out.push_str(&format!(
@@ -689,6 +855,90 @@ mod tests {
         .is_err());
         let many: Vec<Segment> = (0..MAX_SEGMENTS + 1).map(|_| seg(6.0, 7.0, "x")).collect();
         assert!(check(&many, cut.0, cut.1).is_err());
+    }
+
+    fn style_line(look: (&str, &str, &str), vertical: bool, w: u32, h: u32) -> String {
+        let look = Look {
+            position: look.0.into(),
+            size: look.1.into(),
+            color: look.2.into(),
+        };
+        let ass = to_ass(&[seg(1.0, 2.0, "x")], 0.0, &look, vertical, w, h);
+        ass.lines()
+            .find(|l| l.starts_with("Style: rc,"))
+            .expect("a style line")
+            .to_string()
+    }
+
+    /// The ASS header per step and frame, as the spec of 3.12 measured it
+    /// against the overlay: the size unrounded, outline and shadow a share
+    /// of it, a box grown by its padding, the Short's margins in 9:16.
+    #[test]
+    fn every_step_writes_the_header_the_overlay_was_measured_against() {
+        // Name, Font, Size, Primary, Secondary, Outline, Back, Bold..Angle,
+        // BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV
+        assert_eq!(
+            style_line(("lower", "m", "white"), false, 1920, 1080),
+            "Style: rc,Inter,48.6,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,\
+             -1,0,0,0,100,100,0,0,1,3.2,1.5,2,38,38,54,1"
+        );
+        assert_eq!(
+            style_line(("lower", "m", "white"), true, 1080, 1920),
+            "Style: rc,Inter,67.2,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,\
+             -1,0,0,0,100,100,0,0,1,4.4,2,2,119,119,422,1",
+            "22 % over the edge and 11 % at the sides keep clear of a Short"
+        );
+        assert_eq!(
+            style_line(("lower", "l", "box"), false, 1920, 1080),
+            "Style: rc,Inter,64.8,&H00FFFFFF,&H000000FF,&H40000000,&H40000000,\
+             -1,0,0,0,100,100,0,0,3,11.7,0,2,38,38,54,1",
+            "a box is the outline colour at three quarters, padded"
+        );
+        assert_eq!(
+            style_line(("top", "s", "yellow"), false, 2560, 1440),
+            "Style: rc,Inter,50.4,&H0000D4FF,&H000000FF,&H00000000,&H80000000,\
+             -1,0,0,0,100,100,0,0,1,3.3,1.5,8,51,51,72,1"
+        );
+        let middle = style_line(("middle", "l", "white"), true, 1080, 1920);
+        assert!(middle.ends_with(",5,119,119,0,1"), "{middle}");
+        assert!(middle.starts_with("Style: rc,Inter,86.4,"), "{middle}");
+
+        // the frame and the times are untouched by the look
+        let ass = to_ass(
+            &[seg(120.5, 122.74, "hello")],
+            120.0,
+            &Look::default(),
+            false,
+            1920,
+            1080,
+        );
+        assert!(ass.contains("PlayResX: 1920\nPlayResY: 1080\n"));
+        assert!(ass.contains("Dialogue: 0,0:00:00.50,0:00:02.74,rc,,0,0,0,,hello\n"));
+    }
+
+    /// What the page draws its overlay from: every step of both frames,
+    /// and the settings' defaults beside them.
+    #[test]
+    fn the_table_the_page_gets_has_every_step() {
+        let doc = looks_document(&Looks::default());
+        for frame in ["wide", "vertical"] {
+            for s in LOOK_SIZES {
+                assert!(doc["frames"][frame]["size"][s].is_f64(), "{frame} {s}");
+            }
+            for p in LOOK_POSITIONS {
+                assert!(doc["frames"][frame]["position"][p]["margin"].is_f64());
+            }
+            assert_eq!(doc["defaults"][frame]["position"], "lower");
+        }
+        for c in LOOK_COLORS {
+            assert!(doc["color"][c]["text"].is_string(), "{c}");
+        }
+        assert_eq!(
+            doc["frames"]["vertical"]["position"]["lower"]["margin"],
+            22.0
+        );
+        assert_eq!(doc["emPerSize"], 0.8265);
+        assert_eq!(doc["font"], FONT_URL);
     }
 
     #[test]
