@@ -24,6 +24,16 @@ contract.
   get the language chosen on the card; with "Detect" the track goes
   untagged, and the card says so.
 
+- **Drag the edges of a line** (beta, #55). The selected line on the lane
+  has a handle at each end; dragging one shows the new start and end and
+  how far it moved, the picture follows the edge, and the line is kept when
+  you let go. It stops at its neighbours and the ends of the cut, and a
+  line stays at least 0.15 s long - as with `I`, `O` and `Alt`+arrows.
+- **Zoom the cut's timeline** 1× to 8× with − and + above it. The timeline
+  and the lines zoom together and scroll in a frame of their own that
+  keeps the playhead in view; the page itself stays as wide as it is. A
+  click between two lines puts the playhead there.
+
 ### Fixed
 
 - **A clip opens into its cuts when you click it.** The row of the loaded

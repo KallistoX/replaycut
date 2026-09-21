@@ -932,6 +932,13 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 .caption-lane .block.is-new { border-style: dashed; font-style: italic; color: var(--fg-faint); }
 .transcript .tline.is-new .txt { font-style: italic; color: var(--fg-faint); }
 #liAdd[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+/* the cut's timeline and its lines, zoomed together in a frame of their own
+   (since 3.13); the frame scrolls, the page does not */
+.wzoom { --zoom: 1; display: flex; flex-direction: column; gap: var(--space-3); overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.wzoom > #wtl, .wzoom > .caption-lane { flex: none; width: calc(var(--zoom) * 100%); }
+.caption-lane .tip { transform: translateX(-50%); pointer-events: none; }
+.caption-lane .handle { touch-action: none; }
+@media (pointer: coarse) { .caption-lane .handle { width: 24px; margin-left: -12px; } }
 /* the picture has nothing over its lower third while there are lines */
 #workshop.has-subs .wcontrols { position: static; margin-top: var(--space-1); background: none; padding: 0; }
 /* The split of F7 once the cut has lines: the picture beside the frame
@@ -1162,11 +1169,15 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           </div>
         </div>
       </div>
-      <div class="lane-head"><span class="section-title" id="wAxis">Cut</span><span class="muted sm">the axis is the cut</span></div>
+      <div class="lane-head"><span class="section-title" id="wAxis">Cut</span><span class="muted sm">the axis is the cut</span><span class="zoom" role="group" aria-label="Zoom the timeline of the cut"><button class="btn btn-sm" type="button" id="zoomOut" aria-label="Zoom out">−</button><span id="zoomVal">zoom 1×</span><button class="btn btn-sm" type="button" id="zoomIn" aria-label="Zoom in">+</button></span></div>
+      <!-- since 3.13: the cut's timeline and its lines zoom together and
+           scroll in a frame of their own, which follows the playhead -->
+      <div class="wzoom" id="wZoom">
       <div class="timeline" id="wtl" role="slider" aria-label="Position in the cut" tabindex="-1"><div class="ticks" id="wticks"></div><div class="playhead" id="wph"></div></div>
       <!-- since 3.12 (stage b): the lines of the cut on its axis, the one
            that is selected, and what can be done to it -->
       <div class="caption-lane" id="lane" role="listbox" aria-label="Subtitle lines of this cut" aria-orientation="horizontal" hidden></div>
+      </div>
       <div class="line-inspector" id="inspector" hidden>
         <div class="col">
           <div class="row"><span class="which" id="liWhich"></span><span class="times" id="liTimes"></span></div>
@@ -4102,14 +4113,40 @@ function wRenderTime() {
   const len = cutLen(wcut), at = wsrc && wsrc.url ? wAt() : 0;
   $('wTime').textContent = `${fmt(at)} / ${fmt(len)}`;
   $('wph').style.left = (len ? at / len * 100 : 0) + '%';
+  if (wsrc && wsrc.url) wZoomFollow();
   $('wPlay').innerHTML = `<svg class="icon icon-sm"><use href="#i-${wv.paused ? 'play' : 'pause'}"/></svg>`;
   $('wPlay').setAttribute('aria-label', wv.paused ? 'Play' : 'Pause');
   if (wsHas()) { wsFollow(); wsPlayhead(); wsTimingLine(); wsOverlay(); }
 }
+// -------- zoom (since 3.13): the cut's timeline and its lane, 1x to 8x
+const ZOOMS = [1, 2, 4, 8];
+let wZoomLevel = 1;
+function wSetZoom(z) {
+  const box = $('wZoom'), len = cutLen(wcut) || 1;
+  const at = wcut && wsrc && wsrc.url ? wAt() : 0;
+  // the playhead stays where it is on screen, the rest grows around it
+  const onScreen = at / len * box.scrollWidth - box.scrollLeft;
+  wZoomLevel = z;
+  box.style.setProperty('--zoom', String(z));
+  $('zoomVal').textContent = `zoom ${z}×`;
+  $('zoomOut').disabled = z === ZOOMS[0];
+  $('zoomIn').disabled = z === ZOOMS[ZOOMS.length - 1];
+  wTicks();
+  box.scrollLeft = Math.max(0, at / len * box.scrollWidth - onScreen);
+}
+/// While it plays, the frame keeps the playhead in view; a frame scrolled
+/// away by hand stays where it is until the playhead moves.
+function wZoomFollow() {
+  if (wZoomLevel === 1 || !wcut) return;
+  const box = $('wZoom'), len = cutLen(wcut) || 1, x = wAt() / len * box.scrollWidth;
+  if (x < box.scrollLeft + 24 || x > box.scrollLeft + box.clientWidth - 24) box.scrollLeft = x - box.clientWidth / 3;
+}
 function wTicks() {
   const box = $('wticks'); box.innerHTML = '';
   const d = cutLen(wcut); if (!d) return;
-  const step = d > 240 ? 60 : d > 90 ? 30 : d > 30 ? 10 : 5;
+  // the step follows what is in view, so a zoomed timeline gets finer labels
+  const vis = d / wZoomLevel;
+  const step = vis > 240 ? 60 : vis > 90 ? 30 : vis > 30 ? 10 : vis > 12 ? 5 : vis > 5 ? 2 : 1;
   // a cut is rarely a multiple of the step: each label sits where its time is
   for (let t = 0; t <= d + 0.001; t += step) {
     const s = document.createElement('span'); s.textContent = fmtShort(t);
@@ -4243,7 +4280,7 @@ function enterWorkshop(k) {
   wPick = W_DEFAULTS(); wTouched = new Set();
   $('editorBody').hidden = true; $('emptyEditor').hidden = true; $('workshop').hidden = false;
   history.replaceState(null, '', '#' + encodeURIComponent(cur.base) + '/' + k.id);
-  wTicks(); wLoadSource(); wRenderTime(); renderWorkshop();
+  wSetZoom(1); wLoadSource(); wRenderTime(); renderWorkshop();
   listKey = ''; renderList();
   if (!clips.some(c => c.base === cur.base)) wFetchCut();
 }
@@ -4784,6 +4821,9 @@ function wsDraw() {
   wsLane(); wsInspector(); wsTranscript(); wsBar(); wsOverlay(true); renderRenderRow();
 }
 function wsLane() {
+  // while an edge is dragged only it moves (wsDragPaint): rebuilding the
+  // lane would take the handle away that holds the pointer
+  if (wsDrag) return;
   const lane = $('lane'), k = wcut, len = cutLen(k) || 1;
   const key = JSON.stringify([k.id, k.start, k.end, ws.segs, ws.sel]);
   if (key === wsLaneKey) return;
@@ -4803,9 +4843,63 @@ function wsLane() {
     b.onclick = () => wsSelect(i, true);
     lane.appendChild(b);
   });
+  // the edges of the selected line, to drag (since 3.13); the keys do the
+  // same (Alt+arrows), so nothing here is drag-only
+  const sel = ws.segs[ws.sel];
+  if (sel) ['start', 'end'].forEach(edge => {
+    const h = document.createElement('span'); h.className = 'handle'; h.dataset.edge = edge; h.setAttribute('aria-hidden', 'true');
+    h.style.left = ((sel[edge] - k.start) / len * 100) + '%';
+    h.title = edge === 'start' ? 'Drag the start of this line - or Alt+←/→' : 'Drag the end of this line - or Alt+Shift+←/→';
+    h.addEventListener('pointerdown', e => wsDragStart(e, edge, h));
+    lane.appendChild(h);
+  });
   const ph = document.createElement('div'); ph.className = 'playhead'; lane.appendChild(ph);
   if (focused && lane.children[ws.sel]) lane.children[ws.sel].focus();
   wsPlayhead();
+}
+
+// -------- dragging an edge (since 3.13)
+let wsDrag = null;
+/// The edge follows the pointer within the room the line has (wsEdge:
+/// its neighbours, the cut, 150 ms of its own); the picture shows the frame
+/// at the edge. Kept 300 ms after the pointer lets go, like a key would.
+function wsDragStart(e, edge, h) {
+  const i = ws.sel, s = ws.segs[i];
+  if (!s || !wcut) return;
+  e.preventDefault(); e.stopPropagation();
+  wsDrag = { i, edge, from: s[edge] };
+  try { h.setPointerCapture(e.pointerId); } catch (err) { /* a pointer that is already gone */ }
+  h.classList.add('is-active');
+  wv.pause();
+  const move = ev => {
+    const r = $('lane').getBoundingClientRect(), len = cutLen(wcut) || 1;
+    const t = wcut.start + Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * len;
+    if (wsEdge(i, edge, t)) wsDragPaint();
+  };
+  const up = () => {
+    h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+    const moved = ws.segs[i] && ws.segs[i][edge] !== wsDrag.from;
+    wsDrag = null;
+    if (moved) wsChanged(300); else { wsLaneKey = ''; wsDraw(); }
+  };
+  h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+  wsDragPaint();
+}
+/// Only what moves: the block, its handles, the tip over it, the frame.
+function wsDragPaint() {
+  const d = wsDrag; if (!d) return;
+  const lane = $('lane'), k = wcut, len = cutLen(k) || 1, s = ws.segs[d.i];
+  const b = lane.querySelectorAll('.block')[d.i];
+  if (b) { b.style.left = ((s.start - k.start) / len * 100) + '%'; b.style.width = ((s.end - s.start) / len * 100) + '%'; }
+  lane.querySelectorAll('.handle').forEach(h => { h.style.left = ((s[h.dataset.edge] - k.start) / len * 100) + '%'; });
+  let tip = lane.querySelector('.tip');
+  if (!tip) { tip = document.createElement('span'); tip.className = 'tip'; lane.appendChild(tip); }
+  const delta = s[d.edge] - d.from;
+  tip.innerHTML = `${esc(fmt(s.start - k.start))} → ${esc(fmt(s.end - k.start))} <b>${delta >= 0 ? '+' : '−'}${Math.abs(delta).toFixed(1)}</b>`;
+  tip.style.left = ((s[d.edge] - k.start) / len * 100) + '%';
+  wSeek((d.edge === 'start' ? s.start : Math.max(s.start, s.end - 0.04)) - k.start);
+  wsInspector();
+  wsOverlay(true);
 }
 function wsPlayhead() {
   const ph = $('lane').querySelector('.playhead'); if (!ph || !wcut) return;
@@ -5204,6 +5298,14 @@ function initWorkshopSubs() {
       const b = $('lane').children[i]; if (b) b.focus();
     } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); text.focus(); }
   });
+  // a click on the lane between the lines puts the playhead there
+  $('lane').addEventListener('pointerdown', e => {
+    if (e.target !== $('lane') || !wcut) return;
+    const r = $('lane').getBoundingClientRect(), len = cutLen(wcut) || 1;
+    wSeek(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * len);
+  });
+  $('zoomIn').onclick = () => { const i = ZOOMS.indexOf(wZoomLevel); if (i < ZOOMS.length - 1) wSetZoom(ZOOMS[i + 1]); };
+  $('zoomOut').onclick = () => { const i = ZOOMS.indexOf(wZoomLevel); if (i > 0) wSetZoom(ZOOMS[i - 1]); };
   $('subAgain').onclick = () => wsTranscribe(true);
   $('subMore').onclick = e => { e.stopPropagation(); menuAt($('subMore'), wsMenu()); };
   const vp = $('wVpos');
