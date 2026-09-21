@@ -695,6 +695,138 @@ fn stamp(seconds: f64, decimal: char) -> String {
     format!("{h:02}:{m:02}:{s:02}{decimal}{rest:03}")
 }
 
+/// What an audio track is, as far as its name says (since 3.14). OBS
+/// writes the names of its tracks into the recording, and the stream copy
+/// that makes a cut file keeps them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Named {
+    Microphone,
+    VoiceChat,
+    /// the mix, the game, music - or a name that says two things at once
+    Other,
+    /// no name, or one that says nothing we know
+    Unknown,
+}
+
+fn named(title: &str) -> Named {
+    let t = title.to_lowercase();
+    let says = |words: &[&str]| words.iter().any(|w| t.contains(w));
+    let found: Vec<Named> = [
+        (says(&["mic", "mikro"]), Named::Microphone),
+        (
+            says(&["discord", "voice", "chat", "teamspeak", "mumble"]),
+            Named::VoiceChat,
+        ),
+        (
+            says(&["mix", "game", "spiel", "desktop", "music", "musik"]),
+            Named::Other,
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(hit, what)| hit.then_some(what))
+    .collect();
+    match found.as_slice() {
+        [] => Named::Unknown,
+        [one] => *one,
+        // "Game + Mic" is neither the microphone nor the voice chat alone
+        _ => Named::Other,
+    }
+}
+
+/// What a transcription reads (since 3.14): audio streams of the cut file,
+/// counted from 0 as ffmpeg counts them and mixed when there are two, and
+/// what that is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Speech {
+    pub streams: Vec<u32>,
+    /// `mic`, `mix` or `voices`: what is really read, for `job.track`.
+    pub source: &'static str,
+    /// Why these streams, for the log.
+    pub why: String,
+}
+
+/// Which streams carry the speech a transcription was asked for.
+///
+/// `names` are the titles of the audio streams in order, `""` where a
+/// stream has none; `obs_mic` is the stream OBS says is fed by a microphone
+/// alone, when OBS is there to ask. `auto` reads the mix: every voice,
+/// in-game voice included - measured on two squad recordings (2026-09-21),
+/// the microphone alone missed most of the lines. A track is found by its
+/// name first, because the file describes itself and OBS may have been set
+/// up differently since. What the names leave open is filled in as 3.11
+/// found the microphone - OBS, then the layout that `share::audio_args` has
+/// assumed since 1.4 (0 the mix, 1 the microphone, 2 the game, 3 the voice
+/// chat) - but never with a track whose name says it is something else.
+/// Whatever cannot be found is read from the mix, and `source` says so.
+pub fn speech(wanted: &str, names: &[String], obs_mic: Option<u32>) -> Speech {
+    use crate::db::{SOURCE_MIC, SOURCE_MIX, SOURCE_VOICES};
+    let mix = |why: &str| Speech {
+        streams: vec![0],
+        source: SOURCE_MIX,
+        why: why.to_string(),
+    };
+    if wanted == SOURCE_MIX {
+        return mix("asked for");
+    }
+    if wanted != SOURCE_MIC && wanted != SOURCE_VOICES {
+        return mix("automatic reads every track");
+    }
+    let tracks = crate::media::track_count(names);
+    if tracks < 2 {
+        return mix("one track only");
+    }
+    let layout = |stream: u32| (tracks >= 4).then_some(stream);
+    let Some((mic, mic_why)) = find(
+        names,
+        Named::Microphone,
+        &[(obs_mic, "OBS says so"), (layout(1), "the usual layout")],
+    ) else {
+        return mix("no separate microphone");
+    };
+    if wanted == SOURCE_MIC {
+        return Speech {
+            streams: vec![mic],
+            source: SOURCE_MIC,
+            why: mic_why.to_string(),
+        };
+    }
+    match find(names, Named::VoiceChat, &[(layout(3), "the usual layout")]) {
+        Some((voice, voice_why)) if voice != mic => Speech {
+            streams: vec![mic, voice],
+            source: SOURCE_VOICES,
+            why: if mic_why == voice_why {
+                mic_why.to_string()
+            } else {
+                format!("microphone: {mic_why}, voice chat: {voice_why}")
+            },
+        },
+        _ => mix("no voice chat track"),
+    }
+}
+
+/// Whether [`speech`] can read the microphone and the voice chat of a
+/// recording with these tracks: what `clip.voices` says.
+pub fn has_voices(names: &[String], obs_mic: Option<u32>) -> bool {
+    speech(crate::db::SOURCE_VOICES, names, obs_mic).source == crate::db::SOURCE_VOICES
+}
+
+/// The stream named for `role`, else the first fallback that exists and has
+/// no name that says otherwise.
+fn find(
+    names: &[String],
+    role: Named,
+    fallbacks: &[(Option<u32>, &'static str)],
+) -> Option<(u32, &'static str)> {
+    if let Some(i) = names.iter().position(|n| named(n) == role) {
+        return Some((i as u32, "its name"));
+    }
+    fallbacks.iter().find_map(|&(stream, why)| {
+        let s = stream?;
+        let name = names.get(s as usize)?;
+        (named(name) == Named::Unknown).then_some((s, why))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -958,5 +1090,108 @@ mod tests {
         assert!(!known_language("German"));
         assert!(!known_language("DE"));
         assert!(!known_language(""));
+    }
+
+    fn names(n: &[&str]) -> Vec<String> {
+        n.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// (asked for, track names, OBS's microphone stream) -> streams, source
+    #[test]
+    fn the_speech_is_read_from_the_tracks_their_names_say() {
+        let unnamed4 = names(&["", "", "", ""]);
+        let obs4 = names(&["Mix", "Mikrofon", "Game", "Discord"]);
+        type Case = (
+            &'static str,
+            Vec<String>,
+            Option<u32>,
+            &'static [u32],
+            &'static str,
+        );
+        let cases: &[Case] = &[
+            // automatic is the mix, whatever the recording has (since 3.14)
+            ("auto", obs4.clone(), Some(1), &[0], "mix"),
+            ("auto", unnamed4.clone(), None, &[0], "mix"),
+            ("mix", obs4.clone(), None, &[0], "mix"),
+            // one track is the mix, whatever was asked for
+            ("mic", names(&["Mikrofon"]), None, &[0], "mix"),
+            ("voices", names(&[]), None, &[0], "mix"),
+            // the microphone: its name, else OBS, else track 2 of four
+            ("mic", obs4.clone(), Some(2), &[1], "mic"),
+            ("mic", unnamed4.clone(), Some(2), &[2], "mic"),
+            ("mic", unnamed4.clone(), None, &[1], "mic"),
+            ("mic", names(&["", ""]), None, &[0], "mix"),
+            ("mic", names(&["", ""]), Some(1), &[1], "mic"),
+            // microphone + voice chat
+            ("voices", obs4.clone(), None, &[1, 3], "voices"),
+            ("voices", unnamed4.clone(), None, &[1, 3], "voices"),
+            (
+                "voices",
+                names(&["Mix", "Discord", "Game", "Mikrofon"]),
+                None,
+                &[3, 1],
+                "voices",
+            ),
+            (
+                "voices",
+                names(&["Mix", "Mic", "TeamSpeak"]),
+                None,
+                &[1, 2],
+                "voices",
+            ),
+            // the fourth track says it is something else: no voice chat
+            (
+                "voices",
+                names(&["Mix", "Microphone", "Game", "Music"]),
+                None,
+                &[0],
+                "mix",
+            ),
+            // three unnamed tracks have no voice chat in the usual layout
+            ("voices", names(&["", "", ""]), None, &[0], "mix"),
+            // a track that mixes two things is neither of them
+            (
+                "voices",
+                names(&["Mix", "Game + Mic", "Game", "Discord"]),
+                None,
+                &[0],
+                "mix",
+            ),
+            // OBS names the stream the voice chat is on: that is no microphone
+            ("voices", unnamed4.clone(), Some(3), &[0], "mix"),
+        ];
+        for (wanted, n, obs, streams, source) in cases {
+            let s = speech(wanted, n, *obs);
+            assert_eq!(
+                (s.streams.as_slice(), s.source),
+                (*streams, *source),
+                "{wanted} from {n:?} with OBS {obs:?}: {s:?}"
+            );
+            // the page offers the choice exactly where it reads both
+            if *wanted == "voices" {
+                assert_eq!(
+                    has_voices(n, *obs),
+                    *source == "voices",
+                    "{n:?} with OBS {obs:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_track_name_says_what_it_is() {
+        for (title, what) in [
+            ("Mikrofon", Named::Microphone),
+            ("Mic/Aux", Named::Microphone),
+            ("Discord", Named::VoiceChat),
+            ("Voice chat", Named::VoiceChat),
+            ("Mix", Named::Other),
+            ("Spiel", Named::Other),
+            ("In-game voice", Named::Other),
+            ("Track 2", Named::Unknown),
+            ("", Named::Unknown),
+        ] {
+            assert_eq!(named(title), what, "{title}");
+        }
     }
 }

@@ -1108,6 +1108,8 @@ pub const SUBS_MODES: [&str; 3] = [SUBS_NONE, SUBS_BURN, SUBS_TRACK];
 /// Which track a transcript was read from (since 3.11).
 pub const SOURCE_MIC: &str = "mic";
 pub const SOURCE_MIX: &str = "mix";
+/// The microphone and the voice chat mixed, without the game (since 3.14).
+pub const SOURCE_VOICES: &str = "voices";
 
 /// One subtitle: a range of the **recording** - the same time base as
 /// `cut.start`/`cut.end` and as the player in the browser - and its text.

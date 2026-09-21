@@ -100,6 +100,11 @@ pub struct Clip {
     // that cannot decode the recording's codec; null until it was made
     #[serde(rename = "previewH264", default)]
     pub preview_h264: Option<String>,
+    // since 3.14: a transcription can read the microphone and the voice
+    // chat without the game (`subtitles::has_voices`); false in a document
+    // the store kept from before
+    #[serde(default)]
+    pub voices: bool,
 }
 
 /// The only status a clip in the list has ever had; the store keeps it in

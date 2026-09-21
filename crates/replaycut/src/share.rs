@@ -1550,44 +1550,21 @@ async fn preview_pipeline(state: &AppState, id: &str, token: &CancellationToken)
 /// Bitrate of the playable preview in kbit/s.
 pub const PREVIEW_KBPS: u32 = 2000;
 
-/// `POST /api/jobs/<id>/post { target }` (since 2.7): post the link of a
-/// finished job to one notify integration now. Returns the status text.
-/// Which audio stream of a cut file carries the speech (since 3.11).
-///
-/// Not guessed from the number of tracks: replaycut already knows how they
-/// are laid out. OBS is asked first - the check behind the diagnostics line
-/// "Audio tracks" knows which OBS track is fed by a microphone and nothing
-/// else. If OBS is not connected, or its configuration has moved on since
-/// the recording, the layout that `audio_args` has asserted since 1.4
-/// applies: 0 the mix, 1 the microphone, 2 the game, 3 the voice chat.
-/// Anything less than four tracks is a simple recording, and that is the
-/// mix.
-async fn speech_stream(
-    state: &AppState,
-    file: &Path,
-    wanted: &str,
-) -> (u32, &'static str, &'static str) {
-    let tracks = state.runtime().media.audio_tracks(file).await;
-    if wanted == crate::db::SOURCE_MIX {
-        return (0, crate::db::SOURCE_MIX, "asked for");
-    }
-    if tracks < 2 {
-        return (0, crate::db::SOURCE_MIX, "one track only");
-    }
-    if let Some(facts) = state.obs.status().facts.as_ref() {
-        // OBS counts tracks from 1, ffmpeg counts streams from 0
-        if let Some(stream) = crate::obs_status::microphone_track(facts)
-            .map(|t| t.saturating_sub(1))
-            .filter(|s| *s < tracks)
-        {
-            return (stream, crate::db::SOURCE_MIC, "OBS says so");
-        }
-    }
-    if tracks >= 4 {
-        return (1, crate::db::SOURCE_MIC, "the usual layout");
-    }
-    // asked for the microphone, but this recording has no separate one
-    (0, crate::db::SOURCE_MIX, "no separate microphone")
+/// The audio stream OBS says is fed by a microphone and nothing else (since
+/// 3.11): the check behind the diagnostics line "Audio tracks". `None` when
+/// OBS is not connected or no track is a microphone alone.
+pub fn obs_microphone_stream(state: &AppState) -> Option<u32> {
+    let facts = state.obs.status().facts?;
+    // OBS counts tracks from 1, ffmpeg counts streams from 0
+    crate::obs_status::microphone_track(&facts).map(|t| t.saturating_sub(1))
+}
+
+/// Which audio streams of a cut file carry the speech (since 3.11; since
+/// 3.14 by the track names in the file first, and two of them for
+/// `voices`). The rules are `subtitles::speech`.
+async fn speech_streams(state: &AppState, file: &Path, wanted: &str) -> crate::subtitles::Speech {
+    let names = state.runtime().media.audio_names(file).await;
+    crate::subtitles::speech(wanted, &names, obs_microphone_stream(state))
 }
 
 /// A folder that goes when the rendering is over, whichever way it ends.
@@ -1765,7 +1742,8 @@ async fn transcribe_into(
     if crate::subtitles::ready(&state.data_dir, model).is_none() {
         bail!("the model {} is not in the models folder", model.name);
     }
-    let (stream, source, why) = speech_stream(state, input, want_track).await;
+    let speech = speech_streams(state, input, want_track).await;
+    let source = speech.source;
     state.with_job(id, |j| {
         j.stage = "transcribe".into();
         j.percent = 0;
@@ -1799,7 +1777,24 @@ async fn transcribe_into(
         u8::from(settings.subtitles.gpu),
     );
     let input_s = input.to_string_lossy().into_owned();
-    let map = format!("0:a:{stream}");
+    // One stream goes through the chain as it is. Two - the microphone and
+    // the voice chat - are summed first the way the audio mode
+    // `gamediscord` sums its two, without levelling: whisper normalises
+    // what it hears as a whole, and on two squad recordings the voice chat,
+    // 7-9 LU below the microphone, was read all the same (2026-09-21).
+    let (graph, map) = match speech.streams.as_slice() {
+        [a, b] => (
+            [
+                "-filter_complex".to_string(),
+                format!("[0:a:{a}][0:a:{b}]amix=inputs=2:normalize=0,{filter}[speech]"),
+            ],
+            "[speech]".to_string(),
+        ),
+        streams => (
+            ["-af".to_string(), filter],
+            format!("0:a:{}", streams.first().copied().unwrap_or(0)),
+        ),
+    };
     let args = [
         "-nostats",
         "-progress",
@@ -1810,17 +1805,26 @@ async fn transcribe_into(
         "-i",
         &input_s,
         "-vn",
+        &graph[0],
+        &graph[1],
         "-map",
         &map,
-        "-af",
-        &filter,
         "-f",
         "null",
         "-",
     ];
     tracing::info!(
-        "transcribe [{id}]: cut {} from track {stream} ({source}, {why}) with {} in '{}'",
+        "transcribe [{id}]: cut {} from track{} {} ({}, {}) with {} in '{}'",
         cut.id,
+        if speech.streams.len() == 1 { "" } else { "s" },
+        speech
+            .streams
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(" + "),
+        speech.source,
+        speech.why,
         model.name,
         language
     );
@@ -1868,6 +1872,8 @@ async fn transcribe_into(
     Ok(subs)
 }
 
+/// `POST /api/jobs/<id>/post { target }` (since 2.7): post the link of a
+/// finished job to one notify integration now. Returns the status text.
 pub async fn post_now(state: &AppState, id: &str, target: &str) -> Result<String, ShareError> {
     let job = state
         .job(id)

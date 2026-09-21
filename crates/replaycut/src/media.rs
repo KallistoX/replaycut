@@ -875,8 +875,11 @@ impl Media {
         }
     }
 
-    /// Number of audio streams; 1 when probing fails (as in 1.4).
-    pub async fn audio_tracks(&self, path: &Path) -> u32 {
+    /// The names of the audio streams, one per stream and `""` where a
+    /// stream has none (since 3.14: OBS writes the names of its tracks into
+    /// the recording). Empty when probing fails; the number of tracks is
+    /// then 1, as in 1.4 - see [`track_count`].
+    pub async fn audio_names(&self, path: &Path) -> Vec<String> {
         let p = path.to_string_lossy();
         match self
             .ffprobe(&[
@@ -885,20 +888,50 @@ impl Media {
                 "-select_streams",
                 "a",
                 "-show_entries",
-                "stream=index",
+                "stream=index:stream_tags=title",
                 "-of",
-                "csv=p=0",
+                "json",
                 &p,
             ])
             .await
         {
-            Ok(out) => out.lines().filter(|l| !l.trim().is_empty()).count().max(1) as u32,
+            Ok(out) => parse_audio_names(&out),
             Err(e) => {
                 tracing::warn!("cannot count audio tracks of {}: {e}", path.display());
-                1
+                Vec::new()
             }
         }
     }
+}
+
+/// Number of audio streams for a list of their names: 1 when probing
+/// found none (as in 1.4).
+pub fn track_count(names: &[String]) -> u32 {
+    names.len().max(1) as u32
+}
+
+/// ffprobe's JSON for the audio streams -> their titles, in order.
+fn parse_audio_names(json: &str) -> Vec<String> {
+    let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
+    v["streams"]
+        .as_array()
+        .map(|streams| {
+            streams
+                .iter()
+                .map(|s| {
+                    s["tags"]
+                        .as_object()
+                        .and_then(|tags| {
+                            tags.iter()
+                                .find(|(k, _)| k.eq_ignore_ascii_case("title"))
+                                .and_then(|(_, v)| v.as_str())
+                        })
+                        .unwrap_or("")
+                        .to_string()
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// One line of `replaycut bench`.
@@ -1096,5 +1129,21 @@ mod tests {
         assert_eq!(v.codec, "hevc");
         assert_eq!((v.width, v.height, v.fps), (0, 0, 0.0));
         assert_eq!(VideoInfo::parse(""), VideoInfo::default());
+    }
+
+    #[test]
+    fn audio_names_come_from_the_stream_titles() {
+        let json = r#"{ "programs": [], "streams": [
+            { "index": 1, "tags": { "title": "Mix" } },
+            { "index": 2, "tags": { "TITLE": "Mikrofon" } },
+            { "index": 3 },
+            { "index": 4, "tags": { "title": "Discord" } } ] }"#;
+        assert_eq!(
+            super::parse_audio_names(json),
+            ["Mix", "Mikrofon", "", "Discord"]
+        );
+        assert!(super::parse_audio_names("not json").is_empty());
+        assert_eq!(super::track_count(&[]), 1);
+        assert_eq!(super::track_count(&super::parse_audio_names(json)), 4);
     }
 }

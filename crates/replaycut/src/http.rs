@@ -1295,10 +1295,11 @@ fn transcribe_checks(
             format!("unknown language: {language}"),
         ));
     }
-    if !crate::settings::SOURCE_VALUES.contains(&source) {
+    // `voices` is chosen for a cut and is no setting (since 3.14)
+    if !crate::settings::SOURCE_VALUES.contains(&source) && source != crate::db::SOURCE_VOICES {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
-            format!("unknown source: {source} (auto, mic or mix)"),
+            format!("unknown source: {source} (auto, mic, mix or voices)"),
         ));
     }
     let m = crate::subtitles::model(model).ok_or_else(|| {

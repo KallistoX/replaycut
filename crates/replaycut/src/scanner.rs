@@ -178,7 +178,10 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
                     tracing::warn!("thumbnail for {base}: {e:#}");
                 }
             }
-            let tracks = runtime.media.audio_tracks(path).await;
+            let names = runtime.media.audio_names(path).await;
+            let tracks = crate::media::track_count(&names);
+            let voices =
+                crate::subtitles::has_voices(&names, crate::share::obs_microphone_stream(state));
             let video = runtime.media.video_info(path).await;
             let clip = Clip {
                 name: path
@@ -205,6 +208,7 @@ async fn scan(state: &Arc<AppState>) -> Result<Option<Duration>> {
                 width: video.width,
                 height: video.height,
                 fps: video.fps,
+                voices,
             };
             let wants_h264 = clip.preview_h264.is_none()
                 && state.settings().preview_h264 == "always"

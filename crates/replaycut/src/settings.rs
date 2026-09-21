@@ -445,7 +445,10 @@ mod subtitle_tests {
 
 /// What `subtitles.source` can be. The two track names are `db::SOURCE_MIC`
 /// and `db::SOURCE_MIX`; they are spelled out here because the UI
-/// invariants build this file on its own.
+/// invariants build this file on its own. `auto` reads the mix since 3.14.
+/// `voices` (`db::SOURCE_VOICES`) is chosen for a cut and is deliberately
+/// not a setting: 3.13 checks this file when it starts and would refuse to
+/// start after a way back.
 pub const SOURCE_AUTO: &str = "auto";
 pub const SOURCE_VALUES: [&str; 3] = [SOURCE_AUTO, "mic", "mix"];
 
