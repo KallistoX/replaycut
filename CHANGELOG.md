@@ -8,12 +8,17 @@ replaycut 2.0 is a rewrite of a PowerShell service (1.x) that was never
 published. The 2.0 line keeps that service's HTTP API; `docs/api.md` is the
 contract.
 
-## [Unreleased]
+## [3.12.0] - 2026-09-21
 
-**A player for cuts.** A cut you saved or shared can be opened again later,
-watched, named and rendered as often as you like - in the same player you
-cut in, while the quick way from the hotkey to the link stays exactly as
-it was.
+**The workshop.** A cut loads into the player - from its recording's row or
+its bar on the timeline, and also when the recording itself is gone - and
+renders as often as you like, while the quick way from the hotkey to the
+link stays exactly as it was. Subtitles (still beta) are shown over the
+picture as the rendering will draw them and are corrected while it plays,
+and a rendering carries its cut's subtitles unless you tell it otherwise.
+
+Still to come: dragging the edges of a line on the timeline, zoom, the
+layout for the phone, and the defaults of the quick share in Settings.
 
 ### Added
 
@@ -25,11 +30,11 @@ it was.
   title, a render row with Frame, Quality, Audio and Afterwards (a pill
   changes that one rendering only, so "As recorded" is still there for a
   cut), and every output of the cut with its link and its folder. Its
-  player is as big as the recording's, and with 9:16 chosen it shows the
+  player is as big as the recording's - once the cut has subtitles it
+  makes room for them beside it - and with 9:16 chosen it shows the
   window that will be rendered; the window's slider sits by the frame
   choice and is kept with the cut (`PUT /api/cuts/<id> { verticalPos }`).
-  While
-  the recording is there, its own preview plays the cut, so there is
+  While the recording is there, its own preview plays the cut, so there is
   nothing to wait for; a cut whose recording is gone - recycled, lost, or
   on a drive that is not connected - plays from a copy of its own, made
   in a few seconds the first time. Reloading the page keeps the cut
@@ -79,7 +84,7 @@ it was.
   does the same when `subtitles` is left out.
 - **Burned-in subtitles look like named steps now** (beta): position
   (lower third, middle, top), size (S, M, L) and colour (white, white on a
-  box, yellow), for 16:9 and 9:16 each, in Settings → Subtitles. A new
+  box, yellow), for 16:9 and 9:16 each, in Settings › Subtitles. A new
   installation starts with lower · M · white in both, which is how 3.11
   looked. The numbers of 3.11 - colour, outline, size and margin - are not
   carried over. In 9:16 the lower third stays clear of what a Short draws
