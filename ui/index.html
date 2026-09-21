@@ -457,26 +457,6 @@ details.limits summary { cursor: pointer; list-style: none; } details.limits sum
 .clip.is-done .name { color: var(--fg-muted); font-weight: normal; }
 .section-title { font-size: var(--text-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); }
 .section-title .n { color: var(--fg-faint); margin-left: var(--space-1); letter-spacing: 0; }
-.cuts-box { display: flex; flex-direction: column; gap: var(--space-2); }
-.cuts { display: flex; flex-direction: column; gap: var(--space-1); }
-.cutrow { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
-.cutrow.is-current { border-color: var(--accent); }
-.cutrow.is-missing > summary .range { color: var(--fg-muted); text-decoration: line-through; text-decoration-color: var(--fg-faint); }
-.cutrow > summary { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: var(--space-2); align-items: center; min-height: var(--touch); padding: var(--space-1) var(--space-2); list-style: none; cursor: pointer; user-select: none; }
-.cutrow > summary::-webkit-details-marker { display: none; }
-.cutrow > summary .chev { color: var(--fg-faint); transition: transform var(--duration); }
-.cutrow[open] > summary .chev { transform: rotate(90deg); }
-.cutrow .what { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); min-width: 0; }
-.cutrow .range { font-family: var(--font-mono); font-weight: var(--weight-strong); white-space: nowrap; }
-.cutrow .len { color: var(--fg-muted); font-size: var(--text-sm); white-space: nowrap; }
-.cutrow .where { display: flex; align-items: center; gap: var(--space-1); color: var(--fg-muted); font-size: var(--text-sm); flex-basis: 100%; min-width: 0; }
-.cutrow .where .icon-sm { color: var(--fg-faint); }
-.cutrow .where .ok { color: var(--ok); }
-.cutrow .where .warn { color: var(--warn); }
-.cutrow .act { display: flex; gap: var(--space-1); align-items: center; }
-.cutrow .body { border-top: 1px solid var(--line); padding: var(--space-1) var(--space-2) var(--space-2) 30px; display: flex; flex-direction: column; }
-.cutrow .body .note { color: var(--fg-muted); font-size: var(--text-sm); padding: var(--space-2) 0; }
-@media (min-width: 700px) { .cutrow .where { flex-basis: auto; margin-left: auto; } }
 /* subtitles on a cut (3.11, beta). On a phone every row is two lines: the
    times and the counter above, the text below at full width - side by side
    there is no room left to type in. */
@@ -927,6 +907,14 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   .sub-overlay { font-size: 13px; }
   .loaded-chip { min-height: var(--touch); }
 }
+/* since 3.12: the page's own glue around the workshop classes */
+.clip > .shelf { grid-column: 1 / -1; margin-top: var(--space-1); }
+#wPlayer { position: relative; }
+.wcontrols { position: absolute; left: var(--space-2); right: var(--space-2); bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-2); padding: 2px var(--space-2); background: color-mix(in srgb, var(--surface) 85%, transparent); border-radius: var(--radius-md); font-size: var(--text-sm); }
+.wcontrols .btn { color: var(--fg); }
+#wOv { z-index: 1; }
+#wOv .btn { margin-top: var(--space-1); }
+#rNote { margin-top: calc(-1 * var(--space-2)); }
 </style>
 </head>
 <body>
@@ -1041,8 +1029,10 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <button class="btn" id="bDone" title="Mark this clip done - the recording stays where it is (D)" aria-label="Mark done" disabled><svg class="icon"><use href="#i-check"/></svg><span class="lbl">Mark done</span></button>
         <button class="btn btn-danger" id="bDel" aria-label="Delete" disabled><svg class="icon"><use href="#i-trash"/></svg><span class="lbl">Delete</span></button>
       </div>
+      <!-- since 3.12: what the player holds, and which mode that is -->
+      <div class="loaded-chip" id="loaded" aria-live="polite" hidden></div>
       <div class="player-wrap"><video id="v" controls preload="auto" playsinline></video><div class="crop-ov" id="cropOv" hidden><i id="cropL"></i><b id="cropW"></b><i id="cropR"></i><span>9:16 window - drag the slider below</span></div>
-        <div class="gone-ov" id="goneOv" hidden><svg class="icon"><use href="#i-film"/></svg><b>Recording recycled</b><span>Its cuts are still here - render and publish them below.</span></div>
+        <div class="gone-ov" id="goneOv" hidden><svg class="icon"><use href="#i-film"/></svg><b>Recording recycled</b><span>Its cuts are still here - open one from the list, or press W.</span></div>
       </div>
       <div class="video-err" id="vidErr" hidden></div>
       <div class="row" id="h264Row" hidden><span class="muted sm" id="h264Text"></span><button class="btn btn-sm" id="bH264"><svg class="icon icon-sm"><use href="#i-play"/></svg> Make a playable preview</button></div>
@@ -1053,6 +1043,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="handle" id="hout"></div>
         <div class="playhead" id="ph"></div>
       </div>
+      <p class="muted sm" id="tlCutsNote" hidden>The bars on the timeline are the cuts already taken from this recording - click one to load it into the player.</p>
       <div class="row">
         <button class="btn" id="bIn"><svg class="icon"><use href="#i-cut-in"/></svg> Set in <kbd>I</kbd></button>
         <button class="btn" id="bOut"><svg class="icon"><use href="#i-cut-out"/></svg> Set out <kbd>O</kbd></button>
@@ -1076,10 +1067,55 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       </div>
       <span class="plan" id="planInfo"></span>
       <div class="vpos-row" id="vposRow" hidden><span>Window position</span><input type="range" id="vpos" min="0" max="100" value="50" title="Where the 9:16 window sits: left edge, centre, right edge"><span id="vposText">centre</span></div>
-      <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>I</kbd><kbd>O</kbd> marks</span><span><kbd>Enter</kbd> share</span></div>
-      <section class="cuts-box" id="cutsBox" hidden>
-        <div class="section-title">Cuts<span class="n" id="cutCount"></span></div>
-        <div class="cuts" id="cuts"></div>
+      <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>I</kbd><kbd>O</kbd> marks</span><span><kbd>Enter</kbd> share</span><span><kbd>W</kbd> newest cut</span></div>
+    </div>
+
+    <!-- since 3.12: the workshop - a cut in the player, its render row and
+         its outputs. A container of its own beside #editorBody, with its own
+         player and handlers, so the fast path stays the code it was. -->
+    <div id="workshop" class="stack-3" hidden>
+      <div class="banner" id="wOrphan" hidden><svg class="icon"><use href="#i-info"/></svg><span class="grow">The recording is gone. <b>This cut is the original now</b> - it plays, it renders, it keeps its outputs, and it can still be transcribed from any of its audio tracks.</span></div>
+      <div class="title-row">
+        <input class="input" id="cutTitle" maxlength="80" aria-label="Title of the cut">
+        <button class="btn" id="bRange" title="Load the recording with its marks on this cut's range"><svg class="icon"><use href="#i-cut-in"/></svg><span class="lbl">Show range on the recording</span></button>
+        <button class="btn btn-danger" id="bCutDel" hidden><svg class="icon"><use href="#i-trash"/></svg><span class="lbl">Delete cut</span></button>
+        <button class="btn btn-icon" id="bCutMore" aria-label="More for this cut" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+      </div>
+      <div class="loaded-chip is-cut" id="wLoaded" aria-live="polite"></div>
+      <div class="stage">
+        <div class="player-wrap" id="wPlayer">
+          <video id="wv" preload="auto" playsinline></video>
+          <div class="player-ov" id="wOv" hidden></div>
+          <div class="wcontrols"><button class="btn btn-ghost btn-icon btn-sm" id="wPlay" type="button" aria-label="Play"><svg class="icon icon-sm"><use href="#i-play"/></svg></button><span class="mono" id="wTime">0:00.0 / 0:00.0</span></div>
+        </div>
+        <div class="side">
+          <div class="row nowrap"><div class="seg" id="frameSeg" role="group" aria-label="Frame to render"><button type="button" data-frame="wide" aria-pressed="true">16:9</button><button type="button" data-frame="vertical" aria-pressed="false">9:16</button></div><span class="muted sm">the frame you will render</span></div>
+          <div class="card" id="wMissing" hidden>
+            <div class="card-head"><h3>What is missing</h3></div>
+            <div class="card-body stack">
+              <div class="row nowrap"><svg class="icon icon-sm"><use href="#i-cut-in"/></svg><span class="muted sm">The marking tools: there is nothing left to mark.</span></div>
+              <div class="row nowrap"><svg class="icon icon-sm"><use href="#i-cut-in"/></svg><span class="muted sm">"Show range on the recording", and the range cannot be put back.</span></div>
+              <div class="row nowrap"><svg class="icon icon-sm"><use href="#i-film"/></svg><span class="muted sm">"Full recording" in the list, greyed out.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="lane-head"><span class="section-title" id="wAxis">Cut</span><span class="muted sm">the axis is the cut</span></div>
+      <div class="timeline" id="wtl" role="slider" aria-label="Position in the cut" tabindex="-1"><div class="ticks" id="wticks"></div><div class="playhead" id="wph"></div></div>
+      <div class="render-row" id="renderRow">
+        <div class="split"><button class="btn btn-primary" id="bRender"><svg class="icon"><use href="#i-share"/></svg> Render <kbd>Enter</kbd></button><button class="btn btn-primary btn-icon" id="bRenderMenu" title="Render to another target" aria-haspopup="true">▾</button></div>
+        <button class="pill" type="button" id="rFrame" aria-haspopup="true"></button>
+        <button class="pill" type="button" id="rQuality" aria-haspopup="true"></button>
+        <button class="pill" type="button" id="rAudio" aria-haspopup="true"></button>
+        <button class="pill" type="button" id="rSubs" aria-haspopup="true" hidden></button>
+        <button class="pill" type="button" id="rAfter" aria-haspopup="true"></button>
+        <span class="plan" id="rPlan"></span>
+      </div>
+      <p class="muted sm" id="rNote" hidden></p>
+      <div id="wSubs"></div>
+      <section class="stack-2">
+        <div class="section-title">Outputs of this cut<span class="n" id="wOutCount"></span></div>
+        <div class="outputs" id="outputs"></div>
       </section>
     </div>
 
@@ -1312,7 +1348,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
     <div class="card is-collapsible" data-card="subtitles">
       <div class="card-head with-sum"><h2>Subtitles <span class="badge">Beta</span></h2><span class="card-sum" data-sum></span><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Subtitles"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
       <div class="card-body stack-3">
-        <div class="field"><label class="check"><input type="checkbox" data-f="subtitles.enabled"> Read the speech of a cut on this PC <button class="help" type="button" aria-expanded="false" aria-label="What subtitles do" data-help="Off, nothing here runs and nothing is downloaded. On, a cut can be transcribed with ffmpeg's whisper filter, corrected under the cut, and burned into a rendering or carried as a track. The speech never leaves this PC; only the model is fetched, once.">?</button></label><span class="hint" id="sSubsWhisper" hidden></span></div>
+        <div class="field"><label class="check"><input type="checkbox" data-f="subtitles.enabled"> Read the speech of a cut on this PC <button class="help" type="button" aria-expanded="false" aria-label="What subtitles do" data-help="Off, nothing here runs and nothing is downloaded. On, a cut can be transcribed with ffmpeg's whisper filter, corrected in the workshop of the cut, and burned into a rendering or carried as a track. The speech never leaves this PC; only the model is fetched, once.">?</button></label><span class="hint" id="sSubsWhisper" hidden></span></div>
         <!-- Three groups, each a heading close to what it heads (3.11.1, #56):
              the fields keep the stack-3 of every card, a group keeps a
              stack-4 from the next. -->
@@ -1630,8 +1666,9 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <tr><td><kbd>I</kbd> <kbd>O</kbd></td><td>Set the in or out mark at the playhead</td></tr>
       <tr><td><kbd>P</kbd></td><td>Play the selection</td></tr>
       <tr><td><kbd>D</kbd></td><td>Mark the clip done, or bring a done clip back</td></tr>
-      <tr><td><kbd>Enter</kbd></td><td>Share the selection; in the title field: save the title (empty takes the suggestion)</td></tr>
-      <tr><td><kbd>Esc</kbd></td><td>Close a dialog; in the title field: undo the edit</td></tr>
+      <tr><td><kbd>W</kbd></td><td>Load the newest cut of this recording into the workshop; in the workshop: the next cut</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Share the selection; in the workshop: render the cut; in the title field: save the title (empty takes the suggestion)</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Close a dialog or a menu; in the workshop: back to the full recording; in a title field: undo the edit</td></tr>
       <tr><td><kbd>Ctrl</kbd> + <kbd>S</kbd></td><td>On the settings page: save what you changed</td></tr>
       <tr><td><kbd>?</kbd></td><td>This list</td></tr>
     </table></div>
@@ -2892,6 +2929,8 @@ let updDismissed = '', failedDismissed = '', pendingNew = null, pollT = null;
 // since 3.0: the list has two sides, and the clips that were put away are
 // only fetched when someone asks for them (`?done=1`)
 let clipFilter = 'active', doneClips = [], counts = { active: 0, done: 0 }, cutsKey = '', afterChosen = false;
+// since 3.12: the address is read once, when the page comes up
+let hashTaken = false;
 let v, tl, sel, hin, hout, ph;
 
 const short = b => { const p = (cfg.displayName || '').trim(); return p && b && b.toLowerCase().startsWith(p.toLowerCase()) ? b.slice(p.length).trim() : (b || ''); };
@@ -2935,6 +2974,8 @@ const CUT_KEYS = {
   o: () => setOut(),
   p: () => playSel(),
   d: e => { if (!e.ctrlKey && !e.metaKey && !e.altKey) toggleDone(); },
+  // since 3.12: the newest cut of this recording into the workshop
+  w: e => { if (!e.ctrlKey && !e.metaKey && !e.altKey && cur.cuts && cur.cuts.length) openCut(cur, cur.cuts[cur.cuts.length - 1].id); },
   Enter: () => share(),
 };
 
@@ -2968,7 +3009,7 @@ function initClips() {
   document.addEventListener('keydown', e => {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || !$('modal').hidden) { if (e.key === 'Escape' && !$('modal').hidden) $('modal').hidden = true; return; }
     if (!cur) return;
-    const f = CUT_KEYS[keyName(e)];
+    const f = (mode === 'work' ? WORK_KEYS : CUT_KEYS)[keyName(e)];
     if (f) f(e);
   });
   $('bIn').onclick = setIn; $('bOut').onclick = setOut; $('bPrev').onclick = playSel;
@@ -2984,8 +3025,6 @@ function initClips() {
   $('bShareMenu').onclick = e => { e.stopPropagation(); buildShareMenu(); const m = $('shareMenu'); m.hidden = !m.hidden; if (!m.hidden) placeMenu(m, $('bShareMenu')); };
   document.addEventListener('click', e => {
     if (!$('shareMenu').hidden && !e.target.closest('.split')) $('shareMenu').hidden = true;
-    // the render menus of the cut cards (since 3.0)
-    document.querySelectorAll('#cuts .menu').forEach(m => { if (!m.hidden && !e.target.closest('.split')) m.hidden = true; });
   });
   // since 3.0: save the range without rendering, and what happens afterwards
   $('bCut').onclick = saveCut;
@@ -3051,6 +3090,7 @@ function initClips() {
   $('b-newclip-load').onclick = () => { if (pendingNew) { load(pendingNew); toast('New clip loaded'); } pendingNew = null; banner('b-newclip', false); };
   $('b-newclip-keep').onclick = () => { pendingNew = null; banner('b-newclip', false); };
 
+  initWorkshop();   // since 3.12
   poll();
 }
 
@@ -3143,6 +3183,9 @@ function h264Row(c) {
   $('h264Text').textContent = `This browser cannot play ${(c.codec || 'this codec').toUpperCase()} - a 720p H.264 copy takes a moment on the PC and is kept for this clip.`;
 }
 function load(c, keepSel) {
+  // since 3.12: loading a recording is cutting mode - unless it is the same
+  // clip loaded again under the cut in the workshop (its recording went)
+  if (mode === 'work' && !(keepSel && cur && cur.base === c.base)) leaveWorkshop();
   cur = c; $('vidErr').hidden = true; $('editorBody').hidden = false; $('emptyEditor').hidden = true;
   // since 3.0: the recording may be in the recycle bin while its cuts are not
   const gone = c.file === null;
@@ -3163,6 +3206,7 @@ function load(c, keepSel) {
   ticks(c.duration); buildAudio(); render(); cutsKey = ''; renderCuts();
 }
 function unload() {
+  leaveWorkshop();
   cur = null; if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
   $('title').value = ''; $('title').disabled = true; $('bDel').disabled = true; $('bDone').disabled = true; $('selInfo').textContent = ''; $('planInfo').textContent = '';
   sel.style.width = '0'; ph.style.left = '0';
@@ -3346,12 +3390,12 @@ function showResult(r) {
   }
   if (r.kind === 'cut') {
     head('check', `Cut saved - ${fmt(r.start)} - ${fmt(r.end)}, ${Number(r.seconds).toFixed(1)} s`);
-    note('Picture and every audio track, copied. Render it below whenever you like.');
+    note('Picture and every audio track, copied. It is on the timeline and in the list now - click it, or press W, to render it whenever you like.');
     return;
   }
   if (r.kind === 'transcribe') {
     head('check', 'Subtitles read');
-    note(`${fmt(r.start)} - ${fmt(r.end)} · from the ${r.track === 'mic' ? 'microphone' : 'mix'}. Open "Edit" under the cut to correct them.`);
+    note(`${fmt(r.start)} - ${fmt(r.end)} · from the ${r.track === 'mic' ? 'microphone' : 'mix'}. Open the cut (in the list, or with W) to correct them.`);
     return;
   }
   const postFailed = lastPostFailed(r.discord);
@@ -3602,6 +3646,7 @@ async function watchJob(id, mine) {
 }
 
 function showEmpty(kind) {
+  leaveWorkshop();
   $('editorBody').hidden = true; $('emptyEditor').hidden = false;
   const t = $('emptyText'), a = $('emptyActions');
   if (kind === 'setup') {
@@ -3801,83 +3846,51 @@ async function publishTo(id, target) {
 // A cut is the range as its own file: picture and every audio track, copied,
 // not re-encoded. Everything below it came out of it.
 function cutRange(c) { return `${fmt(c.start)} - ${fmt(c.end)}`; }
+// since 3.12: a cut has a title of its own; without one the recording's applies
+function cutName(k, c) { return k.title || (c && c.title) || short(k.base); }
+const cutLen = k => Math.max(0, k.end - k.start);
+
+// ------------------------------------------------------------ cuts on the page (3.0, reworked in 3.12)
+// A cut is the range as its own file: picture and every audio track, copied,
+// not re-encoded. Since 3.12 the cuts of a recording are no list at the foot
+// of the page: they sit on its timeline and in its row of the list, and a
+// click loads one into the workshop.
+let cutBarsKey = '';
 function renderCuts() {
-  const box = $('cutsBox'), list = $('cuts');
-  const cuts = (cur && cur.cuts) || [];
-  box.hidden = !cur || !cuts.length;
-  if (box.hidden) { cutsKey = ''; return; }
-  const open = new Set([...list.querySelectorAll('details[open]')].map(d => d.dataset.cut));
-  // Since 3.11: a correction that has not been saved holds the list still.
-  // Rebuilding it would throw away what is in the field under the cursor.
-  if (subsDirty()) return;
-  // the subtitle switch is part of the key: turning the beta off has to take
-  // the block away here and now, not at the next change of something else
-  const key = cur.base + (cfg.subtitles ? '+s' : '') + JSON.stringify(cuts.map(c => [c.id, c.state, subsKey(c),
-    (c.outputs || []).map(o => o.id + (o.discord || '')).join()])); if (key === cutsKey) return; cutsKey = key;
-  $('cutCount').textContent = cuts.length;
-  list.innerHTML = '';
-  cuts.forEach(c => {
-    const outs = c.outputs || [];
-    const here = Math.abs(c.start - tIn) < 0.05 && Math.abs(c.end - tOut) < 0.05;
-    const el = document.createElement('details');
-    el.className = 'cutrow' + (here ? ' is-current' : '') + (c.state === 'missing' ? ' is-missing' : '');
-    el.dataset.cut = c.id;
-    // stays open across a refresh, and a cut worth reading opens itself
-    if (open.has(c.id) || (open.size === 0 && here && outs.length)) el.open = true;
-    // where it went, or why it cannot go anywhere
-    // an output whose upload failed is only on this PC (3.10)
-    const targets = [...new Set(outs.map(o => o.target && o.target !== 'file' && !o.uploadError ? targetLabel(o.target) : 'on this PC'))];
-    const where = c.state === 'pending'
-      ? '<span class="spinner"></span>cutting …'
-      : c.state === 'missing'
-        ? `<svg class="icon icon-sm warn"><use href="#i-warning"/></svg>no cut file${targets.length ? ' · ' + esc(targets.join(', ')) : ''}`
-        : targets.length
-          ? `<svg class="icon icon-sm ok"><use href="#i-check"/></svg>${esc(targets.join(', '))}`
-          : 'saved, not rendered';
-    el.innerHTML = `<summary>
-        <svg class="icon chev"><use href="#i-chevron"/></svg>
-        <div class="what"><span class="range">${cutRange(c)}</span><span class="len">${fmt(c.end - c.start)} · ${esc(audioLabel(c.audio))}${c.vertical ? ' · 9:16' : ''}</span><span class="where">${where}</span></div>
-        <div class="act"></div>
-      </summary>`;
-    const act = el.querySelector('.act');
-    const ready = c.state === 'ready';
-    const primary = document.createElement('button');
-    primary.className = 'btn btn-sm';
-    if (ready) {
-      primary.textContent = 'Render';
-      primary.title = 'Encode this cut and send it to the default target';
-      primary.onclick = e => { e.preventDefault(); renderCut(c, ''); };
-    } else {
-      primary.innerHTML = '<svg class="icon icon-sm"><use href="#i-cut-in"/></svg> Marks';
-      primary.title = 'Put the marks of the timeline on this range';
-      // without the recording there is no timeline to put them on, and
-      // everything they feed is disabled
-      primary.disabled = c.state === 'pending' || (cur && cur.file === null);
-      primary.onclick = e => { e.preventDefault(); putMarks(c); };
-    }
-    act.appendChild(primary);
-    act.appendChild(moreButton(() => cutMenu(c, ready)));
-    // the outputs, and a word when there are none
-    const body = document.createElement('div'); body.className = 'body';
-    if (c.state === 'missing') {
-      const note = document.createElement('div'); note.className = 'note';
-      note.textContent = cur && cur.file !== null
-        ? 'From before 3.0, so there is no cut file. "Marks" puts its range back on the timeline; share it from there and the cut is made.'
-        : 'From before 3.0: no cut file, and the recording is gone too. What it produced is still here.';
-      body.appendChild(note);
-    } else if (!outs.length) {
-      const note = document.createElement('div'); note.className = 'note';
-      note.textContent = 'Saved, not rendered yet.';
-      body.appendChild(note);
-    }
-    renderSubs(c, body);
-    outs.forEach(o => body.appendChild(outputRow(o, 'clip')));
-    // a cut being made says so with the spinner in its row; the bar that
-    // stood under it had no style and sat in the closed row (#46)
-    if (c.state !== 'pending') el.appendChild(body);
-    list.appendChild(el);
+  renderLoaded();
+  renderCutBars();
+  if (mode === 'work') refreshWorkshop();
+}
+/// The chip over the player in cutting mode: what is loaded.
+function renderLoaded() {
+  const el = $('loaded');
+  if (!cur || cur.file === null) { el.hidden = true; return; }
+  el.hidden = false;
+  const bits = [fmt(cur.duration), cur.codec, cur.width && cur.height ? `${cur.width}×${cur.height}` : '', cur.fps ? `${Math.round(cur.fps)} fps` : '',
+    `${cur.tracks || 1} track${(cur.tracks || 1) === 1 ? '' : 's'}`, cur.size ? fmtSize(cur.size) : ''].filter(Boolean);
+  el.innerHTML = `<svg class="icon"><use href="#i-film"/></svg><b>Full recording</b><span class="meta">${esc(bits.join(' · '))}</span><span class="mode">Cutting mode</span>`;
+}
+/// The ranges of the cuts already taken, as quiet bars on the recording's
+/// timeline (from the design's concept C1). A click loads that cut.
+function renderCutBars() {
+  const cuts = cur && cur.file !== null && cur.duration ? (cur.cuts || []) : [];
+  const key = cur ? cur.base + JSON.stringify(cuts.map(k => [k.id, k.start, k.end, cutName(k, cur)])) + cur.duration : '';
+  if (key === cutBarsKey) return; cutBarsKey = key;
+  tl.querySelectorAll('.cutbar').forEach(b => b.remove());
+  $('tlCutsNote').hidden = !cuts.length;
+  cuts.forEach(k => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'cutbar';
+    b.style.left = (k.start / cur.duration * 100) + '%';
+    b.style.width = Math.max(0.5, cutLen(k) / cur.duration * 100) + '%';
+    const name = cutName(k, cur);
+    b.title = `Load the cut "${name}" (${cutRange(k)})`;
+    b.setAttribute('aria-label', `Load the cut ${name}, ${cutRange(k)}`);
+    const label = document.createElement('span'); label.textContent = name; b.appendChild(label);
+    // a bar is no place to seek or drag: the timeline under it must not see the press
+    b.addEventListener('pointerdown', e => e.stopPropagation());
+    b.onclick = e => { e.stopPropagation(); openCut(cur, k.id); };
+    tl.appendChild(b);
   });
-  growSubs(list);
 }
 function putMarks(c) {
   if (!cur) return;
@@ -3885,38 +3898,437 @@ function putMarks(c) {
   if (v && v.getAttribute('src')) seek(tIn);
   render(); cutsKey = ''; renderCuts();
 }
-function cutMenu(c, ready) {
-  const items = [{ heading: `Cut · ${cutRange(c)}` }];
-  if (ready) {
-    items.push({ heading: 'Render to' });
-    const def = defaultTarget();
-    storageTargets().forEach(t => items.push({ label: t.label, icon: 'i-share', note: t.id === def ? 'default' : '', onclick: () => renderCut(c, t.id) }));
-    items.push({ label: 'File only', icon: 'i-folder', note: def === 'file' ? 'default' : '', onclick: () => renderCut(c, 'file') });
-    items.push('hr');
-  } else if (c.state === 'missing') {
-    items.push({ label: 'Render', icon: 'i-share', disabled: true, title: 'This cut has no file - put its range on the timeline and share it again' });
+
+// ------------------------------------------------------------ the workshop (3.12)
+// A cut in a player of its own, with a render row and its outputs. The
+// recording stays loaded underneath (`cur`, `#v`, the marks): Esc goes back
+// to it as it was. What plays is chosen by `sourceFor`, and the one place
+// that turns the player's time into the recording's and the cut's is `src`.
+let mode = 'cut', wcut = null, wsrc = null, wv = null, wtl = null, wAsked = new Set(), wBroken = new Set(), wKey = '', wOutKey = '';
+const W_DEFAULTS = () => ({ frame: wcut && wcut.vertical ? 'vertical' : 'wide', quality: 'h264', audio: wAudioDefault(), after: 'keep', subs: wSubsDefault() });
+let wPick = {};
+function wAudioDefault() { const a = wcut && wcut.audio; const m = cfg.audio.find(x => x.id === a); return m && (cur.tracks || 1) >= m.need ? a : 'mix'; }
+function wSubsDefault() { const m = wcut && wcut.subtitles && wcut.subtitles.mode; return ['none', 'burn', 'track'].includes(m) ? m : 'none'; }
+
+/// What the player plays for a cut, and how its time maps onto the
+/// recording: `rec = media + offset`. While the recording is there its own
+/// preview covers the cut (no copy, no waiting); without it, the cut's own
+/// copy. An iPhone and AV1 take the H.264 copy - of the recording if there
+/// is one, else of the cut, which is shorter to make.
+function sourceFor(c, k) {
+  const plays = browserPlays(c.codec) !== false;
+  const recording = c.file !== null && !wBroken.has(c.base);
+  if (recording && plays) return { url: c.preview, offset: 0 };
+  if (recording && c.previewH264) return { url: c.previewH264, offset: 0 };
+  const offset = k.actualStart != null ? k.actualStart : k.start;
+  if (plays && k.preview) return { url: k.preview, offset };
+  if (k.previewH264) return { url: k.previewH264, offset };
+  if (k.state !== 'ready') return { none: 'nofile', offset };
+  if (plays) return { need: 'remux', offset };
+  return { need: 'h264', offset };
+}
+const wRec = () => wv.currentTime + (wsrc ? wsrc.offset : 0);
+const wAt = () => Math.max(0, Math.min(cutLen(wcut), wRec() - wcut.start));
+function wSeek(t) {
+  if (!wcut || !wsrc || !wsrc.url) return;
+  const at = Math.max(0, Math.min(cutLen(wcut), t));
+  wv.currentTime = wcut.start + at - wsrc.offset;
+  wRenderTime();
+}
+function wToggle() {
+  if (!wsrc || !wsrc.url) return;
+  if (!wv.paused) { wv.pause(); return; }
+  if (wAt() >= cutLen(wcut) - 0.05) wSeek(0);
+  wv.play().catch(() => {});
+}
+function wRenderTime() {
+  if (!wcut) return;
+  const len = cutLen(wcut), at = wsrc && wsrc.url ? wAt() : 0;
+  $('wTime').textContent = `${fmt(at)} / ${fmt(len)}`;
+  $('wph').style.left = (len ? at / len * 100 : 0) + '%';
+  $('wPlay').innerHTML = `<svg class="icon icon-sm"><use href="#i-${wv.paused ? 'play' : 'pause'}"/></svg>`;
+  $('wPlay').setAttribute('aria-label', wv.paused ? 'Play' : 'Pause');
+}
+function wTicks() {
+  const box = $('wticks'); box.innerHTML = '';
+  const d = cutLen(wcut); if (!d) return;
+  const step = d > 240 ? 60 : d > 90 ? 30 : d > 30 ? 10 : 5;
+  // a cut is rarely a multiple of the step: each label sits where its time is
+  for (let t = 0; t <= d + 0.001; t += step) {
+    const s = document.createElement('span'); s.textContent = fmtShort(t);
+    s.style.cssText = `position:absolute;left:${t / d * 100}%;bottom:2px;transform:translateX(${t === 0 ? '0' : t >= d - 0.001 ? '-100%' : '-50%'})`;
+    box.appendChild(s);
   }
-  items.push({ label: 'Put marks on the timeline', icon: 'i-cut-in', onclick: () => putMarks(c) });
-  items.push('hr');
-  items.push({ label: (c.outputs || []).length ? 'Delete the cut and its outputs' : 'Delete the cut', icon: 'i-trash', danger: true, onclick: () => deleteCut(c) });
+}
+
+/// The player's state: a picture, or why there is none and what helps.
+function wOverlay(kind) {
+  const ov = $('wOv');
+  ov.className = 'player-ov';
+  if (!kind) { ov.hidden = true; ov.innerHTML = ''; return; }
+  ov.hidden = false;
+  const codec = esc((cur.codec || 'this codec').toUpperCase());
+  if (kind === 'preparing') {
+    ov.innerHTML = `<span class="spinner"></span><b>Preparing this cut for playback …</b><span class="muted">The cut is saved in the recording's codec. The PC is making a copy the browser can play - a few seconds, once per cut.</span>`;
+  } else if (kind === 'codec' || kind === 'making') {
+    ov.classList.add('is-blocked');
+    const mb = Math.max(1, Math.round(cutLen(wcut) * (PREVIEW_KBPS_UI + 128) / 8 / 1024));
+    ov.innerHTML = `<svg class="icon"><use href="#i-warning"/></svg><b>This browser cannot play ${codec}</b><span class="muted">Make a playable preview - an H.264 copy next to the cut. It stays until you delete the cut.</span>`
+      + (kind === 'making' ? `<span class="muted"><span class="spinner"></span> Making the playable preview …</span>` : `<button class="btn" id="wH264"><svg class="icon icon-sm"><use href="#i-play"/></svg> Make a playable preview</button><span class="faint sm">about ${mb} MB</span>`);
+    const b = $('wH264'); if (b) b.onclick = () => wMakeH264();
+  } else if (kind === 'nofile') {
+    ov.classList.add('is-blocked');
+    ov.innerHTML = `<svg class="icon"><use href="#i-warning"/></svg><b>No cut file</b><span class="muted">${cur.file !== null ? 'From before 3.0, so there is no cut file. "Show range on the recording" puts its range back on the timeline; share it from there and the cut is made.' : 'From before 3.0: no cut file, and the recording is gone too. What it produced is still here.'}</span>`;
+  }
+}
+const PREVIEW_KBPS_UI = 2000;
+async function wMakeH264() {
+  const k = wcut; if (!k) return;
+  wAsked.add(k.id + '/h264');
+  wOverlay('making');
+  try {
+    const r = await api('/api/cuts/' + encodeURIComponent(k.id) + '/preview', jsonOpts('POST', { h264: true }), { retries: 0 });
+    if (r.ok) { if (r.position > 0) toast(`Queued - ${r.position} job${r.position === 1 ? '' : 's'} ahead`); followJob(r); }
+    else if (r.job) followJob(r);
+    else { toast(r.error, 'err'); wAsked.delete(k.id + '/h264'); wOverlay('codec'); }
+  } catch (e) { toast(e.message, 'err'); wAsked.delete(k.id + '/h264'); wOverlay('codec'); }
+}
+/// Point the workshop's player at what `sourceFor` says, asking the PC for a
+/// copy when there is none yet. Keeps the position when the source changes
+/// under a cut that stays (the recording went, a copy arrived).
+function wLoadSource() {
+  const k = wcut, next = sourceFor(cur, k);
+  const same = wsrc && next.url && wsrc.url === next.url;
+  if (same) { wsrc = next; return; }
+  const at = wsrc && wsrc.url ? wAt() : 0;
+  wsrc = next;
+  if (next.url) {
+    wOverlay(null);
+    wv.src = next.url; wv.load();
+    wv.addEventListener('loadedmetadata', () => { if (wcut === k) wSeek(at); }, { once: true });
+    return;
+  }
+  wv.pause(); wv.removeAttribute('src'); wv.load();
+  if (next.none) { wOverlay(next.none); return; }
+  if (next.need === 'remux') {
+    wOverlay('preparing');
+    if (!wAsked.has(k.id)) {
+      wAsked.add(k.id);
+      api('/api/cuts/' + encodeURIComponent(k.id) + '/preview', jsonOpts('POST', {}), { retries: 0 })
+        .then(r => { if (!r.ok && !/exists|being made/.test(r.error || '')) { toast(r.error, 'err'); } poll.now(); })
+        .catch(e => toast(e.message, 'err'));
+    }
+    return;
+  }
+  // an H.264 copy is being made: say so; with "always" it is asked for without a click
+  const making = (stateDoc && [stateDoc.job].concat(stateDoc.queue || [])).some(id => queueJobs[id] && queueJobs[id].kind === 'preview' && queueJobs[id].cut === k.id);
+  if (making || wAsked.has(k.id + '/h264')) { wOverlay('making'); return; }
+  if (cfg.previewH264 === 'always') { wMakeH264(); return; }
+  wOverlay('codec');
+}
+
+/// Load a cut of this clip into the workshop - from the shelf, a bar on
+/// the timeline, `W` or the address. The recording is loaded underneath
+/// first, as it would be from its row.
+function openCut(c, id) {
+  if (!c) return;
+  if (!cur || cur.base !== c.base) load(c);
+  const k = (cur.cuts || []).find(x => x.id === id);
+  if (!k) return;
+  if (mode === 'work' && wcut && wcut.id === k.id) return;
+  enterWorkshop(k);
+  if (!matchMedia('(min-width: 1000px)').matches) $('cliplist').open = false;
+}
+/// The shelf under the open row of the list (F1, F4b): the full recording
+/// and each cut as a card; a click loads it. Only the loaded clip has one,
+/// so the list never grows by a block per recording.
+function shelfOf(c, gone) {
+  const shelf = document.createElement('div'); shelf.className = 'shelf';
+  shelf.setAttribute('role', 'group'); shelf.setAttribute('aria-label', `Load from ${c.title || short(c.base)}`);
+  shelf.innerHTML = '<span class="section-title">Load</span>';
+  const card = (cls, inner, onclick, current) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = ('cut-card ' + cls).trim(); b.innerHTML = inner;
+    if (current) b.setAttribute('aria-current', 'true');
+    b.onclick = ev => { ev.stopPropagation(); onclick(); if (!matchMedia('(min-width: 1000px)').matches) $('cliplist').open = false; };
+    shelf.appendChild(b); return b;
+  };
+  const inCut = mode === 'cut';
+  card('is-whole' + (inCut && !gone ? ' is-loaded' : '') + (gone ? ' is-unavailable' : ''),
+    `<svg class="icon"><use href="#i-film"/></svg><span class="what"><span class="name">Full recording</span><span class="meta">${gone ? 'recycled' : `${esc(fmt(c.duration))} · ${inCut ? 'loaded' : 'Esc'}`}</span></span>`,
+    () => { if (!gone) leaveWorkshop(); }, inCut && !gone);
+  (c.cuts || []).forEach(k => {
+    const loaded = mode === 'work' && wcut && wcut.id === k.id, outs = (k.outputs || []).length;
+    const state = k.state === 'pending' ? 'cutting …' : k.state === 'missing' ? 'no cut file' : outs ? `${outs} output${outs === 1 ? '' : 's'}` : 'not rendered';
+    const meta = [fmt(cutLen(k)), k.subtitles && k.subtitles.count ? `CC ${k.subtitles.language || '?'}` : '', state, loaded ? 'loaded' : ''].filter(Boolean).join(' · ');
+    const b = card((loaded ? 'is-loaded' : '') + (gone ? ' is-orphan' : ''),
+      `<span class="thumb"></span><span class="what"><span class="name"></span><span class="meta">${esc(meta)}</span></span>`,
+      () => openCut(c, k.id), loaded);
+    b.querySelector('.name').textContent = cutName(k, c);
+    b.title = `${cutName(k, c)} · ${cutRange(k)}`;
+  });
+  return shelf;
+}
+/// The cut to load for a row whose recording is gone, or for `W`: the
+/// newest one with a file, else the newest.
+function newestCut(c) {
+  const cuts = (c.cuts || []).slice().reverse();
+  return cuts.find(k => k.state === 'ready') || cuts[0] || null;
+}
+function nextCut() {
+  const cuts = cur.cuts || [];
+  if (!cuts.length || !wcut) return;
+  const i = cuts.findIndex(k => k.id === wcut.id);
+  openCut(cur, cuts[(i + 1) % cuts.length].id);
+}
+function enterWorkshop(k) {
+  v.pause();
+  mode = 'work'; wcut = k; wsrc = null; wKey = ''; wOutKey = '';
+  wPick = W_DEFAULTS();
+  $('editorBody').hidden = true; $('emptyEditor').hidden = true; $('workshop').hidden = false;
+  history.replaceState(null, '', '#' + encodeURIComponent(cur.base) + '/' + k.id);
+  wTicks(); wLoadSource(); wRenderTime(); renderWorkshop();
+  listKey = ''; renderList();
+  if (!clips.some(c => c.base === cur.base)) wFetchCut();
+}
+/// Back to the recording, as it was left.
+function leaveWorkshop() {
+  if (mode !== 'work') return;
+  mode = 'cut'; wcut = null; wsrc = null;
+  if (wv) { wv.pause(); wv.removeAttribute('src'); wv.load(); }
+  $('workshop').hidden = true; $('editorBody').hidden = !cur;
+  if (location.hash) history.replaceState(null, '', '/');
+  listKey = ''; renderList();
+}
+function backToRecording() {
+  if (!cur || cur.file === null) { toast('The recording of this cut is gone - there is nothing else to load'); return; }
+  leaveWorkshop();
+}
+
+/// The state document moved on: take the cut's new state (outputs, copies,
+/// title), and follow it when it went.
+function refreshWorkshop(fetched) {
+  const k = (cur && cur.cuts || []).find(x => x.id === (wcut && wcut.id));
+  if (!k) { leaveWorkshop(); if (cur && cur.file === null && cur.cuts && cur.cuts.length) openCut(cur, newestCut(cur).id); return; }
+  wcut = k;
+  // `load` of the same clip (its recording went) shows the cutting tools again
+  $('editorBody').hidden = true;
+  wLoadSource();
+  renderWorkshop();
+  // A clip that is done - where most cuts without a recording are - is not
+  // in the document the event stream pushes, only in the poll of the Done
+  // list every 30 s. Its cut is asked for on its own, on every change.
+  if (!fetched && !clips.some(c => c.base === cur.base)) wFetchCut();
+}
+let wFetching = false;
+async function wFetchCut() {
+  if (wFetching || !wcut) return;
+  wFetching = true;
+  try {
+    const k = await api('/api/cuts/' + encodeURIComponent(wcut.id), {}, { retries: 0 });
+    const i = k && k.id && cur ? (cur.cuts || []).findIndex(x => x.id === k.id) : -1;
+    if (i >= 0 && mode === 'work' && wcut && wcut.id === k.id) { cur.cuts[i] = k; refreshWorkshop(true); listKey = ''; renderList(); }
+  } catch (e) { /* the next change asks again */ }
+  wFetching = false;
+}
+
+/// Everything below the player, drawn when something it shows changed.
+function renderWorkshop() {
+  const k = wcut, gone = cur.file === null;
+  const key = JSON.stringify([k, gone, wPick, cur.title, cur.tracks, cfg.subtitles, defaultTarget(), cfg.targets, busy]);
+  if (key !== wKey) {
+    wKey = key;
+    $('wOrphan').hidden = !gone; $('wMissing').hidden = !gone;
+    $('bRange').disabled = gone;
+    $('bRange').title = gone ? 'The recording is gone, so there is no timeline to show the range on' : "Load the recording with its marks on this cut's range";
+    const outs = k.outputs || [];
+    $('bCutDel').hidden = !gone;
+    $('bCutDel').querySelector('.lbl').textContent = outs.length ? `Delete cut + ${outs.length} output${outs.length === 1 ? '' : 's'}` : 'Delete cut';
+    const ct = $('cutTitle');
+    if (document.activeElement !== ct) ct.value = k.title || '';
+    ct.placeholder = cur.title || short(cur.base);
+    const from = gone ? 'source recycled' : `from ${cur.title || short(cur.base)} ${fmt(k.start)}–${fmt(k.end)}`;
+    const cc = k.subtitles && k.subtitles.count ? `CC ${k.subtitles.language || '?'}` : '';
+    const chip = [fmt(cutLen(k)), from, audioLabel(k.audio), cc].filter(Boolean).join(' · ');
+    const preparing = wsrc && wsrc.need === 'remux';
+    $('wLoaded').innerHTML = `<svg class="icon"><use href="#i-subtitles"/></svg><b>Cut</b><span class="meta">${preparing ? '<span class="spinner"></span>preparing for playback · ' : ''}${esc(chip)}</span><span class="mode">Workshop mode</span>`;
+    $('wLoaded').setAttribute('aria-label', `Cut "${cutName(k, cur)}" loaded, workshop mode`);
+    $('wAxis').textContent = `Cut · 0:00 – ${fmt(cutLen(k))}`;
+    renderRenderRow();
+  }
+  // the outputs, newest first, and a word when there are none
+  const outs = (k.outputs || []);
+  const okey = JSON.stringify(outs.map(o => [o.id, o.discord, o.link, o.uploadError]));
+  if (okey !== wOutKey) {
+    wOutKey = okey;
+    const box = $('outputs'); box.innerHTML = '';
+    $('wOutCount').textContent = outs.length || '';
+    if (!outs.length) box.innerHTML = `<div class="empty compact"><div><b>Nothing rendered from this cut yet</b><br>Every file that leaves the PC is one rendering of this cut, and it stays listed here with its link and its folder.</div></div>`;
+    outs.forEach(o => box.appendChild(outputRow(o, 'clip')));
+  }
+  // until stage b the subtitles of 3.11 live here, unchanged
+  renderWorkshopSubs();
+}
+let wSubsKey = '';
+function renderWorkshopSubs() {
+  const host = $('wSubs');
+  // what is typed and not saved holds the block still (as the cut row did in 3.11)
+  if (subsDirty()) return;
+  // an empty `cutsKey` is how the 3.11 code asks for a redraw
+  const force = cutsKey === '';
+  const key = wcut.id + (cfg.subtitles ? '+s' : '') + subsKey(wcut);
+  if (!force && key === wSubsKey) return;
+  wSubsKey = key; cutsKey = 'w';
+  host.innerHTML = '';
+  if (wcut.state !== 'ready') return;
+  renderSubs(wcut, host);
+  growSubs(host);
+}
+/// Where the subtitle block of a cut is on the page - the workshop's, when
+/// that cut is loaded there.
+function subsHost(c) { return mode === 'work' && wcut && wcut.id === c.id ? $('wSubs') : null; }
+
+/// The render row: the split button and five pills. A pill changes this
+/// rendering only and falls back to the cut's own value after it.
+function pill(id, label, value, changed, disabled) {
+  const b = $(id);
+  b.innerHTML = `${esc(label)} <b>${esc(value)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg>`;
+  b.classList.toggle('is-changed', !!changed);
+  b.classList.toggle('is-empty', !!disabled);
+  b.disabled = !!disabled;
+}
+const FRAME_LABEL = { wide: '16:9', vertical: '9:16' };
+const QUALITY_LABEL = { h264: 'H.264', copy: 'As recorded' };
+const AFTER_LABEL = { keep: 'Keep everything', done: 'Mark done', recycle: 'Recycle recording' };
+const SUBS_LABEL = { none: 'None', burn: 'Burned in', track: 'As a track' };
+function renderRenderRow() {
+  const k = wcut, d = W_DEFAULTS(), p = wPick, copy = p.quality === 'copy';
+  // "As recorded" copies the picture as it is: it cannot crop to 9:16, and
+  // nothing can be drawn into it - subtitles ride along as a track
+  if (copy) p.frame = 'wide';
+  if (copy && p.subs === 'burn') p.subs = 'track';
+  const def = defaultTarget();
+  $('bRender').innerHTML = `<svg class="icon"><use href="#i-share"/></svg> Render${def === 'file' ? '' : ' to ' + esc(targetLabel(def))} <kbd>Enter</kbd>`;
+  $('bRender').disabled = k.state !== 'ready'; $('bRenderMenu').disabled = k.state !== 'ready';
+  pill('rFrame', 'Frame', FRAME_LABEL[p.frame], p.frame !== d.frame, copy);
+  pill('rQuality', 'Quality', QUALITY_LABEL[p.quality], p.quality !== d.quality);
+  pill('rAudio', 'Audio', audioLabel(p.audio), p.audio !== d.audio);
+  pill('rAfter', 'Afterwards', AFTER_LABEL[p.after], p.after !== d.after);
+  $('rSubs').hidden = !cfg.subtitles;
+  if (cfg.subtitles) pill('rSubs', 'Subtitles', SUBS_LABEL[p.subs], p.subs !== d.subs);
+  document.querySelectorAll('#frameSeg button').forEach(b => { b.setAttribute('aria-pressed', b.dataset.frame === p.frame ? 'true' : 'false'); b.disabled = copy && b.dataset.frame === 'vertical'; });
+  // what the rendering will cost, as the share row says it
+  const len = Math.max(1, cutLen(k)), vertical = p.frame === 'vertical';
+  if (copy) $('rPlan').innerHTML = cur.size && cur.duration ? `about <b>${(cur.size * len / cur.duration / 1048576).toFixed(0)} MB</b> as recorded` : 'as recorded';
+  else { const pl = plan(len, vertical, limitsOf(def)); $('rPlan').innerHTML = `about <b>${pl.mb.toFixed(0)} MB</b> H.264${vertical ? ', 1080x1920' : pl.height ? `, ${pl.height}p` : ''}`; }
+  const changed = ['frame', 'quality', 'audio', 'after', 'subs'].some(f => p[f] !== d[f]);
+  $('rNote').hidden = !changed;
+  $('rNote').textContent = 'A pill changes this rendering only - the next one starts from the cut again.';
+}
+function pillMenu(anchor, heading, options, value, set) {
+  menu(anchor, [{ heading }].concat(options.map(o => ({ label: o.label, note: o.id === value ? 'chosen' : (o.note || ''), disabled: o.disabled, title: o.title, onclick: () => { set(o.id); wKey = ''; renderWorkshop(); } }))));
+}
+function renderMenuItems() {
+  const def = defaultTarget(), items = [{ heading: 'Render this cut to' }];
+  storageTargets().forEach(t => items.push({ label: t.label, icon: 'i-share', note: t.id === def ? 'default' : '', onclick: () => renderWork(t.id) }));
+  items.push({ label: 'File on this PC', icon: 'i-folder', note: def === 'file' ? 'default' : 'no upload', onclick: () => renderWork('file') });
   return items;
 }
-async function renderCut(c, target) {
-  const body = { audio: $('audio').value, mode: $('mode').value };
-  // since 3.11: what this rendering does with the subtitles of the cut
-  if (cfg.subtitles) body.subtitles = $('subs').value;
+async function renderWork(target) {
+  const k = wcut; if (!k || k.state !== 'ready') return;
+  const p = wPick;
+  const body = { mode: p.quality, audio: p.audio, after: p.after, vertical: p.frame === 'vertical' };
+  if (body.vertical) body.verticalPos = k.verticalPos != null ? k.verticalPos : 0.5;
+  if (cfg.subtitles) body.subtitles = p.subs;
   if (target) body.target = target;
-  if ($('frame').value === 'vertical') { body.vertical = true; body.verticalPos = Number($('vpos').value) / 100; }
-  // Rendering an existing cut says nothing about the clip: "Afterwards"
-  // belongs to the share row, and a render often happens days later.
-  body.after = 'keep';
   try {
-    const r = await api('/api/cuts/' + encodeURIComponent(c.id) + '/render', jsonOpts('POST', body), { retries: 0, timeout: 10000 });
-    if (!r.ok) { toast(r.error, 'err'); return; }
+    const r = await api('/api/cuts/' + encodeURIComponent(k.id) + '/render', jsonOpts('POST', body), { retries: 0, timeout: 10000 });
+    if (!r.ok) { if (r.job) { followJob(r); toast(r.error, 'err'); } else toast(r.error, 'err'); return; }
     if (r.position > 0) toast(`Queued - ${r.position} job${r.position === 1 ? '' : 's'} ahead`);
-    setBusy(true); followJob(r);
+    // the pills were for this one
+    wPick = W_DEFAULTS(); wKey = '';
+    setBusy(true); followJob(r); renderWorkshop();
   } catch (e) { toast(e.message, 'err'); }
 }
+function cutMoreMenu() {
+  const k = wcut, gone = cur.file === null, outs = (k.outputs || []).length;
+  const items = [{ heading: `Cut · ${cutRange(k)}` }];
+  items.push({ label: 'Rename this cut', icon: 'i-cut-in', onclick: () => { $('cutTitle').focus(); $('cutTitle').select(); } });
+  items.push({ label: 'Show range on the recording', icon: 'i-cut-in', disabled: gone, onclick: showRange });
+  items.push({ label: 'Load the full recording', icon: 'i-film', note: 'Esc', disabled: gone, onclick: backToRecording });
+  if (wsrc && wsrc.need === 'h264') items.push({ label: 'Make a playable preview', icon: 'i-play', onclick: wMakeH264 });
+  else if (k.previewH264) items.push({ label: 'Make a playable preview', icon: 'i-play', note: 'done', disabled: true });
+  items.push('hr');
+  items.push({ label: outs ? `Delete the cut and its ${outs} output${outs === 1 ? '' : 's'}` : 'Delete the cut', icon: 'i-trash', danger: true, onclick: () => deleteCut(k) });
+  return items;
+}
+function showRange() {
+  const k = wcut; if (!k || cur.file === null) return;
+  leaveWorkshop(); putMarks(k);
+}
+let cutTitleSaving = null;
+async function saveCutTitle() {
+  const k = wcut; if (!k) return;
+  const title = $('cutTitle').value.trim();
+  if (title === (k.title || '')) return;
+  cutTitleSaving = api('/api/cuts/' + encodeURIComponent(k.id), jsonOpts('PUT', { title }), { retries: 0 });
+  try { const r = await cutTitleSaving; if (r.ok) { k.title = r.cut.title; wKey = ''; listKey = ''; renderList(); renderCutBars(); } else toast(r.error, 'err'); }
+  catch (e) { toast(e.message, 'err'); }
+  cutTitleSaving = null;
+}
+function initWorkshop() {
+  wv = $('wv'); wtl = $('wtl');
+  wv.addEventListener('timeupdate', () => {
+    if (!wcut || !wsrc || !wsrc.url) return;
+    // the cut ends where its range ends; the file may run on (the recording's preview does)
+    if (!wv.paused && wRec() >= wcut.end - 0.02) { wv.pause(); wSeek(cutLen(wcut)); }
+    wRenderTime();
+  });
+  wv.addEventListener('play', () => { if (wcut && wsrc && wsrc.url && (wRec() < wcut.start - 0.05 || wRec() >= wcut.end - 0.05)) wSeek(0); wRenderTime(); });
+  wv.addEventListener('pause', wRenderTime);
+  wv.addEventListener('click', wToggle);
+  // a recording that does not load - a lost file, a folder on a drive that
+  // is not there - is as good as gone: the cut's own copy takes over
+  wv.addEventListener('error', () => {
+    if (!wcut || !wsrc || !wsrc.url) return;
+    if (wsrc.offset === 0 && cur.file !== null && !wBroken.has(cur.base)) { wBroken.add(cur.base); wsrc = null; wLoadSource(); return; }
+    const e = wv.error;
+    if (e && (e.code === 4 || e.code === 3)) { wsrc = { need: 'h264', offset: wsrc.offset }; wOverlay('codec'); }
+  });
+  $('wPlay').onclick = wToggle;
+  let drag = false;
+  const posT = e => { const r = wtl.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * cutLen(wcut); };
+  wtl.addEventListener('pointerdown', e => { if (!wcut) return; drag = true; wtl.setPointerCapture(e.pointerId); wSeek(posT(e)); });
+  wtl.addEventListener('pointermove', e => { if (drag) wSeek(posT(e)); });
+  const end = () => { drag = false; };
+  wtl.addEventListener('pointerup', end); wtl.addEventListener('pointercancel', end);
+  $('bRender').onclick = () => renderWork('');
+  $('bRenderMenu').onclick = e => { e.stopPropagation(); menu($('bRenderMenu'), renderMenuItems()); };
+  $('bCutMore').onclick = e => { e.stopPropagation(); menu($('bCutMore'), cutMoreMenu()); };
+  $('bCutDel').onclick = () => wcut && deleteCut(wcut);
+  $('bRange').onclick = showRange;
+  document.querySelectorAll('#frameSeg button').forEach(b => b.onclick = () => { if (b.disabled) return; wPick.frame = b.dataset.frame; wKey = ''; renderWorkshop(); });
+  $('rFrame').onclick = e => { e.stopPropagation(); pillMenu($('rFrame'), 'Frame', [{ id: 'wide', label: 'Landscape 16:9', note: 'as recorded' }, { id: 'vertical', label: 'Vertical 9:16', note: '1080x1920' }], wPick.frame, x => { wPick.frame = x; }); };
+  $('rQuality').onclick = e => { e.stopPropagation(); pillMenu($('rQuality'), 'Quality', [{ id: 'h264', label: 'H.264 (best quality)', note: 'plays everywhere' }, { id: 'copy', label: 'As recorded (no re-encode)', note: '16:9 only', disabled: false }], wPick.quality, x => { wPick.quality = x; }); };
+  $('rAudio').onclick = e => { e.stopPropagation(); pillMenu($('rAudio'), 'Audio', cfg.audio.map(a => ({ id: a.id, label: a.label, disabled: (cur.tracks || 1) < a.need, title: (cur.tracks || 1) < a.need ? `the recording has only ${cur.tracks || 1} track(s)` : '' })), wPick.audio, x => { wPick.audio = x; }); };
+  $('rAfter').onclick = e => { e.stopPropagation(); pillMenu($('rAfter'), 'Afterwards', [{ id: 'keep', label: 'Keep everything' }, { id: 'done', label: 'Mark the recording done' }, { id: 'recycle', label: 'Recycle the recording', disabled: cur.file === null, note: 'the cut stays' }], wPick.after, x => { wPick.after = x; }); };
+  $('rSubs').onclick = e => { e.stopPropagation(); pillMenu($('rSubs'), 'Subtitles', [{ id: 'none', label: 'None' }, { id: 'burn', label: 'Burned in', disabled: wPick.quality === 'copy', title: wPick.quality === 'copy' ? "'As recorded' touches no frame - take the track" : '' }, { id: 'track', label: 'As a track' }], wPick.subs, x => { wPick.subs = x; }); };
+  const ct = $('cutTitle');
+  ct.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ct.blur(); } else if (e.key === 'Escape') { ct.value = wcut ? (wcut.title || '') : ''; ct.blur(); } });
+  ct.addEventListener('blur', saveCutTitle);
+}
+// the keys of the workshop (see CUT_KEYS)
+const WORK_KEYS = {
+  ' ': e => { e.preventDefault(); wToggle(); },
+  ArrowLeft: e => { e.preventDefault(); wSeek(wAt() - (e.shiftKey ? 5 : 1)); },
+  ArrowRight: e => { e.preventDefault(); wSeek(wAt() + (e.shiftKey ? 5 : 1)); },
+  ',': () => wSeek(wAt() - 1 / 60),
+  '.': () => wSeek(wAt() + 1 / 60),
+  Home: () => wSeek(0),
+  End: () => wSeek(cutLen(wcut)),
+  w: e => { if (!e.ctrlKey && !e.metaKey && !e.altKey) nextCut(); },
+  Enter: () => renderWork(''),
+  Escape: () => { if (openMenuEl) closeMenu(); else if (!document.querySelector('.modal:not([hidden])') && $('navMenu').hidden) backToRecording(); },
+};
 async function deleteCut(c) {
   const remote = (c.outputs || []).some(o => o.target && o.target !== 'file');
   const what = `the cut ${cutRange(c)}` + ((c.outputs || []).length ? ` and its ${c.outputs.length} output${c.outputs.length === 1 ? '' : 's'}` : '');
@@ -4056,7 +4468,7 @@ async function toggleSubs(c) {
 /// Redraw the list in place. A full `renderCuts` would take the focus out of
 /// the field somebody is typing in.
 function redrawSubs(c) {
-  const row = $('cuts') && $('cuts').querySelector(`details[data-cut="${CSS.escape(c.id)}"]`);
+  const row = subsHost(c);   // since 3.12 the block lives in the workshop
   const sec = row && row.querySelector('.subs');
   const s = subsOf(c.id);
   if (!sec || !s) return;
@@ -4147,7 +4559,7 @@ function grow(el) {
 /// Only the footer, so that the Save button lights up without the field
 /// under the cursor being rebuilt.
 function redrawFoot(c) {
-  const row = $('cuts') && $('cuts').querySelector(`details[data-cut="${CSS.escape(c.id)}"]`);
+  const row = subsHost(c);   // since 3.12 the block lives in the workshop
   const box = row && row.querySelector('.subs-editor');
   const s = subsOf(c.id);
   if (!box || !s) return;
@@ -4157,25 +4569,30 @@ function redrawFoot(c) {
 }
 
 /// Play from the start of a segment and stop where it ends.
-let subsStop = null;
+let subsStop = null, subsStopOn = null;
 function playSegment(c, seg, row) {
-  if (!v || !v.getAttribute('src') || !cur || cur.base !== c.base) { toast('The recording is not on screen', 'err'); return; }
+  // since 3.12 the block sits in the workshop and plays there, on the cut's
+  // own player; a segment's times are the recording's, `wRec` maps them
+  const work = mode === 'work' && wcut && wcut.id === c.id && wsrc && wsrc.url;
+  if (!work && (!v || !v.getAttribute('src') || !cur || cur.base !== c.base)) { toast('The recording is not on screen', 'err'); return; }
+  const p = work ? wv : v, now = () => work ? wRec() : v.currentTime;
   document.querySelectorAll('.subrow.is-playing').forEach(r => r.classList.remove('is-playing'));
   row.classList.add('is-playing');
-  if (subsStop) { v.removeEventListener('timeupdate', subsStop); subsStop = null; }
-  seek(seg.start);
+  if (subsStop) { subsStopOn.removeEventListener('timeupdate', subsStop); subsStop = null; }
+  if (work) wSeek(seg.start - wcut.start); else seek(seg.start);
   subsStop = () => {
-    if (v.currentTime < seg.end) return;
-    v.pause(); v.removeEventListener('timeupdate', subsStop); subsStop = null;
+    if (now() < seg.end) return;
+    p.pause(); p.removeEventListener('timeupdate', subsStop); subsStop = null;
     row.classList.remove('is-playing');
   };
-  v.addEventListener('timeupdate', subsStop);
-  v.play().catch(() => {});
+  subsStopOn = p;
+  p.addEventListener('timeupdate', subsStop);
+  p.play().catch(() => {});
 }
 
 function splitSegment(c, i) {
   const s = subsOf(c.id); if (!s) return;
-  const row = $('cuts').querySelector(`details[data-cut="${CSS.escape(c.id)}"] .subrow[data-i="${i}"] textarea`);
+  const host = subsHost(c), row = host && host.querySelector(`.subrow[data-i="${i}"] textarea`);
   const seg = s.segments[i];
   const at = row && row.selectionStart > 0 && row.selectionStart < seg.text.length ? row.selectionStart : Math.floor(seg.text.length / 2);
   const head = seg.text.slice(0, at).trim(), tail = seg.text.slice(at).trim();
@@ -4281,7 +4698,9 @@ function clipTargets(c) {
 }
 function renderList() {
   const shown = listedClips();
-  const key = clipFilter + JSON.stringify(shown.map(c => [c.base, c.title, c.tracks, c.thumb, c.state, c.file === null, (c.cuts || []).length, clipTargets(c).join(), otherFolder(c)])) + (cur ? cur.base : '') + JSON.stringify(counts); if (key === listKey) return; listKey = key;
+  // since 3.12 the open row carries its shelf: what is loaded, and the cuts with their names and states
+  const shelfKey = cur ? JSON.stringify([mode, wcut && wcut.id, (cur.cuts || []).map(k => [k.id, k.title, k.state, (k.outputs || []).length, k.subtitles && k.subtitles.count, k.subtitles && k.subtitles.language])]) : '';
+  const key = clipFilter + JSON.stringify(shown.map(c => [c.base, c.title, c.tracks, c.thumb, c.state, c.file === null, (c.cuts || []).length, clipTargets(c).join(), otherFolder(c)])) + (cur ? cur.base : '') + shelfKey + JSON.stringify(counts); if (key === listKey) return; listKey = key;
   const list = $('list'); list.innerHTML = '';
   if (!shown.length) {
     list.innerHTML = clipFilter === 'done'
@@ -4309,7 +4728,15 @@ function renderList() {
     ].filter(Boolean).map(s => `<span>${s}</span>`).join('');
     e.innerHTML = `${c.thumb ? `<img class="thumb" src="${esc(c.thumb)}" alt="" loading="lazy">` : `<div class="thumb none${gone ? ' gone' : ''}"><svg class="icon icon-sm"><use href="#i-film"/></svg></div>`}<div class="name"><span></span></div><div class="meta">${meta}</div>`;
     const n = e.querySelector('.name span'); if (c.title) { n.innerHTML = `<b></b>`; n.firstChild.textContent = c.title; n.title = short(c.base); } else n.textContent = short(c.base);
-    e.onclick = () => { load(c); if (!matchMedia('(min-width: 1000px)').matches) $('cliplist').open = false; };
+    e.onclick = () => {
+      // since 3.12: a recording that is gone has only its cuts to offer, and
+      // the row of the recording under the workshop goes back to it as it was
+      if (gone) { const k = newestCut(c); if (k) openCut(c, k.id); }
+      else if (mode === 'work' && cur && cur.base === c.base) leaveWorkshop();
+      else load(c);
+      if (!matchMedia('(min-width: 1000px)').matches) $('cliplist').open = false;
+    };
+    if (cur && cur.base === c.base && cuts) { e.classList.add('is-open'); e.appendChild(shelfOf(c, gone)); }
     list.appendChild(e);
   });
   $('count').textContent = shown.length || '';
@@ -4521,12 +4948,19 @@ function applyState(d, polled, withDone) {
       if (c.previewH264 && !cur.previewH264) { cur.previewH264 = c.previewH264; const t = v.currentTime, src = playerSource(cur); if (v.getAttribute('src') !== src) { v.src = src; v.load(); v.addEventListener('loadedmetadata', () => { v.currentTime = t; }, { once: true }); $('vidErr').hidden = true; toast('Playable preview ready', 'ok'); } h264Row(cur); } } });
     renderList(); renderCuts();
     // a clip asked for by address (the "Clip" button on the Activity page)
-    const wanted = wantedClip();
+    // since 3.12 `#<base>/<cut>` is a cut in the workshop, which keeps that
+    // address while it is loaded - so the address is read once, not each time
+    const wanted = hashTaken ? '' : wantedClip();
+    if (!wanted) hashTaken = true;
     if (wanted) {
-      const c = allClips().find(x => x.base === wanted);
-      if (c) { history.replaceState(null, '', '/'); load(c); }
+      const slash = wanted.lastIndexOf('/');
+      const wbase = slash > 0 ? wanted.slice(0, slash) : wanted, wid = slash > 0 ? wanted.slice(slash + 1) : '';
+      const c = allClips().find(x => x.base === wbase);
+      if (c) { hashTaken = true; history.replaceState(null, '', '/'); if (wid && (c.cuts || []).some(k => k.id === wid)) openCut(c, wid); else load(c); }
       else if (clipFilter !== 'done' && counts.done) { clipFilter = 'done'; listKey = ''; $('clipFilter').querySelectorAll('button').forEach(x => x.dataset.filter === 'done' ? x.setAttribute('aria-current', 'page') : x.removeAttribute('aria-current')); poll.now(); return; }
-      else history.replaceState(null, '', '/');
+      // a pushed document has no done clips: wait for the poll that asks for them
+      else if (clipFilter === 'done' && !withDone) { /* not yet */ }
+      else { hashTaken = true; history.replaceState(null, '', '/'); }
     }
     const shown = listedClips();
     // A new recording lands in the active list, whatever the filter shows.

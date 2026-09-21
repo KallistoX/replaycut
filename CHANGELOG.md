@@ -10,23 +10,48 @@ contract.
 
 ## [Unreleased]
 
+**A player for cuts.** A cut you saved or shared can be opened again later,
+watched, named and rendered as often as you like - in the same player you
+cut in, while the quick way from the hotkey to the link stays exactly as
+it was.
+
 ### Added
 
+- **The workshop: a cut in the player.** The row of the loaded recording
+  opens into its shelf - "Full recording" plus its cuts - and its cuts sit
+  as bars on the timeline; a click on either loads the cut. `W` loads the
+  newest cut (in the workshop: the next one), `Esc` goes back to the
+  recording as you left it. The workshop has the cut's own timeline, its
+  title, a render row with Frame, Quality, Audio and Afterwards (a pill
+  changes that one rendering only, so "As recorded" is still there for a
+  cut), and every output of the cut with its link and its folder. While
+  the recording is there, its own preview plays the cut, so there is
+  nothing to wait for; a cut whose recording is gone - recycled, lost, or
+  on a drive that is not connected - plays from a copy of its own, made
+  in a few seconds the first time. Reloading the page keeps the cut
+  loaded.
 - **A cut has a title of its own.** A new cut starts with the title its
   recording has at that moment, and a rendering of it is named after the
   cut - the file, the post and the YouTube title - while the recording
   keeps its own. Two cuts of one recording can so carry two names, and a
   cut that was already sent keeps the name it went out with when the
   recording is renamed later. Cuts from before this version follow their
-  recording as before. The page to rename a cut comes with the player for
-  cuts; the API has it already (`PUT /api/cuts/<id>`).
+  recording as before. Rename a cut in its title field in the workshop
+  (`PUT /api/cuts/<id>` in the API).
 - **A cut can be played in a browser, also when its recording is gone.**
   On request the service makes a copy of the cut that a browser plays: a
   remux of the picture with the mix, made in seconds and outside the job
   queue, so it never waits behind a share - or, for a browser that cannot
   decode AV1 or HEVC, a 720p H.264 copy. Both live in `.cuts\play\` next to
   the cut and go with it; the diagnostics count them apart from the cuts.
-  This is the groundwork for the player for cuts on the clips page.
+
+### Changed
+
+- **The list of cuts at the foot of the clips page is gone.** Its cuts are
+  in the shelf of their recording and on its timeline now, and what the
+  list offered - render, the outputs, delete - is in the workshop.
+  Subtitles of a cut (beta) are edited there too, for now in the same
+  block as before.
 
 ## [3.11.1] - 2026-09-21
 
