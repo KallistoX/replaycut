@@ -13,6 +13,16 @@
 
 use replaycut_api_tests::*;
 
+/// The version the service reports, as (major, minor).
+fn version() -> (u32, u32) {
+    let (_, v) = get_json("/api/clips");
+    let version = v["config"]["version"].as_str().unwrap_or("0").to_string();
+    let mut parts = version
+        .split(['.', '-'])
+        .map(|p| p.parse::<u32>().unwrap_or(0));
+    (parts.next().unwrap_or(0), parts.next().unwrap_or(0))
+}
+
 /// The 1.x UI is a different page with different ids, so this case needs a 2.1
 /// service. Against 1.4.1 it prints "skipped" and passes, like the gates in
 /// `contract.rs` - deliberately a copy, so the two files stay independent.
@@ -55,10 +65,17 @@ fn u01_ui_page_has_viewport_and_hooks() {
         "the viewport meta tag is not the one phones need"
     );
 
-    // The player, the share row with its selects, the quota badge and, since
-    // 3.0, the cut list and the filter above the clips: without these the
-    // page loads and does nothing. (`hist`, the "Shared" list until 2.8, is
-    // gone - its entries live on the Activity page and under their cut.)
+    // The player, the share row with its selects, the quota badge, the
+    // filter above the clips and where the cuts are: the list at the foot
+    // of the page from 3.0, the workshop of a cut from 3.12. Without these
+    // the page loads and does nothing. (`hist`, the "Shared" list until
+    // 2.8, is gone - its entries live on the Activity page and under their
+    // cut.)
+    let cuts = if version() >= (3, 12) {
+        "workshop"
+    } else {
+        "cuts"
+    };
     for id in [
         "v",
         "bShare",
@@ -67,7 +84,7 @@ fn u01_ui_page_has_viewport_and_hooks() {
         "frame",
         "after",
         "quota",
-        "cuts",
+        cuts,
         "clipFilter",
     ] {
         assert!(
