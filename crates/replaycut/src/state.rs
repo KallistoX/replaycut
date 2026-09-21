@@ -206,6 +206,12 @@ pub struct Job {
     // `none` (and then absent), `burn` or `track`
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub subtitles: String,
+    // since 3.12.1: how many lines a job that read the speech got out of it
+    // - a `transcribe` job, and a rendering that read first. 0 is a run that
+    // worked and heard nothing it could put on the picture; absent until
+    // the speech has been read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lines: Option<usize>,
 }
 
 fn default_mode() -> String {

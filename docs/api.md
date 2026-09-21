@@ -2234,6 +2234,17 @@ yet - still says `queued`. A cancel in that moment stops it the same way,
 `stopped: true` and `cancelled` at once, while the job went on and wrote
 its result.
 
+### A transcription says how many lines it read (since 3.12.1)
+
+A job that read the speech of a cut - a `transcribe` job, and a rendering
+that reads before it encodes - carries `lines` once the speech is read:
+how many lines whisper produced after the markers it writes for silence
+(`[Music]`, `*laughs*`) were taken out. `0` is a run that worked and heard
+nothing it could put on the picture - a single short word is easily taken
+for noise. The job still ends `ok`, and the cut's transcript exists with
+`count: 0`, so a page can say "no speech found" instead of "not transcribed
+yet".
+
 ## Behaviour
 
 ### Folder scan

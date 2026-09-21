@@ -1814,6 +1814,8 @@ async fn transcribe_into(
         language.to_string()
     };
     tracing::info!("transcribe [{id}]: {} segment(s)", segments.len());
+    // said on the job, so the page can tell "nothing heard" from "read"
+    state.with_job(id, |j| j.lines = Some(segments.len()));
     let subs = crate::db::Subtitles {
         language,
         model: model.name.to_string(),

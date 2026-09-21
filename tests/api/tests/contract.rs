@@ -5240,3 +5240,52 @@ fn t80_a_cut_keeps_the_window_of_its_vertical_rendering() {
     let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
     assert_eq!(status, 200, "{v}");
 }
+
+fn since_3121() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split(['.', '-']).map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor, patch) = (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    );
+    (major, minor, patch) >= (3, 12, 1)
+}
+
+/// A transcription says how many lines it read (since 3.12.1): `lines` on
+/// the job, and the same number in the cut's summary. The fixture is a sine
+/// tone, so whisper may well hear nothing - which is the case this is for: a
+/// run that worked and found no speech ends `ok` with `lines: 0`, and the
+/// cut's transcript says `count: 0` rather than being absent. In 3.12.0 the
+/// page could not tell that from a cut never transcribed - found on a cut
+/// whose only word was a short "Zack".
+#[test]
+fn t82_a_transcription_says_how_many_lines_it_read() {
+    let _g = serial();
+    if !since_3121() {
+        eprintln!("skipped: needs replaycut 3.12.1");
+        return;
+    }
+    let Some((base, cut, _guard)) = transcribable_cut("how many") else {
+        return;
+    };
+    let (status, v) = post_json(&format!("/api/cuts/{cut}/transcribe"), &json!({}));
+    assert_eq!(status, 202, "{v}");
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+    let lines = done["lines"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("a transcription that is through says how many lines: {done}"));
+    let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+    assert_eq!(
+        c["subtitles"]["count"].as_u64(),
+        Some(lines),
+        "the job and the cut agree, also on 0: {c}"
+    );
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}
