@@ -4869,3 +4869,79 @@ fn t76_a_cut_plays_in_the_browser() {
     let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
     assert_eq!(status, 200, "{v}");
 }
+
+/// A rendering follows its cut's subtitles (#52): left out, a cut with lines
+/// burns them in - or carries them as a track where "As recorded" leaves the
+/// picture alone - and a cut without lines carries none. `none` is the
+/// deliberate choice for one rendering; with the feature off nothing is
+/// refused, the rendering simply has none. Works without a model: the
+/// lines are put, not read.
+#[test]
+fn t77_a_rendering_follows_its_cuts_subtitles() {
+    let _g = serial();
+    if !since_312() {
+        eprintln!("skipped: needs replaycut 3.12");
+        return;
+    }
+    let (_, settings) = get_json("/api/settings");
+    let _guard = Subtitles(settings["subtitles"].clone());
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "subtitles": { "enabled": true } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    let (base, cut) = a_ready_cut("follows", 2.0, 8.0);
+
+    let render = |body: serde_json::Value| -> String {
+        let (status, v) = post_json(&format!("/api/cuts/{cut}/render"), &body);
+        assert_eq!(status, 202, "render {body}: {v}");
+        let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+        assert_eq!(done["ok"], true, "render {body}: {done}");
+        done["subtitles"].as_str().unwrap_or("none").to_string()
+    };
+
+    // no lines: nothing to carry, and nothing to read first
+    assert_eq!(
+        render(json!({ "target": "file", "after": "keep" })),
+        "none",
+        "a cut without lines renders without subtitles"
+    );
+
+    let (status, v) = put_json(
+        &format!("/api/cuts/{cut}/subtitles"),
+        &json!({ "language": "en", "segments": [
+            { "start": 2.4, "end": 4.8, "text": "he is coming from the left" },
+            { "start": 5.0, "end": 7.6, "text": "nice shot" },
+        ] }),
+    );
+    assert_eq!(status, 200, "{v}");
+
+    // lines: burned in, or a track for "As recorded"
+    assert_eq!(render(json!({ "target": "file", "after": "keep" })), "burn");
+    assert_eq!(
+        render(json!({ "target": "file", "after": "keep", "mode": "copy" })),
+        "track",
+        "As recorded carries them as a track"
+    );
+    // leaving them out is a choice, for this rendering only
+    assert_eq!(
+        render(json!({ "target": "file", "after": "keep", "subtitles": "none" })),
+        "none"
+    );
+    assert_eq!(
+        render(json!({ "target": "file", "after": "keep" })),
+        "burn",
+        "the next rendering follows the cut again"
+    );
+
+    // switched off: no subtitles, and no refusal either
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "subtitles": { "enabled": false } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(render(json!({ "target": "file", "after": "keep" })), "none");
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}

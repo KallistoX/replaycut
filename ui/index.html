@@ -3951,7 +3951,8 @@ let mode = 'cut', wcut = null, wsrc = null, wv = null, wtl = null, wAsked = new 
 const W_DEFAULTS = () => ({ frame: wcut && wcut.vertical ? 'vertical' : 'wide', quality: 'h264', audio: wAudioDefault(), after: 'keep', subs: wSubsDefault() });
 let wPick = {};
 function wAudioDefault() { const a = wcut && wcut.audio; const m = cfg.audio.find(x => x.id === a); return m && (cur.tracks || 1) >= m.need ? a : 'mix'; }
-function wSubsDefault() { const m = wcut && wcut.subtitles && wcut.subtitles.mode; return ['none', 'burn', 'track'].includes(m) ? m : 'none'; }
+// a cut with lines carries them (#52); "As recorded" turns burning in into the track
+function wSubsDefault() { return wcut && wcut.subtitles && wcut.subtitles.count ? 'burn' : 'none'; }
 
 /// What the player plays for a cut, and how its time maps onto the
 /// recording: `rec = media + offset`. While the recording is there its own

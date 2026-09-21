@@ -373,7 +373,6 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<Started, ShareError>
     let subtitles = subtitles_for(
         state,
         Some(req.subtitles.as_str()),
-        existing.as_ref().map(|s| s.mode.as_str()),
         existing.as_ref().is_some_and(|s| !s.segments.is_empty()),
         share_mode == "copy",
     )?;
@@ -518,23 +517,34 @@ pub struct RenderRequest {
     /// What happens to the clip afterwards, as in `POST /api/share`.
     pub after: String,
     /// What this rendering does with the subtitles of the cut (since 3.11):
-    /// `none`, `burn` or `track`. Empty takes what the cut remembers.
+    /// `none`, `burn` or `track`. Empty follows the cut (since 3.12).
     pub subtitles: Option<String>,
 }
 
-/// What a rendering may do about subtitles. `cut` is the transcript the cut
-/// has, if any; `None` means the rendering would have to read the speech
-/// first, which it can only do when everything is in place for it.
+/// What a rendering does about subtitles, and whether it can.
+///
+/// Left out, it follows the cut (since 3.12, #52): a cut that has lines
+/// carries them - burned in, or as a track where "As recorded" leaves the
+/// picture alone - and a cut without lines carries none. Leaving them out
+/// is the deliberate `none`, for this one rendering. Until 3.12 the default
+/// was whatever the last rendering of the cut had done, and a cut that had
+/// just been transcribed rendered without its subtitles. With the feature
+/// switched off the default is `none`, never a refusal.
+///
+/// `has_subtitles` says whether the cut has lines; without, asking for them
+/// means reading the speech first, which needs everything in place for it.
 pub fn subtitles_for(
     state: &AppState,
     wanted: Option<&str>,
-    remembered: Option<&str>,
     has_subtitles: bool,
     copy_mode: bool,
 ) -> Result<String, ShareError> {
+    let enabled = state.settings().subtitles.enabled;
     let mode = match wanted {
         Some(m) if !m.is_empty() => m.to_string(),
-        _ => remembered.unwrap_or(crate::db::SUBS_NONE).to_string(),
+        _ if !enabled || !has_subtitles => crate::db::SUBS_NONE.to_string(),
+        _ if copy_mode => crate::db::SUBS_TRACK.to_string(),
+        _ => crate::db::SUBS_BURN.to_string(),
     };
     if mode == crate::db::SUBS_NONE {
         return Ok(mode);
@@ -682,7 +692,6 @@ pub fn start_render(
     let subtitles = subtitles_for(
         state,
         req.subtitles.as_deref(),
-        remembered.as_ref().map(|s| s.mode.as_str()),
         remembered.as_ref().is_some_and(|s| !s.segments.is_empty()),
         share_mode == "copy",
     )?;
@@ -1812,13 +1821,10 @@ async fn transcribe_into(
         model: model.name.to_string(),
         source: source.to_string(),
         at: util::now_local(),
-        mode: state
-            .db
-            .subtitles(&cut.id)
-            .ok()
-            .flatten()
-            .map(|s| s.mode)
-            .unwrap_or_else(|| crate::db::SUBS_NONE.to_string()),
+        // Since 3.12 a rendering follows the cut and no longer reads this;
+        // it is kept for a 3.11 that opens the store after a way back, which
+        // then does what 3.12 does: a transcript is meant to be burned in.
+        mode: crate::db::SUBS_BURN.to_string(),
         edited: false,
         segments,
     };

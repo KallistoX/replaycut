@@ -52,6 +52,12 @@ it was.
 
 ### Changed
 
+- **A rendering carries the subtitles its cut has** (beta, #52). A cut
+  that had just been transcribed rendered without its subtitles, because
+  the choice sat in the share row and had stayed on "none". Now a cut with
+  lines burns them in - or carries them as a track in "As recorded" - and
+  leaving them out is the choice you make, for that one rendering. The API
+  does the same when `subtitles` is left out.
 - **The list of cuts at the foot of the clips page is gone.** Its cuts are
   in the shelf of their recording and on its timeline now, and what the
   list offered - render, the outputs, delete - is in the workshop.

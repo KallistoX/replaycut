@@ -1912,7 +1912,8 @@ the graphics card belongs to the game.
 
 Left out, the rendering does what this cut's subtitles remember from last
 time (`subtitles.mode`); a rendering writes that back, so the next one
-starts where the last one left off.
+starts where the last one left off. **Since 3.12 a rendering follows the
+cut instead**, see [below](#a-rendering-follows-its-cuts-subtitles).
 
 The finished job carries `subtitles` with what it did.
 
@@ -2063,6 +2064,32 @@ start. The diagnostics line `cuts` counts them apart from the cut files
 Why `.cuts\play\` and not `.cuts\`: the scan moves every file in `.cuts\`
 whose name is not a cut id to the recycle bin - a 3.11 does that too - and
 leaves folders alone.
+
+### A rendering follows its cut's subtitles
+
+`subtitles` left out of `POST /api/cuts/<id>/render` or `POST /api/share`
+no longer means "what the last rendering of this cut did". It follows the
+cut:
+
+| The cut | `mode: "h264"` | `mode: "copy"` |
+| --- | --- | --- |
+| has lines | `burn` | `track` |
+| has none | `none` | `none` |
+
+With the feature switched off it is `none` whatever the cut has, and
+nothing is refused. Named, `subtitles` is what it was: `none` leaves the
+lines out of this one rendering - the next one that says nothing follows
+the cut again - and `burn` or `track` on a cut without lines reads the
+speech first, as since 3.11.
+
+Why: a cut that had just been transcribed rendered without its subtitles,
+because a choice in another row had stayed on its default (#52). A
+transcript that exists is meant to be used; leaving it out is the choice
+that has to be made.
+
+`subtitles.mode` in the transcript stays and is still written - by every
+rendering, and as `burn` by a transcription - for a 3.11 that opens the
+store after a way back. This service no longer reads it.
 
 ## Behaviour
 
