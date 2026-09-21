@@ -111,7 +111,8 @@ async function prepare(page, theme) {
       frame.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;'
         + 'object-fit:contain;background:#000;z-index:1';
       video.parentElement.style.position = 'relative';
-      video.parentElement.appendChild(frame);
+      // right behind the video, so what the page lays over it stays on top
+      video.after(frame);
     }
   }, { at: FRAME_AT, plays });
 
@@ -127,12 +128,75 @@ async function prepare(page, theme) {
 /** The theme belongs to the service: the page takes the browser's guess only
  * until the settings arrive, then the configured one wins. */
 async function setTheme(name) {
+  await putSettings({ theme: name });
+}
+async function putSettings(patch) {
   const res = await fetch(`${base}/api/settings`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ theme: name }),
+    body: JSON.stringify(patch),
   });
-  if (!res.ok) throw new Error(`could not switch to the theme ${name}: ${res.status}`);
+  if (!res.ok) throw new Error(`could not change the settings ${JSON.stringify(patch)}: ${res.status}`);
+}
+
+/** The workshop (since 3.12): the cut the seed gave subtitles, loaded by its
+ * address, the playhead on the shot and its line over the picture. The
+ * subtitles are a beta and are switched on for this one picture only. */
+async function shootWorkshop(browser, { width, height, file }) {
+  await putSettings({ subtitles: { enabled: true } });
+  const { clips } = await (await fetch(`${base}/api/clips`)).json();
+  const clip = clips.find((c) => (c.cuts || []).some((k) => k.subtitles && k.subtitles.count));
+  if (!clip) throw new Error('the seed left no cut with subtitles');
+  const cut = clip.cuts.find((k) => k.subtitles && k.subtitles.count);
+  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2, colorScheme: 'dark' });
+  const page = await context.newPage();
+  await page.goto(`${base}/#${encodeURIComponent(clip.base)}/${cut.id}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('#workshop.has-subs #lane .block', { timeout: 20_000 });
+  let plays = true;
+  try {
+    await page.waitForFunction(() => {
+      const v = document.getElementById('wv');
+      return v && v.readyState >= 2;
+    }, null, { timeout: 15_000 });
+  } catch {
+    plays = false;
+    console.warn('the browser did not decode the cut - the workshop shows the thumbnail');
+  }
+  await page.evaluate(async ({ at, start, plays, thumb }) => {
+    const video = document.getElementById('wv');
+    if (plays) {
+      await new Promise((done) => {
+        video.addEventListener('seeked', () => done(), { once: true });
+        wSeek(at - start); // the page's own seek, so the lane and the line follow
+      });
+    }
+    let source = thumb;
+    if (plays) {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      source = canvas.toDataURL('image/png');
+    }
+    if (source) {
+      const frame = document.createElement('img');
+      frame.src = source;
+      // exactly over the video: the controls sit under it in the workshop
+      frame.style.cssText = `position:absolute;left:${video.offsetLeft}px;top:${video.offsetTop}px;`
+        + `width:${video.offsetWidth}px;height:${video.offsetHeight}px;`
+        + 'object-fit:contain;background:#000;z-index:1;border-radius:var(--radius-lg)';
+      video.after(frame);
+    }
+    await document.fonts.ready;
+    document.activeElement?.blur();
+    const style = document.createElement('style');
+    style.textContent = '*{caret-color:transparent!important}';
+    document.head.appendChild(style);
+  }, { at: FRAME_AT + 0.05, start: cut.start, plays, thumb: clip.thumb });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: file });
+  await context.close();
+  await putSettings({ subtitles: { enabled: false } });
 }
 
 async function shoot(browser, { width, height, file, theme }) {
@@ -172,6 +236,11 @@ await shoot(browser, { width: 390, height: 844, file: join(tmp, 'mobile.png') })
 ffmpeg(['-i', join(tmp, 'desktop.png'), '-vf', 'scale=1920:-2', '-q:v', '3', join(outDir, 'clips.jpg')]);
 ffmpeg(['-i', join(tmp, 'mobile.png'), '-vf', 'scale=750:-2', join(outDir, 'clips_mobile.png')]);
 console.log('clips.jpg and clips_mobile.png written');
+
+// A cut in the workshop, with its subtitles (since 3.12).
+await shootWorkshop(browser, { width: 1440, height: 900, file: join(tmp, 'workshop.png') });
+ffmpeg(['-i', join(tmp, 'workshop.png'), '-vf', 'scale=1920:-2', '-q:v', '3', join(outDir, 'workshop.jpg')]);
+console.log('workshop.jpg written');
 
 // The same picture in six themes; the website fades them into each other.
 if (withThemes) {

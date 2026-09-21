@@ -1,5 +1,6 @@
 // Builds the state the screenshots show: eight recordings cut out of one demo
 // clip, titles on most of them, a clip with two cuts and a rendered output,
+// the newest with a cut, two outputs and subtitles for the workshop,
 // and two clips already done. Everything goes through the HTTP API, against a
 // service started with --dry-run, so nothing is uploaded and nothing posted.
 //
@@ -134,7 +135,44 @@ await api(`/api/cuts/${cuts[0]}/render`, {
 await waitFor('the render', async () => (await api(`/api/cuts/${cuts[0]}`)).outputs.length > 0);
 console.log(`cuts ${cuts.join(', ')} on ${withCuts.base}, one rendered`);
 
-// 5. Done last.
+// 5. The newest clip - the one the pictures open - gets a cut around the
+// shot with two outputs and its subtitles: clips.jpg shows its shelf and the
+// bar on its timeline, workshop.jpg the cut in the workshop. The lines are
+// put, not read, because the runner has no model; subtitles are a beta, so
+// they are switched on for that and off again, and clips.jpg shows a new
+// installation.
+const newest = clips[0];
+const shot = await api('/api/cuts', {
+  method: 'POST',
+  body: JSON.stringify({ base: newest.base, start: 2.9, end: 7.9, audio: 'mix' }),
+});
+const shotCut = typeof shot.cut === 'string' ? shot.cut : shot.cut?.id;
+await waitFor(`cut ${shotCut}`, async () => (await api(`/api/cuts/${shotCut}`)).state === 'ready');
+await api(`/api/cuts/${shotCut}`, { method: 'PUT', body: JSON.stringify({ title: 'The shot at 243 m' }) });
+for (const vertical of [false, true]) {
+  const before = (await api(`/api/cuts/${shotCut}`)).outputs.length;
+  await api(`/api/cuts/${shotCut}/render`, {
+    method: 'POST',
+    body: JSON.stringify({ target: 'file', mode: 'h264', after: 'keep', vertical }),
+  });
+  await waitFor('the render', async () => (await api(`/api/cuts/${shotCut}`)).outputs.length > before);
+}
+await api('/api/settings', { method: 'PUT', body: JSON.stringify({ subtitles: { enabled: true } }) });
+await api(`/api/cuts/${shotCut}/subtitles`, {
+  method: 'PUT',
+  body: JSON.stringify({
+    language: 'en',
+    segments: [
+      { start: 3.0, end: 4.1, text: 'Contact at the tree line, far right' },
+      { start: 4.2, end: 5.1, text: 'Wait for it...' },
+      { start: 5.2, end: 7.8, text: 'Headshot at two hundred forty-three metres!' },
+    ],
+  }),
+});
+await api('/api/settings', { method: 'PUT', body: JSON.stringify({ subtitles: { enabled: false } }) });
+console.log(`cut ${shotCut} on ${newest.base}: two outputs and three lines`);
+
+// 6. Done last.
 for (const clip of clips.filter((c) => c.done)) {
   await api(`/api/clips/${clip.base}/state`, {
     method: 'PUT',

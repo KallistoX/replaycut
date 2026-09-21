@@ -11,8 +11,8 @@ project, like `docs/design/icons/mkico`. The UI itself still has no build step.
 | File | What it is |
 |---|---|
 | `demo.mkv` | Six seconds of gameplay, the material every screenshot is made of |
-| `seed.mjs` | Puts the state into a service: recordings, titles, cuts, an output |
-| `shoot.mjs` | Playwright: the clips page on a desktop and on a phone, optionally in six themes |
+| `seed.mjs` | Puts the state into a service: recordings, titles, cuts, outputs, the subtitles of one cut |
+| `shoot.mjs` | Playwright: the clips page on a desktop and on a phone, a cut in the workshop, optionally in six themes |
 
 ## Running it by hand
 

@@ -22,9 +22,10 @@ your phone, link in Discord.](docs/design/icons/social.png)
 - **Trim in the browser.** F9 in the game, a toast on the desktop, in and out
   points on your phone or laptop - the same page on every screen.
 - **Cut now, decide later.** Every share keeps the range as a cut of its own:
-  the picture untouched, every audio track along. Render it again tomorrow -
-  another audio mix, vertical for a Short, to another target - without the
-  five-minute recording, which you can let go of.
+  the picture untouched, every audio track along. Open it in the
+  [workshop](#the-workshop) tomorrow and render it again - another audio mix,
+  vertical for a Short, to another target - without the five-minute
+  recording, which you can let go of.
 - **A list that empties itself.** A shared clip is done and out of the way,
   grouped by the evening it belongs to; one click brings it back, and
   **Activity** knows what went where.
@@ -39,7 +40,8 @@ your phone, link in Discord.](docs/design/icons/social.png)
   quick share; every other share offers "Post to ..." when you want it.
 - **Subtitles, read on your own PC** (beta, off until you switch it on).
   ffmpeg's `whisper` filter reads the microphone track of a cut, you correct
-  the lines under it, and a rendering burns them into the picture - the only
+  the lines in the workshop with the line on the picture as it will be
+  rendered, and a rendering burns them into the picture - the only
   way they show in a Discord preview or a Short - or carries them as a
   track. The speech never leaves the machine; only the model is fetched,
   once. A distribution whose ffmpeg lacks the filter says so in Diagnostics.
@@ -76,6 +78,24 @@ See [`docs/settings.md`](docs/settings.md) for the status of each integration.
 Everything runs on the PC that runs the game. The browser - on that PC, a
 laptop or a phone in the same network - is only the remote control
 ([the clips page on a phone](docs/images/clips_mobile.png)).
+
+### The workshop
+
+![A cut in the workshop: the picture with its subtitle, the lines on the cut's own timeline, and the selected line to correct](docs/images/workshop.jpg)
+
+The cuts of a recording sit in its row of the list and as bars on its
+timeline; a click loads one into the workshop - the same player, on the
+cut's own timeline (`W` loads the newest, `Esc` goes back to the
+recording). There a cut gets a title of its own, renders as often as you
+like with a pill per choice - frame, quality, audio, afterwards - and lists
+every output with its link and its folder. A cut whose recording is gone
+still plays: the service makes a copy of it the browser can play.
+
+With subtitles switched on, the lines of a cut lie on its timeline and the
+one under the playhead is on the picture, in the size, place and colour the
+rendering will give it, for 16:9 and for the 9:16 window of a Short. Click a
+line, correct its text, set its start and end at the playhead with `I` and
+`O`, split, merge or delete it; everything saves by itself.
 
 ## Install
 
@@ -170,7 +190,8 @@ Secret Service and the VAAPI driver are optional.
   other storages and "file only", live progress and a queue, the result with
   links or "Open folder" and "Copy file", "Download" for the device the
   page is open on, "Publish to ..." for another
-  storage, and the share history.
+  storage, and the share history. A cut opens in the
+  [workshop](#the-workshop) on the same page (`/#<recording>/<cut>`).
 - **Settings** (`/settings`): everything in `settings.json`, integrations
   with their tests, theme, autostart, access from other devices with the
   password and the signed-in devices; changes apply at once, the port after
