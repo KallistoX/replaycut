@@ -8,6 +8,32 @@ replaycut 2.0 is a rewrite of a PowerShell service (1.x) that was never
 published. The 2.0 line keeps that service's HTTP API; `docs/api.md` is the
 contract.
 
+## [Unreleased]
+
+**Subtitles hear the whole squad** (beta). A transcription read only your
+microphone, so in a clip with your mates the half that was theirs was
+missing.
+
+### Changed
+
+- **Automatic now reads the mix** - every track: your microphone, the voice
+  chat and in-game voice. Until now it read the microphone alone whenever
+  the recording had one. On two squad recordings the mix read 6 and 10
+  spoken lines where the microphone read 1 and 6. If you set Settings ›
+  Subtitles › Audio track to "Microphone", that stays as you set it. When
+  two people talk at the same time, whisper usually writes down only one
+  of them.
+
+### Added
+
+- **Microphone + voice chat** as a track in the workshop (the Track pill
+  and the `⋮` menu of the subtitles): both mixed without the game sound.
+  It is worth it when the game is as loud as the voice chat and the mix
+  misses lines; in-game voice is only in the mix. It is offered where the
+  recording has both tracks - found by the names OBS gives its tracks
+  ("Mic", "Discord", "Voice", "Chat"), else by the usual four-track layout.
+- The subtitle bar says which track the lines were read from.
+
 ## [3.13.0] - 2026-09-21
 
 **The rest of the workshop, the quick share in Settings, and the job
