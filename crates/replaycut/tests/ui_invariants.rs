@@ -484,7 +484,10 @@ fn every_letter_shortcut_is_listed_once_per_mode() {
             );
         }
     }
-    let modes: [(&str, &[char]); 2] = [("CUT_KEYS", &['i', 'o', 'p', 'd']), ("WORK_KEYS", &[])];
+    let modes: [(&str, &[char]); 2] = [
+        ("CUT_KEYS", &['i', 'o', 'p', 'd', 'c', 'w']),
+        ("WORK_KEYS", &['w']),
+    ];
     for (table, must) in modes {
         let Some(keys) = table_keys(&html, table) else {
             assert!(
@@ -574,5 +577,59 @@ fn every_banner_button_is_wired() {
          their banner shows (wire them next to the other banner handlers, or \
          list them in BANNER_BUTTONS_OF_ONE_PAGE with the reason):\n  {}",
         unwired.join("\n  ")
+    );
+}
+
+/// The fast path keeps its elements where they were (since 3.12). The
+/// workshop for cuts is a container of its own beside `#editorBody`, so
+/// every element of cutting mode stays inside `#editorBody`, and the
+/// progress bar and the result card - the two things both modes share -
+/// sit after both. Moving one of these into the workshop, or the workshop
+/// into the tools of cutting mode, is what this is here to catch.
+#[test]
+fn the_fast_path_keeps_its_ids() {
+    let html = ui();
+    let at = |id: &str| {
+        html.find(&format!(" id=\"{id}\""))
+            .unwrap_or_else(|| panic!("#{id} is gone from the page"))
+    };
+    let (body, workshop) = (at("editorBody"), at("workshop"));
+    assert!(body < workshop, "#workshop comes after #editorBody");
+    for id in [
+        "title",
+        "bDone",
+        "bDel",
+        "v",
+        "tl",
+        "sel",
+        "hin",
+        "hout",
+        "bIn",
+        "bOut",
+        "bAll",
+        "bPrev",
+        "bShare",
+        "bShareMenu",
+        "bCut",
+        "selInfo",
+        "planInfo",
+    ] {
+        let p = at(id);
+        assert!(
+            p > body && p < workshop,
+            "#{id} belongs to the tools of cutting mode, inside #editorBody"
+        );
+    }
+    let (prog, result) = (at("prog"), at("result"));
+    for id in ["wv", "wtl", "cutTitle", "bRender", "outputs"] {
+        let p = at(id);
+        assert!(
+            p > workshop && p < prog,
+            "#{id} belongs to the workshop, between #workshop and #prog"
+        );
+    }
+    assert!(
+        workshop < prog && prog < result,
+        "#prog and #result sit after both modes, the progress bar first"
     );
 }

@@ -1053,7 +1053,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       </div>
       <div class="share-row">
         <div class="split"><button class="btn btn-primary" id="bShare"><svg class="icon"><use href="#i-share"/></svg> Share <kbd>Enter</kbd></button><button class="btn btn-primary btn-icon" id="bShareMenu" title="Share to another target">▾</button><div class="menu" id="shareMenu" hidden></div></div>
-        <button class="btn" id="bCut" title="Save this range as a cut and render nothing - a cut keeps the picture and all audio tracks, so you can render it any way you like later"><svg class="icon"><use href="#i-cut-in"/></svg> Save cut</button>
+        <button class="btn" id="bCut" title="Save this range as a cut and render nothing - a cut keeps the picture and all audio tracks, so you can render it any way you like later"><svg class="icon"><use href="#i-cut-in"/></svg> Save cut <kbd>C</kbd></button>
         <!-- since 3.1: the four settings read as a sentence and open on "Change" -->
         <span class="setup right" id="setupText"></span>
         <button class="btn btn-sm btn-ghost" id="bSetup">Change</button>
@@ -1067,7 +1067,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       </div>
       <span class="plan" id="planInfo"></span>
       <div class="vpos-row" id="vposRow" hidden><span>Window position</span><input type="range" id="vpos" min="0" max="100" value="50" title="Where the 9:16 window sits: left edge, centre, right edge"><span id="vposText">centre</span></div>
-      <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>I</kbd><kbd>O</kbd> marks</span><span><kbd>Enter</kbd> share</span><span><kbd>W</kbd> newest cut</span></div>
+      <div class="shortcuts"><span><kbd>Space</kbd> play/pause</span><span><kbd>←</kbd><kbd>→</kbd> 1 s</span><span><kbd>Shift</kbd>+arrow 5 s</span><span><kbd>,</kbd><kbd>.</kbd> 1 frame</span><span><kbd>Home</kbd><kbd>End</kbd> start/end</span><span><kbd>I</kbd><kbd>O</kbd> marks</span><span><kbd>Enter</kbd> share</span><span><kbd>C</kbd> save cut</span><span><kbd>W</kbd> newest cut</span><span><kbd>Alt</kbd>+arrow nearer mark 0.1 s</span></div>
     </div>
 
     <!-- since 3.12: the workshop - a cut in the player, its render row and
@@ -1664,7 +1664,9 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <tr><td><kbd>,</kbd> <kbd>.</kbd></td><td>One frame back or forward</td></tr>
       <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Start or end of the clip</td></tr>
       <tr><td><kbd>I</kbd> <kbd>O</kbd></td><td>Set the in or out mark at the playhead</td></tr>
+      <tr><td><kbd>Alt</kbd> + <kbd>←</kbd> <kbd>→</kbd></td><td>Move the mark nearer the playhead by 0.1 s</td></tr>
       <tr><td><kbd>P</kbd></td><td>Play the selection</td></tr>
+      <tr><td><kbd>C</kbd></td><td>Save the marks as a cut, without rendering</td></tr>
       <tr><td><kbd>D</kbd></td><td>Mark the clip done, or bring a done clip back</td></tr>
       <tr><td><kbd>W</kbd></td><td>Load the newest cut of this recording into the workshop; in the workshop: the next cut</td></tr>
       <tr><td><kbd>Enter</kbd></td><td>Share the selection; in the workshop: render the cut; in the title field: save the title (empty takes the suggestion)</td></tr>
@@ -2964,8 +2966,10 @@ function plan(d, vertical, lim) { const a = 128000;
 const keyName = e => e.key.length === 1 ? e.key.toLowerCase() : e.key;
 const CUT_KEYS = {
   ' ': e => { e.preventDefault(); v.paused ? v.play() : v.pause(); },
-  ArrowLeft: e => { e.preventDefault(); seek(v.currentTime - (e.shiftKey ? 5 : 1)); },
-  ArrowRight: e => { e.preventDefault(); seek(v.currentTime + (e.shiftKey ? 5 : 1)); },
+  // with Alt (since 3.12) the mark nearer the playhead moves by a tenth of a
+  // second instead; Alt+← is "Back" in the browser, hence preventDefault
+  ArrowLeft: e => { e.preventDefault(); if (e.altKey) nudgeMark(-0.1); else seek(v.currentTime - (e.shiftKey ? 5 : 1)); },
+  ArrowRight: e => { e.preventDefault(); if (e.altKey) nudgeMark(0.1); else seek(v.currentTime + (e.shiftKey ? 5 : 1)); },
   ',': () => seek(v.currentTime - 1 / 60),
   '.': () => seek(v.currentTime + 1 / 60),
   Home: () => seek(0),
@@ -2974,10 +2978,22 @@ const CUT_KEYS = {
   o: () => setOut(),
   p: () => playSel(),
   d: e => { if (!e.ctrlKey && !e.metaKey && !e.altKey) toggleDone(); },
+  // since 3.12: save the marks as a cut, as the button does
+  c: e => { if (!e.ctrlKey && !e.metaKey && !e.altKey) saveCut(); },
   // since 3.12: the newest cut of this recording into the workshop
   w: e => { if (!e.ctrlKey && !e.metaKey && !e.altKey && cur.cuts && cur.cuts.length) openCut(cur, cur.cuts[cur.cuts.length - 1].id); },
   Enter: () => share(),
 };
+
+/// Alt+arrow (since 3.12): move the in or the out mark, whichever is nearer
+/// the playhead, and show the frame it lands on.
+function nudgeMark(d) {
+  if (!cur || cur.file === null) return;
+  const dur = cur.duration || v.duration || 0;
+  if (Math.abs(v.currentTime - tIn) <= Math.abs(v.currentTime - tOut)) { tIn = Math.max(0, Math.min(tIn + d, tOut - 0.5)); v.currentTime = tIn; }
+  else { tOut = Math.min(dur, Math.max(tOut + d, tIn + 0.5)); v.currentTime = tOut; }
+  edited = true; render();
+}
 
 function initClips() {
   v = $('v'); tl = $('tl'); sel = $('sel'); hin = $('hin'); hout = $('hout'); ph = $('ph');

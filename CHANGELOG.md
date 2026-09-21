@@ -30,6 +30,9 @@ it was.
   on a drive that is not connected - plays from a copy of its own, made
   in a few seconds the first time. Reloading the page keeps the cut
   loaded.
+- **Two keys for cutting**: `C` saves the marks as a cut, like the "Save
+  cut" button, and `Alt`+`←`/`→` moves the mark nearer the playhead by a
+  tenth of a second. Everything the keys did before they still do.
 - **A cut has a title of its own.** A new cut starts with the title its
   recording has at that moment, and a rendering of it is named after the
   cut - the file, the post and the YouTube title - while the recording
