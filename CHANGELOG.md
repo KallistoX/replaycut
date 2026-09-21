@@ -67,6 +67,12 @@ contract.
   habit, set Quality once in Settings › Quick share. The Subtitles select
   of the share row is gone: a range that is a cut with lines follows the
   cut, and everything else follows the settings.
+- **What runs, what waits and what came out sit in a strip under the top
+  bar** on the clips page, in cutting mode and in the workshop alike: the
+  progress with Cancel, the queue line with "Remove from queue" and the
+  last result, now with a button to hide it. The strip stays in view while
+  the page scrolls - on a phone it takes a third of the screen at most -
+  and the workshop's picture on a narrow screen sits below it.
 - **The Subtitles card in Settings** is laid out like the other cards:
   language and track first, then the model, then the default look per
   frame with a small preview drawn from the same table as the workshop's

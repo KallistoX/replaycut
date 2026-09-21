@@ -189,7 +189,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-4) 0; }
 .banners.pinned { position: sticky; top: var(--topbar-h); z-index: 4; background: var(--bg); }
 @media (max-width: 600px) { .banners.pinned { max-height: 33vh; overflow-y: auto; } }
 
-.clips { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: calc(100vh - var(--topbar-h) - var(--banners-h, 0px)); }
+.clips { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: calc(100vh - var(--topbar-h) - var(--banners-h, 0px) - var(--jobs-h, 0px)); }
 .cliplist { border-right: 1px solid var(--line); overflow: auto; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-1); }
 .cliplist > summary { display: none; }
 .cliplist h2 { font-size: var(--text-sm); color: var(--fg-muted); letter-spacing: 0.08em; text-transform: uppercase; margin: var(--space-3) var(--space-2) var(--space-1); }
@@ -779,13 +779,14 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 .look .step b { margin-left: auto; color: var(--fg); font-weight: var(--weight-strong); }
 .look .step .icon-sm { color: var(--fg-muted); }
 
-/* ---------- jobs (ships last) ----------
+/* ---------- jobs (since 3.13) ----------
  * Three rows, one purpose each: what runs, what waits, what happened last.
- * Pinned under the top bar, identical in both modes. Until it ships, the
- * progress bar (#prog) and the result card (#result) stay where they are
- * today: under the tools, in both modes. */
+ * Pinned under the top bar and the pinned banner, identical in both modes.
+ * The rows are the progress bar (#prog, its queue line inside) and the
+ * result card (#result) of 3.12, moved here: the .job classes below are the
+ * design's and stay for its sheet; the page draws the two it always had. */
 .jobs { display: flex; flex-direction: column; gap: 1px; background: var(--bg); }
-.jobs.pinned { position: sticky; top: var(--topbar-h); z-index: 4; }
+.jobs.pinned { position: sticky; top: calc(var(--topbar-h) + var(--banners-h, 0px)); z-index: 4; }
 .job { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--line); background: var(--warn-soft); }
 .job .what { display: flex; flex-direction: column; gap: var(--space-1); flex: 1; min-width: 0; }
 .job .line { display: flex; align-items: center; gap: var(--space-2); }
@@ -799,6 +800,13 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 .job.is-failed { background: var(--err-soft); }
 .job.is-failed > .icon { color: var(--err); }
 @media (max-width: 600px) { .jobs.pinned { max-height: 33vh; overflow-y: auto; } }
+/* the two cards of 3.12 as rows of the strip, tinted like the banners */
+.jobs > .progress, .jobs > .result { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: var(--space-2) var(--space-4); }
+.jobs > .progress { background: var(--warn-soft); }
+.jobs > .progress.err, .jobs > .result.err { background: var(--err-soft); }
+.jobs > .result { background: var(--ok-soft); }
+.jobs > .result.partial { background: var(--warn-soft); }
+.jobs > .result .head [data-hide] { margin: -6px -8px -6px auto; }
 
 /* ============ 2. changed components ============ */
 
@@ -961,7 +969,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 @media (max-width: 999px) {
   #workshop.has-subs .stage { display: contents; }
   #workshop:not(.has-subs) .player-dock { display: contents; }
-  #workshop.has-subs .player-dock { top: var(--topbar-h); z-index: 3; }
+  #workshop.has-subs .player-dock { top: calc(var(--topbar-h) + var(--banners-h, 0px) + var(--jobs-h, 0px)); z-index: 3; }
   #workshop.has-subs #wPlayer video { max-height: 34vh; }
   /* what scrolls under the dock keeps its layers to itself */
   #workshop.has-subs #wtl { z-index: 0; }
@@ -1090,6 +1098,14 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <div class="banner warn" id="b-restart" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Restart needed.</b> <span id="b-restart-text"></span></div><button class="btn btn-sm" id="b-restart-now">Restart now</button></div>
   <div class="banner warn" id="b-replaystop" hidden><svg class="icon"><use href="#i-warning"/></svg><div class="grow"><b>Replay buffer is not running</b> - F9 does nothing until it does. OBS is open and connected.</div><button class="btn btn-sm" id="b-replaystop-start">Start replay buffer</button></div>
   <div class="banner" id="b-newclip" hidden><svg class="icon"><use href="#i-film"/></svg><div class="grow"><b>New clip:</b> <span id="b-newclip-text"></span> You have marks on the current one.</div><div class="row nowrap"><button class="btn btn-sm" id="b-newclip-load">Load new clip</button><button class="btn btn-sm btn-ghost" id="b-newclip-keep">Keep editing</button></div></div>
+</div>
+<!-- The job strip (since 3.13, F3): what runs, what waits behind it and what
+     came out last, pinned under the bar in both modes of the clips page. The
+     progress bar with its queue line and the result card of 3.12, moved.
+     Shown on the clips page only. -->
+<div class="jobs pinned" id="jobs" hidden>
+  <div class="progress" id="prog" hidden><div class="row nowrap"><span class="grow" id="progText"></span><span class="muted sm" id="progPct"></span><button class="btn btn-sm btn-ghost" id="progCancel" title="Stop this share" hidden><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div><div class="bar"><i id="progBar"></i></div><div class="stages" id="stages"></div><div class="queued" id="progQueue" hidden></div></div>
+  <div class="result" id="result" hidden></div>
 </div>
 <div class="banners" id="bannersMore"></div>
 
@@ -1291,11 +1307,6 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <div class="outputs" id="outputs"></div>
       </section>
     </div>
-
-    <!-- since 3.12: what runs and what came out of it sits at the foot of the
-         tools in both modes, until the job strip takes it -->
-    <div class="progress" id="prog" hidden><div class="row nowrap"><span class="grow" id="progText"></span><span class="muted sm" id="progPct"></span><button class="btn btn-sm btn-ghost" id="progCancel" title="Stop this share" hidden><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div><div class="bar"><i id="progBar"></i></div><div class="stages" id="stages"></div><div class="queued" id="progQueue" hidden></div></div>
-    <div class="result" id="result" hidden></div>
   </main>
 </div>
 
@@ -2012,6 +2023,10 @@ bannerIds.forEach(id => bannerWatch.observe($(id), { attributeFilter: ['hidden']
 // A banner also grows when its text does, and when the window narrows.
 new ResizeObserver(setBannersH).observe($('banners'));
 layoutBanners();
+// The job strip under them (since 3.13): what sticks below it - the dock of
+// the narrow workshop - starts that much lower.
+const setJobsH = () => document.documentElement.style.setProperty('--jobs-h', $('jobs').offsetHeight + 'px');
+new ResizeObserver(setJobsH).observe($('jobs'));
 // The same for the save bar at the bottom edge of the settings page: the
 // page keeps that much room free below its last card, and the toasts stack
 // above it instead of under it. A page that is not on screen measures 0, so
@@ -2026,6 +2041,8 @@ function setDot(state, title) {
 }
 function showPage(name) {
   ['clips', 'login', 'approve', 'soon', 'setup', 'settings', 'diagnostics', 'obs', 'activity'].forEach(p => { $('page-' + p).hidden = p !== name; });
+  // the job strip belongs to the clips page; Activity has the queue of its own
+  $('jobs').hidden = name !== 'clips';
   // The three pages in the bar and the two in the menu are marked the same way.
   document.querySelectorAll('#nav a, #navMenu a[data-page]').forEach(a => { if (a.dataset.page === (name === 'clips' ? 'clips' : location.pathname.slice(1))) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   // On a page that lives in the menu, the button carries the mark, so the bar
@@ -3693,7 +3710,13 @@ function showResult(r) {
   box.hidden = false;
   box.className = 'result';
   box.innerHTML = '';
-  const head = (icon, text) => { const h = document.createElement('div'); h.className = 'head'; h.innerHTML = `<svg class="icon"><use href="#i-${icon}"/></svg> `; h.append(text); box.appendChild(h); };
+  // pinned in the strip since 3.13, so it can be put away until the next one
+  const head = (icon, text) => {
+    const h = document.createElement('div'); h.className = 'head'; h.innerHTML = `<svg class="icon"><use href="#i-${icon}"/></svg> `; h.append(text);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'btn btn-ghost btn-icon'; x.dataset.hide = ''; x.title = 'Hide'; x.setAttribute('aria-label', 'Hide this result');
+    x.innerHTML = '<svg class="icon"><use href="#i-close"/></svg>'; x.onclick = () => { box.hidden = true; };
+    h.appendChild(x); box.appendChild(h);
+  };
   const note = text => { const n = document.createElement('div'); n.className = 'muted sm'; n.textContent = text; box.appendChild(n); };
 
   if (r.cancelled) {

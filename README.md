@@ -68,10 +68,10 @@ See [`docs/settings.md`](docs/settings.md) for the status of each integration.
    Settings › Quick share; one you change counts for the next share only.
 3. **Share.** **Share** cuts the selection and uploads it to the quick-share
    target; the menu next to the button holds every other storage and "file
-   only". Progress, queue and result stay on the page. **Save cut** stops
-   after the cut - render it when the evening is over. **Afterwards** decides
-   what happens to the clip: keep it, mark it done, or let the recording go
-   to the recycle bin.
+   only". Progress, queue and result stay in a strip under the top bar.
+   **Save cut** stops after the cut - render it when the evening is over.
+   **Afterwards** decides what happens to the clip: keep it, mark it done,
+   or let the recording go to the recycle bin.
 4. **Post.** The quick share posts the link to Discord, Telegram or your
    webhook; on every other share the result card and the history offer
    **Post to ...**.

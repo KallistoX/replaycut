@@ -584,8 +584,9 @@ fn every_banner_button_is_wired() {
 /// workshop for cuts is a container of its own beside `#editorBody`, so
 /// every element of cutting mode stays inside `#editorBody`, and the
 /// progress bar and the result card - the two things both modes share -
-/// sit after both. Moving one of these into the workshop, or the workshop
-/// into the tools of cutting mode, is what this is here to catch.
+/// sit in the job strip under the top bar (since 3.13). Moving one of
+/// these into the workshop, or the workshop into the tools of cutting
+/// mode, is what this is here to catch.
 #[test]
 fn the_fast_path_keeps_its_ids() {
     let html = ui();
@@ -620,16 +621,13 @@ fn the_fast_path_keeps_its_ids() {
             "#{id} belongs to the tools of cutting mode, inside #editorBody"
         );
     }
-    let (prog, result) = (at("prog"), at("result"));
     for id in ["wv", "wtl", "cutTitle", "bRender", "outputs"] {
-        let p = at(id);
-        assert!(
-            p > workshop && p < prog,
-            "#{id} belongs to the workshop, between #workshop and #prog"
-        );
+        assert!(at(id) > workshop, "#{id} belongs to the workshop");
     }
+    let (jobs, prog, result, clips) = (at("jobs"), at("prog"), at("result"), at("page-clips"));
     assert!(
-        workshop < prog && prog < result,
-        "#prog and #result sit after both modes, the progress bar first"
+        jobs < prog && prog < result && result < clips,
+        "#prog and #result sit in the job strip before the clips page, \
+         outside both modes, the progress bar first"
     );
 }
