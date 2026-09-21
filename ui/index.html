@@ -4241,7 +4241,18 @@ function renderRenderRow() {
   $('rNote').textContent = 'A pill changes this rendering only - the next one starts from the cut again.';
 }
 function pillMenu(anchor, heading, options, value, set) {
-  menu(anchor, [{ heading }].concat(options.map(o => ({ label: o.label, note: o.id === value ? 'chosen' : (o.note || ''), disabled: o.disabled, title: o.title, onclick: () => { set(o.id); wKey = ''; renderWorkshop(); } }))));
+  menuAt(anchor, [{ heading }].concat(options.map(o => ({ label: o.label, note: o.id === value ? 'chosen' : (o.note || ''), disabled: o.disabled, title: o.title, onclick: () => { set(o.id); wKey = ''; renderWorkshop(); } }))));
+}
+/// A menu under its button when the button shares its row with others:
+/// `menu` hangs it on the button's parent and aligns it right, which for a
+/// pill in the render row is the far end of the row.
+function menuAt(anchor, items) {
+  menu(anchor, items);
+  const m = openMenuEl; if (!m || m.dataset.for !== anchor.dataset.menuId) return;
+  m.classList.remove('right');
+  m.style.left = anchor.offsetLeft + 'px'; m.style.right = 'auto';
+  const over = m.getBoundingClientRect().right - (document.documentElement.clientWidth - MENU_EDGE);
+  if (over > 0) m.style.left = Math.max(0, anchor.offsetLeft - over) + 'px';
 }
 function renderMenuItems() {
   const def = defaultTarget(), items = [{ heading: 'Render this cut to' }];
@@ -4318,7 +4329,7 @@ function initWorkshop() {
   const end = () => { drag = false; };
   wtl.addEventListener('pointerup', end); wtl.addEventListener('pointercancel', end);
   $('bRender').onclick = () => renderWork('');
-  $('bRenderMenu').onclick = e => { e.stopPropagation(); menu($('bRenderMenu'), renderMenuItems()); };
+  $('bRenderMenu').onclick = e => { e.stopPropagation(); menuAt($('bRenderMenu'), renderMenuItems()); };
   $('bCutMore').onclick = e => { e.stopPropagation(); menu($('bCutMore'), cutMoreMenu()); };
   $('bCutDel').onclick = () => wcut && deleteCut(wcut);
   $('bRange').onclick = showRange;
