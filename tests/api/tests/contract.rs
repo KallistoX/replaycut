@@ -5377,3 +5377,108 @@ fn t81_the_quick_share_takes_its_defaults_from_the_settings() {
     let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
     assert_eq!(status, 200, "{v}");
 }
+
+// --------------------------------------------------------------- since 3.14
+
+fn since_314() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split(['.', '-']).map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (3, 14)
+}
+
+/// A clip says whether a transcription can read the microphone and the
+/// voice chat without the game (since 3.14), so the page offers that only
+/// where it can be done. The names OBS writes into a recording come first;
+/// without names a recording of four tracks has the usual layout. The
+/// choice is made for a cut and is no setting: a settings file that said
+/// `voices` would keep 3.13 from starting after a way back.
+#[test]
+fn t83_a_clip_says_whether_it_has_a_voice_chat() {
+    let _g = serial();
+    if !since_314() {
+        eprintln!("skipped: needs replaycut 3.14");
+        return;
+    }
+    // four tracks without names: the layout the audio modes assume (a clip
+    // of its own - the fixture itself is gone once the delete test ran)
+    let plain = format!("{} plain tracks", fixture().base);
+    make_clip(&plain);
+    let clip = wait_for_clip(&plain, Duration::from_secs(20));
+    assert_eq!(clip["voices"], true, "{clip}");
+
+    // named as OBS names them, in an order of their own
+    let named = format!("{} named tracks", fixture().base);
+    make_clip_with_track_names(&named, ["Mix", "Discord", "Game", "Mikrofon"]);
+    let clip = wait_for_clip(&named, Duration::from_secs(20));
+    assert_eq!(clip["voices"], true, "{clip}");
+
+    // the fourth track says it is something else: no voice chat to read
+    let music = format!("{} music track", fixture().base);
+    make_clip_with_track_names(&music, ["Mix", "Microphone", "Game", "Music"]);
+    let clip = wait_for_clip(&music, Duration::from_secs(20));
+    assert_eq!(clip["voices"], false, "{clip}");
+
+    let (_, settings) = get_json("/api/settings");
+    let _guard = Subtitles(settings["subtitles"].clone());
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "subtitles": { "source": "voices" } }),
+    );
+    assert_eq!(
+        status, 400,
+        "voices is chosen for a cut, not in the settings: {v}"
+    );
+
+    for base in [plain, named, music] {
+        let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+        assert_eq!(status, 200, "{v}");
+    }
+}
+
+/// A transcription reads the mix unless it is told otherwise (since 3.14;
+/// 3.11 to 3.13 read the microphone alone and missed the others), and
+/// `voices` reads the microphone and the voice chat together. Job and cut
+/// both say which it was.
+#[test]
+fn t84_a_transcription_reads_the_mix_unless_told_otherwise() {
+    let _g = serial();
+    if !since_314() {
+        eprintln!("skipped: needs replaycut 3.14");
+        return;
+    }
+    let Some((base, cut, _guard)) = transcribable_cut("which track") else {
+        return;
+    };
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "subtitles": { "source": "auto" } }),
+    );
+    assert_eq!(status, 200, "{v}");
+
+    for (body, track) in [
+        (json!({}), "mix"),
+        (json!({ "source": "voices" }), "voices"),
+        (json!({ "source": "mic" }), "mic"),
+    ] {
+        let (status, v) = post_json(&format!("/api/cuts/{cut}/transcribe"), &body);
+        assert_eq!(status, 202, "{body}: {v}");
+        let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+        assert_eq!(done["ok"], true, "{body}: {done}");
+        assert_eq!(done["track"], track, "{body}: {done}");
+        let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+        assert_eq!(c["subtitles"]["source"], track, "{body}: {c}");
+    }
+
+    let (status, v) = post_json(
+        &format!("/api/cuts/{cut}/transcribe"),
+        &json!({ "source": "sideways" }),
+    );
+    assert_eq!(status, 400, "{v}");
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}

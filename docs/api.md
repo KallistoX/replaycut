@@ -1758,7 +1758,8 @@ pointed at on the timeline without arithmetic.
 - `language`: what whisper was told to expect, or what a `PUT` said. Empty
   when the transcription was run with `auto` and nobody has said since.
 - `model`: `base`, `small` or `medium`; empty when the list was only typed.
-- `source`: `mic` or `mix`, the track the speech was read from.
+- `source`: `mic` or `mix`, the track the speech was read from; since 3.14
+  also `voices`, the microphone and the voice chat together.
 - `mode`: what the next rendering of this cut does with them - `none`,
   `burn` or `track`.
 - `edited`: somebody corrected them by hand.
@@ -1788,8 +1789,9 @@ own. The segments come from `GET /api/cuts/<id>/subtitles`.
 ```
 
 Reads the speech of a cut. Everything the body leaves out comes from
-`settings.subtitles`. `source` is `auto` (the microphone when the recording
-has one), `mic` or `mix`.
+`settings.subtitles`. `source` is `auto`, `mic` or `mix`, and since 3.14
+`voices`. `auto` is the mix since 3.14 and was the microphone, when the
+recording had one, before ([Since 3.14](#since-314)).
 
 `202 { ok: true, job, position, cut }`. Stages `queued -> transcribe ->
 done`, `kind: "transcribe"`, run with idle priority. It writes no file, is
@@ -2279,6 +2281,59 @@ than `off`/`burn`.
 
 The state document carries the same object as `config.quickShare`, the
 starting point of the pills under the player.
+
+## Since 3.14
+
+### A transcription reads the mix unless told otherwise
+
+`source: "auto"` - the default of `POST /api/cuts/<id>/transcribe` and of
+`settings.subtitles.source` - reads the mix, track 1 of the recording
+(`0:a:0`): every voice, in-game voice included. 3.11 to 3.13 read the
+microphone alone whenever the recording had one, and the lines of the
+others were missing. Measured on two four-track recordings (2026-09-21):
+the mix read 6 and 10 spoken lines where the microphone read 1 and 6.
+`mic` and `mix` read what they always did; a setting of `mic` stays as it
+is.
+
+### Microphone + voice chat, without the game
+
+`source: "voices"` in the transcribe body reads the microphone and the voice
+chat mixed together (`amix=inputs=2:normalize=0`, as the audio mode
+`gamediscord` mixes its two), without the game sound. It is worth it when
+the game is as loud as the voice chat and the mix misses lines; in-game
+voice is only in the mix. When two people talk at the same time, whisper
+usually writes down only one of them.
+
+Which tracks those are is read from the names in the file first - OBS
+writes the names of its audio tracks into the recording:
+
+| Name contains | Is |
+| --- | --- |
+| `mic`, `mikro` | the microphone |
+| `discord`, `voice`, `chat`, `teamspeak`, `mumble` | the voice chat |
+| `mix`, `game`, `spiel`, `desktop`, `music`, `musik` | something else |
+
+A name that says two of them (`Game + Mic`) says neither. What the names
+leave open is filled in as 3.11 found the microphone: the track OBS reports
+as fed by a microphone alone, else track 2 of a recording of four tracks or
+more; the voice chat is track 4 of such a recording. A track whose name says
+it is something else is never taken for either. The microphone of `source:
+"mic"` is found the same way since 3.14.
+
+`voices` is a value of `job.track` and of `cut.subtitles.source` as well. A
+recording in which either track cannot be found is read from the mix, and
+`track` says `mix`. `subtitles.source` in the settings stays `auto`, `mic`
+or `mix`, and `PUT /api/settings` answers `400` for `voices`: the choice is
+made for a cut, and a settings file that said `voices` would keep 3.13 from
+starting after a way back.
+
+### `clip.voices`
+
+A [Clip](#clip) gains `voices`: `true` when the recording has both tracks,
+found as above, so a page offers the choice only where it can be made.
+Measured when the recording in the watched folder is scanned, which every
+start does; a clip the store kept from before 3.14 that no scan meets again
+- its recording gone, or in a folder no longer watched - says `false`.
 
 ## Behaviour
 

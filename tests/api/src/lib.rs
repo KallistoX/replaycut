@@ -86,7 +86,21 @@ pub fn make_clip_with_keyframes_every(base: &str, seconds: u32) -> PathBuf {
     make_clip_with(base, &["-force_key_frames", &expr, "-sc_threshold", "0"])
 }
 
-fn make_clip_with(base: &str, video_args: &[&str]) -> PathBuf {
+/// A clip like [`make_clip`] whose four audio tracks carry names, the way
+/// OBS writes the names of its tracks into a recording (since 3.14 the
+/// service reads them to find the microphone and the voice chat).
+pub fn make_clip_with_track_names(base: &str, names: [&str; 4]) -> PathBuf {
+    let args: Vec<String> = names
+        .iter()
+        .enumerate()
+        .flat_map(|(i, n)| [format!("-metadata:s:a:{i}"), format!("title={n}")])
+        .collect();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    make_clip_with(base, &args)
+}
+
+/// `out_args` go in front of the audio codec: video options, metadata.
+fn make_clip_with(base: &str, out_args: &[&str]) -> PathBuf {
     let env = env();
     let path = env.clip_dir.join(format!("{base}.mkv"));
     let mut cmd = Command::new(&env.ffmpeg);
@@ -114,7 +128,7 @@ fn make_clip_with(base: &str, video_args: &[&str]) -> PathBuf {
         "-pix_fmt",
         "yuv420p",
     ]);
-    cmd.args(video_args);
+    cmd.args(out_args);
     cmd.args(["-c:a", "aac", "-b:a", "64k"]);
     cmd.arg(&path);
     let out = cmd
