@@ -8,6 +8,23 @@ replaycut 2.0 is a rewrite of a PowerShell service (1.x) that was never
 published. The 2.0 line keeps that service's HTTP API; `docs/api.md` is the
 contract.
 
+## [Unreleased]
+
+**One repair to the workshop**: in Firefox, the picture of a cut from a
+large recording could stand still after a few seconds.
+
+### Fixed
+
+- **A cut plays through in the workshop** (Firefox). The player of cutting
+  mode kept the recording while the workshop played the same file, and
+  Firefox gives two players of one file a shared cache: the paused one held
+  its read-ahead from the start of the file there, and a cut near the end
+  of a 2 GB recording got its data only in a trickle. The picture stood
+  after a few seconds, and only reloading the page helped, for a while. The
+  player of cutting mode now lets go of the recording while the workshop is
+  open and takes it back, at the same place, when you return. Chrome and
+  Edge were not affected. (#57)
+
 ## [3.14.0] - 2026-09-21
 
 **Subtitles hear the whole squad** (beta). A transcription read only your
