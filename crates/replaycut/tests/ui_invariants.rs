@@ -433,18 +433,44 @@ fn only_a_running_job_takes_the_progress_bar() {
     );
 }
 
+/// The keys of one table of the clips page, `const NAME = { ... };` with one
+/// entry per line: what stands before the first colon, unquoted. `None`
+/// when the page has no such table.
+fn table_keys(html: &str, name: &str) -> Option<Vec<String>> {
+    let start = html.find(&format!("const {name} = {{"))?;
+    let body = &html[start..];
+    let body = &body[..body.find("\n};")?];
+    Some(
+        body.lines()
+            .skip(1)
+            .filter_map(|line| {
+                let (key, _) = line.trim_start().split_once(':')?;
+                let key = key.trim();
+                let key = key
+                    .strip_prefix('\'')
+                    .and_then(|k| k.strip_suffix('\''))
+                    .unwrap_or(key);
+                Some(key.to_string())
+            })
+            .collect(),
+    )
+}
+
 /// Every letter the clips page answers to is in the list behind `?`, and no
-/// letter does two things. The handler is an `else if` chain, so a second
-/// use of a letter would silently never run. `D` (Mark done / Bring back)
-/// came in 3.9.1 next to `I`, `O` and `P`.
+/// letter does two things in one mode. Since 3.12 the page has two modes -
+/// cutting a recording, and the workshop for a cut - and each keeps its keys
+/// in a table of its own (`CUT_KEYS`, `WORK_KEYS`): `I` sets a mark in one
+/// and the start of a line in the other, which is fine, but a letter twice
+/// in one table is legal JavaScript that silently keeps only the last entry.
+/// `D` (Mark done / Bring back) came in 3.9.1 next to `I`, `O` and `P`.
 #[test]
-fn every_letter_shortcut_is_listed_once() {
+fn every_letter_shortcut_is_listed_once_per_mode() {
     let html = ui();
     let help_at = html
         .find("id=\"helpModal\"")
         .expect("the keyboard shortcuts dialog is gone");
     let help = &html[help_at..help_at + html[help_at..].find("</table>").unwrap_or(0)];
-    let mut letters: BTreeMap<char, usize> = BTreeMap::new();
+    // no letter is handled beside the tables, where a second meaning could hide
     const NEEDLE: &str = "k === '";
     let mut at = 0;
     while let Some(i) = html[at..].find(NEEDLE) {
@@ -452,35 +478,59 @@ fn every_letter_shortcut_is_listed_once() {
         at = start;
         let mut chars = html[start..].chars();
         if let (Some(c), Some('\'')) = (chars.next(), chars.next()) {
-            if c.is_ascii_lowercase() {
-                *letters.entry(c).or_default() += 1;
-            }
+            assert!(
+                !c.is_ascii_alphabetic(),
+                "the letter {c:?} is handled outside the key tables - put it into CUT_KEYS or WORK_KEYS"
+            );
         }
     }
-    for must in ['i', 'o', 'p', 'd'] {
+    let modes: [(&str, &[char]); 2] = [("CUT_KEYS", &['i', 'o', 'p', 'd']), ("WORK_KEYS", &[])];
+    for (table, must) in modes {
+        let Some(keys) = table_keys(&html, table) else {
+            assert!(
+                must.is_empty(),
+                "the clips page has no {table} any more - where do its keys live now?"
+            );
+            continue;
+        };
+        let mut letters: BTreeMap<char, usize> = BTreeMap::new();
+        for key in &keys {
+            let mut chars = key.chars();
+            if let (Some(c), None) = (chars.next(), chars.next()) {
+                if c.is_ascii_alphabetic() {
+                    assert!(
+                        c.is_ascii_lowercase(),
+                        "{table} writes {c:?} in upper case - the handler looks letters up in lower case"
+                    );
+                    *letters.entry(c).or_default() += 1;
+                }
+            }
+        }
+        for m in must {
+            assert!(
+                letters.contains_key(m),
+                "{table} no longer answers to {m:?} - update this test and the list behind ?"
+            );
+        }
+        let twice: Vec<char> = letters
+            .iter()
+            .filter(|(_, n)| **n > 1)
+            .map(|(c, _)| *c)
+            .collect();
         assert!(
-            letters.contains_key(&must),
-            "the clips page no longer answers to {must:?} - update this test and the list behind ?"
+            twice.is_empty(),
+            "{table} has these letters twice - only the last entry would ever run: {twice:?}"
+        );
+        let unlisted: Vec<char> = letters
+            .keys()
+            .map(|c| c.to_ascii_uppercase())
+            .filter(|c| !help.contains(&format!("<kbd>{c}</kbd>")))
+            .collect();
+        assert!(
+            unlisted.is_empty(),
+            "these shortcuts of {table} work but the list behind ? does not name them: {unlisted:?}"
         );
     }
-    let twice: Vec<char> = letters
-        .iter()
-        .filter(|(_, n)| **n > 1)
-        .map(|(c, _)| *c)
-        .collect();
-    assert!(
-        twice.is_empty(),
-        "these letters are handled more than once - the later branch never runs: {twice:?}"
-    );
-    let unlisted: Vec<char> = letters
-        .keys()
-        .map(|c| c.to_ascii_uppercase())
-        .filter(|c| !help.contains(&format!("<kbd>{c}</kbd>")))
-        .collect();
-    assert!(
-        unlisted.is_empty(),
-        "these shortcuts work but the list behind ? does not name them: {unlisted:?}"
-    );
 }
 
 /// Banner buttons that only one page wires, with the reason. The banner they

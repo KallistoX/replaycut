@@ -2631,6 +2631,26 @@ function plan(d, vertical, lim) { const a = 128000;
   const area = src ? Math.min(1, out / src) : 1;
   const bps = cur && cur.size && cur.duration ? cur.size * 8 / cur.duration * factor * area : 20e6; return { mb: (bps + a) * d / 8 / 1048576, kbps: 0, height: h }; }
 
+// The keys of the clips page, one table per mode (since 3.12). A letter is
+// written in lower case and does one thing per mode; ui_invariants reads the
+// tables and holds that, and that each letter is in the list behind `?`.
+// Letters count whatever the case: Shift+I is I.
+const keyName = e => e.key.length === 1 ? e.key.toLowerCase() : e.key;
+const CUT_KEYS = {
+  ' ': e => { e.preventDefault(); v.paused ? v.play() : v.pause(); },
+  ArrowLeft: e => { e.preventDefault(); seek(v.currentTime - (e.shiftKey ? 5 : 1)); },
+  ArrowRight: e => { e.preventDefault(); seek(v.currentTime + (e.shiftKey ? 5 : 1)); },
+  ',': () => seek(v.currentTime - 1 / 60),
+  '.': () => seek(v.currentTime + 1 / 60),
+  Home: () => seek(0),
+  End: () => seek(cur.duration),
+  i: () => setIn(),
+  o: () => setOut(),
+  p: () => playSel(),
+  d: e => { if (!e.ctrlKey && !e.metaKey && !e.altKey) toggleDone(); },
+  Enter: () => share(),
+};
+
 function initClips() {
   v = $('v'); tl = $('tl'); sel = $('sel'); hin = $('hin'); hout = $('hout'); ph = $('ph');
   // the list is a collapsed panel beside the game, a column on a wide screen
@@ -2661,17 +2681,8 @@ function initClips() {
   document.addEventListener('keydown', e => {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || !$('modal').hidden) { if (e.key === 'Escape' && !$('modal').hidden) $('modal').hidden = true; return; }
     if (!cur) return;
-    const k = e.key, big = e.shiftKey ? 5 : 1;
-    if (k === ' ') { e.preventDefault(); v.paused ? v.play() : v.pause(); }
-    else if (k === 'ArrowLeft') { e.preventDefault(); seek(v.currentTime - big); }
-    else if (k === 'ArrowRight') { e.preventDefault(); seek(v.currentTime + big); }
-    else if (k === ',') seek(v.currentTime - 1 / 60);
-    else if (k === '.') seek(v.currentTime + 1 / 60);
-    else if (k === 'Home') seek(0); else if (k === 'End') seek(cur.duration);
-    else if (k === 'i' || k === 'I') setIn(); else if (k === 'o' || k === 'O') setOut();
-    else if (k === 'p' || k === 'P') playSel();
-    else if ((k === 'd' || k === 'D') && !e.ctrlKey && !e.metaKey && !e.altKey) toggleDone();
-    else if (k === 'Enter') share();
+    const f = CUT_KEYS[keyName(e)];
+    if (f) f(e);
   });
   $('bIn').onclick = setIn; $('bOut').onclick = setOut; $('bPrev').onclick = playSel;
   $('bAll').onclick = () => { if (!cur) return; tIn = 0; tOut = cur.duration; edited = false; render(); };
