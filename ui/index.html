@@ -1564,7 +1564,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="stack-3">
             <div class="fields-2">
               <div class="field"><label>Language of the speech</label><select class="select" data-f="subtitles.language" id="sSubsLang"></select><span class="hint">Naming your language is worth it: "Detect" decides again for every 30 seconds it looks at, so a quiet passage can flip a clip into English mid-sentence - and a subtitle track whose language nobody recorded goes out untagged.</span></div>
-              <div class="field"><label>Audio track <button class="help" type="button" aria-expanded="false" aria-label="Which track the speech is read from" data-help="Automatic asks OBS which track carries the microphone and falls back to track 2 of a four-track recording. A recording with one track is always the mix.">?</button></label><select class="select" data-f="subtitles.source"><option value="auto">automatic - the microphone when there is one</option><option value="mic">microphone</option><option value="mix">mix (all)</option></select><span class="hint">The microphone alone gives the cleanest text when the game is loud.</span></div>
+              <div class="field"><label>Audio track <button class="help" type="button" aria-expanded="false" aria-label="Which track the speech is read from" data-help="Automatic reads the mix: every track - your microphone, the voice chat and in-game voice. Microphone reads your own voice alone. For a single cut the workshop can also read the microphone and the voice chat without the game sound; that is worth it when the game is as loud as the voice chat and the mix misses lines. When two people talk at the same time, whisper usually writes down only one of them.">?</button></label><select class="select" data-f="subtitles.source"><option value="auto">automatic - the mix, every voice</option><option value="mic">microphone</option><option value="mix">mix (all)</option></select><span class="hint">Only the mix carries in-game voice.</span></div>
             </div>
             <div class="field"><label class="switch"><input type="checkbox" data-f="subtitles.gpu"><span class="track"></span> Let whisper use the graphics card <span class="muted sm">(off: the card belongs to the game)</span> <button class="help" type="button" aria-expanded="false" aria-label="What the graphics card does here" data-help="Off by default: the card belongs to the game, and in the ffmpeg builds this was measured on the filter runs on the CPU whatever this says. Worth a try when you transcribe while not playing.">?</button></label></div>
           </div>
@@ -3229,6 +3229,10 @@ let v, tl, sel, hin, hout, ph;
 
 const short = b => { const p = (cfg.displayName || '').trim(); return p && b && b.toLowerCase().startsWith(p.toLowerCase()) ? b.slice(p.length).trim() : (b || ''); };
 const audioLabel = id => (cfg.audio.find(a => a.id === id) || {}).label || id || 'Mix';
+// what a transcription read (`job.track`, `subtitles.source`); since 3.14
+// also the microphone and the voice chat together
+const SPEECH_FROM = { mic: 'the microphone', mix: 'the mix', voices: 'the microphone and the voice chat' };
+const speechFrom = t => SPEECH_FROM[t] || SPEECH_FROM.mix;
 function expiry() { return cfg.expireDays > 0 ? 'link expires in ' + cfg.expireDays + ' days' : 'link never expires'; }
 // what a target caps a share at (since 3.8: the storage entries carry it, and the one of File only)
 function limitsOf(id) { const t = (cfg.targets || []).find(t => t.id === id); return { maxHeight: (t && t.maxHeight) || 0, maxKbps: (t && t.maxKbps) || 0 }; }
@@ -3695,7 +3699,7 @@ function showProgress(j) {
   const pct = FOLLOWS_FFMPEG.includes(j.stage) ? (j.percent || 0) : (j.stage === 'queued' || j.stage === 'cut' ? 0 : 100);
   const queued = j.stage === 'queued' ? (j.position ? `Queued - ${j.position} share${j.position === 1 ? '' : 's'} ahead` : 'Queued …') : null;
   if (j.kind === 'preview') $('progText').textContent = (queued || `Making the playable preview (720p H.264) of ${short(j.base)}`);
-  else $('progText').textContent = (queued || (j.stage === 'encode' && j.mode === 'copy' ? 'Copying' : STAGE_TEXT[j.stage]) || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)}${j.mode === 'copy' ? ' as recorded' : (j.kbps ? ` at ${j.kbps} kbit/s` : ' at best quality')}${j.maxHeight ? `, ${j.maxHeight}p` : ''}${j.vertical ? ', vertical 9:16' : ''}, ${audioLabel(j.audio)}` : '') + (j.stage === 'transcribe' ? ` of ${fmt(j.seconds)}${j.track ? ` from the ${j.track === 'mic' ? 'microphone' : 'mix'}` : ''}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '') + (otherClip(j) ? ` · ${otherClip(j)}` : '');
+  else $('progText').textContent = (queued || (j.stage === 'encode' && j.mode === 'copy' ? 'Copying' : STAGE_TEXT[j.stage]) || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)}${j.mode === 'copy' ? ' as recorded' : (j.kbps ? ` at ${j.kbps} kbit/s` : ' at best quality')}${j.maxHeight ? `, ${j.maxHeight}p` : ''}${j.vertical ? ', vertical 9:16' : ''}, ${audioLabel(j.audio)}` : '') + (j.stage === 'transcribe' ? ` of ${fmt(j.seconds)}${j.track ? ` from ${speechFrom(j.track)}` : ''}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '') + (otherClip(j) ? ` · ${otherClip(j)}` : '');
   const canCancel = ['queued', 'encode', 'upload', 'transcribe'].includes(j.stage);
   $('progCancel').hidden = !canCancel; $('progCancel').dataset.job = j.id;
   $('progPct').textContent = pct + ' %';
@@ -3760,11 +3764,11 @@ function showResult(r) {
     // since 3.12.1 the job says how many lines it read: 0 is no speech, not a result to correct
     if (r.lines === 0) {
       head('info', 'No speech found in this cut');
-      note(`${fmt(r.start)} - ${fmt(r.end)} · from the ${r.track === 'mic' ? 'microphone' : 'mix'}. whisper heard nothing it could put on the picture - in the workshop you can try another track or language.`);
+      note(`${fmt(r.start)} - ${fmt(r.end)} · from ${speechFrom(r.track)}. whisper heard nothing it could put on the picture - in the workshop you can try another track or language.`);
       return;
     }
     head('check', r.lines ? `Subtitles read - ${r.lines} line${r.lines === 1 ? '' : 's'}` : 'Subtitles read');
-    note(`${fmt(r.start)} - ${fmt(r.end)} · from the ${r.track === 'mic' ? 'microphone' : 'mix'}. Open the cut (in the list, or with W) to correct them.`);
+    note(`${fmt(r.start)} - ${fmt(r.end)} · from ${speechFrom(r.track)}. Open the cut (in the list, or with W) to correct them.`);
     return;
   }
   const postFailed = lastPostFailed(r.discord);
@@ -5319,7 +5323,10 @@ function wsBar() {
   const empty = ws.segs.some(s => !String(s.text || '').trim());
   const state = ws.saving ? 'saving …' : ws.error ? `not saved - ${ws.error}` : empty ? 'a new line is kept once it has text'
     : ws.rev !== ws.savedRev ? 'saving …' : ws.savedAt ? `saved ${ws.savedAt}` : (d.edited ? 'corrected' : `read by ${d.model || 'hand'}`);
-  $('subState').textContent = `As spoken · ${lang} · ${n} line${n === 1 ? '' : 's'} · ${state}`;
+  // what whisper read, since there are three to choose from (3.14); lines
+  // typed by hand were read from nothing
+  const from = d.model && d.source ? ` · from ${speechFrom(d.source)}` : '';
+  $('subState').textContent = `As spoken · ${lang}${from} · ${n} line${n === 1 ? '' : 's'} · ${state}`;
   $('subState').classList.toggle('err', !!ws.error);
   $('subSrt').href = `/api/cuts/${encodeURIComponent(wcut.id)}/subtitles?format=srt`;
 }
@@ -5510,21 +5517,29 @@ function wsSubsCard() {
     bindHand(setLang);
     return;
   }
-  const tr = wTr || { source: (wSubsSettings && wSubsSettings.source) || 'auto', language: (wSubsSettings && wSubsSettings.language) || 'auto' };
-  const trackWords = { auto: 'Automatic', mic: 'Microphone', mix: 'Mix (all)' };
+  const tr = Object.assign({ source: (wSubsSettings && wSubsSettings.source) || 'auto', language: (wSubsSettings && wSubsSettings.language) || 'auto' }, wTr);
+  // microphone + voice chat only where the recording has both (3.14); a
+  // choice made on another cut falls back to automatic here
+  if (tr.source === 'voices' && !cur.voices) tr.source = 'auto';
+  const trackWords = { auto: 'Automatic', voices: 'Microphone + voice chat', mic: 'Microphone', mix: 'Mix (all)' };
+  if (!cur.voices) delete trackWords.voices;
+  const trackHelp = 'Automatic reads the mix: every track - your microphone, the voice chat and in-game voice. '
+    + (cur.voices ? 'Microphone + voice chat leaves the game sound out; it is worth it when the game is as loud as the voice chat and the mix misses lines. In-game voice is only in the mix. '
+      : 'This recording has no voice-chat track of its own to read without the game. ')
+    + 'When two people talk at the same time, whisper usually writes down only one of them.';
   // read, and nothing heard (since 3.12.1): a transcript with no lines is
   // not "none yet" - it says what was read, and how to try again
   const sum = k.subtitles, heard = sum && !sum.count;
   const intro = heard
-    ? `<b>No speech found.</b> ${esc(sum.model || 'whisper')} read the ${sum.source === 'mix' ? 'mix of all tracks' : 'microphone'}${sum.language ? ` in ${esc(langName(sum.language))}` : ''}${sum.at ? ` at ${esc(sum.at.slice(11, 16))}` : ''} and found nothing to put on the picture - a single short word is easily taken for noise. Another track or language may hear more.`
+    ? `<b>No speech found.</b> ${esc(sum.model || 'whisper')} read ${sum.source === 'mix' ? 'the mix of all tracks' : speechFrom(sum.source)}${sum.language ? ` in ${esc(langName(sum.language))}` : ''}${sum.at ? ` at ${esc(sum.at.slice(11, 16))}` : ''} and found nothing to put on the picture - a single short word is easily taken for noise. Another track or language may hear more.`
     : `This cut has none yet. Transcribing runs on this PC and takes about as long as the cut plays - <b>about ${secs} s</b> for ${esc(fmt(cutLen(k)))}. You can keep using the page while it runs.`;
   body.innerHTML = `<p class="muted sm">${intro}</p>`
-    + `<div class="row"><button class="btn" type="button" id="wTrGo"><svg class="icon icon-sm"><use href="#i-${heard ? 'refresh' : 'subtitles'}"/></svg> ${heard ? 'Transcribe again' : 'Transcribe'}</button><button class="pill" type="button" id="wTrTrack" aria-haspopup="true">Track <b>${esc(trackWords[tr.source] || tr.source)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button><button class="pill" type="button" id="wTrLang" aria-haspopup="true">Language <b>${esc(langName(tr.language) || tr.language)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button></div>`
+    + `<div class="row"><button class="btn" type="button" id="wTrGo"><svg class="icon icon-sm"><use href="#i-${heard ? 'refresh' : 'subtitles'}"/></svg> ${heard ? 'Transcribe again' : 'Transcribe'}</button><button class="pill" type="button" id="wTrTrack" aria-haspopup="true">Track <b>${esc(trackWords[tr.source] || tr.source)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button><button class="pill" type="button" id="wTrLang" aria-haspopup="true">Language <b>${esc(langName(tr.language) || tr.language)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button><button class="help" type="button" aria-expanded="false" aria-label="Which track the speech is read from" data-help="${esc(trackHelp)}">?</button></div>`
     + `<span class="faint sm">Model: ${esc(model ? model.name : wanted)}, ready on this PC</span>`
     + handRow(tr.language);
   bindHand(tr.language);
   $('wTrGo').onclick = () => wsTranscribe(false, { source: tr.source, language: tr.language });
-  $('wTrTrack').onclick = e => { e.stopPropagation(); menuAt($('wTrTrack'), [{ heading: 'Read the speech from' }].concat(Object.entries(trackWords).map(([id, label]) => ({ label, note: id === tr.source ? 'chosen' : '', disabled: id !== 'auto' && (cur.tracks || 1) === 1, onclick: () => { wTr = Object.assign({}, tr, { source: id }); wsSubsCard(); } })))); };
+  $('wTrTrack').onclick = e => { e.stopPropagation(); menuAt($('wTrTrack'), [{ heading: 'Read the speech from' }].concat(Object.entries(trackWords).map(([id, label]) => ({ label, note: id === tr.source ? 'chosen' : id === 'voices' ? 'no game sound' : '', disabled: id !== 'auto' && (cur.tracks || 1) === 1, onclick: () => { wTr = Object.assign({}, tr, { source: id }); wsSubsCard(); } })))); };
   $('wTrLang').onclick = e => { e.stopPropagation(); menuAt($('wTrLang'), [{ heading: 'Language of the speech' }].concat(((wModels && wModels.languages) || []).map(l => ({ label: l.label, note: l.id === tr.language ? 'chosen' : '', onclick: () => { wTr = Object.assign({}, tr, { language: l.id }); wsSubsCard(); } })))); };
 }
 async function wsGetModel(name) {
@@ -5558,8 +5573,11 @@ async function wsTranscribe(again, how) {
 function wsMenu() {
   const k = wcut, d = ws.doc || {}, items = [{ heading: 'Subtitles' }];
   items.push({ label: 'Transcribe again', icon: 'i-refresh', title: 'Read the speech of this cut again, with the model and language from Settings', onclick: () => wsTranscribe(true) });
-  const other = d.source === 'mic' ? 'mix' : d.source === 'mix' ? 'mic' : '';
-  if (other && cur.tracks !== 1) items.push({ label: 'From the other track', icon: 'i-subtitles', note: other === 'mic' ? 'microphone' : 'mix', onclick: () => wsTranscribe(true, { source: other }) });
+  // read again from each source it was not read from (3.14: three of them);
+  // wsTranscribe asks before it replaces lines somebody corrected
+  if (cur.tracks !== 1) [['mix', 'From the mix', 'every track'], ['mic', 'From the microphone', ''], ['voices', 'From microphone + voice chat', 'no game sound']]
+    .filter(([id]) => id !== d.source && (id !== 'voices' || cur.voices))
+    .forEach(([id, label, note]) => items.push({ label, icon: 'i-subtitles', note, onclick: () => wsTranscribe(true, { source: id }) }));
   const name = encodeURIComponent(k.id);
   items.push('hr');
   items.push({ label: 'Export as SRT', icon: 'i-download', href: `/api/cuts/${name}/subtitles?format=srt`, download: '' });

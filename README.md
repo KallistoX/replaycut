@@ -39,7 +39,8 @@ your phone, link in Discord.](docs/design/icons/social.png)
 - **The link posts itself.** Discord, Telegram or any webhook right after the
   quick share; every other share offers "Post to ..." when you want it.
 - **Subtitles, read on your own PC** (beta, off until you switch it on).
-  ffmpeg's `whisper` filter reads the microphone track of a cut, you correct
+  ffmpeg's `whisper` filter reads the speech of a cut - the mix, or your
+  microphone and the voice chat without the game - you correct
   the lines in the workshop with the line on the picture as it will be
   rendered, and a rendering burns them into the picture - the only
   way they show in a Discord preview or a Short - or carries them as a
