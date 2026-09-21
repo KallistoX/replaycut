@@ -915,6 +915,10 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 #wOv { z-index: 1; }
 #wOv .btn { margin-top: var(--space-1); }
 #rNote { margin-top: calc(-1 * var(--space-2)); }
+/* overlapping cuts stack in rows and the timeline grows downwards; the
+   handles grow with it (at the usual height these are the same 56 and 40 px) */
+#tl.has-rows .handle { height: auto; bottom: -6px; }
+#tl.has-rows .handle::after { height: auto; bottom: 8px; }
 </style>
 </head>
 <body>
@@ -3872,6 +3876,8 @@ const cutLen = k => Math.max(0, k.end - k.start);
 // of the page: they sit on its timeline and in its row of the list, and a
 // click loads one into the workshop.
 let cutBarsKey = '';
+/// The height of one row of cut bars: the bar and its label under it.
+const CUTBAR_ROW = 18;
 function renderCuts() {
   renderLoaded();
   renderCutBars();
@@ -3894,10 +3900,23 @@ function renderCutBars() {
   if (key === cutBarsKey) return; cutBarsKey = key;
   tl.querySelectorAll('.cutbar').forEach(b => b.remove());
   $('tlCutsNote').hidden = !cuts.length;
+  // Cuts that overlap go into rows of their own, and the timeline grows
+  // downwards by a row for each - one bar never hides another. A row is
+  // free again where its last bar ended (its label included).
+  const rowEnd = [], rowOf = new Map();
+  cuts.slice().sort((a, b) => a.start - b.start).forEach(k => {
+    let r = rowEnd.findIndex(e => e <= k.start);
+    if (r < 0) { r = rowEnd.length; rowEnd.push(0); }
+    rowEnd[r] = k.end; rowOf.set(k.id, r);
+  });
+  const rows = Math.max(1, rowEnd.length);
+  tl.classList.toggle('has-rows', rows > 1);
+  tl.style.height = rows > 1 ? `calc(var(--tl-h, 44px) + ${(rows - 1) * CUTBAR_ROW}px)` : '';
   cuts.forEach(k => {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'cutbar';
     b.style.left = (k.start / cur.duration * 100) + '%';
     b.style.width = Math.max(0.5, cutLen(k) / cur.duration * 100) + '%';
+    b.style.top = (3 + rowOf.get(k.id) * CUTBAR_ROW) + 'px';
     const name = cutName(k, cur);
     b.title = `Load the cut "${name}" (${cutRange(k)})`;
     b.setAttribute('aria-label', `Load the cut ${name}, ${cutRange(k)}`);
