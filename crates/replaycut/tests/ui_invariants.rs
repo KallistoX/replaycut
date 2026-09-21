@@ -486,7 +486,7 @@ fn every_letter_shortcut_is_listed_once_per_mode() {
     }
     let modes: [(&str, &[char]); 2] = [
         ("CUT_KEYS", &['i', 'o', 'p', 'd', 'c', 'w']),
-        ("WORK_KEYS", &['i', 'o', 'p', 's', 'm', 'w']),
+        ("WORK_KEYS", &['i', 'o', 'p', 's', 'm', 'n', 'w']),
     ];
     for (table, must) in modes {
         let Some(keys) = table_keys(&html, table) else {

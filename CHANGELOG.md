@@ -8,6 +8,22 @@ replaycut 2.0 is a rewrite of a PowerShell service (1.x) that was never
 published. The 2.0 line keeps that service's HTTP API; `docs/api.md` is the
 contract.
 
+## [Unreleased]
+
+### Added
+
+- **Add a line of your own** (beta, #55). "+ Add line" in the head of the
+  transcript, or `N`, puts a new line into the gap at the playhead - two
+  seconds long, or up to the next line when that comes sooner - with the
+  text field ready. It is kept once it has text. Inside a line the button
+  is off and says why: there, Split does the job.
+- **Subtitles without whisper.** The card of a cut without lines has "+ Add
+  line" too - "or type the lines yourself" - also when there is no model
+  yet, when this ffmpeg cannot transcribe (some Linux distributions ship it
+  without the filter), and when a transcription heard nothing. The lines
+  get the language chosen on the card; with "Detect" the track goes
+  untagged, and the card says so.
+
 ## [3.12.1] - 2026-09-21
 
 **One repair to the subtitle beta of 3.12**: a cut in which whisper heard

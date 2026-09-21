@@ -95,7 +95,9 @@ With subtitles switched on, the lines of a cut lie on its timeline and the
 one under the playhead is on the picture, in the size, place and colour the
 rendering will give it, for 16:9 and for the 9:16 window of a Short. Click a
 line, correct its text, set its start and end at the playhead with `I` and
-`O`, split, merge or delete it; everything saves by itself.
+`O`, split, merge or delete it, or add one of your own in a gap (`N`) -
+also when whisper heard nothing or cannot run here; everything saves by
+itself.
 
 ## Install
 

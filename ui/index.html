@@ -928,6 +928,10 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 .line-inspector .transcript { max-height: 150px; overflow-y: auto; }
 .line-inspector .times.warn { color: var(--warn); }
 .caption-lane .block:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* a line that has no text yet (Add line, since 3.13): there, not yet saved */
+.caption-lane .block.is-new { border-style: dashed; font-style: italic; color: var(--fg-faint); }
+.transcript .tline.is-new .txt { font-style: italic; color: var(--fg-faint); }
+#liAdd[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
 /* the picture has nothing over its lower third while there are lines */
 #workshop.has-subs .wcontrols { position: static; margin-top: var(--space-1); background: none; padding: 0; }
 /* The split of F7 once the cut has lines: the picture beside the frame
@@ -997,6 +1001,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <symbol id="i-undo" viewBox="0 0 20 20"><path d="M4 8h8a4 4 0 0 1 0 8H8"/><path d="M7 5 4 8l3 3"/></symbol>
   <symbol id="i-split" viewBox="0 0 20 20"><path d="M10 2.5v15M3 7l-3 3 3 3M17 7l3 3-3 3"/></symbol>
   <symbol id="i-merge" viewBox="0 0 20 20"><path d="M10 2.5v15M1 10h5M14 10h5M6 7l3 3-3 3M14 7l-3 3 3 3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
   <symbol id="i-b-nextcloud" viewBox="0 0 24 24"><path d="M12.018 6.537c-2.5 0-4.6 1.712-5.241 4.015-.56-1.232-1.793-2.105-3.225-2.105A3.569 3.569 0 0 0 0 12a3.569 3.569 0 0 0 3.552 3.553c1.432 0 2.664-.874 3.224-2.106.641 2.304 2.742 4.016 5.242 4.016 2.487 0 4.576-1.693 5.231-3.977.569 1.21 1.783 2.067 3.198 2.067A3.568 3.568 0 0 0 24 12a3.569 3.569 0 0 0-3.553-3.553c-1.416 0-2.63.858-3.199 2.067-.654-2.284-2.743-3.978-5.23-3.977zm0 2.085c1.878 0 3.378 1.5 3.378 3.378 0 1.878-1.5 3.378-3.378 3.378A3.362 3.362 0 0 1 8.641 12c0-1.878 1.5-3.378 3.377-3.378zm-8.466 1.91c.822 0 1.467.645 1.467 1.468s-.644 1.467-1.467 1.468A1.452 1.452 0 0 1 2.085 12c0-.823.644-1.467 1.467-1.467zm16.895 0c.823 0 1.468.645 1.468 1.468s-.645 1.468-1.468 1.468A1.452 1.452 0 0 1 18.98 12c0-.823.644-1.467 1.467-1.467z"/></symbol>
   <symbol id="i-b-onedrive" viewBox="0 0 24 24"><path d="M19.453 9.95q.961.058 1.787.468.826.41 1.442 1.066.615.657.966 1.512.352.856.352 1.816 0 1.008-.387 1.893-.386.885-1.049 1.547-.662.662-1.546 1.049-.885.387-1.893.387H6q-1.242 0-2.332-.475-1.09-.475-1.904-1.29-.815-.814-1.29-1.903Q0 14.93 0 13.688q0-.985.31-1.887.311-.903.862-1.658.55-.756 1.324-1.325.774-.568 1.711-.861.434-.129.85-.187.416-.06.861-.082h.012q.515-.786 1.207-1.413.691-.627 1.5-1.066.808-.44 1.705-.668.896-.229 1.845-.229 1.278 0 2.456.417 1.177.416 2.144 1.16.967.744 1.658 1.78.692 1.038 1.008 2.28zm-7.265-4.137q-1.325 0-2.52.544-1.195.545-2.04 1.565.446.117.85.299.405.181.792.416l4.78 2.86 2.731-1.15q.27-.117.545-.204.276-.088.58-.147-.293-.937-.855-1.705-.563-.768-1.319-1.318-.755-.551-1.658-.856-.902-.304-1.886-.304zM2.414 16.395l9.914-4.184-3.832-2.297q-.586-.351-1.23-.539-.645-.188-1.325-.188-.914 0-1.722.364-.809.363-1.412.978-.604.616-.955 1.436-.352.82-.352 1.723 0 .703.234 1.423.235.721.68 1.284zm16.711 1.793q.563 0 1.078-.176.516-.176.961-.516l-7.23-4.324-10.301 4.336q.527.328 1.13.504.604.175 1.237.175zm3.012-1.852q.363-.727.363-1.523 0-.774-.293-1.407t-.791-1.072q-.498-.44-1.166-.68-.668-.24-1.406-.24-.422 0-.838.1t-.815.252q-.398.152-.785.334-.386.181-.761.345Z"/></symbol>
   <symbol id="i-b-youtube" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></symbol>
@@ -1186,7 +1191,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <span class="faint xs"><kbd>Alt</kbd>+<kbd>←</kbd><kbd>→</kbd> moves the start, with <kbd>Shift</kbd> the end. Edits save by themselves.</span>
         </div>
         <div class="col transcript-col">
-          <div class="row nowrap"><span class="section-title grow">Whole transcript</span><span class="faint xs">click to jump</span></div>
+          <div class="row nowrap"><span class="section-title grow">Whole transcript</span><button class="btn btn-sm btn-ghost" type="button" id="liAdd" title="A new line in the gap at the playhead"><svg class="icon icon-sm"><use href="#i-plus"/></svg> Add line <kbd>N</kbd></button></div>
           <div class="transcript" id="transcript"></div>
         </div>
       </div>
@@ -1765,6 +1770,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <tr><td><kbd>Alt</kbd> + <kbd>←</kbd> <kbd>→</kbd></td><td>Move the mark nearer the playhead by 0.1 s</td><td>Move the start of the selected line by 0.1 s; with <kbd>Shift</kbd> its end</td></tr>
       <tr><td><kbd>P</kbd></td><td>Play the selection</td><td>Play the selected line</td></tr>
       <tr><td><kbd>S</kbd> <kbd>M</kbd></td><td>-</td><td>Split the line at the playhead, or merge the selected line with the next</td></tr>
+      <tr><td><kbd>N</kbd></td><td>-</td><td>A new line in the gap at the playhead, to type into</td></tr>
       <tr><td><kbd>Delete</kbd></td><td>-</td><td>Delete the selected line (Undo in the message)</td></tr>
       <tr><td><kbd>C</kbd></td><td>Save the marks as a cut, without rendering</td><td>-</td></tr>
       <tr><td><kbd>D</kbd></td><td>Mark the clip done, or bring a done clip back</td><td>-</td></tr>
@@ -4502,6 +4508,8 @@ const WORK_KEYS = {
   p: e => { if (plain(e)) wsPlayLine(); },
   s: e => { if (plain(e)) wsSplit(); },
   m: e => { if (plain(e)) wsMerge(); },
+  // the key must not reach the text field it moves the focus into
+  n: e => { if (plain(e)) { e.preventDefault(); wsAdd(); } },
   Delete: e => { if (wsHas()) { e.preventDefault(); wsDelete(); } },
   Enter: () => renderWork(''),
   Escape: () => { if (openMenuEl) closeMenu(); else if (!document.querySelector('.modal:not([hidden])') && $('navMenu').hidden) backToRecording(); },
@@ -4619,6 +4627,9 @@ function wsBody() {
 async function wsSave() {
   clearTimeout(ws.timer); ws.timer = null;
   if (ws.saving || ws.rev === ws.savedRev || !ws.id) return;
+  // only new lines without text: nothing to keep yet, and an empty list
+  // would delete the transcript (a "No speech found" among them)
+  if (ws.segs.length && !ws.segs.some(s => String(s.text || '').trim())) return;
   const id = ws.id, rev = ws.rev;
   ws.saving = true; wsBar();
   try {
@@ -4781,8 +4792,10 @@ function wsLane() {
     b.tabIndex = i === ws.sel ? 0 : -1;
     b.style.left = ((s.start - k.start) / len * 100) + '%';
     b.style.width = ((s.end - s.start) / len * 100) + '%';
-    b.textContent = s.text.replace(/\n/g, ' ');
-    b.setAttribute('aria-label', `${s.text.replace(/\n/g, ' ')}, ${fmt(s.start - k.start)} to ${fmt(s.end - k.start)}`);
+    const words = s.text.replace(/\n/g, ' ').trim();
+    if (!words) b.classList.add('is-new');
+    b.textContent = words || 'new line';
+    b.setAttribute('aria-label', `${words || 'new line, no text yet'}, ${fmt(s.start - k.start)} to ${fmt(s.end - k.start)}`);
     b.onclick = () => wsSelect(i, true);
     lane.appendChild(b);
   });
@@ -4815,6 +4828,44 @@ function wsTimingLine() {
   if (!wsHas()) return;
   $('liAt').textContent = `Timing · playhead ${fmt(Math.max(0, wRecSafe() - wcut.start))}`;
   $('liSplit').disabled = !wsSplitAt();
+  // off, not disabled: a disabled button shows no tooltip, and a click
+  // should say why (the toast of wsAdd)
+  const gap = !!wsGapAt(wRecSafe()), add = $('liAdd');
+  add.setAttribute('aria-disabled', gap ? 'false' : 'true');
+  add.title = gap ? 'A new line in the gap at the playhead' : 'Put the playhead in a gap between the lines - inside a line, Split does it';
+}
+
+// -------- a line of your own (since 3.13)
+/// Where a new line can go: the gap at the playhead, 2 s long or up to the
+/// next line when that comes sooner, inside the cut and at least SUB_MIN.
+/// Inside a line there is no gap - Split does that job there.
+function wsGapAt(t) {
+  if (!wcut) return null;
+  if (ws.segs.some(s => t >= s.start && t < s.end)) return null;
+  const at = ws.segs.findIndex(s => s.start >= t);
+  const next = at < 0 ? null : ws.segs[at];
+  const lo = Math.max(wcut.start, t), hi = Math.min(wcut.end, next ? next.start : Infinity, lo + 2);
+  if (hi - lo < SUB_MIN) return null;
+  const r3 = x => Math.round(x * 1000) / 1000;
+  return { start: r3(lo), end: r3(hi), index: at < 0 ? ws.segs.length : at };
+}
+/// "+ Add line" and `N`: an empty line in the gap at the playhead, selected,
+/// with the text field ready. It is saved once it has text - the service
+/// takes no empty line - and a line left empty is gone after a reload.
+/// `lang` is the language a cut without a transcript gets from the card.
+function wsAdd(lang) {
+  if (!cfg.subtitles || !wcut || wcut.state !== 'ready' || wsReading()) return;
+  wsFor(wcut);
+  const g = wsGapAt(wRecSafe());
+  if (!g) { toast('Put the playhead in a gap between the lines - inside a line, Split does it'); return; }
+  ws.segs.splice(g.index, 0, { start: g.start, end: g.end, text: '' });
+  ws.sel = g.index; ws.caret = -1;
+  if (lang && lang !== 'auto' && !(ws.doc && ws.doc.language)) ws.doc = Object.assign({}, ws.doc, { language: lang });
+  wsDraw();
+  // at once: the drawing above is synchronous, and a frame callback does not
+  // run in a tab that counts as hidden
+  const t = $('lineText');
+  if (t && !t.disabled) { t.focus(); ws.textFocus = true; }
 }
 function wsTranscript() {
   const box = $('transcript'), k = wcut;
@@ -4827,7 +4878,9 @@ function wsTranscript() {
     if (i === ws.sel) b.setAttribute('aria-current', 'true');
     b.innerHTML = '<span class="t"></span><span class="txt"></span>';
     b.firstChild.textContent = fmt(s.start - k.start);
-    b.lastChild.textContent = s.text.replace(/\n/g, ' ');
+    const words = s.text.replace(/\n/g, ' ').trim();
+    if (!words) b.classList.add('is-new');
+    b.lastChild.textContent = words || 'new line - type its text';
     b.onclick = () => wsSelect(i, true);
     box.appendChild(b);
   });
@@ -4838,7 +4891,9 @@ function wsBar() {
   if (!wsHas()) return;
   const d = ws.doc || {}, n = ws.segs.length;
   const lang = d.language ? langName(d.language) : 'language not set';
-  const state = ws.saving ? 'saving …' : ws.error ? `not saved - ${ws.error}` : ws.rev !== ws.savedRev ? 'saving …' : ws.savedAt ? `saved ${ws.savedAt}` : (d.edited ? 'corrected' : `read by ${d.model || 'hand'}`);
+  const empty = ws.segs.some(s => !String(s.text || '').trim());
+  const state = ws.saving ? 'saving …' : ws.error ? `not saved - ${ws.error}` : empty ? 'a new line is kept once it has text'
+    : ws.rev !== ws.savedRev ? 'saving …' : ws.savedAt ? `saved ${ws.savedAt}` : (d.edited ? 'corrected' : `read by ${d.model || 'hand'}`);
   $('subState').textContent = `As spoken · ${lang} · ${n} line${n === 1 ? '' : 's'} · ${state}`;
   $('subState').classList.toggle('err', !!ws.error);
   $('subSrt').href = `/api/cuts/${encodeURIComponent(wcut.id)}/subtitles?format=srt`;
@@ -5010,16 +5065,24 @@ function wsSubsCard() {
   if (body.dataset.key === key) return;
   body.dataset.key = key;
   if (ws.loading) { body.innerHTML = '<p class="muted sm"><span class="spinner"></span> reading the lines …</p>'; return; }
+  // lines of your own (since 3.13): no model, no whisper filter or no
+  // speech heard is then no dead end. The language is the card's.
+  const setLang = (wSubsSettings && wSubsSettings.language) || 'auto';
+  const handRow = lang => `<div class="row"><button class="btn btn-sm" type="button" id="wAddFirst"><svg class="icon icon-sm"><use href="#i-plus"/></svg> Add line</button>`
+    + `<span class="muted sm">or type the lines yourself - ${lang && lang !== 'auto' ? `in ${esc(langName(lang))}, from the playhead` : 'from the playhead; with no language named the track goes untagged'}</span></div>`;
+  const bindHand = lang => { const b = $('wAddFirst'); if (b) b.onclick = () => wsAdd(lang); };
   if (wModels && wModels.available === false) {
-    body.innerHTML = `<p class="muted sm">This ffmpeg cannot transcribe: it was built without the whisper filter. <a href="/diagnostics">Diagnostics</a> says what helps.</p>`;
+    body.innerHTML = `<p class="muted sm">This ffmpeg cannot transcribe: it was built without the whisper filter. <a href="/diagnostics">Diagnostics</a> says what helps.</p>` + handRow(setLang);
+    bindHand(setLang);
     return;
   }
   if (model && model.state !== 'ready') {
     const mb = Math.round((model.bytes || 0) / 1048576);
-    body.innerHTML = model.state === 'downloading'
+    body.innerHTML = (model.state === 'downloading'
       ? `<p class="muted sm"><b>Downloading the model ${esc(model.name)}</b> - once, into the data folder of this PC.</p><div class="bar"><i style="width:${model.percent || 0}%"></i></div><span class="faint sm">${model.percent || 0} % of ${mb} MB</span>`
-      : `<p class="muted sm">Transcribing needs a model on this PC, fetched once: <b>${esc(model.name)}</b>, ${mb} MB. Nothing else leaves the PC.</p><div class="row"><button class="btn" type="button" id="wModelGet"><svg class="icon icon-sm"><use href="#i-download"/></svg> Download ${esc(model.name)}</button><button class="btn btn-ghost" type="button" disabled>Transcribe</button></div>${model.error ? `<span class="faint sm">${esc(model.error)}</span>` : ''}`;
+      : `<p class="muted sm">Transcribing needs a model on this PC, fetched once: <b>${esc(model.name)}</b>, ${mb} MB. Nothing else leaves the PC.</p><div class="row"><button class="btn" type="button" id="wModelGet"><svg class="icon icon-sm"><use href="#i-download"/></svg> Download ${esc(model.name)}</button><button class="btn btn-ghost" type="button" disabled>Transcribe</button></div>${model.error ? `<span class="faint sm">${esc(model.error)}</span>` : ''}`) + handRow(setLang);
     const g = $('wModelGet'); if (g) g.onclick = () => wsGetModel(model.name);
+    bindHand(setLang);
     return;
   }
   const tr = wTr || { source: (wSubsSettings && wSubsSettings.source) || 'auto', language: (wSubsSettings && wSubsSettings.language) || 'auto' };
@@ -5032,7 +5095,9 @@ function wsSubsCard() {
     : `This cut has none yet. Transcribing runs on this PC and takes about as long as the cut plays - <b>about ${secs} s</b> for ${esc(fmt(cutLen(k)))}. You can keep using the page while it runs.`;
   body.innerHTML = `<p class="muted sm">${intro}</p>`
     + `<div class="row"><button class="btn" type="button" id="wTrGo"><svg class="icon icon-sm"><use href="#i-${heard ? 'refresh' : 'subtitles'}"/></svg> ${heard ? 'Transcribe again' : 'Transcribe'}</button><button class="pill" type="button" id="wTrTrack" aria-haspopup="true">Track <b>${esc(trackWords[tr.source] || tr.source)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button><button class="pill" type="button" id="wTrLang" aria-haspopup="true">Language <b>${esc(langName(tr.language) || tr.language)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button></div>`
-    + `<span class="faint sm">Model: ${esc(model ? model.name : wanted)}, ready on this PC</span>`;
+    + `<span class="faint sm">Model: ${esc(model ? model.name : wanted)}, ready on this PC</span>`
+    + handRow(tr.language);
+  bindHand(tr.language);
   $('wTrGo').onclick = () => wsTranscribe(false, { source: tr.source, language: tr.language });
   $('wTrTrack').onclick = e => { e.stopPropagation(); menuAt($('wTrTrack'), [{ heading: 'Read the speech from' }].concat(Object.entries(trackWords).map(([id, label]) => ({ label, note: id === tr.source ? 'chosen' : '', disabled: id !== 'auto' && (cur.tracks || 1) === 1, onclick: () => { wTr = Object.assign({}, tr, { source: id }); wsSubsCard(); } })))); };
   $('wTrLang').onclick = e => { e.stopPropagation(); menuAt($('wTrLang'), [{ heading: 'Language of the speech' }].concat(((wModels && wModels.languages) || []).map(l => ({ label: l.label, note: l.id === tr.language ? 'chosen' : '', onclick: () => { wTr = Object.assign({}, tr, { language: l.id }); wsSubsCard(); } })))); };
@@ -5103,7 +5168,9 @@ function renderWorkshopSubs() {
   $('fpLabel').textContent = vert ? '16:9 · what 9:16 keeps' : '9:16';
   $('fpBand').hidden = vert; $('fpWindow').hidden = !vert;
   if (LOOKS) $('fpBand').style.height = LOOKS.frames.vertical.shortsUi.bottom + '%';
-  if (has) { wsLookBox(); wsLane(); wsInspector(); wsTranscript(); wsBar(); requestAnimationFrame(() => { wsOverlay(true); wsPreview(true); }); }
+  // at once: reading the picture's box forces the layout, and a frame
+  // callback would not run in a tab that counts as hidden
+  if (has) { wsLookBox(); wsLane(); wsInspector(); wsTranscript(); wsBar(); wsOverlay(true); wsPreview(true); }
   else { $('wSub').hidden = true; if (!$('wSubsCard').hidden) wsSubsCard(); }
 }
 function initWorkshopSubs() {
@@ -5119,6 +5186,7 @@ function initWorkshopSubs() {
   text.addEventListener('click', () => { ws.caret = text.selectionStart; });
   text.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); text.blur(); } });
   $('liPlay').onclick = wsPlayLine; $('liSplit').onclick = wsSplit; $('liMerge').onclick = wsMerge; $('liDel').onclick = wsDelete;
+  $('liAdd').onclick = () => wsAdd();
   $('liIn').onclick = () => wsStamp('start'); $('liOut').onclick = () => wsStamp('end');
   document.querySelectorAll('#inspector [data-nudge]').forEach(b => { const [which, d] = b.dataset.nudge.split(','); b.onclick = () => wsNudge(which, Number(d)); });
   // the lane is one control: arrows and Tab walk its lines, Enter edits one
