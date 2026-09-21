@@ -919,6 +919,14 @@ ol.steps b { color: var(--fg); font-weight: normal; }
    handles grow with it (at the usual height these are the same 56 and 40 px) */
 #tl.has-rows .handle { height: auto; bottom: -6px; }
 #tl.has-rows .handle::after { height: auto; bottom: 8px; }
+/* the workshop's player is as big as the recording's: what sat beside it
+   goes under it (a deviation from F5/F7, asked for in the review of a2) */
+#workshop .stage { flex-direction: column; align-items: stretch; container-type: inline-size; }
+#workshop .stage > .player-wrap { width: 100%; }
+/* 9:16 chosen: the picture is the window that is rendered, at the height
+   the 16:9 picture has, moved by the window position */
+#workshop .stage > #wPlayer.is-vertical { width: fit-content; max-width: 100%; margin: 0 auto; }
+#wPlayer.is-vertical video { width: auto; height: min(58vh, 56.25cqw); aspect-ratio: 9 / 16; object-fit: cover; }
 </style>
 </head>
 <body>
@@ -4224,12 +4232,13 @@ function subsHost(c) { return mode === 'work' && wcut && wcut.id === c.id ? $('w
 
 /// The render row: the split button and five pills. A pill changes this
 /// rendering only and falls back to the cut's own value after it.
-function pill(id, label, value, changed, disabled) {
+function pill(id, label, value, changed, disabled, why) {
   const b = $(id);
   b.innerHTML = `${esc(label)} <b>${esc(value)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg>`;
   b.classList.toggle('is-changed', !!changed);
   b.classList.toggle('is-empty', !!disabled);
   b.disabled = !!disabled;
+  b.title = disabled && why ? why : '';
 }
 const FRAME_LABEL = { wide: '16:9', vertical: '9:16' };
 const QUALITY_LABEL = { h264: 'H.264', copy: 'As recorded' };
@@ -4244,7 +4253,11 @@ function renderRenderRow() {
   const def = defaultTarget();
   $('bRender').innerHTML = `<svg class="icon"><use href="#i-share"/></svg> Render${def === 'file' ? '' : ' to ' + esc(targetLabel(def))} <kbd>Enter</kbd>`;
   $('bRender').disabled = k.state !== 'ready'; $('bRenderMenu').disabled = k.state !== 'ready';
-  pill('rFrame', 'Frame', FRAME_LABEL[p.frame], p.frame !== d.frame, copy);
+  pill('rFrame', 'Frame', FRAME_LABEL[p.frame], p.frame !== d.frame, copy, "'As recorded' keeps the frame as it was recorded - pick H.264 for 9:16");
+  // the big picture is the frame that is rendered
+  const vert = p.frame === 'vertical';
+  $('wPlayer').classList.toggle('is-vertical', vert);
+  wv.style.objectPosition = vert ? `${(k.verticalPos != null ? k.verticalPos : 0.5) * 100}% 50%` : '';
   pill('rQuality', 'Quality', QUALITY_LABEL[p.quality], p.quality !== d.quality);
   pill('rAudio', 'Audio', audioLabel(p.audio), p.audio !== d.audio);
   pill('rAfter', 'Afterwards', AFTER_LABEL[p.after], p.after !== d.after);
@@ -4354,7 +4367,7 @@ function initWorkshop() {
   $('bRange').onclick = showRange;
   document.querySelectorAll('#frameSeg button').forEach(b => b.onclick = () => { if (b.disabled) return; wPick.frame = b.dataset.frame; wKey = ''; renderWorkshop(); });
   $('rFrame').onclick = e => { e.stopPropagation(); pillMenu($('rFrame'), 'Frame', [{ id: 'wide', label: 'Landscape 16:9', note: 'as recorded' }, { id: 'vertical', label: 'Vertical 9:16', note: '1080x1920' }], wPick.frame, x => { wPick.frame = x; }); };
-  $('rQuality').onclick = e => { e.stopPropagation(); pillMenu($('rQuality'), 'Quality', [{ id: 'h264', label: 'H.264 (best quality)', note: 'plays everywhere' }, { id: 'copy', label: 'As recorded (no re-encode)', note: '16:9 only', disabled: false }], wPick.quality, x => { wPick.quality = x; }); };
+  $('rQuality').onclick = e => { e.stopPropagation(); pillMenu($('rQuality'), 'Quality', [{ id: 'h264', label: 'H.264 (best quality)', note: 'plays everywhere' }, { id: 'copy', label: 'As recorded (no re-encode)', note: '16:9 only', disabled: wPick.frame === 'vertical', title: wPick.frame === 'vertical' ? 'A 9:16 rendering is always H.264 - pick Landscape 16:9 first' : '' }], wPick.quality, x => { wPick.quality = x; }); };
   $('rAudio').onclick = e => { e.stopPropagation(); pillMenu($('rAudio'), 'Audio', cfg.audio.map(a => ({ id: a.id, label: a.label, disabled: (cur.tracks || 1) < a.need, title: (cur.tracks || 1) < a.need ? `the recording has only ${cur.tracks || 1} track(s)` : '' })), wPick.audio, x => { wPick.audio = x; }); };
   $('rAfter').onclick = e => { e.stopPropagation(); pillMenu($('rAfter'), 'Afterwards', [{ id: 'keep', label: 'Keep everything' }, { id: 'done', label: 'Mark the recording done' }, { id: 'recycle', label: 'Recycle the recording', disabled: cur.file === null, note: 'the cut stays' }], wPick.after, x => { wPick.after = x; }); };
   $('rSubs').onclick = e => { e.stopPropagation(); pillMenu($('rSubs'), 'Subtitles', [{ id: 'none', label: 'None' }, { id: 'burn', label: 'Burned in', disabled: wPick.quality === 'copy', title: wPick.quality === 'copy' ? "'As recorded' touches no frame - take the track" : '' }, { id: 'track', label: 'As a track' }], wPick.subs, x => { wPick.subs = x; }); };

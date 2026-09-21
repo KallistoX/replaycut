@@ -24,7 +24,9 @@ it was.
   recording as you left it. The workshop has the cut's own timeline, its
   title, a render row with Frame, Quality, Audio and Afterwards (a pill
   changes that one rendering only, so "As recorded" is still there for a
-  cut), and every output of the cut with its link and its folder. While
+  cut), and every output of the cut with its link and its folder. Its
+  player is as big as the recording's, and with 9:16 chosen it shows the
+  window that will be rendered. While
   the recording is there, its own preview plays the cut, so there is
   nothing to wait for; a cut whose recording is gone - recycled, lost, or
   on a drive that is not connected - plays from a copy of its own, made
