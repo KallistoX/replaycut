@@ -11,7 +11,7 @@
 // render puts a clip that is already done back into the list.
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, utimesSync } from 'node:fs';
+import { mkdirSync, renameSync, utimesSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -77,11 +77,18 @@ async function waitFor(what, test, seconds = 120) {
 // 1. The recordings. OBS writes MKV with a keyframe every couple of seconds;
 // the cut step copies from a keyframe, so the demo clip carries them too and
 // these segments keep them (-g 60 at 30 fps).
+//
+// Each one is written under a name the scanner does not look at, dated, and
+// only then renamed into place: a clip takes its time from the file, and on
+// Windows the folder listing can still carry the time of the write for a
+// moment after `utimes` - once that put a clip of 82 minutes ago at the top
+// of the list, with the time the seed ran.
 mkdirSync(clipDir, { recursive: true });
 const clips = PLAN.map((entry) => {
   const when = new Date(Date.now() - entry.minutesAgo * 60_000);
   const name = baseName(when);
   const file = join(clipDir, `${name}.mkv`);
+  const part = join(clipDir, `${name}.part`);
   execFileSync('ffmpeg', [
     '-v', 'error', '-y',
     '-ss', String(entry.from), '-i', demo, '-t', String(entry.seconds),
@@ -89,10 +96,11 @@ const clips = PLAN.map((entry) => {
     '-c:v', 'libx264', '-crf', '30', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
     '-g', '60', '-keyint_min', '60', '-sc_threshold', '0',
     '-c:a', 'copy',
-    file,
+    '-f', 'matroska', part,
   ]);
   const stamp = when.getTime() / 1000;
-  utimesSync(file, stamp, stamp);
+  utimesSync(part, stamp, stamp);
+  renameSync(part, file);
   return { ...entry, base: name };
 });
 console.log(`wrote ${clips.length} recordings to ${clipDir}`);
