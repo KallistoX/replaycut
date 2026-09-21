@@ -3536,7 +3536,7 @@ function h264Row(c) {
 function load(c, keepSel) {
   // since 3.12: loading a recording is cutting mode - unless it is the same
   // clip loaded again under the cut in the workshop (its recording went)
-  if (mode === 'work' && !(keepSel && cur && cur.base === c.base)) leaveWorkshop();
+  if (mode === 'work' && !(keepSel && cur && cur.base === c.base)) leaveWorkshop(false);
   cur = c; $('vidErr').hidden = true; $('editorBody').hidden = false; $('emptyEditor').hidden = true;
   // since 3.0: the recording may be in the recycle bin while its cuts are not
   const gone = c.file === null;
@@ -3563,7 +3563,7 @@ function load(c, keepSel) {
   renderList();
 }
 function unload() {
-  leaveWorkshop();
+  leaveWorkshop(false);
   cur = null; if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
   $('title').value = ''; $('title').disabled = true; $('bDel').disabled = true; $('bDone').disabled = true; $('selInfo').textContent = ''; $('planInfo').textContent = '';
   sel.style.width = '0'; ph.style.left = '0';
@@ -4024,7 +4024,7 @@ async function watchJob(id, mine) {
 }
 
 function showEmpty(kind) {
-  leaveWorkshop();
+  leaveWorkshop(false);
   $('editorBody').hidden = true; $('emptyEditor').hidden = false;
   const t = $('emptyText'), a = $('emptyActions');
   if (kind === 'setup') {
@@ -4503,8 +4503,15 @@ function nextCut() {
   const i = cuts.findIndex(k => k.id === wcut.id);
   openCut(cur, cuts[(i + 1) % cuts.length].id);
 }
+/// Only one player holds a source (3.14.1). While the workshop is open the
+/// player of cutting mode lets go of the recording and keeps its position
+/// here; `leaveWorkshop` gives it back. Both players on one address share a
+/// media cache in Firefox, and the paused one kept its read-ahead from the
+/// start of a large file in it: the cut near the end was throttled to a
+/// trickle and its picture stood after a few seconds.
+let vBack = null;
 function enterWorkshop(k) {
-  v.pause();
+  if (v.getAttribute('src')) { vBack = v.currentTime; v.pause(); v.removeAttribute('src'); v.load(); }
   mode = 'work'; wcut = k; wsrc = null; wKey = ''; wOutKey = '';
   wPick = W_DEFAULTS(); wTouched = new Set();
   $('editorBody').hidden = true; $('emptyEditor').hidden = true; $('workshop').hidden = false;
@@ -4513,12 +4520,16 @@ function enterWorkshop(k) {
   listKey = ''; renderList();
   if (!clips.some(c => c.base === cur.base)) wFetchCut();
 }
-/// Back to the recording, as it was left.
-function leaveWorkshop() {
+/// Back to the recording, as it was left. `back` is false where another
+/// recording, or none, is loaded next: the old one is not fetched for nothing.
+function leaveWorkshop(back = true) {
   if (mode !== 'work') return;
   wsFlush();
   mode = 'cut'; wcut = null; wsrc = null;
   if (wv) { wv.pause(); wv.removeAttribute('src'); wv.load(); }
+  // set before the metadata is there, the time is where playback starts
+  const at = vBack; vBack = null;
+  if (back && at !== null && cur && cur.file !== null) { v.src = playerSource(cur); v.load(); v.currentTime = at; }
   $('workshop').hidden = true; $('editorBody').hidden = !cur;
   if (location.hash) history.replaceState(null, '', '/');
   listKey = ''; renderList();
@@ -5953,8 +5964,9 @@ function applyState(d, polled, withDone) {
     allClips().forEach(c => { if (cur && cur.base === c.base) { cur.title = c.title; cur.tracks = c.tracks; cur.cuts = c.cuts; if (c.state && cur.state !== c.state && putAway !== c.base) { cur.state = c.state; doneButton(); } if (document.activeElement !== $('title')) $('title').value = c.title || '';
       // the recording went to the recycle bin while the page was open (3.0)
       if (c.file === null && cur.file !== null) { load(c, true); toast(`The recording is in the ${trashName()} - its cuts are still here`); }
-      // the playable copy arrived: switch the player to it, keeping the position (since 2.6)
-      if (c.previewH264 && !cur.previewH264) { cur.previewH264 = c.previewH264; const t = v.currentTime, src = playerSource(cur); if (v.getAttribute('src') !== src) { v.src = src; v.load(); v.addEventListener('loadedmetadata', () => { v.currentTime = t; }, { once: true }); $('vidErr').hidden = true; toast('Playable preview ready', 'ok'); } h264Row(cur); } } });
+      // the playable copy arrived: switch the player to it, keeping the position (since 2.6);
+      // in the workshop the player holds nothing and takes the copy on the way back (3.14.1)
+      if (c.previewH264 && !cur.previewH264) { cur.previewH264 = c.previewH264; const t = v.currentTime, src = playerSource(cur); if (v.getAttribute('src') && v.getAttribute('src') !== src) { v.src = src; v.load(); v.addEventListener('loadedmetadata', () => { v.currentTime = t; }, { once: true }); $('vidErr').hidden = true; toast('Playable preview ready', 'ok'); } h264Row(cur); } } });
     renderList(); renderCuts();
     // a clip asked for by address (the "Clip" button on the Activity page)
     // since 3.12 `#<base>/<cut>` is a cut in the workshop, which keeps that

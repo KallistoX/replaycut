@@ -547,6 +547,82 @@ const BANNER_BUTTONS_OF_ONE_PAGE: &[(&str, &str)] = &[(
 
 /// Every button of the banner strip is wired.
 ///
+/// The body of `function NAME(` up to its closing brace at the start of a line.
+fn function_body<'a>(html: &'a str, name: &str) -> &'a str {
+    let start = html
+        .find(&format!("function {name}("))
+        .unwrap_or_else(|| panic!("function {name} is gone"));
+    let end = start
+        + html[start..]
+            .find("\n}")
+            .unwrap_or_else(|| panic!("{name} has no closing brace at the start of a line"));
+    &html[start..end]
+}
+
+/// Where the function that encloses `at` starts, and its name.
+fn enclosing_function(html: &str, at: usize) -> &str {
+    let start = html[..at].rfind("\nfunction ").map_or(0, |i| i + 10);
+    let name_end = html[start..].find('(').map_or(start, |i| start + i);
+    &html[start..name_end]
+}
+
+/// Only one player holds a source (3.14.1). Both players of the clips page
+/// play the same preview when a cut is in the workshop, and in Firefox two
+/// `<video>` elements on one address share a media cache: the paused player
+/// of cutting mode kept its read-ahead from the start of a 2 GB file in it,
+/// and the cut near the end was throttled until its picture stood. So the
+/// workshop takes the source from `#v` when it opens and gives it back when
+/// it closes - after `#wv` let go of it - and nothing else hands `#v` a
+/// source while the workshop is open.
+#[test]
+fn only_one_player_holds_a_source() {
+    let html = ui();
+    let enter = function_body(&html, "enterWorkshop");
+    assert!(
+        enter.contains(" v.removeAttribute('src')"),
+        "enterWorkshop must take the source from #v - the two players would share it"
+    );
+    let leave = function_body(&html, "leaveWorkshop");
+    let (wv_off, v_on) = (
+        leave.find("wv.removeAttribute('src')"),
+        leave.find(" v.src = "),
+    );
+    assert!(
+        matches!((wv_off, v_on), (Some(off), Some(on)) if off < on),
+        "leaveWorkshop gives #v the recording back only after #wv let go of it"
+    );
+    // Every other place that points #v somewhere: `load` (it leaves the
+    // workshop first), and a switch of a source #v already holds.
+    let mut stray = Vec::new();
+    let mut at = 0;
+    while let Some(i) = html[at..].find("v.src = ") {
+        let pos = at + i;
+        at = pos + 1;
+        if html[..pos].ends_with('w') {
+            continue;
+        }
+        let line_start = html[..pos].rfind('\n').map_or(0, |i| i + 1);
+        let line = html[line_start..].lines().next().unwrap_or_default();
+        let ok = match enclosing_function(&html, pos) {
+            "load" | "leaveWorkshop" => true,
+            _ => line.contains("if (v.getAttribute('src') && "),
+        };
+        if !ok {
+            stray.push(format!(
+                "line {}: {}",
+                line_of(&html, pos),
+                line.trim().chars().take(80).collect::<String>()
+            ));
+        }
+    }
+    assert!(
+        stray.is_empty(),
+        "these give #v a source without asking whether it holds one - with the \
+         workshop open, both players would hold the recording:\n  {}",
+        stray.join("\n  ")
+    );
+}
+
 /// The strip is part of every page, so a button in it is on screen wherever
 /// the user is. Issue 20 was exactly this: a banner whose button did nothing
 /// because its handler sat in one page's init. `data-dismiss` buttons are
