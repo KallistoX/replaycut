@@ -4463,3 +4463,92 @@ fn t72_subtitles_can_ride_along_as_a_track() {
     let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
     assert_eq!(status, 200, "{v}");
 }
+
+fn since_3111() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split(['.', '-']).map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor, patch) = (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    );
+    (major, minor, patch) >= (3, 11, 1)
+}
+
+/// A cut of the fixture on a service that can really transcribe, with the
+/// subtitles switched on and put back afterwards. `None` where this ffmpeg
+/// has no whisper filter or no model is on the machine - every CI runner -
+/// because there is nothing to watch there. The fixture is a sine tone, so
+/// which model reads it does not matter: whichever is there will do.
+fn transcribable_cut(label: &str) -> Option<(String, String, Subtitles)> {
+    let (_, models) = get_json("/api/subtitles/models");
+    let model = models["models"]
+        .as_array()
+        .and_then(|m| m.iter().find(|e| e["state"] == "ready"))
+        .and_then(|e| e["name"].as_str())
+        .map(str::to_string)
+        .filter(|_| models["available"] == true);
+    let Some(model) = model else {
+        eprintln!("skipped: this machine cannot transcribe (no whisper filter or no model)");
+        return None;
+    };
+    let (_, settings) = get_json("/api/settings");
+    let guard = Subtitles(settings["subtitles"].clone());
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "subtitles": { "enabled": true, "model": model, "language": "en" } }),
+    );
+    assert_eq!(status, 200, "{v}");
+
+    let base = format!("{} {label}", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let (status, v) = post_json(
+        "/api/cuts",
+        &json!({ "base": base, "start": 2.0, "end": 9.0, "audio": "mix", "after": "keep" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let cut = v["cut"].as_str().expect("cut").to_string();
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+    Some((base, cut, guard))
+}
+
+/// A rendering asked for subtitles on a cut that has none reads them first,
+/// as the stage `transcribe` in front of `encode`. In 3.11.0 the stage said
+/// `encode`, then `transcribe`, and stayed there while the encode ran: the
+/// page showed a transcription for the whole rendering (#54).
+#[test]
+fn t73_a_rendering_reads_the_speech_before_it_encodes() {
+    let _g = serial();
+    if !since_3111() {
+        eprintln!("skipped: needs replaycut 3.11.1");
+        return;
+    }
+    let Some((base, cut, _guard)) = transcribable_cut("reads first") else {
+        return;
+    };
+    let (status, v) = post_json(
+        &format!("/api/cuts/{cut}/render"),
+        &json!({ "target": "file", "after": "keep", "subtitles": "track" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let (stages, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_stages_monotonic(&stages);
+    assert!(
+        stages.iter().any(|s| s == "transcribe"),
+        "a cut without subtitles has them read first: {stages:?}"
+    );
+    // a sine tone is no speech: the rendering carries whatever whisper made
+    // of it, or says there was nothing to carry - the order is the point
+    assert!(
+        done["ok"] == true || done["error"].as_str().unwrap_or("").contains("no speech"),
+        "{done}"
+    );
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}

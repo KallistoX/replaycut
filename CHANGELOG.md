@@ -8,6 +8,18 @@ replaycut 2.0 is a rewrite of a PowerShell service (1.x) that was never
 published. The 2.0 line keeps that service's HTTP API; `docs/api.md` is the
 contract.
 
+## [Unreleased]
+
+### Fixed
+
+- **A rendering that reads the speech first says so only while it does.**
+  Asked for subtitles on a cut that had none, a rendering read them in
+  front of the encode as it should - but its job said `encode`, then
+  `transcribe`, and stayed on `transcribe` for the whole encode, so the page
+  showed a transcription until the file was done. The speech is read now
+  before the stage `encode` begins, and the stage moves on when it is
+  through. (#54)
+
 ## [3.11.0] - 2026-09-20
 
 **Subtitles**, read on your own PC and corrected before anyone else sees

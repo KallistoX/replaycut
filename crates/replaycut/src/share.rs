@@ -1807,8 +1807,15 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
 
     // encode (skipped when the file already exists from the source job)
     if let Some((input, seek)) = source {
+        // since 3.11: the subtitle files of this rendering, written into a
+        // folder of their own and removed with it. A cut without a
+        // transcript has it read here, as the stage `transcribe` in front of
+        // `encode`; in 3.11.0 the encode ran on under `transcribe` (#54)
+        let subs = prepare_subtitles(state, id, &job, token).await?;
+        let _sweep = subs.as_ref().map(|s| TempDir(s.dir.clone()));
         state.with_job(id, |j| {
             j.stage = "encode".into();
+            j.percent = 0;
             j.title = Some(title.clone());
         });
         let started = Instant::now();
@@ -1833,10 +1840,6 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
             std::fs::create_dir_all(dir)
                 .with_context(|| format!("cannot create {}", dir.display()))?;
         }
-        // since 3.11: the subtitle files of this rendering, written into a
-        // folder of their own and removed with it
-        let subs = prepare_subtitles(state, id, &job, token).await?;
-        let _sweep = subs.as_ref().map(|s| TempDir(s.dir.clone()));
         if let Err(e) = encode(
             state,
             id,
