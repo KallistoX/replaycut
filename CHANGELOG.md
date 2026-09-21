@@ -40,6 +40,9 @@ contract.
   showed a transcription until the file was done. The speech is read now
   before the stage `encode` begins, and the stage moves on when it is
   through. (#54)
+- **The save bar names every setting that waits to be saved.** A change to
+  Subtitles, HTTPS, the playable preview or the password on this PC left
+  it saying "Unsaved changes:" and nothing after the colon.
 
 ## [3.11.0] - 2026-09-20
 
