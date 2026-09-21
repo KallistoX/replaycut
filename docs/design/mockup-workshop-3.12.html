@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>replaycut — cuts and subtitles, the workshop of 3.12</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="workshop.css">
+<style>
+/* ============ sheet only - not for index.html ============ */
+/* This sheet shows the 700 px and 390 px frames inside a wide window. The real
+ * page switches on the media queries of workshop.css; the sheet repeats the
+ * same rules in a container query so the narrow frames are honest here. It was
+ * section 4 of workshop.css in the hand-over and stays with the sheet. */
+.sheet-body { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-5) var(--space-4); }
+.sheet-body > h2 { display: flex; align-items: center; gap: var(--space-4); font-size: var(--text-lg); }
+.sheet-body > h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.frame { display: flex; flex-direction: column; gap: var(--space-2); }
+.frame > .cap { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+.frame > .cap .id { display: inline-flex; align-items: center; height: 22px; padding: 0 var(--space-2); background: var(--accent); color: var(--accent-fg); border-radius: var(--radius-pill); font: var(--weight-strong) var(--text-xs) / 1 var(--font-mono); }
+.frame > .cap .id.later { background: var(--surface-2); color: var(--fg-muted); border: 1px solid var(--line); }
+.frame > .cap b { font-weight: var(--weight-strong); }
+.frame > .cap .muted { font-size: var(--text-sm); }
+.frame > .note { max-width: 96ch; color: var(--fg-muted); font-size: var(--text-sm); }
+/* the frames keep the width they are labelled with, so a 1280 px frame is a
+ * 1280 px frame even when this sheet is read in a narrower window */
+.viewport { container-type: inline-size; width: 1280px; flex: none; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg); }
+.viewport.w700 { width: 700px; }
+.viewport.w390 { width: 390px; }
+.viewport.w900 { width: 900px; }
+.viewport.w720 { width: 720px; }
+.viewport.w520 { width: 520px; }
+.viewport.w420 { width: 420px; }
+.viewport .clips { min-height: 0; }
+.viewport .topbar { position: static; }
+.viewport .jobs.pinned, .viewport .banners.pinned, .viewport .player-dock { position: static; }
+.row-of-frames { display: flex; gap: var(--space-5); align-items: flex-start; flex-wrap: wrap; }
+.thumb, .cut-card .thumb, .output .thumb, .clip > .clip-row .thumb { background-image: repeating-linear-gradient(135deg, var(--surface-2) 0 6px, var(--line) 6px 12px); }
+.shot { position: relative; display: flex; align-items: center; justify-content: center; aspect-ratio: 16 / 9; background: repeating-linear-gradient(135deg, var(--surface-2) 0 12px, var(--bg) 12px 24px); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.shot.v { aspect-ratio: 9 / 16; }
+.shot > .what { font: var(--text-sm) / 1 var(--font-mono); color: var(--fg-faint); }
+.shot > .controls { position: absolute; left: var(--space-3); right: var(--space-3); bottom: var(--space-3); height: 28px; display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2); background: var(--scrim); border-radius: var(--radius-sm); font: var(--text-sm) / 1 var(--font-mono); }
+.shot > .controls .track { flex: 1; height: 4px; border-radius: 2px; background: var(--line-strong); }
+.shot > .controls .track i { display: block; height: 100%; border-radius: 2px; background: var(--fg); }
+.menu.is-static { position: static; box-shadow: none; width: 300px; }
+/* the keyboard table of the hand-over page */
+.keys { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+.keys th, .keys td { text-align: left; vertical-align: top; padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--line); font-weight: normal; }
+.keys thead th { background: var(--surface-2); color: var(--fg-faint); font: var(--weight-strong) var(--text-xs) / 1.4 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.keys tbody tr:last-child td { border-bottom: 0; }
+.keys td:first-child { white-space: nowrap; }
+.keys .none { color: var(--fg-faint); }
+.keys .where { color: var(--fg-muted); font-size: var(--text-sm); }
+/* stands in for one of the two light themes that ship - a theme is a copy of
+ * tokens.css with other values, not a selector; this block only lets the sheet
+ * show the components in a light theme next to the dark one. */
+[data-theme="daylight"] {
+  --bg: #f3f4f6; --surface: #ffffff; --surface-2: #e8eaee; --line: #d7dbe1; --line-strong: #b6bcc6;
+  --fg: #161a20; --fg-muted: #5c6673; --fg-faint: #868f9c;
+  --accent: #8d5c03; --accent-hover: #734a02; --accent-fg: #ffffff; --accent-soft: rgba(141, 92, 3, 0.18);
+  --scrim: rgba(0, 0, 0, 0.25);
+  background: var(--bg); color: var(--fg);
+}
+.states { display: flex; gap: var(--space-5); flex-wrap: wrap; align-items: flex-start; }
+.states > .group { display: flex; flex-direction: column; gap: var(--space-2); width: 400px; }
+.states > .group.wide { width: 480px; }
+.states > .group.narrow { width: 300px; }
+/* A frame must follow its own width, not the window's: base.css switches on
+ * media queries, so inside this sheet those rules are neutralised per frame
+ * and applied again as container queries. Ship nothing from here. */
+.viewport .clips { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 0; }
+.viewport .cliplist { border-right: 1px solid var(--line); border-bottom: 0; padding: var(--space-3); overflow: auto; }
+.viewport .cliplist > summary { display: none; }
+.viewport .cliplist > .list-body { padding: 0; max-height: none; overflow: visible; }
+.viewport .stage { flex-direction: row; }
+.viewport .stage > .player-wrap { width: 604px; }
+.viewport .stage .frame-preview { display: block; }
+.viewport .caption-lane { display: block; }
+.viewport .caption-map { display: none; }
+.viewport .line-inspector { grid-template-columns: minmax(0, 1fr) 250px 290px; }
+.viewport .line-inspector > .col + .col { padding-left: var(--space-3); padding-top: 0; border-left: 1px solid var(--line); border-top: 0; }
+.viewport .line-inspector .col.transcript-col { display: flex; }
+.viewport .player-dock { display: contents; }
+.viewport .nav a span { display: inline; }
+.viewport .nav a { min-width: 0; }
+.viewport .btn { min-height: 36px; }
+.viewport .editor .title-row .btn { padding: 0 var(--space-3); width: auto; }
+.viewport .editor .title-row .btn .lbl { display: inline; }
+.viewport .fields-2 { grid-template-columns: 1fr 1fr; }
+@container (max-width: 999px) {
+  .viewport .clips { display: flex; flex-direction: column; }
+  .viewport .cliplist { border-right: 0; border-bottom: 1px solid var(--line); padding: 0; overflow: visible; }
+  .viewport .cliplist > summary { display: flex; align-items: center; gap: var(--space-2); min-height: var(--touch); padding: 0 var(--space-4); color: var(--fg-muted); list-style: none; cursor: pointer; }
+  .viewport .cliplist > .list-body { padding: 0 var(--space-3) var(--space-3); max-height: 50vh; overflow: auto; }
+  .viewport .stage { flex-direction: column; }
+  .viewport .stage > .player-wrap { width: 100%; }
+  .viewport .stage .frame-preview { display: none; }
+  .viewport .caption-lane { display: none; }
+  .viewport .caption-map { display: block; }
+  .viewport .line-inspector { grid-template-columns: minmax(0, 1fr); }
+  .viewport .line-inspector > .col + .col { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); padding-top: var(--space-3); }
+  .viewport .line-inspector .col.transcript-col { display: none; }
+  .viewport .player-dock { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius-lg); }
+}
+@container (max-width: 600px) {
+  .viewport .nav a span, .viewport .topbar .right .lbl { display: none; }
+  .viewport .nav a { min-width: var(--touch); justify-content: center; }
+  .viewport .quickshare > .section-title, .viewport .quickshare .note { flex-basis: 100%; }
+  .viewport .quickshare .note.right { margin-left: 0; }
+  .viewport .editor .title-row .btn { padding: 0; width: var(--touch); }
+  .viewport .editor .title-row .btn .lbl { display: none; }
+  .viewport .btn { min-height: var(--touch); }
+  .viewport .cut-card { min-height: var(--touch); }
+  .viewport .cut-card .thumb { width: 56px; height: 32px; }
+  .viewport .fields-2 { grid-template-columns: 1fr 1fr; }
+  .viewport .sub-overlay { font-size: 13px; bottom: 26%; }
+  .viewport .shortcuts { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- Inline icon sprite: monochrome, 20 px grid, currentColor. New in this round:
+     i-subtitles, i-split, i-merge, i-more, i-download, i-rename, i-link. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 20 20"><path d="M4 3.5v13l11-6.5z"/><path d="M2 7h4M2 13h4"/></symbol>
+  <symbol id="i-play" viewBox="0 0 20 20"><path d="M6 4v12l10-6z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 20 20"><path d="M6 4v12M14 4v12"/></symbol>
+  <symbol id="i-cut-in" viewBox="0 0 20 20"><path d="M4 3v14M4 10h9M10 6l4 4-4 4"/></symbol>
+  <symbol id="i-cut-out" viewBox="0 0 20 20"><path d="M16 3v14M16 10H7M10 6l-4 4 4 4"/></symbol>
+  <symbol id="i-share" viewBox="0 0 20 20"><path d="M10 12V3M6.5 6.5 10 3l3.5 3.5M4 11v5h12v-5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 20 20"><path d="M2.5 5.5h5l2 2h8v8h-15z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 20 20"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7"/></symbol>
+  <symbol id="i-check" viewBox="0 0 20 20"><path d="m4 10.5 4 4 8-9"/></symbol>
+  <symbol id="i-warning" viewBox="0 0 20 20"><path d="M10 3 2.5 16.5h15z"/><path d="M10 8v4M10 14.2v.3"/></symbol>
+  <symbol id="i-info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/></symbol>
+  <symbol id="i-close" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 20 20"><path d="M16 9.5A6 6 0 0 0 5 6.5M4 10.5A6 6 0 0 0 15 13.5"/><path d="M4.5 3v4h4M15.5 17v-4h-4"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 20 20"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z"/><circle cx="10" cy="10" r="2.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 20 20"><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5 5.5l1 11h8l1-11M8.5 9v5M11.5 9v5"/></symbol>
+  <symbol id="i-external" viewBox="0 0 20 20"><path d="M11 3h6v6M17 3l-8 8M15 11v5H4V5h5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5l3 2"/></symbol>
+  <symbol id="i-film" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M6 4v12M14 4v12M2.5 8h3.5M14 8h3.5M2.5 12h3.5M14 12h3.5"/></symbol>
+  <symbol id="i-bucket" viewBox="0 0 20 20"><path d="M3.5 5.5h13l-1.5 11h-10z"/><path d="M3.5 5.5c0-1.1 2.9-2 6.5-2s6.5.9 6.5 2"/></symbol>
+  <symbol id="i-webhook" viewBox="0 0 20 20"><path d="M7.5 8.5 5 13a3 3 0 1 0 2.7 4.3"/><path d="M12.5 8.5 15 13a3 3 0 1 1-2.7 4.3"/><path d="M10 6.5a3 3 0 1 0-3-3"/><path d="M7.5 17.3h5"/></symbol>
+  <symbol id="i-subtitles" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="2"/><path d="M5.5 9.5h3M5.5 12.5h6M11.5 9.5h3M14 12.5h.5"/></symbol>
+  <symbol id="i-split" viewBox="0 0 20 20"><path d="M10 2.5v15M3 7l-3 3 3 3M17 7l3 3-3 3"/></symbol>
+  <symbol id="i-merge" viewBox="0 0 20 20"><path d="M10 2.5v15M1 10h5M14 10h5M6 7l3 3-3 3M14 7l-3 3 3 3"/></symbol>
+  <symbol id="i-more" viewBox="0 0 20 20" fill="currentColor" stroke="none"><circle cx="10" cy="4.5" r="1.4"/><circle cx="10" cy="10" r="1.4"/><circle cx="10" cy="15.5" r="1.4"/></symbol>
+  <symbol id="i-download" viewBox="0 0 20 20"><path d="M10 3v9M6.5 8.5 10 12l3.5-3.5M4 16h12"/></symbol>
+  <symbol id="i-rename" viewBox="0 0 20 20"><path d="M4 16h12M5.5 13.5l7.5-7.5 2.5 2.5-7.5 7.5H5.5z"/></symbol>
+  <symbol id="i-link" viewBox="0 0 20 20"><path d="M8 12l4-4M7.5 5.5 9 4a3.5 3.5 0 0 1 5 5l-1.5 1.5M12.5 14.5 11 16a3.5 3.5 0 0 1-5-5l1.5-1.5"/></symbol>
+</svg>
+
+<header class="topbar">
+  <span class="wordmark"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></span>
+  <span class="muted sm">cuts and subtitles · hand-over · round 3</span>
+  <div class="right"><span class="sm">tokens.css + base.css + workshop.css · no script</span></div>
+</header>
+
+<main class="sheet-body">
+
+  <p class="muted" style="max-width:96ch">Every frame below is real markup against <code>base.css</code> and <code>workshop.css</code>; each one carries <code>data-frame</code>. The ids are the ids of today's page (<code>#title</code>, <code>#v</code>, <code>#tl</code>, <code>#sel</code>, <code>#bIn</code>, <code>#bOut</code>, <code>#bShare</code>, <code>#bCut</code>, <code>#prog</code>, <code>#result</code>, <code>#vpos</code> …) wherever the element exists today; a frame that repeats an element uses a suffix, because one document cannot hold the same id twice. The <code>&lt;style&gt;</code> in the head of this file is scaffolding for this sheet only.</p>
+
+  <h2>Cutting mode — a recording is loaded</h2>
+
+  <section class="frame" data-frame="F1">
+    <div class="cap"><span class="id">F1</span><b>At rest</b><span class="muted">shelf open · both cuts on the timeline · four quick-share pills · 1280 px</span></div>
+    <div class="viewport">
+      <header class="topbar">
+        <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+        <nav class="nav">
+          <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+          <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+          <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+        </nav>
+        <div class="right">
+          <span class="status"><i class="dot"></i><span class="lbl">OBS connected</span></span>
+          <div class="navmenu"><button class="btn btn-ghost btn-icon" aria-label="More" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button></div>
+        </div>
+      </header>
+      <div class="clips">
+        <details class="cliplist" open>
+          <summary><svg class="icon"><use href="#i-chevron"/></svg><b>3 clips</b> · newest 09:26</summary>
+          <div class="list-body">
+            <div class="row nowrap" style="padding:0 var(--space-1) var(--space-2)">
+              <h2 class="section-title grow">Clips <span class="n">3</span></h2>
+              <button class="btn btn-sm">Save replay <kbd>F9</kbd></button>
+            </div>
+            <div class="tabs">
+              <button aria-selected="true">Active 3</button>
+              <button aria-selected="false">Done 0</button>
+            </div>
+            <h2>Today</h2>
+            <div class="clip new" tabindex="0">
+              <div class="clip-row">
+                <span class="thumb"></span>
+                <span class="what"><span class="name"><span>Replay 19-03-31</span></span><span class="meta">09:26 · 1:15.0</span></span>
+              </div>
+            </div>
+            <div class="clip" tabindex="0">
+              <div class="clip-row">
+                <span class="thumb"></span>
+                <span class="what"><span class="name"><span>Nachtangriff</span></span><span class="meta">09:26 · 1:00.0 · 1 cut</span></span>
+              </div>
+            </div>
+            <div class="clip active is-open" tabindex="0">
+              <div class="clip-row">
+                <span class="thumb"></span>
+                <span class="what"><span class="name"><span>Raketenwerfer Action</span></span><span class="meta">09:26 · 1:30.0 · 2 cuts</span></span>
+              </div>
+              <div class="shelf" role="group" aria-label="Load from Raketenwerfer Action">
+                <span class="section-title">Load</span>
+                <button class="cut-card is-whole is-loaded" aria-current="true">
+                  <svg class="icon"><use href="#i-film"/></svg>
+                  <span class="what"><span class="name">Full recording</span><span class="meta">1:30.0 · 4 tracks · loaded</span></span>
+                </button>
+                <button class="cut-card">
+                  <span class="thumb"></span>
+                  <span class="what"><span class="name">Drei mit einem Schuss</span><span class="meta">0:34.0 · CC de · 2 outputs</span></span>
+                </button>
+                <button class="cut-card">
+                  <span class="thumb"></span>
+                  <span class="what"><span class="name">Second angle</span><span class="meta">0:23.0 · not rendered</span></span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <div class="editor">
+          <div class="title-row row nowrap">
+            <input class="input" id="title" maxlength="80" value="Raketenwerfer Action" aria-label="Title of the recording">
+            <button class="btn" id="bDone" title="Mark this clip done - the recording stays where it is (D)"><svg class="icon"><use href="#i-check"/></svg><span class="lbl">Mark done</span> <kbd>D</kbd></button>
+            <button class="btn btn-danger" id="bDel"><svg class="icon"><use href="#i-trash"/></svg><span class="lbl">Delete</span></button>
+            <button class="btn btn-icon" id="bMore" aria-label="More for this recording" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+
+          <div class="loaded-chip" id="loaded" aria-live="polite">
+            <svg class="icon"><use href="#i-film"/></svg>
+            <b>Full recording</b>
+            <span class="meta">1:30.0 · h264 · 1920×1080 · 60 fps · 4 tracks · 264 MB</span>
+            <span class="mode">Cutting mode</span>
+          </div>
+
+          <div class="player-wrap">
+            <div class="shot" role="img" aria-label="the recording plays here">
+              <span class="what">game footage</span>
+              <span class="controls"><svg class="icon icon-sm"><use href="#i-play"/></svg>0:56.0 / 1:30.0<span class="track"><i style="width:62%"></i></span></span>
+            </div>
+          </div>
+
+          <div class="timeline" id="tl" role="group" aria-label="Timeline of the recording">
+            <div class="ticks"><span>0:00</span><span>0:15</span><span>0:30</span><span>0:45</span><span>1:00</span><span>1:15</span><span>1:30</span></div>
+            <div class="range" id="sel" style="left:55.6%;width:13.3%"></div>
+            <button class="cutbar" style="left:13.3%;width:37.8%" aria-label="Load the cut Drei mit einem Schuss, 0:12.0 to 0:46.0"><span>Drei mit einem Schuss</span></button>
+            <button class="cutbar" style="left:72.2%;width:25.6%" aria-label="Load the cut Second angle, 1:05.0 to 1:28.0"><span>Second angle</span></button>
+            <div class="handle" id="hin" style="left:55.6%" data-time="0:50.0"></div>
+            <div class="handle" id="hout" style="left:68.9%" data-time="1:02.0"></div>
+            <div class="playhead" style="left:62.2%"></div>
+          </div>
+          <p class="muted sm">The two bars are the cuts already taken from this recording — click one to load it into the player.</p>
+
+          <div class="row">
+            <button class="btn" id="bIn"><svg class="icon"><use href="#i-cut-in"/></svg> Set in <kbd>I</kbd></button>
+            <button class="btn" id="bOut"><svg class="icon"><use href="#i-cut-out"/></svg> Set out <kbd>O</kbd></button>
+            <button class="btn" id="bAll">Whole clip</button>
+            <button class="btn" id="bPrev"><svg class="icon"><use href="#i-play"/></svg> Play selection <kbd>P</kbd></button>
+            <span class="plan" id="selInfo">0:50.0 – 1:02.0 · <b>12.0 s</b></span>
+          </div>
+
+          <div class="share-row">
+            <div class="split">
+              <button class="btn btn-primary" id="bShare"><svg class="icon"><use href="#i-share"/></svg> Share to Nextcloud <kbd>Enter</kbd></button>
+              <button class="btn btn-primary btn-icon" id="bShareMenu" aria-label="Share to another target" aria-haspopup="true" aria-expanded="false"><svg class="icon"><use href="#i-chevron"/></svg></button>
+            </div>
+            <button class="btn" id="bCut" title="Save this range as a cut and render nothing - a cut keeps the picture and all audio tracks, so you can render it any way you like later"><svg class="icon"><use href="#i-cut-in"/></svg> Save cut <kbd>C</kbd></button>
+            <span class="plan" id="planInfo">about <b>53 MB</b> · H.264, 1080p at best quality · to <b>Nextcloud</b>, link never expires + post</span>
+          </div>
+
+          <div class="quickshare" id="quickRow">
+            <span class="section-title">Quick share</span>
+            <button class="pill" id="pAudio" aria-haspopup="true" aria-expanded="false">Audio <b>Mix (all)</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <button class="pill" id="pQuality" aria-haspopup="true" aria-expanded="false">Quality <b>H.264</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <button class="pill" id="pFrame" aria-haspopup="true" aria-expanded="false">Frame <b>16:9</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <button class="pill" id="pAfter" aria-haspopup="true" aria-expanded="false">Afterwards <b>Mark done</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <span class="note right">Subtitles on a quick share: <b>off</b> · <a href="#F13">Settings › Quick share</a></span>
+            <span class="note">A pill changes the next share only — the defaults live in Settings and are the same on every device.</span>
+          </div>
+
+          <div class="shortcuts">
+            <span><kbd>Space</kbd> play/pause</span>
+            <span><kbd>←</kbd><kbd>→</kbd> 1 s</span>
+            <span><kbd>Shift</kbd>+arrow 5 s</span>
+            <span><kbd>,</kbd><kbd>.</kbd> 1 frame</span>
+            <span><kbd>Home</kbd><kbd>End</kbd> start/end</span>
+            <span><kbd>I</kbd><kbd>O</kbd> marks</span>
+            <span><kbd>Enter</kbd> share</span>
+            <span><kbd>C</kbd> save cut</span>
+            <span><kbd>W</kbd> newest cut</span>
+            <span><kbd>D</kbd> mark done</span>
+          </div>
+
+          <!-- until the job strip of F3 ships, these two stay exactly where they are
+               today: under the tools, in both modes. -->
+          <div class="progress" id="prog" hidden></div>
+          <div class="result" id="result" hidden></div>
+        </div>
+      </div>
+    </div>
+    <p class="note">Against today's page: the shelf inside the open list row, the loaded-chip, the two cut bars on <code>#tl</code>, and the four settings as a visible <code>.quickshare</code> row instead of the collapsed sentence with “Change”. <code>#prog</code> and <code>#result</code> keep their place under the tools in both modes until the strip in <a href="#F3">F3</a> ships. The 9:16 window control is no longer here — it belongs to the frame choice (<a href="#F8">F8</a>).</p>
+  </section>
+
+  <div class="row-of-frames">
+    <section class="frame" data-frame="F4a">
+      <div class="cap"><span class="id">F4a</span><b>A recording with no cuts yet</b></div>
+      <div class="viewport" style="width:312px;padding:var(--space-3)">
+        <div class="clip active" tabindex="0">
+          <div class="clip-row">
+            <span class="thumb"></span>
+            <span class="what"><span class="name"><span>Replay 19-03-31</span></span><span class="meta">09:26 · 1:15.0</span></span>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="width:312px">No shelf: with nothing to choose between, the row is the load. This is today's <code>.clip</code>, unchanged — the shelf appears only once a cut exists, and only under the row that is open.</p>
+    </section>
+
+    <section class="frame" data-frame="F4b">
+      <div class="cap"><span class="id">F4b</span><b>Twelve recordings over three days</b><span class="muted">one shelf at a time</span></div>
+      <div class="viewport" style="width:312px;padding:var(--space-3)">
+        <div class="row nowrap" style="padding:0 var(--space-1) var(--space-2)">
+          <h2 class="section-title grow">Clips <span class="n">12</span></h2>
+          <button class="btn btn-sm">Save replay <kbd>F9</kbd></button>
+        </div>
+        <div class="tabs"><button aria-selected="true">Active 9</button><button aria-selected="false">Done 3</button></div>
+        <h2 class="section-title" style="margin:var(--space-3) var(--space-2) var(--space-1)">Today</h2>
+        <div class="clip new"><div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Replay 21-58-04</span></span><span class="meta">21:58 · 2:00.0</span></span></div></div>
+        <div class="clip active is-open">
+          <div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Raketenwerfer Action</span></span><span class="meta">09:26 · 1:30.0 · 2 cuts</span></span></div>
+          <div class="shelf" role="group" aria-label="Load from Raketenwerfer Action">
+            <span class="section-title">Load</span>
+            <button class="cut-card is-whole is-loaded" aria-current="true"><svg class="icon"><use href="#i-film"/></svg><span class="what"><span class="name">Full recording</span><span class="meta">1:30.0 · loaded</span></span></button>
+            <button class="cut-card"><span class="thumb"></span><span class="what"><span class="name">Drei mit einem Schuss</span><span class="meta">0:34.0 · CC de</span></span></button>
+            <button class="cut-card"><span class="thumb"></span><span class="what"><span class="name">Second angle</span><span class="meta">0:23.0</span></span></button>
+          </div>
+        </div>
+        <div class="clip"><div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Nachtangriff</span></span><span class="meta">09:26 · 1:00.0 · 1 cut</span></span></div></div>
+        <h2 class="section-title" style="margin:var(--space-3) var(--space-2) var(--space-1)">Yesterday</h2>
+        <div class="clip"><div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Clutch 1v3</span></span><span class="meta">22:41 · 1:00.0 · 1 cut</span></span></div></div>
+        <div class="clip"><div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Replay 21-14-07</span></span><span class="meta">21:14 · 1:30.0 · 1 cut</span></span></div></div>
+        <div class="clip"><div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Replay 20-02-19</span></span><span class="meta">20:02 · 0:45.0</span></span></div></div>
+        <h2 class="section-title" style="margin:var(--space-3) var(--space-2) var(--space-1)">19 September</h2>
+        <div class="clip"><div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Drohnen-Ace</span></span><span class="meta">23:12 · 2:00.0 · 2 cuts</span></span></div></div>
+        <div class="clip"><div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Replay 22-47-51</span></span><span class="meta">22:47 · 1:15.0</span></span></div></div>
+        <div class="clip"><div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Replay 22-30-08</span></span><span class="meta">22:30 · 1:30.0 · 1 cut</span></span></div></div>
+      </div>
+      <p class="note" style="width:312px">A row that is not open shows only “· 2 cuts”. Opening a row closes the one before it, so the list has one shelf at most and does not grow by twelve blocks at once.</p>
+    </section>
+  </div>
+
+  <h2>Workshop mode — a cut is loaded</h2>
+
+  <section class="frame" data-frame="F5">
+    <div class="cap"><span class="id">F5</span><b>A cut without subtitles</b><span class="muted">what the workshop offers before anything has been transcribed</span></div>
+    <div class="viewport">
+      <header class="topbar">
+        <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+        <nav class="nav">
+          <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+          <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+          <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+        </nav>
+        <div class="right"><span class="status"><i class="dot"></i><span class="lbl">OBS connected</span></span></div>
+      </header>
+      <div class="clips">
+        <details class="cliplist" open>
+          <summary><svg class="icon"><use href="#i-chevron"/></svg><b>3 clips</b> · newest 09:26</summary>
+          <div class="list-body">
+            <div class="clip active is-open">
+              <div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Raketenwerfer Action</span></span><span class="meta">09:26 · 1:30.0 · 2 cuts</span></span></div>
+              <div class="shelf" role="group" aria-label="Load from Raketenwerfer Action">
+                <span class="section-title">Load</span>
+                <button class="cut-card is-whole"><svg class="icon"><use href="#i-film"/></svg><span class="what"><span class="name">Full recording</span><span class="meta">1:30.0 · cut another moment</span></span></button>
+                <button class="cut-card"><span class="thumb"></span><span class="what"><span class="name">Drei mit einem Schuss</span><span class="meta">0:34.0 · CC de · 2 outputs</span></span></button>
+                <button class="cut-card is-loaded" aria-current="true"><span class="thumb"></span><span class="what"><span class="name">Second angle</span><span class="meta">0:23.0 · loaded</span></span></button>
+              </div>
+            </div>
+          </div>
+        </details>
+        <div class="editor">
+          <div class="title-row row nowrap">
+            <input class="input" id="title5" maxlength="80" value="Second angle" aria-label="Title of the cut">
+            <button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg><span class="lbl">Show range on the recording</span></button>
+            <button class="btn btn-icon" aria-label="More for this cut" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+          <div class="loaded-chip is-cut" aria-live="polite">
+            <svg class="icon"><use href="#i-subtitles"/></svg>
+            <b>Cut</b>
+            <span class="meta">0:23.0 · from Raketenwerfer Action 0:58.0–1:21.0 · Game + microphone · 61 MB</span>
+            <span class="mode">Workshop mode</span>
+          </div>
+          <div class="stage">
+            <div class="player-wrap">
+              <div class="shot" role="img" aria-label="the cut plays here">
+                <span class="what">game footage</span>
+                <span class="controls"><svg class="icon icon-sm"><use href="#i-play"/></svg>0:00.0 / 0:23.0<span class="track"><i style="width:0"></i></span></span>
+              </div>
+            </div>
+            <div class="side">
+              <div class="row nowrap">
+                <div class="seg" role="group" aria-label="Frame to render">
+                  <button aria-pressed="true">16:9</button>
+                  <button aria-pressed="false">9:16</button>
+                </div>
+                <span class="muted sm">the frame you will render</span>
+              </div>
+              <div class="card">
+                <div class="card-head"><svg class="icon"><use href="#i-subtitles"/></svg><h3>Subtitles</h3><span class="badge">Beta</span></div>
+                <div class="card-body stack-3">
+                  <p class="muted sm">This cut has none yet. Transcribing runs on this PC and takes about as long as the cut plays — <b>about 20 s</b> for 0:23.0. You can keep using the page while it runs.</p>
+                  <div class="row">
+                    <button class="btn"><svg class="icon"><use href="#i-subtitles"/></svg> Transcribe</button>
+                    <button class="pill" aria-haspopup="true" aria-expanded="false">Track <b>Game + microphone</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+                    <button class="pill" aria-haspopup="true" aria-expanded="false">Language <b>Detect</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+                  </div>
+                  <span class="faint sm">Model: small, ready on this PC</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="lane-head">
+            <span class="section-title">Cut · 0:00 – 0:23.0</span>
+            <span class="zoom"><button class="btn btn-sm" aria-label="Zoom out">−</button>zoom 1×<button class="btn btn-sm" aria-label="Zoom in">+</button></span>
+          </div>
+          <div class="timeline" role="group" aria-label="Timeline of the cut">
+            <div class="ticks"><span>0:00</span><span>0:05</span><span>0:10</span><span>0:15</span><span>0:20</span><span>0:23</span></div>
+            <div class="playhead" style="left:0"></div>
+          </div>
+          <p class="muted sm">No caption lane while there are no lines — the row appears with the transcript, so the page never shows an empty track.</p>
+          <hr>
+          <div class="render-row">
+            <div class="split">
+              <button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Render to Nextcloud <kbd>Enter</kbd></button>
+              <button class="btn btn-primary btn-icon" aria-label="Render to another target" aria-haspopup="true" aria-expanded="false"><svg class="icon"><use href="#i-chevron"/></svg></button>
+            </div>
+            <button class="pill" aria-haspopup="true" aria-expanded="false">Frame <b>16:9</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <button class="pill" aria-haspopup="true" aria-expanded="false">Audio <b>Game + microphone</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <span class="pill is-empty">Subtitles <b>none</b></span>
+            <button class="pill" aria-haspopup="true" aria-expanded="false">Afterwards <b>Keep everything</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <span class="plan">about 62 MB</span>
+          </div>
+          <div class="empty">
+            <svg class="icon"><use href="#i-share"/></svg>
+            <b>Nothing rendered from this cut yet</b>
+            <span class="sm">Every file that leaves the PC is one rendering of this cut, and it stays listed here with its link and its folder.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="frame" data-frame="F6">
+    <div class="cap"><span class="id">F6</span><b>Transcribing</b><span class="muted">the text arrives when the job ends · the cut stays playable and renderable</span></div>
+    <div class="viewport">
+      <header class="topbar">
+        <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+        <nav class="nav">
+          <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+          <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+          <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+        </nav>
+        <div class="right"><span class="status"><i class="dot busy"></i><span class="lbl">1 running</span></span></div>
+      </header>
+      <div class="clips">
+        <details class="cliplist"><summary><svg class="icon"><use href="#i-chevron"/></svg><b>3 clips</b> · newest 09:26</summary></details>
+        <div class="editor">
+          <div class="title-row row nowrap">
+            <input class="input" id="title6" maxlength="80" value="Drei mit einem Schuss" aria-label="Title of the cut">
+            <button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg><span class="lbl">Show range on the recording</span></button>
+            <button class="btn btn-icon" aria-label="More for this cut" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+          <div class="loaded-chip is-cut" aria-live="polite">
+            <svg class="icon"><use href="#i-subtitles"/></svg><b>Cut</b>
+            <span class="meta">0:34.0 · from Raketenwerfer Action 0:12.0–0:46.0 · Mix (all) · 93 MB</span>
+            <span class="mode">Workshop mode</span>
+          </div>
+          <div class="stage">
+            <div class="player-wrap">
+              <div class="shot" role="img" aria-label="the cut plays here">
+                <span class="what">game footage</span>
+                <span class="controls"><svg class="icon icon-sm"><use href="#i-play"/></svg>0:04.0 / 0:34.0<span class="track"><i style="width:12%"></i></span></span>
+              </div>
+            </div>
+            <div class="side">
+              <div class="row nowrap">
+                <div class="seg" role="group" aria-label="Frame to render"><button aria-pressed="true">16:9</button><button aria-pressed="false">9:16</button></div>
+              </div>
+              <div class="progress" id="prog6" role="status">
+                <div class="row nowrap"><span class="spinner"></span><span class="grow"><b>Transcribing “Drei mit einem Schuss”</b></span></div>
+                <div class="bar"><i style="width:62%"></i></div>
+                <div class="row"><span class="muted sm grow">0:21 of 0:34 · about 13 s left</span><button class="btn btn-sm btn-ghost"><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div>
+                <div class="stages"><span class="st-done">read the audio</span><span class="st-on">listen</span><span>write the lines</span></div>
+                <p class="muted sm">The text arrives in one piece when the job is done — about half a minute for a 34-second cut. Until then the cut plays and renders as it is; a rendering started now carries no subtitles.</p>
+                <div class="row nowrap faint sm"><svg class="icon icon-sm"><use href="#i-clock"/></svg>Queued behind it: render “Second angle” → Nextcloud</div>
+              </div>
+            </div>
+          </div>
+          <div class="timeline" role="group" aria-label="Timeline of the cut">
+            <div class="ticks"><span>0:00</span><span>0:05</span><span>0:10</span><span>0:15</span><span>0:20</span><span>0:25</span><span>0:30</span><span>0:34</span></div>
+            <div class="playhead" style="left:11.8%"></div>
+          </div>
+          <hr>
+          <div class="render-row">
+            <div class="split">
+              <button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Render to Nextcloud <kbd>Enter</kbd></button>
+              <button class="btn btn-primary btn-icon" aria-label="Render to another target" aria-haspopup="true" aria-expanded="false"><svg class="icon"><use href="#i-chevron"/></svg></button>
+            </div>
+            <button class="pill" aria-haspopup="true" aria-expanded="false">Frame <b>16:9</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <button class="pill" aria-haspopup="true" aria-expanded="false">Audio <b>Mix (all)</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <span class="pill is-empty">Subtitles <b>not ready yet</b></span>
+            <button class="pill" aria-haspopup="true" aria-expanded="false">Afterwards <b>Keep everything</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <span class="plan">about 92 MB</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">The running job is today's <code>.progress</code> card in today's place (in the side column beside the picture, so the cut stays watchable). When the strip of <a href="#F3">F3</a> ships, this card moves up into it unchanged.</p>
+  </section>
+
+  <section class="frame" data-frame="F7">
+    <div class="cap"><span class="id">F7</span><b>Mid-edit — the main frame</b><span class="muted">line 3 selected, its end being dragged on the lane · one version, so the language is a label</span></div>
+    <div class="viewport">
+      <header class="topbar">
+        <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+        <nav class="nav">
+          <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+          <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+          <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+        </nav>
+        <div class="right"><span class="status"><i class="dot"></i><span class="lbl">OBS connected</span></span></div>
+      </header>
+      <div class="clips">
+        <details class="cliplist" open>
+          <summary><svg class="icon"><use href="#i-chevron"/></svg><b>3 clips</b> · newest 09:26</summary>
+          <div class="list-body">
+            <div class="clip"><div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Replay 19-03-31</span></span><span class="meta">09:26 · 1:15.0</span></span></div></div>
+            <div class="clip"><div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Nachtangriff</span></span><span class="meta">09:26 · 1:00.0 · 1 cut</span></span></div></div>
+            <div class="clip is-open">
+              <div class="clip-row"><span class="thumb"></span><span class="what"><span class="name"><span>Raketenwerfer Action</span></span><span class="meta">09:26 · 1:30.0 · 2 cuts</span></span></div>
+              <div class="shelf" role="group" aria-label="Load from Raketenwerfer Action">
+                <span class="section-title">Load</span>
+                <button class="cut-card is-whole"><svg class="icon"><use href="#i-film"/></svg><span class="what"><span class="name">Full recording</span><span class="meta">1:30.0 · <kbd>Esc</kbd></span></span></button>
+                <button class="cut-card is-loaded" aria-current="true"><span class="thumb"></span><span class="what"><span class="name">Drei mit einem Schuss</span><span class="meta">0:34.0 · CC de · loaded</span></span></button>
+                <button class="cut-card"><span class="thumb"></span><span class="what"><span class="name">Second angle</span><span class="meta">0:23.0 · not rendered</span></span></button>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <div class="editor">
+          <div class="title-row row nowrap">
+            <input class="input" id="title7" maxlength="80" value="Drei mit einem Schuss" aria-label="Title of the cut">
+            <button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg><span class="lbl">Show range on the recording</span></button>
+            <button class="btn btn-icon" aria-label="More for this cut" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+          <div class="loaded-chip is-cut" aria-live="polite">
+            <svg class="icon"><use href="#i-subtitles"/></svg><b>Cut</b>
+            <span class="meta">0:34.0 · from Raketenwerfer Action 0:12.0–0:46.0 · Mix (all) · 93 MB</span>
+            <span class="mode">Workshop mode</span>
+          </div>
+
+          <div class="stage">
+            <div class="player-wrap has-controls">
+              <div class="shot" role="img" aria-label="the cut plays here, with the subtitle over it">
+                <span class="what">game footage</span>
+                <span class="sub-overlay is-selected">Warte, warte, warte, noch nicht schießen,<br>der sieht uns nicht</span>
+                <span class="controls"><svg class="icon icon-sm"><use href="#i-pause"/></svg>0:10.5 / 0:34.0<span class="track"><i style="width:31%"></i></span></span>
+              </div>
+            </div>
+            <div class="side">
+              <div class="row nowrap">
+                <div class="seg" role="group" aria-label="Frame to render"><button aria-pressed="true">16:9</button><button aria-pressed="false">9:16</button></div>
+                <span class="muted sm">the frame you will render</span>
+              </div>
+              <div class="frames">
+                <div class="frame-preview v">
+                  <span class="label">9:16</span>
+                  <span class="sub-overlay">Warte, warte, warte, noch nicht schießen, der sieht uns nicht</span>
+                  <span class="ui-band">Shorts interface</span>
+                </div>
+                <div class="look">
+                  <div class="head"><span class="section-title grow">Look — this cut</span><span class="faint xs">as in Settings</span></div>
+                  <button class="step" aria-haspopup="true">Position <b>Lower third</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+                  <button class="step" aria-haspopup="true">Size <b>M</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+                  <button class="step" aria-haspopup="true">Colour <b>White with shadow</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+                  <span class="faint xs">Named steps, because the rendering is done by libass: the overlay here is the browser's and will be close, not identical.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane-head">
+            <span class="section-title">Cut timeline · 0:00 – 0:34.0</span>
+            <span class="muted sm">the axis is the cut</span>
+            <span class="zoom"><button class="btn btn-sm" aria-label="Zoom out">−</button>zoom 1×<button class="btn btn-sm" aria-label="Zoom in">+</button></span>
+          </div>
+          <div class="timeline" id="tl7" role="group" aria-label="Timeline of the cut">
+            <div class="ticks"><span>0:00</span><span>0:05</span><span>0:10</span><span>0:15</span><span>0:20</span><span>0:25</span><span>0:30</span><span>0:34</span></div>
+            <div class="playhead" style="left:30.9%"></div>
+          </div>
+          <div class="caption-lane" role="listbox" aria-label="Subtitle lines of this cut" aria-orientation="horizontal">
+            <button class="block" role="option" aria-selected="false" tabindex="-1" style="left:3.5%;width:9.4%">Pass auf, der kommt</button>
+            <button class="block" role="option" aria-selected="false" tabindex="-1" style="left:14.7%;width:6.2%">Ich hab</button>
+            <button class="block is-selected" role="option" aria-selected="true" tabindex="0" style="left:24.4%;width:15%">Warte, warte, warte</button>
+            <span class="handle" style="left:24.4%" aria-hidden="true"></span>
+            <span class="handle is-active" style="left:39.4%" aria-hidden="true"></span>
+            <span class="tip" style="left:33%">0:20.3 → 0:25.4 <b>+0.6</b></span>
+            <button class="block" role="option" aria-selected="false" tabindex="-1" style="left:41.2%;width:5.6%">Jetzt!</button>
+            <button class="block" role="option" aria-selected="false" tabindex="-1" style="left:48.2%;width:11.2%">Oh mein Gott</button>
+            <button class="block is-foreign" role="option" aria-selected="false" tabindex="-1" style="left:63.2%;width:10.3%">Nice one</button>
+            <button class="block" role="option" aria-selected="false" tabindex="-1" style="left:77.1%;width:12.9%">Clip das</button>
+            <div class="playhead" style="left:30.9%"></div>
+          </div>
+          <div class="caption-map" aria-hidden="true">
+            <span class="block" style="left:3.5%;width:9.4%"></span>
+            <span class="block" style="left:14.7%;width:6.2%"></span>
+            <span class="block is-selected" style="left:24.4%;width:15%"></span>
+            <span class="block" style="left:41.2%;width:5.6%"></span>
+            <span class="block" style="left:48.2%;width:11.2%"></span>
+            <span class="block is-foreign" style="left:63.2%;width:10.3%"></span>
+            <span class="block" style="left:77.1%;width:12.9%"></span>
+            <span class="playhead" style="left:30.9%"></span>
+          </div>
+
+          <div class="line-inspector">
+            <div class="col">
+              <div class="row nowrap"><span class="which">Line 3 of 7</span><span class="times">5.1 s · 41 chars · 8.0 per second</span></div>
+              <label class="field"><span class="sr-only muted sm">Text of line 3</span><textarea class="input" id="lineText" rows="2">Warte, warte, warte, noch nicht schießen,
+der sieht uns nicht</textarea></label>
+              <div class="row">
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-play"/></svg> Play line <kbd>P</kbd></button>
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-split"/></svg> Split at playhead <kbd>S</kbd></button>
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-merge"/></svg> Merge with next <kbd>M</kbd></button>
+                <button class="btn btn-sm btn-danger"><svg class="icon icon-sm"><use href="#i-trash"/></svg> Delete line <kbd>Del</kbd></button>
+              </div>
+            </div>
+            <div class="col">
+              <span class="section-title">Timing · playhead 0:10.5</span>
+              <div class="stack">
+                <button class="btn"><svg class="icon icon-sm"><use href="#i-cut-in"/></svg> Start here <kbd>I</kbd></button>
+                <button class="btn"><svg class="icon icon-sm"><use href="#i-cut-out"/></svg> End here <kbd>O</kbd></button>
+              </div>
+              <div class="nudge">
+                <span>start</span>
+                <button class="btn btn-sm" aria-label="Start 0.1 s earlier">− 0.1</button>
+                <button class="btn btn-sm" aria-label="Start 0.1 s later">+ 0.1</button>
+                <span>end</span>
+                <button class="btn btn-sm" aria-label="End 0.1 s earlier">− 0.1</button>
+                <button class="btn btn-sm" aria-label="End 0.1 s later">+ 0.1</button>
+              </div>
+              <span class="faint xs">On the lane: drag an edge, or <kbd>Alt</kbd>+<kbd>←</kbd><kbd>→</kbd> without a pointer. Edits save by themselves.</span>
+            </div>
+            <div class="col transcript-col">
+              <div class="row nowrap"><span class="section-title grow">Whole transcript</span><span class="faint xs">click to jump</span></div>
+              <div class="transcript">
+                <button class="tline"><span class="t">01.2</span><span class="txt">Pass auf, der kommt von links hinten</span></button>
+                <button class="tline"><span class="t">05.0</span><span class="txt">Ich hab den Raketenwerfer</span></button>
+                <button class="tline is-current" aria-current="true"><span class="t">08.3</span><span class="txt">Warte, warte, warte, noch nicht schießen, der sieht uns nicht</span></button>
+                <button class="tline"><span class="t">14.0</span><span class="txt">Jetzt!</span></button>
+                <button class="tline"><span class="t">16.4</span><span class="txt">Oh mein Gott, alle drei mit einem Schuss</span></button>
+                <button class="tline is-foreign"><span class="t">21.5</span><span class="txt">Nice one, that was insane</span></button>
+                <button class="tline"><span class="t">26.2</span><span class="txt">Clip das, das glaubt uns sonst keiner</span></button>
+              </div>
+              <span class="faint xs">One line is English — kept as spoken. A translated version can be added later; the label above then becomes tabs.</span>
+            </div>
+          </div>
+
+          <div class="sub-bar">
+            <svg class="icon"><use href="#i-subtitles"/></svg>
+            <b>Subtitles</b>
+            <span class="badge">Beta</span>
+            <span class="state">As spoken · German · 7 lines · saved 09:31</span>
+            <span class="act">
+              <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Transcribe again</button>
+              <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-download"/></svg> Export SRT</button>
+              <button class="btn btn-sm btn-icon" aria-label="More for the subtitles" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+            </span>
+          </div>
+
+          <div class="render-row">
+            <div class="split">
+              <button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Render to Nextcloud <kbd>Enter</kbd></button>
+              <button class="btn btn-primary btn-icon" aria-label="Render to another target" aria-haspopup="true" aria-expanded="false"><svg class="icon"><use href="#i-chevron"/></svg></button>
+            </div>
+            <button class="pill" aria-haspopup="true" aria-expanded="false">Frame <b>16:9</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <button class="pill" aria-haspopup="true" aria-expanded="false">Audio <b>Mix (all)</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <button class="pill is-changed" aria-haspopup="true" aria-expanded="false">Subtitles <b>Burn in · German</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <button class="pill" aria-haspopup="true" aria-expanded="false">Afterwards <b>Keep everything</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <span class="plan">This cut has subtitles, so they are burned in unless you change it · about <b>92 MB</b>, H.264 1080p</span>
+          </div>
+
+          <h2 class="section-title">Outputs of this cut <span class="n">2</span></h2>
+          <div class="outputs">
+            <div class="output">
+              <span class="thumb v"></span>
+              <span class="what"><span class="name">9:16 · subtitles burned in · YouTube</span><span class="meta">09:27 · 92.76 MB · 34.0 s · unlisted</span></span>
+              <span class="act">
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy link</button>
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-external"/></svg> Open</button>
+                <button class="btn btn-sm btn-icon" aria-label="More for this output" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+              </span>
+            </div>
+            <div class="output">
+              <span class="thumb"></span>
+              <span class="what"><span class="name">16:9 · no subtitles · Nextcloud</span><span class="meta">09:27 · 106.9 MB · link posted to Discord</span></span>
+              <span class="act">
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy link</button>
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-folder"/></svg> Open folder</button>
+                <button class="btn btn-sm btn-icon" aria-label="More for this output" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+              </span>
+            </div>
+          </div>
+
+          <div class="progress" id="prog7" hidden></div>
+          <div class="result" id="result7" hidden></div>
+        </div>
+      </div>
+    </div>
+    <p class="note">No Save button: an edit saves a moment after you stop typing or let go of an edge, and the subtitle bar carries the state (“saved 09:31” / “saving …”). Delete line and <kbd>Delete</kbd> do not ask — they raise an Undo toast, like Mark done. The whole transcript is the third column of the inspector, which costs no extra height; under 1000 px that column and the lane give way to the document (<a href="#F16">F16</a>). <code>#prog</code> and <code>#result</code> sit at the foot of the editor in this mode too, until the strip ships.</p>
+  </section>
+
+  <section class="frame" data-frame="F8">
+    <div class="cap"><span class="id">F8</span><b>9:16 chosen, window placed, look changed from the default</b><span class="muted">the window position is a setting of the rendering and lives with the frame choice</span></div>
+    <div class="viewport w900" style="padding:var(--space-4)">
+      <div class="stage">
+        <div class="player-wrap has-controls" style="width:236px">
+          <div class="shot v" role="img" aria-label="the cut in the 9:16 frame">
+            <span class="what" style="position:absolute;left:0;right:0;top:var(--space-2);text-align:center">9:16</span>
+            <span class="sub-overlay pos-middle box">Warte, warte, warte, noch nicht schießen, der sieht uns nicht</span>
+            <span class="ui-band" style="position:absolute;left:0;right:0;bottom:0;height:24%;border-top:1px dashed var(--line-strong);background:var(--surface);opacity:.6"></span>
+            <span class="controls"><svg class="icon icon-sm"><use href="#i-pause"/></svg>0:10.5 / 0:34.0</span>
+          </div>
+        </div>
+        <div class="side">
+          <div class="row nowrap">
+            <div class="seg" role="group" aria-label="Frame to render"><button aria-pressed="false">16:9</button><button aria-pressed="true">9:16</button></div>
+            <span class="muted sm">the big picture is always the frame you render</span>
+          </div>
+          <div class="vpos-row" id="vposRow">
+            <span>Window position</span>
+            <input type="range" id="vpos" min="0" max="100" value="50" title="Where the 9:16 window sits: left edge, centre, right edge">
+            <b>Centre</b>
+          </div>
+          <div class="frames">
+            <div class="frame-preview h">
+              <span class="label">16:9</span>
+              <span class="window" style="left:30%;right:30%"></span>
+              <span class="sub-overlay" style="left:32%;right:32%;bottom:24%;font-size:8px">Warte, warte…</span>
+              <span style="position:absolute;left:0;right:0;bottom:4px;text-align:center;font:9px/1 var(--font-mono);color:var(--fg-muted)">what 9:16 keeps</span>
+            </div>
+            <div class="look is-changed">
+              <div class="head"><span class="section-title grow">Look — this cut</span><span class="badge warn">differs from the default</span></div>
+              <button class="step" aria-haspopup="true">Position <b>Middle</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="step" aria-haspopup="true">Size <b>L</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="step" aria-haspopup="true">Colour <b>White on a dark box</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <span class="muted xs">Default for 9:16: middle · M · white with shadow</span>
+              <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Reset to default</button>
+            </div>
+          </div>
+          <div class="render-row">
+            <div class="split">
+              <button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Render to YouTube <kbd>Enter</kbd></button>
+              <button class="btn btn-primary btn-icon" aria-label="Render to another target" aria-haspopup="true" aria-expanded="false"><svg class="icon"><use href="#i-chevron"/></svg></button>
+            </div>
+            <button class="pill is-changed" aria-haspopup="true" aria-expanded="false">Frame <b>9:16</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <button class="pill is-changed" aria-haspopup="true" aria-expanded="false">Subtitles <b>Burn in · German</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <span class="plan">about 92 MB</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">The window can be placed in both modes — a cut holds the full picture — but it matters here, where Shorts are made. <code>#vpos</code> and <code>.crop-ov</code> exist today; they move next to the frame choice and the crop overlay is drawn on the 16:9 preview when 9:16 is the chosen frame, and on the player itself when 16:9 is. Under 1000 px the <code>.seg</code> swaps the one picture and <code>.frame-preview</code> is hidden, so the slider is judged on the big picture.</p>
+  </section>
+
+  <section class="frame" data-frame="F10">
+    <div class="cap"><span class="id">F10</span><b>Every menu of workshop mode</b><span class="muted">one popup open at a time on the real page</span></div>
+    <div class="row-of-frames">
+      <div class="stack">
+        <span class="section-title">The cut ⋮</span>
+        <div class="menu is-static">
+          <button><svg class="icon"><use href="#i-rename"/></svg>Rename this cut</button>
+          <button><svg class="icon"><use href="#i-cut-in"/></svg>Show range on the recording</button>
+          <button><svg class="icon"><use href="#i-film"/></svg>Load the full recording<span class="muted"><kbd>Esc</kbd></span></button>
+          <button><svg class="icon"><use href="#i-folder"/></svg>Open the cut's folder</button>
+          <button><svg class="icon"><use href="#i-copy"/></svg>Copy the file</button>
+          <button><svg class="icon"><use href="#i-refresh"/></svg>Make a playable preview<span class="muted">done</span></button>
+          <hr>
+          <button class="danger"><svg class="icon"><use href="#i-trash"/></svg>Delete the cut and its 2 outputs</button>
+        </div>
+      </div>
+      <div class="stack">
+        <span class="section-title">The subtitle bar ⋮</span>
+        <div class="menu is-static">
+          <button><svg class="icon"><use href="#i-refresh"/></svg>Transcribe again<span class="muted">Mix (all)</span></button>
+          <button><svg class="icon"><use href="#i-refresh"/></svg>Transcribe from the microphone</button>
+          <button><svg class="icon"><use href="#i-refresh"/></svg>Transcribe from game + microphone</button>
+          <hr>
+          <button><svg class="icon"><use href="#i-download"/></svg>Export SRT</button>
+          <button><svg class="icon"><use href="#i-download"/></svg>Export VTT</button>
+          <hr>
+          <button class="danger"><svg class="icon"><use href="#i-trash"/></svg>Delete the subtitles</button>
+        </div>
+        <p class="muted sm" style="width:300px">All three tracks stay available on a cut whose recording is gone: a cut is the picture plus every audio track, copied, and transcription reads the cut's own file.</p>
+      </div>
+      <div class="stack">
+        <span class="section-title">An output ⋮</span>
+        <div class="menu is-static">
+          <button><svg class="icon"><use href="#i-link"/></svg>Copy the direct link</button>
+          <button><svg class="icon"><use href="#i-copy"/></svg>Copy the page link</button>
+          <button><svg class="icon"><use href="#i-external"/></svg>Open</button>
+          <button><svg class="icon"><use href="#i-download"/></svg>Download</button>
+          <button><svg class="icon"><use href="#i-folder"/></svg>Open the folder</button>
+          <button><svg class="icon"><use href="#i-copy"/></svg>Copy the file</button>
+          <hr>
+          <div class="menu-title">Post the link to</div>
+          <button><svg class="icon"><use href="#i-share"/></svg>Discord</button>
+          <button><svg class="icon"><use href="#i-share"/></svg>Telegram</button>
+          <button><svg class="icon"><use href="#i-webhook"/></svg>Webhook “Clips”</button>
+          <hr>
+          <div class="menu-title">Publish to</div>
+          <button><svg class="icon"><use href="#i-bucket"/></svg>Nextcloud</button>
+          <button><svg class="icon"><use href="#i-bucket"/></svg>OneDrive</button>
+          <button disabled><svg class="icon"><use href="#i-external"/></svg>YouTube<span class="muted">already there</span></button>
+          <hr>
+          <button class="danger"><svg class="icon"><use href="#i-trash"/></svg>Delete this output</button>
+        </div>
+      </div>
+      <div class="stack">
+        <span class="section-title">The Render split button ▾</span>
+        <div class="menu is-static">
+          <div class="menu-title">Render this cut to</div>
+          <button><svg class="icon"><use href="#i-check"/></svg>Nextcloud<span class="muted">default</span></button>
+          <button><svg class="icon"><use href="#i-external"/></svg>YouTube<span class="muted">unlisted</span></button>
+          <button><svg class="icon"><use href="#i-bucket"/></svg>OneDrive</button>
+          <button><svg class="icon"><use href="#i-folder"/></svg>File on this PC<span class="muted">no upload</span></button>
+          <button><svg class="icon"><use href="#i-webhook"/></svg>Webhook “Clips”</button>
+          <hr>
+          <button><svg class="icon"><use href="#i-settings"/></svg>Targets in Settings</button>
+        </div>
+        <p class="muted sm" style="width:300px">Picking a target renders once to it; the default is the one in Settings › Quick share. There is no Target pill — the split button is the one-off.</p>
+      </div>
+      <div class="stack">
+        <span class="section-title">A quick-share pill ▾ · Frame</span>
+        <div class="menu is-static">
+          <div class="menu-title">Frame</div>
+          <button><svg class="icon"><use href="#i-check"/></svg>Landscape 16:9<span class="muted">1920×1080</span></button>
+          <button><span class="icon"></span>Vertical 9:16<span class="muted">1080×1920</span></button>
+        </div>
+        <p class="muted sm" style="width:300px">Four pills in cutting mode — Audio, Quality, Frame, Afterwards — and each menu is this short. Picking 9:16 shows the window position next to the choice.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="frame" data-frame="F11">
+    <div class="cap"><span class="id">F11</span><b>The recording is gone</b><span class="muted">the cut is the original now</span></div>
+    <div class="viewport">
+      <header class="topbar">
+        <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+        <nav class="nav">
+          <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+          <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+          <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+        </nav>
+        <div class="right"><span class="status"><i class="dot"></i><span class="lbl">OBS connected</span></span></div>
+      </header>
+      <div class="banners pinned">
+        <div class="banner">
+          <svg class="icon"><use href="#i-info"/></svg>
+          <span class="grow">The recording was recycled yesterday at 21:40. <b>This cut is the original now</b> — it plays, it renders, it keeps its outputs, and it can still be transcribed from any of its audio tracks.</span>
+          <button class="btn btn-ghost btn-icon" aria-label="Hide"><svg class="icon"><use href="#i-close"/></svg></button>
+        </div>
+      </div>
+      <div class="clips">
+        <details class="cliplist" open>
+          <summary><svg class="icon"><use href="#i-chevron"/></svg><b>3 clips</b> · newest 09:26</summary>
+          <div class="list-body">
+            <h2 class="section-title" style="margin:var(--space-1) var(--space-2)">Yesterday</h2>
+            <div class="clip is-open is-gone">
+              <div class="clip-row">
+                <span class="thumb is-gone">gone</span>
+                <span class="what"><span class="name"><span>Clutch 1v3</span></span><span class="meta">22:41 · recycled · 1 cut left</span></span>
+              </div>
+              <div class="shelf" role="group" aria-label="Load from Clutch 1v3">
+                <span class="section-title">Load</span>
+                <button class="cut-card is-whole is-unavailable" disabled><svg class="icon"><use href="#i-film"/></svg><span class="what"><span class="name">Full recording</span><span class="meta">recycled 21:40</span></span></button>
+                <button class="cut-card is-loaded" aria-current="true"><span class="thumb"></span><span class="what"><span class="name">Clutch 1v3</span><span class="meta">0:34.0 · CC de · 1 output · loaded</span></span></button>
+              </div>
+            </div>
+            <p class="muted sm" style="padding:var(--space-2)">The row keeps the recording's name until its last cut is deleted — then the row goes too.</p>
+          </div>
+        </details>
+        <div class="editor">
+          <div class="title-row row nowrap">
+            <input class="input" id="title11" maxlength="80" value="Clutch 1v3" aria-label="Title of the cut">
+            <button class="btn" disabled title="The recording is gone, so there is no timeline to show the range on"><svg class="icon"><use href="#i-cut-in"/></svg><span class="lbl">Show range on the recording</span></button>
+            <button class="btn btn-danger"><svg class="icon"><use href="#i-trash"/></svg><span class="lbl">Delete cut + 1 output</span></button>
+            <button class="btn btn-icon" aria-label="More for this cut" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+          <div class="loaded-chip is-cut" aria-live="polite">
+            <svg class="icon"><use href="#i-subtitles"/></svg><b>Cut</b>
+            <span class="meta">0:34.0 · source recycled · 4 audio tracks · 93 MB</span>
+            <span class="mode">Workshop mode</span>
+          </div>
+          <div class="stage">
+            <div class="player-wrap has-controls">
+              <div class="shot" role="img" aria-label="the cut's own file plays here">
+                <span class="what">the cut's own file</span>
+                <span class="sub-overlay">Jetzt!</span>
+                <span class="controls"><svg class="icon icon-sm"><use href="#i-pause"/></svg>0:16.0 / 0:34.0<span class="track"><i style="width:47%"></i></span></span>
+              </div>
+            </div>
+            <div class="side">
+              <div class="row nowrap">
+                <div class="seg" role="group" aria-label="Frame to render"><button aria-pressed="true">16:9</button><button aria-pressed="false">9:16</button></div>
+                <span class="muted sm">both frames still work — 9:16 crops the cut</span>
+              </div>
+              <div class="card">
+                <div class="card-head"><h3>What is missing</h3></div>
+                <div class="card-body stack">
+                  <div class="row nowrap"><svg class="icon icon-sm"><use href="#i-cut-in"/></svg><span class="muted sm">The marking tools: there is nothing left to mark.</span></div>
+                  <div class="row nowrap"><svg class="icon icon-sm"><use href="#i-cut-in"/></svg><span class="muted sm">“Show range on the recording”, and the range cannot be put back.</span></div>
+                  <div class="row nowrap"><svg class="icon icon-sm"><use href="#i-film"/></svg><span class="muted sm">“Full recording” in the shelf, greyed with the time it was recycled.</span></div>
+                  <hr>
+                  <span class="muted sm">Everything else is unchanged, including all three transcribe entries: the cut carries every audio track, and transcription reads the cut's own file.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="note muted sm">Below this: caption lane, line inspector, whole transcript, subtitle bar, render row and outputs exactly as in <a href="#F7">F7</a>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="row-of-frames">
+    <section class="frame" data-frame="F11b">
+      <div class="cap"><span class="id">F11b</span><b>The model is not on this PC yet</b></div>
+      <div class="viewport w420" style="padding:var(--space-4)">
+        <div class="card">
+          <div class="card-head"><svg class="icon"><use href="#i-subtitles"/></svg><h3>Subtitles</h3><span class="badge">Beta</span></div>
+          <div class="card-body stack-3">
+            <p class="muted sm">Transcribing needs the speech model. It is downloaded once — <b>small, 466 MB</b> — and then everything runs offline on this PC.</p>
+            <div class="row">
+              <button class="btn"><svg class="icon"><use href="#i-download"/></svg> Download the model</button>
+              <span class="faint sm">or <a href="#F14">choose another size in Settings</a></span>
+            </div>
+            <hr>
+            <span class="faint sm">Nothing else on the page changes: the cut plays, renders and keeps its outputs while the model is missing.</span>
+          </div>
+        </div>
+        <div class="progress" role="status" style="margin-top:var(--space-3)">
+          <div class="row nowrap"><span class="spinner"></span><span class="grow"><b>Downloading the model “small”</b></span><span class="muted sm">184 of 466 MB</span></div>
+          <div class="bar"><i style="width:39%"></i></div>
+          <div class="row nowrap"><span class="muted sm grow">Transcribing starts by itself when it is here.</span><button class="btn btn-sm btn-ghost"><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="frame" data-frame="F11c">
+      <div class="cap"><span class="id">F11c</span><b>The beta is switched off</b><span class="muted">what is left of the workshop</span></div>
+      <div class="viewport w700" style="padding:var(--space-4)">
+        <div class="editor" style="padding:0">
+          <div class="title-row row nowrap">
+            <input class="input" id="title11c" maxlength="80" value="Drei mit einem Schuss" aria-label="Title of the cut">
+            <button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg><span class="lbl">Show range</span></button>
+            <button class="btn btn-icon" aria-label="More for this cut" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+          <div class="loaded-chip is-cut">
+            <svg class="icon"><use href="#i-film"/></svg><b>Cut</b>
+            <span class="meta">0:34.0 · from Raketenwerfer Action 0:12.0–0:46.0</span>
+            <span class="mode">Workshop mode</span>
+          </div>
+          <div class="player-wrap">
+            <div class="shot" role="img" aria-label="the cut plays here"><span class="what">game footage</span></div>
+          </div>
+          <div class="row nowrap"><div class="seg" role="group" aria-label="Frame to render"><button aria-pressed="true">16:9</button><button aria-pressed="false">9:16</button></div><span class="muted sm">no subtitle bar, no lane, no inspector, no Look, no subtitle pill</span></div>
+          <div class="timeline">
+            <div class="ticks"><span>0:00</span><span>0:10</span><span>0:20</span><span>0:30</span><span>0:34</span></div>
+            <div class="playhead" style="left:0"></div>
+          </div>
+          <div class="render-row">
+            <div class="split">
+              <button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Render to Nextcloud <kbd>Enter</kbd></button>
+              <button class="btn btn-primary btn-icon" aria-label="Render to another target" aria-haspopup="true"><svg class="icon"><use href="#i-chevron"/></svg></button>
+            </div>
+            <button class="pill" aria-haspopup="true">Frame <b>16:9</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <button class="pill" aria-haspopup="true">Audio <b>Mix (all)</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            <button class="pill" aria-haspopup="true">Afterwards <b>Keep everything</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="max-width:700px">The workshop is then: load the cut, watch it, name it, render it, keep its outputs.</p>
+    </section>
+  </div>
+
+  <div class="row-of-frames">
+    <section class="frame" data-frame="F12a">
+      <div class="cap"><span class="id">F12a</span><b>Preparing the cut for playback</b></div>
+      <div class="viewport w520" style="padding:var(--space-4)">
+        <div class="player-wrap">
+          <div class="shot"></div>
+          <div class="player-ov" role="status">
+            <span class="spinner"></span>
+            <b>Preparing this cut for playback …</b>
+            <span class="muted">The cut is saved in the recording's codec. The PC is making a copy the browser can play — a few seconds, once per cut.</span>
+            <span class="bar"><i style="width:45%"></i></span>
+          </div>
+        </div>
+        <p class="note">The controls under the player are already there and already the workshop's; only the picture waits. Rendering does not wait for this copy — it works from the cut itself.</p>
+      </div>
+    </section>
+
+    <section class="frame" data-frame="F12b">
+      <div class="cap"><span class="id">F12b</span><b>This browser cannot play the codec</b></div>
+      <div class="viewport w520" style="padding:var(--space-4)">
+        <div class="player-wrap">
+          <div class="shot"></div>
+          <div class="player-ov is-blocked">
+            <svg class="icon"><use href="#i-warning"/></svg>
+            <b>This browser cannot play HEVC</b>
+            <span class="muted">Make a playable preview — an H.264 copy next to the cut. It stays until you delete the cut.</span>
+            <button class="btn"><svg class="icon"><use href="#i-play"/></svg> Make a playable preview</button>
+            <span class="faint sm">about 30 s · 40 MB</span>
+          </div>
+        </div>
+        <p class="note">Same wording and same place as on a recording today (<code>#h264Row</code> / <code>#bH264</code>), moved into the player overlay. The lane, the inspector and the render row stay usable meanwhile.</p>
+      </div>
+    </section>
+  </div>
+
+  <h2>Settings — two more cards in General</h2>
+
+  <section class="frame" data-frame="F13">
+    <div class="cap"><span class="id">F13</span><b>Quick share</b><span class="muted">closed by default with its summary in the head, like the other cards</span></div>
+    <div class="viewport w720" style="padding:var(--space-5) var(--space-4)">
+      <div class="tabs">
+        <button aria-selected="true">General</button>
+        <button aria-selected="false">Integrations</button>
+      </div>
+      <div class="stack-3" style="margin-top:var(--space-4)">
+        <p class="muted sm">… the General tab's other cards, unchanged.</p>
+        <div class="card is-collapsible">
+          <div class="card-head with-sum">
+            <h2>Quick share</h2>
+            <span class="card-sum">Mix (all) · H.264 · 16:9 · Nextcloud · mark done afterwards · no subtitles</span>
+            <button class="btn btn-ghost btn-icon card-toggle" aria-expanded="false" aria-label="Open Quick share"><svg class="icon"><use href="#i-chevron"/></svg></button>
+          </div>
+        </div>
+        <div class="card is-collapsible is-open">
+          <div class="card-head with-sum">
+            <h2>Quick share</h2>
+            <span class="card-sum">open</span>
+            <button class="btn btn-ghost btn-icon card-toggle" aria-expanded="true" aria-label="Close Quick share"><svg class="icon"><use href="#i-chevron"/></svg></button>
+          </div>
+          <div class="card-body stack-3">
+            <p class="muted sm">What <kbd>Enter</kbd> on the clips page does. The same settings sit under the player, where a pill changes the next share only and falls back to these afterwards.</p>
+            <div class="fields-2">
+              <label class="field">
+                <span class="help-anchor">Audio <button class="help" aria-expanded="false" aria-label="What this means">?</button></span>
+                <select class="select" id="sAudio"><option selected>Mix (all)</option><option>Game only</option><option>Microphone only</option><option>Game + microphone (no voice chat)</option></select>
+              </label>
+              <label class="field">
+                <span class="help-anchor">Quality <button class="help" aria-expanded="false" aria-label="What this means">?</button></span>
+                <select class="select" id="sQuality"><option selected>H.264 (best quality)</option><option>As recorded</option></select>
+              </label>
+              <label class="field">
+                <span>Frame</span>
+                <select class="select" id="sFrame"><option selected>Landscape 16:9</option><option>Vertical 9:16</option></select>
+              </label>
+              <div class="field">
+                <span class="help-anchor">Afterwards <button class="help" aria-expanded="true" aria-label="What this means">?</button></span>
+                <select class="select" id="sAfter"><option>Keep</option><option selected>Mark done</option><option>Recycle the recording</option></select>
+                <div class="pop">Keep leaves the recording as it is. Mark done moves it to the second tab. Recycle deletes the recording right after the share and keeps the cut — the file is gone, the cut still plays.</div>
+              </div>
+              <label class="field">
+                <span>Target</span>
+                <select class="select" id="sTarget"><option selected>Nextcloud</option><option>OneDrive</option><option>File on this PC</option><option>Webhook “Clips”</option></select>
+              </label>
+            </div>
+            <hr>
+            <div class="field">
+              <span class="help-anchor">Subtitles on a quick share <button class="help" aria-expanded="false" aria-label="What this means">?</button></span>
+              <label class="check"><input type="radio" name="qsubs" checked><span><b>Off</b><br><span class="muted sm">A quick share carries no subtitles. Give a cut subtitles in the workshop, where you can read them first.</span></span></label>
+              <label class="check"><input type="radio" name="qsubs"><span><b>Transcribe and burn in without review</b><br><span class="muted sm">The share waits for the transcription — about as long as the clip plays — and burns the text in unread. Names, places and callouts are often wrong, and it is in the file for good. Use it if getting it out fast matters more than getting it right.</span></span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">Two states of the same card: closed, as it is by default, and open. Nothing here is new behaviour — these settings existed, they just had no home. The default target lives here; the split button under the player picks another target for one share.</p>
+  </section>
+
+  <section class="frame" data-frame="F14">
+    <div class="cap"><span class="id">F14</span><b>Subtitles, in the card rhythm of the other cards</b></div>
+    <div class="viewport w720" style="padding:var(--space-5) var(--space-4)">
+      <div class="tabs">
+        <button aria-selected="true">General</button>
+        <button aria-selected="false">Integrations</button>
+      </div>
+      <div class="stack-3" style="margin-top:var(--space-4)">
+        <div class="card is-collapsible">
+          <div class="card-head with-sum">
+            <h2>Subtitles</h2>
+            <span class="card-sum">on · detect the language · Mix (all) · model small · graphics card off</span>
+            <button class="btn btn-ghost btn-icon card-toggle" aria-expanded="false" aria-label="Open Subtitles"><svg class="icon"><use href="#i-chevron"/></svg></button>
+          </div>
+        </div>
+        <div class="card is-collapsible is-open">
+          <div class="card-head with-sum">
+            <h2>Subtitles</h2>
+            <span class="badge">Beta</span>
+            <span class="card-sum"></span>
+            <label class="switch"><input type="checkbox" checked><span class="track"></span><span>On</span></label>
+            <button class="btn btn-ghost btn-icon card-toggle" aria-expanded="true" aria-label="Close Subtitles"><svg class="icon"><use href="#i-chevron"/></svg></button>
+          </div>
+          <div class="card-body stack-3">
+            <p class="muted sm">Speech in a cut is transcribed on this PC. Nothing is sent anywhere. Switch this off and the workshop has no subtitle half at all.</p>
+            <div class="fields-2">
+              <label class="field">
+                <span>Language of the speech</span>
+                <select class="select" id="sLang"><option selected>Detect</option><option>German</option><option>English</option></select>
+                <span class="hint">Detect decides again every 30 seconds and can flip in a quiet passage. If your clips are in one language, name it.</span>
+              </label>
+              <label class="field">
+                <span class="help-anchor">Audio track <button class="help" aria-expanded="false" aria-label="What this means">?</button></span>
+                <select class="select" id="sTrack"><option selected>Mix (all)</option><option>Microphone only</option><option>Game + microphone (no voice chat)</option></select>
+                <span class="hint">The microphone alone gives the cleanest text if the game is loud.</span>
+              </label>
+            </div>
+            <div class="stack">
+              <span class="section-title">Model</span>
+              <div class="checks">
+                <div class="check-row">
+                  <span class="mark"><input type="radio" name="model" aria-label="base"></span>
+                  <span><span class="label">base</span><span class="detail">fastest, roughest · for German callouts it is often enough</span></span>
+                  <span class="side"><span class="muted sm">142 MB</span><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-download"/></svg> Download</button></span>
+                </div>
+                <div class="check-row ok">
+                  <span class="mark"><input type="radio" name="model" checked aria-label="small, recommended"></span>
+                  <span><span class="label">small <span class="muted">— recommended</span></span><span class="detail">about as long as the cut plays</span></span>
+                  <span class="side"><span class="muted sm">466 MB</span><span class="badge ok"><svg class="icon icon-sm"><use href="#i-check"/></svg>ready</span></span>
+                </div>
+                <div class="check-row">
+                  <span class="mark"><input type="radio" name="model" aria-label="medium"></span>
+                  <span><span class="label">medium</span><span class="detail">most accurate · two to three times as long</span>
+                    <span class="progress" style="padding:var(--space-2) 0 0;background:none;border:0"><span class="bar"><i style="width:39%"></i></span></span>
+                  </span>
+                  <span class="side"><span class="muted sm">574 of 1462 MB</span><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></span>
+                </div>
+              </div>
+            </div>
+            <div class="stack">
+              <label class="switch"><input type="checkbox"><span class="track"></span><span>Use the graphics card</span></label>
+              <span class="switch-note muted sm">Off by default — the graphics card belongs to the game. Switch it on if transcribing while you are not playing.</span>
+            </div>
+            <hr>
+            <div class="stack-3">
+              <span class="section-title">Default look · per frame</span>
+              <span class="muted sm">A cut can differ from this; the workshop then says so and offers “Reset to default”. Named steps, not numbers — the rendering is done by libass, so exact pixels would be a promise the preview cannot keep.</span>
+              <div class="fields-2">
+                <div class="row nowrap" style="align-items:flex-start;gap:var(--space-3);padding:var(--space-2);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-md)">
+                  <div class="frame-preview h" style="width:124px">
+                    <span class="label">16:9</span>
+                    <span class="sub-overlay" style="font-size:8px;bottom:14%">Warte, warte, warte, noch nicht schießen</span>
+                  </div>
+                  <div class="look" style="flex:1;min-width:0;border:0;background:none;padding:0">
+                    <button class="step" aria-haspopup="true">Position <b>Lower third</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+                    <button class="step" aria-haspopup="true">Size <b>M</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+                    <button class="step" aria-haspopup="true">Colour <b>White, shadow</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+                  </div>
+                </div>
+                <div class="row nowrap" style="align-items:flex-start;gap:var(--space-3);padding:var(--space-2);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-md)">
+                  <div class="frame-preview v" style="width:56px">
+                    <span class="label" style="font-size:8px">9:16</span>
+                    <span class="sub-overlay" style="font-size:7px;bottom:32%">Warte, warte, warte</span>
+                    <span class="ui-band"></span>
+                  </div>
+                  <div class="look" style="flex:1;min-width:0;border:0;background:none;padding:0">
+                    <button class="step" aria-haspopup="true">Position <b>Middle</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+                    <button class="step" aria-haspopup="true">Size <b>M</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+                    <button class="step" aria-haspopup="true">Colour <b>White, shadow</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+                    <span class="faint xs">clear of the Shorts interface</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <h2>700 px — half a window next to the game</h2>
+
+  <div class="row-of-frames">
+    <section class="frame" data-frame="F15">
+      <div class="cap"><span class="id">F15</span><b>Cutting mode at rest</b></div>
+      <div class="viewport w700">
+        <header class="topbar">
+          <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+          <nav class="nav">
+            <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+            <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+            <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+          </nav>
+          <div class="right"><span class="status"><i class="dot"></i></span></div>
+        </header>
+        <div class="clips">
+          <details class="cliplist">
+            <summary><svg class="icon"><use href="#i-chevron"/></svg><b>3 clips</b> · newest 09:26<button class="btn btn-sm right">Save replay <kbd>F9</kbd></button></summary>
+          </details>
+          <div class="editor">
+            <div class="title-row row nowrap">
+              <input class="input" id="title15" maxlength="80" value="Raketenwerfer Action" aria-label="Title of the recording">
+              <button class="btn"><svg class="icon"><use href="#i-check"/></svg><span class="lbl">Mark done</span></button>
+              <button class="btn btn-danger"><svg class="icon"><use href="#i-trash"/></svg><span class="lbl">Delete</span></button>
+              <button class="btn btn-icon" aria-label="More" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+            </div>
+            <div class="loaded-chip">
+              <svg class="icon"><use href="#i-film"/></svg><b>Full recording</b>
+              <span class="meta">1:30.0 · 4 tracks</span>
+              <button class="pill" aria-haspopup="true" aria-expanded="false">2 cuts<svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            </div>
+            <div class="player-wrap">
+              <div class="shot" role="img" aria-label="the recording plays here">
+                <span class="what">game footage</span>
+                <span class="controls"><svg class="icon icon-sm"><use href="#i-play"/></svg>0:56.0 / 1:30.0<span class="track"><i style="width:62%"></i></span></span>
+              </div>
+            </div>
+            <div class="timeline" role="group" aria-label="Timeline of the recording">
+              <div class="ticks"><span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span></div>
+              <div class="range" style="left:55.6%;width:13.3%"></div>
+              <button class="cutbar" style="left:13.3%;width:37.8%" aria-label="Load the cut Drei mit einem Schuss"></button>
+              <button class="cutbar" style="left:72.2%;width:25.6%" aria-label="Load the cut Second angle"></button>
+              <div class="handle" style="left:55.6%" data-time="0:50.0"></div>
+              <div class="handle" style="left:68.9%" data-time="1:02.0"></div>
+              <div class="playhead" style="left:62.2%"></div>
+            </div>
+            <div class="row">
+              <button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg> Set in <kbd>I</kbd></button>
+              <button class="btn"><svg class="icon"><use href="#i-cut-out"/></svg> Set out <kbd>O</kbd></button>
+              <button class="btn">Whole clip</button>
+              <button class="btn"><svg class="icon"><use href="#i-play"/></svg> Play selection <kbd>P</kbd></button>
+              <span class="plan">0:50.0 – 1:02.0 · <b>12.0 s</b></span>
+            </div>
+            <div class="share-row">
+              <div class="split">
+                <button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Share to Nextcloud <kbd>Enter</kbd></button>
+                <button class="btn btn-primary btn-icon" aria-label="Share to another target" aria-haspopup="true"><svg class="icon"><use href="#i-chevron"/></svg></button>
+              </div>
+              <button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg> Save cut <kbd>C</kbd></button>
+            </div>
+            <div class="quickshare">
+              <span class="section-title">Quick share</span>
+              <button class="pill" aria-haspopup="true">Audio <b>Mix (all)</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="pill" aria-haspopup="true">Quality <b>H.264</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="pill" aria-haspopup="true">Frame <b>16:9</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="pill" aria-haspopup="true">Afterwards <b>Mark done</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <span class="note">Subtitles on a quick share: <b>off</b> · <a href="#F13">Settings › Quick share</a> · a pill changes the next share only</span>
+            </div>
+            <span class="plan">about <b>53 MB</b> · to Nextcloud, link never expires + post</span>
+            <div class="progress" hidden></div>
+            <div class="result" hidden></div>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="width:700px">The list is the panel it already becomes today, with the shelf inside it, so the two cuts are two taps away. The four pills wrap and keep their labels.</p>
+    </section>
+
+    <section class="frame" data-frame="F16">
+      <div class="cap"><span class="id">F16</span><b>Workshop mid-edit</b><span class="muted">same markup as F7 — the lane gives way to the map and the document</span></div>
+      <div class="viewport w700">
+        <header class="topbar">
+          <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+          <nav class="nav">
+            <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+            <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+            <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+          </nav>
+          <div class="right"><span class="status"><i class="dot"></i></span></div>
+        </header>
+        <div class="clips">
+          <details class="cliplist"><summary><svg class="icon"><use href="#i-chevron"/></svg><b>3 clips</b> · newest 09:26</summary></details>
+          <div class="editor">
+            <div class="title-row row nowrap">
+              <input class="input" id="title16" maxlength="80" value="Drei mit einem Schuss" aria-label="Title of the cut">
+              <button class="btn btn-icon" aria-label="More for this cut" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+            </div>
+            <div class="player-dock">
+              <div class="loaded-chip is-cut">
+                <svg class="icon"><use href="#i-subtitles"/></svg><b>Cut</b>
+                <span class="meta">0:34.0 · CC de</span>
+                <div class="seg" role="group" aria-label="Frame to render"><button aria-pressed="true">16:9</button><button aria-pressed="false">9:16</button></div>
+              </div>
+              <div class="player-wrap has-controls">
+                <div class="shot" role="img" aria-label="the cut plays here, with the subtitle over it">
+                  <span class="what">game footage</span>
+                  <span class="sub-overlay size-s">Warte, warte, warte, noch nicht schießen, der sieht uns nicht</span>
+                  <span class="controls"><svg class="icon icon-sm"><use href="#i-pause"/></svg>0:10.5 / 0:34.0<span class="track"><i style="width:31%"></i></span></span>
+                </div>
+              </div>
+              <div class="caption-map" role="listbox" aria-label="Subtitle lines of this cut">
+                <span class="block" style="left:3.5%;width:9.4%"></span>
+                <span class="block" style="left:14.7%;width:6.2%"></span>
+                <span class="block is-selected" style="left:24.4%;width:15%"></span>
+                <span class="block" style="left:41.2%;width:5.6%"></span>
+                <span class="block" style="left:48.2%;width:11.2%"></span>
+                <span class="block is-foreign" style="left:63.2%;width:10.3%"></span>
+                <span class="block" style="left:77.1%;width:12.9%"></span>
+                <span class="playhead" style="left:30.9%"></span>
+              </div>
+              <div class="row">
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-cut-in"/></svg> Start here <kbd>I</kbd></button>
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-cut-out"/></svg> End here <kbd>O</kbd></button>
+                <button class="btn btn-sm" aria-label="End 0.1 s earlier">− 0.1</button>
+                <button class="btn btn-sm" aria-label="End 0.1 s later">+ 0.1</button>
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-split"/></svg> Split</button>
+                <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-merge"/></svg> Merge</button>
+              </div>
+            </div>
+            <div class="transcript is-wrapped">
+              <button class="tline"><span class="t">0:01.2</span><span class="txt">Pass auf, der kommt von links hinten</span></button>
+              <span class="gap">0.6 s gap</span>
+              <button class="tline"><span class="t">0:05.0</span><span class="txt">Ich hab den Raketenwerfer</span></button>
+              <span class="gap">1.2 s gap</span>
+              <div class="open">
+                <div class="row nowrap"><span class="which">Line 3 of 7</span><span class="times right">0:08.3 → 0:13.4 · 5.1 s</span></div>
+                <textarea class="input" rows="2" aria-label="Text of line 3">Warte, warte, warte, noch nicht schießen, der sieht uns nicht</textarea>
+                <span class="faint xs">Timing with the buttons above the document — they stay in view with the picture. Saved by itself.</span>
+              </div>
+              <span class="gap">0.6 s gap</span>
+              <button class="tline"><span class="t">0:14.0</span><span class="txt">Jetzt!</span></button>
+              <button class="tline"><span class="t">0:16.4</span><span class="txt">Oh mein Gott, alle drei mit einem Schuss</span></button>
+              <button class="tline is-foreign"><span class="t">0:21.5</span><span class="txt">Nice one, that was insane <span class="muted xs">— English in a German clip, kept as spoken</span></span></button>
+              <button class="tline"><span class="t">0:26.2</span><span class="txt">Clip das, das glaubt uns sonst keiner</span></button>
+            </div>
+            <div class="sub-bar">
+              <svg class="icon"><use href="#i-subtitles"/></svg><b>Subtitles</b>
+              <span class="state">As spoken · German · 7 lines · saved 09:31</span>
+              <span class="act">
+                <button class="btn btn-sm">Look</button>
+                <button class="btn btn-sm btn-icon" aria-label="More for the subtitles" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+              </span>
+            </div>
+            <div class="render-row">
+              <div class="split">
+                <button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Render to Nextcloud <kbd>Enter</kbd></button>
+                <button class="btn btn-primary btn-icon" aria-label="Render to another target" aria-haspopup="true"><svg class="icon"><use href="#i-chevron"/></svg></button>
+              </div>
+              <button class="pill" aria-haspopup="true">Frame <b>16:9</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="pill is-changed" aria-haspopup="true">Subtitles <b>Burn in</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="pill" aria-haspopup="true">Audio <b>Mix</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="width:700px">Under 1000 px the same document that the desktop shows as a compact third column becomes the editing surface, with the gap rows named. The <code>.player-dock</code> is <code>display: contents</code> above 1000 px, so this is one markup for both widths.</p>
+    </section>
+  </div>
+
+  <h2>Phone — 390 px</h2>
+
+  <div class="row-of-frames">
+    <section class="frame" data-frame="F17">
+      <div class="cap"><span class="id">F17</span><b>Cutting mode at rest</b></div>
+      <div class="viewport w390">
+        <header class="topbar">
+          <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+          <nav class="nav">
+            <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+            <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+            <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+          </nav>
+          <div class="right"><span class="status"><i class="dot"></i></span><div class="navmenu"><button class="btn btn-ghost btn-icon" aria-label="More" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button></div></div>
+        </header>
+        <div class="clips">
+          <details class="cliplist">
+            <summary><svg class="icon"><use href="#i-chevron"/></svg><b>3 clips</b> · newest 09:26<button class="btn btn-sm right">Save replay</button></summary>
+          </details>
+          <div class="editor">
+            <div class="title-row row nowrap">
+              <input class="input" id="title17" maxlength="80" value="Raketenwerfer Action" aria-label="Title of the recording">
+              <button class="btn" aria-label="Mark done"><svg class="icon"><use href="#i-check"/></svg><span class="lbl">Mark done</span></button>
+              <button class="btn btn-danger" aria-label="Delete"><svg class="icon"><use href="#i-trash"/></svg><span class="lbl">Delete</span></button>
+            </div>
+            <button class="loaded-chip" aria-haspopup="true" aria-expanded="false" style="text-align:left;cursor:pointer;font:inherit;width:100%">
+              <svg class="icon"><use href="#i-film"/></svg>
+              <span class="what" style="display:flex;flex-direction:column;min-width:0"><b>Full recording</b><span class="meta">1:30.0 · 2 cuts</span></span>
+              <svg class="icon" style="margin-left:auto;transform:rotate(90deg);color:var(--fg-muted)"><use href="#i-chevron"/></svg>
+            </button>
+            <div class="player-wrap">
+              <div class="shot" role="img" aria-label="the recording plays here">
+                <span class="what">game footage</span>
+                <span class="controls"><svg class="icon icon-sm"><use href="#i-play"/></svg>0:56.0 / 1:30.0</span>
+              </div>
+            </div>
+            <div class="timeline" role="group" aria-label="Timeline of the recording">
+              <div class="ticks"><span>0:00</span><span>0:45</span><span>1:30</span></div>
+              <div class="range" style="left:55.6%;width:13.3%"></div>
+              <button class="cutbar" style="left:13.3%;width:37.8%" aria-label="Load the cut Drei mit einem Schuss"></button>
+              <button class="cutbar" style="left:72.2%;width:25.6%" aria-label="Load the cut Second angle"></button>
+              <div class="handle" style="left:55.6%"></div>
+              <div class="handle" style="left:68.9%"></div>
+              <div class="playhead" style="left:62.2%"></div>
+            </div>
+            <div class="fields-2">
+              <button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg> Set in</button>
+              <button class="btn"><svg class="icon"><use href="#i-cut-out"/></svg> Set out</button>
+              <button class="btn">Whole clip</button>
+              <button class="btn"><svg class="icon"><use href="#i-play"/></svg> Play selection</button>
+            </div>
+            <span class="plan">0:50.0 – 1:02.0 · <b>12.0 s</b></span>
+            <div class="share-row">
+              <div class="split grow">
+                <button class="btn btn-primary grow"><svg class="icon"><use href="#i-share"/></svg> Share</button>
+                <button class="btn btn-primary btn-icon" aria-label="Share to another target" aria-haspopup="true"><svg class="icon"><use href="#i-chevron"/></svg></button>
+              </div>
+              <button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg> Save cut</button>
+            </div>
+            <div class="quickshare">
+              <span class="section-title">Quick share</span>
+              <button class="pill" aria-haspopup="true">Mix (all)<svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="pill" aria-haspopup="true">H.264<svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="pill" aria-haspopup="true">16:9<svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="pill" aria-haspopup="true">Mark done<svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <span class="note">Subtitles on a quick share: <b>off</b></span>
+            </div>
+            <span class="plan">about <b>53 MB</b> · to Nextcloud, link + post</span>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="width:390px">Two things more than today: the loaded-chip, which is also how you pick what is loaded, and the pills instead of the three selects. The keyboard hints are not rendered on a coarse pointer, so the page is no longer than today's.</p>
+    </section>
+
+    <section class="frame" data-frame="F18">
+      <div class="cap"><span class="id">F18</span><b>Workshop, mid-edit</b></div>
+      <div class="viewport w390">
+        <header class="topbar">
+          <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+          <nav class="nav">
+            <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+            <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+            <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+          </nav>
+          <div class="right"><span class="status"><i class="dot"></i></span></div>
+        </header>
+        <div class="clips">
+          <details class="cliplist"><summary><svg class="icon"><use href="#i-chevron"/></svg><b>3 clips</b> · newest 09:26</summary></details>
+          <div class="editor">
+            <div class="player-dock">
+              <button class="loaded-chip is-cut" aria-haspopup="true" aria-expanded="false" style="text-align:left;cursor:pointer;font:inherit;width:100%">
+                <svg class="icon"><use href="#i-subtitles"/></svg>
+                <span class="what" style="display:flex;flex-direction:column;min-width:0"><b>Cut · Drei mit einem Schuss</b><span class="meta">0:34.0 · 7 lines</span></span>
+                <svg class="icon" style="margin-left:auto;transform:rotate(90deg);color:var(--fg-muted)"><use href="#i-chevron"/></svg>
+              </button>
+              <div class="row nowrap">
+                <div class="seg" role="group" aria-label="Frame to render"><button aria-pressed="true">16:9</button><button aria-pressed="false">9:16</button></div>
+                <span class="faint xs">the toggle swaps the picture</span>
+              </div>
+              <div class="player-wrap has-controls">
+                <div class="shot" role="img" aria-label="the cut plays here, with the subtitle over it">
+                  <span class="what">game footage</span>
+                  <span class="sub-overlay size-s">Warte, warte, warte, noch nicht schießen, der sieht uns nicht</span>
+                  <span class="controls"><svg class="icon icon-sm"><use href="#i-pause"/></svg>0:10.5 / 0:34.0</span>
+                </div>
+              </div>
+              <div class="caption-map has-label" role="listbox" aria-label="Subtitle lines of this cut">
+                <span class="label">Caption map · tap a line</span>
+                <span class="block" style="left:3.5%;width:9.4%"></span>
+                <span class="block" style="left:14.7%;width:6.2%"></span>
+                <span class="block is-selected" style="left:24.4%;width:15%"></span>
+                <span class="block" style="left:41.2%;width:5.6%"></span>
+                <span class="block" style="left:48.2%;width:11.2%"></span>
+                <span class="block is-foreign" style="left:63.2%;width:10.3%"></span>
+                <span class="block" style="left:77.1%;width:12.9%"></span>
+                <span class="playhead" style="left:30.9%"></span>
+              </div>
+            </div>
+            <div class="line-inspector">
+              <div class="col">
+                <div class="row nowrap"><span class="which">Line 3 / 7</span><span class="times right">0:08.3 → 0:13.4</span></div>
+                <textarea class="input" rows="2" aria-label="Text of line 3">Warte, warte, warte, noch nicht schießen, der sieht uns nicht</textarea>
+                <div class="stamp">
+                  <button class="btn"><svg class="icon"><use href="#i-cut-in"/></svg> Start here</button>
+                  <button class="btn"><svg class="icon"><use href="#i-cut-out"/></svg> End here</button>
+                </div>
+                <div class="nudge">
+                  <span>start</span>
+                  <button class="btn" aria-label="Start 0.1 s earlier">− 0.1</button>
+                  <button class="btn" aria-label="Start 0.1 s later">+ 0.1</button>
+                  <span>end</span>
+                  <button class="btn" aria-label="End 0.1 s earlier">− 0.1</button>
+                  <button class="btn" aria-label="End 0.1 s later">+ 0.1</button>
+                </div>
+                <div class="row">
+                  <button class="btn grow"><svg class="icon"><use href="#i-split"/></svg> Split</button>
+                  <button class="btn grow"><svg class="icon"><use href="#i-merge"/></svg> Merge</button>
+                  <button class="btn btn-danger btn-icon" aria-label="Delete line"><svg class="icon"><use href="#i-trash"/></svg></button>
+                </div>
+              </div>
+            </div>
+            <div class="transcript is-wrapped">
+              <button class="tline"><span class="t">01.2</span><span class="txt">Pass auf, der kommt von links hinten</span></button>
+              <span class="gap">0.6 s</span>
+              <button class="tline"><span class="t">05.0</span><span class="txt">Ich hab den Raketenwerfer</span></button>
+              <button class="tline is-foreign"><span class="t">21.5</span><span class="txt">Nice one, that was insane</span></button>
+            </div>
+            <div class="row">
+              <button class="pill" aria-haspopup="true">Look<svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="pill" aria-haspopup="true">Mix<svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="pill is-changed" aria-haspopup="true">Burn in<svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+              <button class="pill" aria-haspopup="true">16:9<svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+            </div>
+            <div class="share-row">
+              <div class="split grow">
+                <button class="btn btn-primary grow"><svg class="icon"><use href="#i-share"/></svg> Render</button>
+                <button class="btn btn-primary btn-icon" aria-label="Render to another target" aria-haspopup="true"><svg class="icon"><use href="#i-chevron"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="frame" data-frame="F19">
+      <div class="cap"><span class="id">F19</span><b>Picking what is loaded</b></div>
+      <div class="viewport w390" style="padding-bottom:var(--space-2)">
+        <div class="editor" style="opacity:.35;padding-bottom:0">
+          <div class="loaded-chip is-cut"><svg class="icon"><use href="#i-subtitles"/></svg><b>Cut · Drei mit einem Schuss</b></div>
+          <div class="player-wrap"><div class="shot"></div></div>
+          <div class="timeline"></div>
+        </div>
+        <div class="modal is-static" style="padding:var(--space-3)">
+          <div class="dialog" style="max-width:none;padding:var(--space-3)">
+            <div class="card-head"><h2>Load from “Raketenwerfer Action”</h2><button class="btn btn-ghost btn-icon" aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button></div>
+            <button class="cut-card is-whole"><svg class="icon"><use href="#i-film"/></svg><span class="what"><span class="name">Full recording</span><span class="meta">1:30.0 · cut another moment</span></span></button>
+            <button class="cut-card is-loaded" aria-current="true"><span class="thumb"></span><span class="what"><span class="name">Drei mit einem Schuss</span><span class="meta">0:34.0 · CC de · 2 outputs · loaded</span></span></button>
+            <button class="cut-card"><span class="thumb"></span><span class="what"><span class="name">Second angle</span><span class="meta">0:23.0 · not rendered</span></span></button>
+            <hr>
+            <button class="btn btn-ghost" style="justify-content:flex-start"><svg class="icon"><use href="#i-chevron"/></svg> Another recording · 3 clips</button>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="width:390px">The loaded-chip opens a sheet, not a page: the same list as the desktop shelf, at 44 px a row, with the cut cards at their large size.</p>
+    </section>
+  </div>
+
+  <h2>Later — designed, not in the first build</h2>
+
+  <section class="frame" data-frame="F3">
+    <div class="cap"><span class="id later">F3</span><b>The job strip</b><span class="badge">later</span><span class="muted">one share running, one queued, the last result with Undo · pinned under the top bar in both modes</span></div>
+    <div class="viewport">
+      <header class="topbar">
+        <a class="wordmark" href="#"><svg class="icon"><use href="#i-logo"/></svg><span>replaycut</span></a>
+        <nav class="nav">
+          <a href="#" aria-current="page"><svg class="icon"><use href="#i-film"/></svg><span>Clips</span></a>
+          <a href="#"><svg class="icon"><use href="#i-clock"/></svg><span>Activity</span></a>
+          <a href="#"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+        </nav>
+        <div class="right"><span class="status"><i class="dot busy"></i><span class="lbl">1 running · 1 queued</span></span></div>
+      </header>
+      <div class="jobs pinned">
+        <div class="job" role="status">
+          <span class="spinner"></span>
+          <span class="what">
+            <span class="line"><b>Sharing “Raketenwerfer Action” 0:50.0 – 1:02.0 to Nextcloud</b><span class="muted">copying · uploading · posting the link</span><span class="when">64 % · about 8 s left</span></span>
+            <span class="bar"><i style="width:64%"></i></span>
+          </span>
+          <button class="btn btn-sm btn-ghost"><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button>
+        </div>
+        <div class="job is-queued">
+          <svg class="icon"><use href="#i-clock"/></svg>
+          <span class="grow">Queued: transcribe <b>“Second angle”</b> · about 20 s of work</span>
+          <button class="btn btn-sm btn-ghost"><svg class="icon icon-sm"><use href="#i-close"/></svg> Remove from the queue</button>
+        </div>
+        <div class="job is-result">
+          <svg class="icon"><use href="#i-check"/></svg>
+          <span class="what">
+            <span class="line"><b>Shared “Nachtangriff” 0:20.0 – 0:44.0 to Nextcloud</b> · link posted to Discord · 09:31</span>
+            <span class="muted sm mono">https://cloud.example/s/7Qk3f9 · 71.4 MB · the recording was marked done afterwards</span>
+          </span>
+          <span class="act" style="display:flex;gap:var(--space-1);align-items:center">
+            <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-copy"/></svg> Copy link</button>
+            <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Undo mark done</button>
+            <button class="btn btn-sm btn-ghost btn-icon" aria-label="Hide"><svg class="icon"><use href="#i-close"/></svg></button>
+          </span>
+        </div>
+      </div>
+      <div class="clips">
+        <details class="cliplist"><summary><svg class="icon"><use href="#i-chevron"/></svg><b>3 clips</b> · newest 09:26</summary></details>
+        <div class="editor">
+          <p class="muted sm">The page below is unchanged — the strip pushes it down, it never covers it. The wording is the only difference between the modes: “Sharing …”, “Rendering …”, “Transcribing …”.</p>
+        </div>
+      </div>
+    </div>
+    <p class="note">Until this ships, its three rows are today's three places: <code>#prog</code> (running, with Cancel), the queue line inside it, and <code>#result</code> (with Undo) — both under the tools, in cutting mode and in workshop mode, as drawn in <a href="#F1">F1</a>, <a href="#F6">F6</a> and <a href="#F7">F7</a>.</p>
+  </section>
+
+  <div class="row-of-frames">
+    <section class="frame" data-frame="F9">
+      <div class="cap"><span class="id later">F9</span><b>Two versions, English selected</b><span class="badge">later</span></div>
+      <div class="viewport w520" style="padding:var(--space-4)">
+        <div class="sub-bar">
+          <svg class="icon"><use href="#i-subtitles"/></svg><b>Subtitles</b><span class="badge">Beta</span>
+          <div class="version-tabs" role="tablist" aria-label="Subtitle version">
+            <button role="tab" aria-selected="false">As spoken · de</button>
+            <button role="tab" aria-selected="true">English</button>
+            <button class="add" aria-label="Add a version">+</button>
+          </div>
+          <span class="act"><button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-download"/></svg> Export SRT</button><button class="btn btn-sm btn-icon" aria-label="More for the subtitles" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button></span>
+        </div>
+        <p class="muted sm" style="margin:var(--space-3) 0"><svg class="icon icon-sm" style="color:var(--info)"><use href="#i-info"/></svg> English · translated from the German version · 7 lines · not edited by hand</p>
+        <div class="transcript is-wrapped" style="padding:var(--space-3);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-md)">
+          <button class="tline"><span class="t">01.2</span><span class="txt">Watch out, he's coming from behind on the left</span></button>
+          <button class="tline"><span class="t">05.0</span><span class="txt">I've got the rocket launcher</span></button>
+          <button class="tline is-current" aria-current="true"><span class="t">08.3</span><span class="txt">Wait, wait, wait, don't shoot yet, he can't see us</span></button>
+          <button class="tline"><span class="t">14.0</span><span class="txt">Now!</span></button>
+          <button class="tline"><span class="t">16.4</span><span class="txt">Oh my god, all three with one shot</span></button>
+          <button class="tline is-foreign"><span class="t">21.5</span><span class="txt">Nice one, that was insane <span class="muted xs">— English in a German clip, kept as spoken, translated in the other tab</span></span></button>
+          <button class="tline"><span class="t">26.2</span><span class="txt">Clip that, nobody will believe us otherwise</span></button>
+        </div>
+        <div class="render-row" style="margin-top:var(--space-3)">
+          <div class="split">
+            <button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Render to YouTube <kbd>Enter</kbd></button>
+            <button class="btn btn-primary btn-icon" aria-label="Render to another target" aria-haspopup="true"><svg class="icon"><use href="#i-chevron"/></svg></button>
+          </div>
+          <button class="pill is-changed" aria-haspopup="true">Subtitles <b>Burn in · English</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+        </div>
+        <p class="note">The render row always names the version it will use — the one on the picture is the one selected here.</p>
+      </div>
+    </section>
+
+    <section class="frame" data-frame="F20">
+      <div class="cap"><span class="id later">F20</span><b>The loupe</b><span class="badge">later</span><span class="muted">a second step for the phone</span></div>
+      <div class="viewport w390" style="padding:var(--space-3)">
+        <div class="card">
+          <div class="card-head with-sum"><h3>End of line 3</h3><span class="card-sum right mono" style="text-align:right">0:13.4</span></div>
+          <div class="card-body stack">
+            <div class="timeline" style="height:72px">
+              <div class="ticks" style="align-items:flex-start;padding-top:var(--space-1)"><span>09.4</span><span>11.4</span><span>13.4</span><span>15.4</span><span>17.4</span></div>
+              <div class="range" style="left:0;width:50%;border-left:0"></div>
+              <div class="handle" style="left:50%;top:18px;height:52px" data-time="0:13.4"></div>
+            </div>
+            <span class="faint xs">± 4 s around the edge · 45 px per second · the picture scrubs while you drag</span>
+            <div class="row">
+              <button class="btn grow">Edit start</button>
+              <button class="btn grow" aria-pressed="true" style="border-color:var(--accent);background:var(--accent-soft)">Edit end</button>
+              <button class="btn btn-icon" aria-label="Play this line"><svg class="icon"><use href="#i-play"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="width:390px">Start here / End here and the ± buttons stay — the loupe is an addition, never the only way.</p>
+    </section>
+
+    <section class="frame" data-frame="exact-preview">
+      <div class="cap"><span class="id later">later</span><b>Exact preview</b><span class="badge">later</span></div>
+      <div class="viewport w420" style="padding:var(--space-4)">
+        <div class="look">
+          <div class="head"><span class="section-title grow">Look — this cut</span></div>
+          <button class="step" aria-haspopup="true">Position <b>Lower third</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+          <button class="step" aria-haspopup="true">Size <b>M</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+          <button class="step" aria-haspopup="true">Colour <b>White with shadow</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+          <button class="btn btn-sm"><svg class="icon icon-sm"><use href="#i-eye"/></svg> Exact preview</button>
+          <span class="faint xs">Asks the PC for one real rendered frame at the playhead, so the libass result can be seen instead of the browser's approximation. Out of the first build.</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <h2>Keyboard, both modes</h2>
+
+  <table class="keys">
+    <thead><tr><th>Key</th><th>Cutting mode</th><th>Workshop mode</th><th>Shown where</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>Space</kbd></td><td>play / pause the recording</td><td>play / pause the cut</td><td class="where">hint row under the tools</td></tr>
+      <tr><td><kbd>←</kbd><kbd>→</kbd></td><td>playhead 1 s · with <kbd>Shift</kbd> 5 s</td><td>the same · the lane follows the playhead</td><td class="where">hint row</td></tr>
+      <tr><td><kbd>,</kbd><kbd>.</kbd></td><td>one frame back / forward</td><td>one frame back / forward</td><td class="where">hint row</td></tr>
+      <tr><td><kbd>Home</kbd><kbd>End</kbd></td><td>start / end of the recording</td><td>start / end of the cut</td><td class="where">hint row</td></tr>
+      <tr><td><kbd>I</kbd><kbd>O</kbd></td><td><b>set in / set out</b> at the playhead</td><td><b>start / end of the selected line</b> at the playhead</td><td class="where">on the buttons themselves, both modes</td></tr>
+      <tr><td><kbd>P</kbd></td><td>play the selection</td><td>play the selected line</td><td class="where">on the button</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td><b>Share</b> to the default target</td><td><b>Render</b> to the default target</td><td class="where">on the primary button</td></tr>
+      <tr><td><kbd>C</kbd></td><td>save cut from the marks</td><td class="none">—</td><td class="where">on the button</td></tr>
+      <tr><td><kbd>W</kbd></td><td>load the newest cut of this recording</td><td>load the next cut</td><td class="where">hint row · the shelf's cut cards</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>close the open menu</td><td>leave a text field; else close the menu; else <b>load the full recording</b></td><td class="where">on the shelf's “Full recording” card</td></tr>
+      <tr><td><kbd>D</kbd></td><td>mark the recording done</td><td class="none">— (a cut is never “done”)</td><td class="where">on the button</td></tr>
+      <tr><td><kbd>S</kbd></td><td class="none">—</td><td>split the selected line at the playhead</td><td class="where">on the button in the inspector</td></tr>
+      <tr><td><kbd>M</kbd></td><td class="none">—</td><td>merge the selected line with the next</td><td class="where">on the button</td></tr>
+      <tr><td><kbd>Tab</kbd></td><td>next control</td><td>next line while the lane or a block has focus, otherwise next control</td><td class="where">foot note of the inspector</td></tr>
+      <tr><td><kbd>Delete</kbd></td><td class="none">— (deleting a recording always asks)</td><td>delete the selected line, with an Undo toast</td><td class="where">on the button</td></tr>
+      <tr><td><kbd>Alt</kbd>+<kbd>←</kbd><kbd>→</kbd></td><td>move the near mark 0.1 s</td><td>move the focused edge of the line 0.1 s</td><td class="where">foot note of the inspector</td></tr>
+      <tr><td><kbd>F9</kbd></td><td>save replay (the hotkey, as a button)</td><td>the same</td><td class="where">on the button in the list head</td></tr>
+    </tbody>
+  </table>
+  <p class="note">While the caret is in a text field — a line's text, a title — single-letter shortcuts do nothing; only <kbd>Esc</kbd> (leave the field) and <kbd>Tab</kbd> still act. <kbd>Enter</kbd> in a subtitle line inserts a line break (two lines is normal) and in a title confirms it. Nothing is saved by a key: an edit saves a moment after you stop typing or let go of an edge, and the subtitle bar carries “saved 09:31” / “saving …”.</p>
+
+  <h2>The new components, in all their states</h2>
+
+  <div class="states">
+    <div class="group">
+      <span class="section-title">loaded-chip — recording · cut · orphan cut · preparing</span>
+      <div class="loaded-chip"><svg class="icon"><use href="#i-film"/></svg><b>Full recording</b><span class="meta">1:30.0</span><span class="mode">Cutting mode</span></div>
+      <div class="loaded-chip is-cut"><svg class="icon"><use href="#i-subtitles"/></svg><b>Cut</b><span class="meta">0:34.0 · CC de</span><span class="mode">Workshop mode</span></div>
+      <div class="loaded-chip is-cut"><svg class="icon"><use href="#i-subtitles"/></svg><b>Cut</b><span class="meta">source recycled</span><span class="mode">Workshop mode</span></div>
+      <div class="loaded-chip"><span class="spinner"></span><b>Cut</b><span class="meta">preparing for playback</span></div>
+    </div>
+    <div class="group narrow">
+      <span class="section-title">cut-card — rest · hover · loaded · orphan · unavailable · deleting</span>
+      <button class="cut-card"><span class="thumb"></span><span class="what"><span class="name">Second angle</span><span class="meta">0:23.0 · not rendered</span></span></button>
+      <button class="cut-card is-hover"><span class="thumb"></span><span class="what"><span class="name">Second angle</span><span class="meta">hover</span></span></button>
+      <button class="cut-card is-loaded" aria-current="true"><span class="thumb"></span><span class="what"><span class="name">Drei mit einem Schuss</span><span class="meta">loaded</span></span></button>
+      <button class="cut-card is-orphan"><span class="thumb is-gone">gone</span><span class="what"><span class="name">Clutch 1v3</span><span class="meta">source recycled</span></span></button>
+      <button class="cut-card is-whole is-unavailable" disabled><svg class="icon"><use href="#i-film"/></svg><span class="what"><span class="name">Full recording</span><span class="meta">recycled 21:40</span></span></button>
+      <button class="cut-card is-deleting"><span class="thumb"></span><span class="what"><span class="name">Second angle</span><span class="meta">deleting …</span></span></button>
+    </div>
+    <div class="group wide">
+      <span class="section-title">caption-lane — rest · dragging · keyboard focus · empty</span>
+      <div class="caption-lane always" role="listbox" aria-label="Example">
+        <button class="block" role="option" aria-selected="false">Pass auf</button>
+        <button class="block is-selected" role="option" aria-selected="true" style="left:26%;width:22%">Warte, warte</button>
+        <button class="block is-foreign" role="option" aria-selected="false" style="left:54%;width:14%">Nice one</button>
+        <div class="playhead" style="left:36%"></div>
+      </div>
+      <div class="caption-lane always" style="margin-top:26px">
+        <button class="block is-selected" style="left:26%;width:22%">Warte, warte</button>
+        <span class="handle" style="left:26%"></span>
+        <span class="handle is-active" style="left:48%"></span>
+        <span class="tip" style="left:34%">0:20.3 → 0:25.4 <b>+0.6</b></span>
+      </div>
+      <div class="caption-lane always">
+        <button class="block is-selected is-focus" style="left:26%;width:22%">Warte, warte</button>
+      </div>
+      <div class="empty compact"><span class="sm">no lines — the lane is not rendered at all</span></div>
+      <span class="section-title">caption-map — the read-only sibling, under 1000 px</span>
+      <div class="caption-map always">
+        <span class="block" style="left:4%;width:16%"></span>
+        <span class="block is-selected" style="left:26%;width:22%"></span>
+        <span class="block is-foreign" style="left:54%;width:14%"></span>
+        <span class="playhead" style="left:36%"></span>
+      </div>
+    </div>
+    <div class="group">
+      <span class="section-title">version-tabs — one version · two · translating</span>
+      <div class="sub-bar"><svg class="icon"><use href="#i-subtitles"/></svg><b>Subtitles</b><span class="state">As spoken · German · 7 lines</span></div>
+      <div class="sub-bar"><svg class="icon"><use href="#i-subtitles"/></svg><div class="version-tabs" role="tablist"><button role="tab" aria-selected="true">As spoken · de</button><button role="tab" aria-selected="false">English</button><button class="add" aria-label="Add a version">+</button></div></div>
+      <div class="sub-bar"><span class="spinner"></span><span class="state">Translating into English · about 10 s</span></div>
+      <span class="section-title">quickshare — pill at rest · open · set for this share · empty</span>
+      <div class="row">
+        <button class="pill">Frame <b>16:9</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+        <button class="pill is-focus" aria-expanded="true">Frame <b>16:9</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+        <button class="pill is-changed">Frame <b>9:16</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+        <span class="pill is-empty">Subtitles <b>none</b></span>
+      </div>
+      <span class="section-title">seg · look</span>
+      <div class="row">
+        <div class="seg" role="group" aria-label="Frame"><button aria-pressed="true">16:9</button><button aria-pressed="false">9:16</button></div>
+        <div class="look is-changed" style="width:200px"><div class="head"><span class="section-title grow">Look</span><span class="badge warn">differs</span></div><button class="step">Position <b>Middle</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button></div>
+      </div>
+    </div>
+  </div>
+
+  <div data-theme="daylight" style="padding:var(--space-4);border:1px solid var(--line-strong);border-radius:var(--radius-lg)">
+    <span class="section-title">The same in a light theme — tokens only, no rule changes</span>
+    <div class="states" style="margin-top:var(--space-3)">
+      <div class="group">
+        <div class="loaded-chip is-cut"><svg class="icon"><use href="#i-subtitles"/></svg><b>Cut</b><span class="meta">0:34.0 · CC de</span><span class="mode">Workshop mode</span></div>
+        <button class="cut-card is-loaded" aria-current="true"><span class="thumb"></span><span class="what"><span class="name">Drei mit einem Schuss</span><span class="meta">0:34.0 · loaded</span></span></button>
+        <div class="row">
+          <div class="split">
+            <button class="btn btn-primary"><svg class="icon"><use href="#i-share"/></svg> Render to Nextcloud <kbd>Enter</kbd></button>
+            <button class="btn btn-primary btn-icon" aria-label="Render to another target"><svg class="icon"><use href="#i-chevron"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="group wide">
+        <div class="caption-lane always" role="listbox" aria-label="Example">
+          <button class="block" role="option" aria-selected="false">Pass auf</button>
+          <button class="block is-selected" role="option" aria-selected="true" style="left:26%;width:22%">Warte, warte</button>
+          <button class="block is-foreign" role="option" aria-selected="false" style="left:54%;width:14%">Nice one</button>
+          <div class="playhead" style="left:36%"></div>
+        </div>
+        <div class="row">
+          <button class="pill">Frame <b>16:9</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+          <button class="pill is-changed">Frame <b>9:16</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button>
+          <div class="seg" role="group" aria-label="Frame"><button aria-pressed="true">16:9</button><button aria-pressed="false">9:16</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Focus, ARIA and what changed in base.css</h2>
+
+  <div class="row-of-frames">
+    <div class="card" style="flex:1;min-width:420px">
+      <div class="card-head"><h3>Focus and ARIA</h3></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">The caption lane is a <code>role="listbox"</code> of blocks; every block is a <code>button</code> whose accessible name is the line's text plus its time (“Warte, warte, warte … , 0:20.3 to 0:25.4”). One block is in the tab order at a time (<code>tabindex="0"</code>, the rest <code>-1</code>); <kbd>←</kbd><kbd>→</kbd> move the selection, <kbd>Alt</kbd>+arrow moves the focused edge by 0.1 s, <kbd>Shift</kbd>+<kbd>Tab</kbd> switches which edge has focus. Handles are <code>aria-hidden</code>: they are the pointer's way to the same thing the buttons do, and nothing here is drag-only.</p>
+        <p class="muted sm">The loaded-chip is <code>aria-live="polite"</code>: loading announces “Cut ‘Drei mit einem Schuss’ loaded, workshop mode”. Progress rows are <code>role="status"</code>, announced once and not per percent. The focus ring stays <code>--focus</code>, never the accent, so it is visible on the amber button. Exactly one <code>.btn-primary</code> per view.</p>
+      </div>
+    </div>
+    <div class="card" style="flex:1;min-width:420px">
+      <div class="card-head"><h3>Notes for index.html</h3></div>
+      <div class="card-body stack-3">
+        <p class="muted sm">New in <code>workshop.css</code>: <code>.loaded-chip</code>, <code>.cut-card</code>, <code>.shelf</code>, <code>.caption-lane</code>, <code>.caption-map</code>, <code>.line-inspector</code>, <code>.transcript</code>, <code>.frame-preview</code>, <code>.sub-overlay</code>, <code>.version-tabs</code>, <code>.quickshare</code> + <code>.pill</code>, <code>.seg</code>, <code>.look</code>, <code>.sub-bar</code>, <code>.render-row</code>, <code>.outputs</code> + <code>.output</code>, <code>.stage</code>, <code>.player-dock</code>, <code>.player-ov</code>, <code>.jobs</code> + <code>.job</code>.</p>
+        <p class="muted sm">Changed, and marked in the file: <code>.clip</code> (gains <code>.clip-row</code> and a shelf), <code>.timeline</code> (gains <code>.cutbar</code>), <code>.gone-ov</code> (generalised to <code>.player-ov</code>), <code>.share-row</code> (the collapsed sentence with “Change” is gone). Dropped: <code>.cuts-box</code>, <code>.cutrow</code> and the subtitle editor inside it. Icons added: <code>i-subtitles</code>, <code>i-split</code>, <code>i-merge</code>, <code>i-more</code>, <code>i-download</code>, <code>i-rename</code>, <code>i-link</code>.</p>
+        <p class="muted sm">Breakpoints are the ones in <code>base.css</code>: two columns from 1000 px, the list as a panel below that, everything stacked under 600 px, 44 px targets on coarse pointers. The <code>&lt;style&gt;</code> in the head of this sheet is its scaffolding — it repeats those rules as container queries so the 700 px and 390 px frames are honest inside a wide window, and it does not go into <code>index.html</code>.</p>
+      </div>
+    </div>
+  </div>
+
+</main>
+</body>
+</html>

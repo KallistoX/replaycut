@@ -1,0 +1,328 @@
+/* replaycut - the workshop for cuts and subtitles.
+ *
+ * Reads tokens.css and extends base.css. Nothing in here is a colour literal
+ * except .sub-overlay, which is subtitle text drawn over the picture - part of
+ * the video, not of the UI.
+ *
+ * Sections:
+ *   1. new components        .loaded-chip .cut-card .caption-lane .caption-map
+ *                            .line-inspector .transcript .frame-preview
+ *                            .version-tabs .quickshare .seg .look .jobs
+ *   2. changed components    marked CHANGED, with what changed and why
+ *   3. widths                the breakpoints of base.css, nothing new
+ *
+ * The hand-over had a section 4 with the scaffolding of its own sheet (the
+ * narrow frames as container queries). It is not part of the page and lives
+ * in mockup-workshop-3.12.html now, the one file that needs it.
+ */
+
+/* ============ 0. page rules that exist in index.html today ============
+ * Unchanged, repeated here so this file stands on its own next to base.css:
+ * these are the clips page's own rules, not part of the component base. */
+.editor .title-row { display: flex; gap: var(--space-2); align-items: center; }
+.editor .title-row .input { flex: 1; min-width: 0; }
+@media (max-width: 600px) { .editor .title-row .btn { padding: 0; width: var(--touch); } .editor .title-row .btn .lbl { display: none; } }
+.player-wrap { position: relative; }
+.player-wrap video { display: block; }
+.crop-ov { position: absolute; inset: 0; pointer-events: none; }
+.crop-ov i { position: absolute; top: 0; bottom: 0; background: var(--scrim); }
+.crop-ov b { position: absolute; top: 0; bottom: 0; border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+.vpos-row { display: flex; gap: var(--space-3); align-items: center; font-size: var(--text-sm); color: var(--fg-muted); }
+.vpos-row input[type=range] { flex: 1; min-width: 120px; max-width: 420px; accent-color: var(--accent); }
+.vpos-row b { color: var(--fg); }
+.plan { color: var(--fg-muted); font-size: var(--text-sm); }
+.plan b { color: var(--fg); }
+.share-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.split { position: relative; display: inline-flex; }
+.split > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split > .btn-icon { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 0; }
+.btn.btn-primary kbd { background: transparent; color: var(--accent-fg); border-color: var(--accent-fg); opacity: 0.7; }
+.section-title .n { color: var(--fg-faint); margin-left: var(--space-1); letter-spacing: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ============ 1. new components ============ */
+
+/* ---------- loaded-chip ----------
+ * One line above the player: what is in it, and what that makes the page.
+ * aria-live="polite", so loading something is announced. */
+.loaded-chip { display: flex; align-items: center; gap: var(--space-2); min-height: 32px; padding: var(--space-1) var(--space-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.loaded-chip > .icon { color: var(--accent); }
+.loaded-chip b { font-weight: var(--weight-strong); }
+.loaded-chip .meta { min-width: 0; color: var(--fg-muted); font-family: var(--font-mono); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loaded-chip .mode { margin-left: auto; flex: none; color: var(--fg-muted); font-size: var(--text-sm); }
+.loaded-chip.is-cut { border-color: var(--accent); }
+.loaded-chip.is-cut .mode { color: var(--accent); font-weight: var(--weight-strong); }
+.loaded-chip .spinner { margin-right: var(--space-1); }
+
+/* ---------- cut-card ----------
+ * The same card at three sizes: shelf row (sm), phone sheet row (lg), and the
+ * strip on the recording's timeline. It is a button, not a row with a button. */
+.cut-card { display: flex; align-items: center; gap: var(--space-2); width: 100%; padding: var(--space-2); text-align: left; background: none; color: var(--fg); border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; cursor: pointer; }
+.cut-card:hover, .cut-card.is-hover { background: var(--surface-2); border-color: var(--line-strong); }
+.cut-card.is-loaded { background: var(--accent-soft); border-color: var(--accent); }
+.cut-card .thumb { flex: none; width: 36px; height: 22px; border-radius: 3px; background: var(--surface-2); object-fit: cover; }
+.cut-card .thumb.is-gone { display: flex; align-items: center; justify-content: center; border: 1px dashed var(--line-strong); background: none; font: var(--text-xs) / 1 var(--font-mono); color: var(--fg-faint); }
+.cut-card .what { display: flex; flex-direction: column; min-width: 0; }
+.cut-card .name { font-weight: var(--weight-strong); font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cut-card .meta { color: var(--fg-muted); font: var(--text-xs) / 1.4 var(--font-mono); }
+.cut-card.is-orphan { opacity: 0.75; }
+.cut-card.is-deleting { opacity: 0.5; pointer-events: none; }
+.cut-card.is-whole .icon { color: var(--fg-muted); }
+.cut-card.is-whole.is-loaded .icon { color: var(--accent); }
+.cut-card.is-unavailable { border-style: dashed; opacity: 0.5; pointer-events: none; }
+@media (pointer: coarse) { .cut-card { min-height: var(--touch); } .cut-card .thumb { width: 56px; height: 32px; } }
+
+/* The shelf inside a list row: what can be loaded from this recording. */
+.shelf { display: flex; flex-direction: column; gap: var(--space-1); margin-left: var(--space-2); padding-left: var(--space-2); border-left: 1px solid var(--line); }
+.shelf > .section-title { font-family: var(--font-mono); font-size: var(--text-xs); padding: 2px var(--space-1); }
+
+/* ---------- caption-lane ----------
+ * The cut's own axis with every line on it, gaps included. role="listbox",
+ * every block a button named by its text and its time. Edges are draggable and
+ * Alt+arrow moves the focused edge, so nothing here is drag-only. */
+.caption-lane { position: relative; height: 36px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); user-select: none; touch-action: none; }
+.caption-lane .block { position: absolute; top: 6px; bottom: 6px; padding: 0 var(--space-2); background: var(--surface); color: var(--fg-muted); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: var(--text-xs) / 22px var(--font); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.caption-lane .block:hover { border-color: var(--fg-faint); color: var(--fg); }
+.caption-lane .block.is-selected { top: 3px; bottom: 3px; background: var(--accent-soft); border-color: var(--accent); color: var(--fg); font-weight: var(--weight-strong); line-height: 28px; z-index: 2; }
+/* A line whose language is not the language of the version (German clip, English call). */
+.caption-lane .block.is-foreign { border-color: var(--info); }
+.caption-lane .handle { position: absolute; top: -3px; bottom: -3px; width: 12px; margin-left: -6px; background: var(--accent); border-radius: 3px; cursor: ew-resize; z-index: 4; }
+.caption-lane .handle.is-active { background: var(--accent-hover); }
+.caption-lane .tip { position: absolute; top: -28px; padding: 1px var(--space-2); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius-sm); font: var(--text-xs) / 18px var(--font-mono); white-space: nowrap; z-index: 5; }
+.caption-lane .tip b { color: var(--accent); }
+.caption-lane .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--fg); pointer-events: none; z-index: 3; }
+.lane-head { display: flex; align-items: center; gap: var(--space-2); }
+.lane-head .zoom { margin-left: auto; display: flex; align-items: center; gap: var(--space-1); color: var(--fg-muted); font-size: var(--text-sm); }
+.lane-head .zoom .btn { width: 24px; min-height: 24px; padding: 0; }
+
+/* ---------- caption-map ----------
+ * The read-only sibling of the lane: under 1000 px a finger cannot hit 0.1 s,
+ * so the map only shows and selects, and the document does the editing. */
+.caption-map { position: relative; height: 30px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.caption-map .block { position: absolute; top: 5px; bottom: 5px; padding: 0; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 3px; cursor: pointer; }
+.caption-map .block.is-selected { top: 3px; bottom: 3px; background: var(--accent-soft); border-color: var(--accent); }
+.caption-map .block.is-foreign { border-color: var(--info); }
+.caption-map .playhead { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--fg); pointer-events: none; }
+.caption-map > .label { position: absolute; left: var(--space-2); top: 3px; font: 9px / 1 var(--font-mono); letter-spacing: 0.08em; color: var(--fg-faint); pointer-events: none; }
+.caption-map.has-label { height: 44px; }
+.caption-map.has-label .block { top: 16px; bottom: 5px; }
+.caption-map.has-label .block.is-selected { top: 14px; bottom: 3px; }
+.caption-map.has-label .playhead { top: 12px; bottom: 0; }
+
+/* ---------- line-inspector ---------- */
+.line-inspector { display: grid; grid-template-columns: minmax(0, 1fr) 250px 290px; gap: var(--space-3); padding: var(--space-3); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius-lg); }
+.line-inspector > .col { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.line-inspector > .col + .col { padding-left: var(--space-3); border-left: 1px solid var(--line); }
+.line-inspector .which { font: var(--weight-strong) var(--text-xs) / 1.4 var(--font-mono); letter-spacing: 0.08em; color: var(--accent); }
+.line-inspector .times { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--fg-muted); }
+.line-inspector textarea.input { min-height: 72px; }
+.line-inspector .stamp { display: flex; gap: var(--space-2); }
+.line-inspector .stamp .btn { flex: 1; }
+.line-inspector .nudge { display: grid; grid-template-columns: auto 1fr 1fr; gap: var(--space-1); align-items: center; font-size: var(--text-sm); color: var(--fg-muted); }
+.line-inspector .nudge .btn { font-family: var(--font-mono); }
+
+/* ---------- transcript ----------
+ * The whole document: lines with their start, the gaps between them named.
+ * Compact third column on the desktop, the editing surface under 1000 px. */
+.transcript { display: flex; flex-direction: column; gap: 2px; }
+.transcript .tline { display: flex; gap: var(--space-2); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); background: none; color: var(--fg-muted); border: 1px solid transparent; font: inherit; font-size: var(--text-sm); text-align: left; cursor: pointer; }
+.transcript .tline:hover { background: var(--surface-2); color: var(--fg); }
+.transcript .tline .t { flex: none; font-family: var(--font-mono); font-size: var(--text-sm); color: var(--fg-faint); }
+.transcript .tline .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transcript.is-wrapped .tline .txt { white-space: normal; }
+.transcript .tline.is-current { background: var(--accent-soft); color: var(--fg); }
+.transcript .tline.is-current .t { color: var(--accent); }
+.transcript .tline.is-foreign { border-color: var(--info); background: var(--info-soft); color: var(--fg); }
+.transcript .tline.is-foreign .t { color: var(--info); }
+.transcript .gap { display: flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-2); color: var(--fg-faint); font: var(--text-xs) / 1 var(--font-mono); }
+.transcript .gap::before, .transcript .gap::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.transcript .open { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius-md); }
+@media (pointer: coarse) { .transcript .tline { min-height: var(--touch); align-items: center; } }
+
+/* ---------- frame-preview ----------
+ * The other frame beside the picture: 9:16 next to 16:9 and the other way
+ * round. Shows where the subtitle sits and what the window keeps. */
+.frame-preview { position: relative; flex: none; border: 1px solid var(--line-strong); border-radius: var(--radius-md); background: var(--surface-2); overflow: hidden; }
+.frame-preview.v { width: 150px; aspect-ratio: 9 / 16; }
+.frame-preview.h { width: 220px; aspect-ratio: 16 / 9; }
+.frame-preview > .label { position: absolute; left: 0; right: 0; top: var(--space-1); text-align: center; font: var(--text-xs) / 1 var(--font-mono); color: var(--fg-faint); }
+/* the band the Shorts interface covers - subtitles stay clear of it */
+.frame-preview .ui-band { position: absolute; left: 0; right: 0; bottom: 0; height: 24%; border-top: 1px dashed var(--line-strong); background: var(--surface); opacity: 0.6; display: flex; align-items: center; justify-content: center; font: 9px / 1 var(--font-mono); color: var(--fg-muted); }
+/* what the 9:16 window keeps of a 16:9 picture */
+.frame-preview .window { position: absolute; top: 0; bottom: 0; background: var(--accent-soft); border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+
+/* ---------- sub-overlay ----------
+ * The subtitle over the picture. The only place with colour literals: this is
+ * video, and it has to read on any footage. The rendering is done by libass
+ * and will be close, not identical - which is why the controls are named
+ * steps and not numbers. */
+.sub-overlay { position: absolute; left: 10%; right: 10%; bottom: 11%; text-align: center; color: #fff; font-weight: var(--weight-strong); font-size: 17px; line-height: 1.25; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.95); pointer-events: none; }
+.sub-overlay.pos-middle { bottom: auto; top: 44%; }
+.sub-overlay.pos-top { bottom: auto; top: 8%; }
+.sub-overlay.size-s { font-size: 13px; }
+.sub-overlay.size-l { font-size: 22px; }
+.sub-overlay.box { padding: var(--space-1) var(--space-2); background: rgba(0, 0, 0, 0.72); border-radius: var(--radius-sm); text-shadow: none; }
+.sub-overlay.is-selected { outline: 1px dashed var(--accent); outline-offset: 4px; }
+/* over the video's own control strip the caption moves up, so the two never meet */
+.player-wrap.has-controls .sub-overlay { bottom: 20%; }
+.frame-preview .sub-overlay { left: 6%; right: 6%; bottom: 31%; font-size: 11px; text-shadow: 0 2px 5px rgba(0, 0, 0, 0.95); }
+
+/* ---------- version-tabs ----------
+ * One version: the language is a label. Two or more: the tabs appear in the
+ * same place. The tab that is selected is the one on the picture and the one a
+ * rendering takes - the render row names it. */
+.version-tabs { display: flex; align-items: center; gap: 2px; border-bottom: 1px solid var(--line); }
+.version-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: var(--space-1) var(--space-2); color: var(--fg-muted); font: inherit; font-size: var(--text-sm); cursor: pointer; }
+.version-tabs [aria-selected="true"] { color: var(--fg); font-weight: var(--weight-strong); border-bottom-color: var(--accent); }
+.version-tabs .add { width: 28px; color: var(--fg-muted); }
+
+/* ---------- quickshare ----------
+ * The four settings of the quick path, visible instead of collapsed. A pill
+ * changes the next share only; the defaults live in Settings. */
+.quickshare { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.quickshare > .section-title { flex: none; font-family: var(--font-mono); font-size: var(--text-xs); }
+.quickshare .note { color: var(--fg-muted); font-size: var(--text-sm); }
+.quickshare .note.right { margin-left: auto; }
+.pill { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 32px; padding: 0 var(--space-2); background: var(--surface-2); color: var(--fg-muted); border: 1px solid var(--line); border-radius: var(--radius-md); font: inherit; font-size: var(--text-sm); white-space: nowrap; cursor: pointer; }
+.pill b { color: var(--fg); font-weight: var(--weight-strong); }
+.pill:hover { border-color: var(--line-strong); }
+.pill[aria-expanded="true"] { border-color: var(--accent); }
+/* set for this share only, away from the default in Settings */
+.pill.is-changed { background: var(--accent-soft); border-color: var(--accent); }
+.pill.is-empty { border-style: dashed; color: var(--fg-faint); cursor: default; }
+.pill.is-empty b { color: var(--fg-faint); }
+.pill .icon-sm { color: var(--fg-muted); }
+@media (pointer: coarse) { .pill { min-height: 36px; } }
+
+/* ---------- seg (16:9 | 9:16) ----------
+ * Two frames, both one tap away, because the picture follows the choice. */
+.seg { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
+.seg button { padding: var(--space-1) var(--space-3); background: var(--surface-2); color: var(--fg-muted); border: 0; font: inherit; font-size: var(--text-sm); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg [aria-pressed="true"] { background: var(--accent-soft); color: var(--fg); font-weight: var(--weight-strong); }
+@media (pointer: coarse) { .seg button { padding: var(--space-2) var(--space-4); } }
+
+/* ---------- look ----------
+ * Position, size and colour of the subtitle for this cut, as named steps.
+ * Settings supplies the default per frame; a cut that differs says so. */
+.look { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.look.is-changed { border-color: var(--warn); }
+.look .head { display: flex; align-items: center; gap: var(--space-2); }
+.look .step { display: flex; align-items: center; gap: var(--space-1); background: none; border: 0; padding: 0; color: var(--fg-muted); font: inherit; font-size: var(--text-sm); cursor: pointer; }
+.look .step b { margin-left: auto; color: var(--fg); font-weight: var(--weight-strong); }
+.look .step .icon-sm { color: var(--fg-muted); }
+
+/* ---------- jobs (ships last) ----------
+ * Three rows, one purpose each: what runs, what waits, what happened last.
+ * Pinned under the top bar, identical in both modes. Until it ships, the
+ * progress bar (#prog) and the result card (#result) stay where they are
+ * today: under the tools, in both modes. */
+.jobs { display: flex; flex-direction: column; gap: 1px; background: var(--bg); }
+.jobs.pinned { position: sticky; top: var(--topbar-h); z-index: 4; }
+.job { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--line); background: var(--warn-soft); }
+.job .what { display: flex; flex-direction: column; gap: var(--space-1); flex: 1; min-width: 0; }
+.job .line { display: flex; align-items: center; gap: var(--space-2); }
+.job .line .muted { font-size: var(--text-sm); }
+.job .line .when { margin-left: auto; color: var(--fg-muted); font-family: var(--font-mono); font-size: var(--text-sm); }
+.job .bar { height: 8px; background: var(--surface-2); border-radius: var(--radius-sm); overflow: hidden; }
+.job .bar i { display: block; height: 100%; background: var(--accent); }
+.job.is-queued { background: none; color: var(--fg-muted); font-size: var(--text-sm); padding: var(--space-1) var(--space-4); }
+.job.is-result { background: var(--ok-soft); align-items: flex-start; }
+.job.is-result > .icon { color: var(--ok); margin-top: 1px; }
+.job.is-failed { background: var(--err-soft); }
+.job.is-failed > .icon { color: var(--err); }
+@media (max-width: 600px) { .jobs.pinned { max-height: 33vh; overflow-y: auto; } }
+
+/* ============ 2. changed components ============ */
+
+/* CHANGED .clip - a list row can now open into its shelf. The row itself is
+ * unchanged; it moves into .clip-row so the shelf can sit under it. A row
+ * without cuts has no shelf and looks exactly as it does today. */
+.clip.is-open { background: var(--surface); border-color: var(--accent); gap: var(--space-2); }
+.clip.is-open.is-gone { border-color: var(--line-strong); }
+.clip > .clip-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.clip > .clip-row .thumb { flex: none; width: 44px; height: 26px; border-radius: 3px; background: var(--surface-2); }
+.clip > .clip-row .thumb.is-gone { display: flex; align-items: center; justify-content: center; border: 1px dashed var(--line-strong); background: none; font: 9px / 1 var(--font-mono); color: var(--fg-faint); }
+.clip > .clip-row .what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.clip.is-gone > .clip-row { opacity: 0.7; }
+
+/* CHANGED .timeline - in cutting mode it carries the ranges of the cuts that
+ * already exist, as quiet bars with their title. Clicking one loads that cut,
+ * which is the only way a cut and its recording are ever on screen together. */
+.timeline .cutbar { position: absolute; top: 3px; height: 7px; padding: 0; background: var(--line-strong); border: 0; border-radius: 3px; cursor: pointer; z-index: 2; }
+.timeline .cutbar:hover, .timeline .cutbar:focus-visible { background: var(--fg-faint); }
+.timeline .cutbar > span { position: absolute; left: 0; top: 8px; max-width: 100%; font: 9px / 1 var(--font-mono); color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.timeline .cutbar:hover > span { color: var(--fg); }
+
+/* CHANGED .player-wrap / .gone-ov - the overlay is no longer only for a
+ * recycled recording: the same box says "preparing this cut for playback" and
+ * "this browser cannot play the codec". .gone-ov keeps working; .player-ov is
+ * the general name and takes a state class. */
+.player-ov { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2); padding: var(--space-4); text-align: center; background: var(--surface-2); border-radius: var(--radius-lg); }
+.player-ov b { font-weight: var(--weight-strong); }
+.player-ov .muted { max-width: 42ch; font-size: var(--text-sm); }
+.player-ov .bar { width: 260px; height: 8px; background: var(--bg); border-radius: var(--radius-sm); overflow: hidden; }
+.player-ov .bar i { display: block; height: 100%; background: var(--accent); }
+.player-ov.is-blocked > .icon { width: 32px; height: 32px; color: var(--warn); }
+
+/* CHANGED .share-row - the collapsed sentence with "Change" is gone; the
+ * settings are the .quickshare row below it, and this row is the primary
+ * button, "Save cut" and what the share will cost. */
+.share-row .plan { margin-left: auto; text-align: right; }
+
+/* CHANGED .cuts-box / .cutrow - both are dropped. The cuts of a recording live
+ * in the shelf of its list row (.shelf > .cut-card) and are edited in the
+ * player; the subtitle editor that used to sit inside .cutrow .body is now the
+ * caption lane, the line inspector and the transcript. */
+
+/* the render row of workshop mode is the share row of cutting mode */
+.render-row { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+
+/* the bar above the render row: what the cut's subtitles are and what can be
+ * done with them. The version label or the version tabs sit in it. */
+.sub-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.sub-bar > .icon { color: var(--fg-muted); }
+.sub-bar .state { color: var(--fg-muted); font-size: var(--text-sm); }
+.sub-bar .act { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); }
+
+/* one output of a cut */
+.outputs { display: flex; flex-direction: column; gap: var(--space-1); }
+.output { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.output .thumb { flex: none; width: 46px; height: 26px; border-radius: 3px; background: var(--surface-2); }
+.output .thumb.v { width: 26px; height: 46px; }
+.output .what { display: flex; flex-direction: column; min-width: 0; }
+.output .name { font-weight: var(--weight-strong); font-size: var(--text-sm); }
+.output .meta { color: var(--fg-muted); font: var(--text-xs) / 1.5 var(--font-mono); }
+.output .act { margin-left: auto; display: flex; align-items: center; gap: var(--space-1); }
+@media (max-width: 600px) { .output { flex-wrap: wrap; } .output .act { margin-left: 0; width: 100%; } }
+
+/* the workshop's two-picture row, and the dock it becomes when it gets narrow */
+.stage { display: flex; gap: var(--space-3); align-items: flex-start; }
+.stage > .player-wrap { flex: none; width: 604px; max-width: 100%; }
+.stage > .side { display: flex; flex-direction: column; gap: var(--space-2); flex: 1; min-width: 0; }
+.stage .frames { display: flex; gap: var(--space-3); align-items: flex-start; }
+
+/* ============ 3. widths - the breakpoints of base.css ============ */
+
+@media (max-width: 999px) {
+  /* one picture, no room for the other frame beside it: the seg swaps it */
+  .stage { flex-direction: column; }
+  .stage > .player-wrap { width: 100%; }
+  .stage .frame-preview { display: none; }
+  /* the lane gives way to the map, the document does the editing */
+  .caption-lane { display: none; }
+  .line-inspector { grid-template-columns: minmax(0, 1fr); }
+  .line-inspector > .col + .col { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); padding-top: var(--space-3); }
+  .line-inspector .col.transcript-col { display: none; }
+  .transcript .tline .txt { white-space: normal; }
+  /* the picture and the timing buttons stay in view while the document scrolls */
+  .player-dock { position: sticky; top: 0; z-index: 2; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius-lg); }
+}
+@media (min-width: 1000px) { .caption-map:not(.always) { display: none; } .player-dock { display: contents; } }
+@media (max-width: 600px) {
+  .quickshare > .section-title, .quickshare .note { flex-basis: 100%; }
+  .quickshare .note.right { margin-left: 0; }
+  .line-inspector .stamp .btn, .line-inspector .nudge .btn { min-height: var(--touch); }
+  .sub-overlay { font-size: 13px; }
+  .loaded-chip { min-height: var(--touch); }
+}
