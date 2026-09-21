@@ -47,6 +47,31 @@ contract.
 - **Keyboard hints are left out on a touch screen**, where they only make
   the buttons wider.
 
+- **Quick share in Settings.** A new card in Settings › General holds what
+  `Enter` on the clips page shares: audio, quality, frame, what happens to
+  the recording afterwards, the target, and - with subtitles on - whether
+  a range without lines is transcribed and burned in unread. A share
+  request that leaves a choice out takes it from there (`quickShare`, see
+  `docs/api.md`, "Since 3.13").
+- **Four pills under the player** take the place of the sentence and
+  "Change": Audio, Quality, Frame and Afterwards start at the settings, a
+  changed one is marked, and after a share they fall back. The 9:16 window
+  sits next to the Frame pill. The line below says what a quick share does
+  with subtitles, and warns when it would fail for want of a model.
+
+### Changed
+
+- **Share choices are settings, not browser habits.** "As recorded" and the
+  subtitle choice of the share row were kept in each browser, Afterwards in
+  each tab; the page forgets them now. If you shared "As recorded" out of
+  habit, set Quality once in Settings › Quick share. The Subtitles select
+  of the share row is gone: a range that is a cut with lines follows the
+  cut, and everything else follows the settings.
+- **The Subtitles card in Settings** is laid out like the other cards:
+  language and track first, then the model, then the default look per
+  frame with a small preview drawn from the same table as the workshop's
+  overlay and the rendering.
+
 ### Fixed
 
 - **A clip opens into its cuts when you click it.** The row of the loaded

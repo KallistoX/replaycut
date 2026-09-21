@@ -1,7 +1,7 @@
 # YouTube: a Google client of your own
 
 replaycut uploads a share as a video of its own to your YouTube channel
-(unlisted by default) and, with the "Vertical 9:16" option in the share row,
+(unlisted by default) and, with the frame set to 9:16 under the player,
 as a Short. Since 3.3 it brings its own Google client: switch the YouTube
 card on, click **Connect YouTube**, done. This page is for the one case
 where that is not enough.
@@ -114,9 +114,10 @@ nothing else is lost.
 
 ## Shorts
 
-Choose **Vertical 9:16 (Short)** in the share row. The player shows the
-9:16 window; the slider below moves it across the picture (the action is
-rarely in the middle). The share is encoded at 1080x1920 and uploaded with
+Set the **Frame** pill under the player to **9:16**, or make 9:16 the
+default in Settings › Quick share. The player shows the 9:16 window; the
+slider next to the pill moves it across the picture (the action is rarely
+in the middle). The share is encoded at 1080x1920 and uploaded with
 `#Shorts` in the title; YouTube decides by format and length that it is a
 Short. The option works with every target and with "file only" too: the
 file is then ready for TikTok, Instagram Reels or WhatsApp.

@@ -63,8 +63,9 @@ See [`docs/settings.md`](docs/settings.md) for the status of each integration.
 1. **Record.** OBS keeps the last minutes in the replay buffer. You press the
    hotkey (or **Save replay** on the page) and the file lands at the top of the
    clip list.
-2. **Trim.** Open the clip, **Set in** and **Set out**, pick the audio mix, the
-   codec and landscape or vertical, give it a title.
+2. **Trim.** Open the clip, **Set in** and **Set out**, give it a title. The
+   pills under the player - audio, quality, frame, afterwards - start at
+   Settings › Quick share; one you change counts for the next share only.
 3. **Share.** **Share** cuts the selection and uploads it to the quick-share
    target; the menu next to the button holds every other storage and "file
    only". Progress, queue and result stay on the page. **Save cut** stops
