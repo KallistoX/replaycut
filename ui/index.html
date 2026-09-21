@@ -324,6 +324,7 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 .md pre { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); overflow-x: auto; } .md pre code { background: none; padding: 0; }
 .md a { color: var(--accent); }
 .keys { border-collapse: collapse; width: 100%; } .keys td { padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--line); vertical-align: top; } .keys td:first-child { white-space: nowrap; width: 1%; }
+.keys th { padding: var(--space-1) var(--space-2); text-align: left; font-size: var(--text-sm); font-weight: var(--weight-strong); color: var(--fg-muted); border-bottom: 1px solid var(--line-strong); }
 
 .toast-stack { position: fixed; right: var(--space-4); bottom: calc(var(--space-4) + var(--savebar-h, 0px)); display: flex; flex-direction: column; gap: var(--space-2); z-index: 20; max-width: min(360px, calc(100vw - 2 * var(--space-4))); }
 .toast { display: flex; gap: var(--space-2); align-items: center; padding: var(--space-2) var(--space-3); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 4px 16px var(--scrim); }
@@ -390,6 +391,8 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading)
 .progress.err { border-color: var(--err); }
 .progress .bar { height: 8px; background: var(--surface-2); border-radius: var(--radius-sm); overflow: hidden; }
 .progress .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width var(--duration-slow); }
+#wSubsBody .bar { height: 8px; background: var(--surface-2); border-radius: var(--radius-sm); overflow: hidden; }
+#wSubsBody .bar i { display: block; height: 100%; background: var(--accent); transition: width var(--duration-slow); }
 .progress.err .bar i { background: var(--err); }
 .progress .stages { display: flex; gap: var(--space-4); font-size: var(--text-sm); color: var(--fg-muted); flex-wrap: wrap; }
 .progress .stages .st-on { color: var(--accent); font-weight: var(--weight-strong); }
@@ -458,24 +461,6 @@ details.limits summary { cursor: pointer; list-style: none; } details.limits sum
 .clip.is-done .name { color: var(--fg-muted); font-weight: normal; }
 .section-title { font-size: var(--text-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); }
 .section-title .n { color: var(--fg-faint); margin-left: var(--space-1); letter-spacing: 0; }
-/* subtitles on a cut (3.11, beta). On a phone every row is two lines: the
-   times and the counter above, the text below at full width - side by side
-   there is no room left to type in. */
-.subs { border-top: 1px solid var(--line); margin-top: var(--space-1); padding-top: var(--space-2); }
-.subs-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-height: var(--touch); }
-.subs-head .grow { flex: 1 1 auto; }
-.subs-head .summary { flex-basis: 100%; }
-@media (min-width: 700px) { .subs-head .summary { flex-basis: auto; } }
-.subs-list { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); max-height: 420px; overflow-y: auto; padding-right: var(--space-1); }
-.subrow { display: flex; flex-direction: column; gap: var(--space-1); }
-.subrow.is-playing .time { color: var(--accent); }
-.subrow-top { display: flex; align-items: center; gap: var(--space-1); }
-.subrow .time { font-family: var(--font-mono); font-size: var(--text-sm); white-space: nowrap; padding: 0 var(--space-1); }
-.subrow .count { margin-left: auto; color: var(--fg-faint); font-size: var(--text-xs); font-family: var(--font-mono); }
-.subrow .count.warn { color: var(--warn); }
-.subrow textarea { width: 100%; resize: none; overflow: hidden; min-height: 34px; font-size: var(--text-sm); line-height: 1.35; }
-.subs-foot { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
-.subs-foot .muted { font-size: var(--text-sm); }
 .outrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: center; min-height: 40px; font-size: var(--text-sm); }
 .outrow + .outrow { border-top: 1px solid var(--line); }
 .outrow .meta { display: flex; flex-wrap: wrap; gap: 0 var(--space-2); color: var(--fg-muted); min-width: 0; }
@@ -922,12 +907,59 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 #tl.has-rows .handle::after { height: auto; bottom: 8px; }
 /* the workshop's player is as big as the recording's: what sat beside it
    goes under it (a deviation from F5/F7, asked for in the review of a2) */
-#workshop .stage { flex-direction: column; align-items: stretch; container-type: inline-size; }
+#workshop { container-type: inline-size; }
+#workshop .stage { flex-direction: column; align-items: stretch; }
 #workshop .stage > .player-wrap { width: 100%; }
 /* 9:16 chosen: the picture is the window that is rendered, at the height
    the 16:9 picture has, moved by the window position */
 #workshop .stage > #wPlayer.is-vertical { width: fit-content; max-width: 100%; margin: 0 auto; }
 #wPlayer.is-vertical video { width: auto; height: min(58vh, 56.25cqw); aspect-ratio: 9 / 16; object-fit: cover; }
+/* since 3.12, stage b: the subtitles in the workshop. The overlays are
+   placed by script from the look table (GET /api/subtitles/looks), so the
+   fixed sizes of the design's .sub-overlay do not apply. */
+@font-face { font-family: "RC Subs"; src: url("/fonts/subtitles.ttf") format("truetype"); font-weight: 700; font-display: block; }
+#wSub, #fpSub { z-index: 1; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+#fpBox canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#fpBox > .label, #fpBox > .window { z-index: 2; }
+#fpBox > .ui-band { z-index: 1; }
+#look .step { width: 100%; }
+#look .step b { margin-left: auto; }
+.line-inspector .transcript { max-height: 150px; overflow-y: auto; }
+.line-inspector .times.warn { color: var(--warn); }
+.caption-lane .block:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* the picture has nothing over its lower third while there are lines */
+#workshop.has-subs .wcontrols { position: static; margin-top: var(--space-1); background: none; padding: 0; }
+/* The split of F7 once the cut has lines: the picture beside the frame
+   preview and the look, as big as the height leaves room for, so that the
+   picture, the lane and the inspector are on screen together at 1280x950 -
+   the point of #55. --ws-rest is everything in the column but the picture. */
+#workshop { --ws-side: 360px; --ws-rest: 560px; }
+@media (min-width: 1000px) {
+  #workshop.has-subs .stage { flex-direction: row; align-items: flex-start; }
+  #workshop.has-subs .stage > #wPlayer { flex: none; width: min(calc(100cqw - var(--ws-side)), calc((100vh - var(--ws-rest)) * 16 / 9)); min-width: 400px; }
+  #workshop.has-subs .stage > #wPlayer.is-vertical { width: fit-content; min-width: 0; margin: 0; }
+  #workshop.has-subs #wPlayer video { max-height: none; }
+  #workshop.has-subs #wPlayer.is-vertical video { height: max(240px, min(calc((100cqw - var(--ws-side)) * 9 / 16), calc(100vh - var(--ws-rest)))); }
+}
+/* Under 1000 px everything stacks, and the picture stays at the top while
+   the lane, the inspector and the transcript scroll under it. The lane and
+   the transcript stay - the document view of F16 is stage c. */
+@media (max-width: 999px) {
+  #workshop.has-subs .stage { display: contents; }
+  #workshop.has-subs #wPlayer { position: sticky; top: var(--topbar-h); z-index: 3; background: var(--bg); padding-bottom: var(--space-1); }
+  #workshop.has-subs #wPlayer video { max-height: 40vh; }
+  /* what scrolls under the picture keeps its layers to itself */
+  #workshop.has-subs #wtl, #workshop.has-subs .caption-lane { z-index: 0; }
+  #workshop.has-subs .caption-lane { display: block; }
+  #workshop.has-subs .line-inspector .col.transcript-col { display: flex; }
+  .line-inspector .stamp .btn, .line-inspector .nudge .btn { min-height: var(--touch); }
+}
+@media (pointer: coarse) {
+  .caption-lane { height: 52px; }
+  .caption-lane .block { line-height: 38px; font-size: var(--text-sm); }
+  .caption-lane .block.is-selected { line-height: 44px; }
+}
 </style>
 </head>
 <body>
@@ -963,6 +995,8 @@ ol.steps b { color: var(--fg); font-weight: normal; }
   <symbol id="i-more" viewBox="0 0 20 20"><circle cx="4.5" cy="10" r="1.25"/><circle cx="10" cy="10" r="1.25"/><circle cx="15.5" cy="10" r="1.25"/></symbol>
   <symbol id="i-send" viewBox="0 0 20 20"><path d="M17 3 3 9l6 2 2 6z"/><path d="m9 11 8-8"/></symbol>
   <symbol id="i-undo" viewBox="0 0 20 20"><path d="M4 8h8a4 4 0 0 1 0 8H8"/><path d="M7 5 4 8l3 3"/></symbol>
+  <symbol id="i-split" viewBox="0 0 20 20"><path d="M10 2.5v15M3 7l-3 3 3 3M17 7l3 3-3 3"/></symbol>
+  <symbol id="i-merge" viewBox="0 0 20 20"><path d="M10 2.5v15M1 10h5M14 10h5M6 7l3 3-3 3M14 7l-3 3 3 3"/></symbol>
   <symbol id="i-b-nextcloud" viewBox="0 0 24 24"><path d="M12.018 6.537c-2.5 0-4.6 1.712-5.241 4.015-.56-1.232-1.793-2.105-3.225-2.105A3.569 3.569 0 0 0 0 12a3.569 3.569 0 0 0 3.552 3.553c1.432 0 2.664-.874 3.224-2.106.641 2.304 2.742 4.016 5.242 4.016 2.487 0 4.576-1.693 5.231-3.977.569 1.21 1.783 2.067 3.198 2.067A3.568 3.568 0 0 0 24 12a3.569 3.569 0 0 0-3.553-3.553c-1.416 0-2.63.858-3.199 2.067-.654-2.284-2.743-3.978-5.23-3.977zm0 2.085c1.878 0 3.378 1.5 3.378 3.378 0 1.878-1.5 3.378-3.378 3.378A3.362 3.362 0 0 1 8.641 12c0-1.878 1.5-3.378 3.377-3.378zm-8.466 1.91c.822 0 1.467.645 1.467 1.468s-.644 1.467-1.467 1.468A1.452 1.452 0 0 1 2.085 12c0-.823.644-1.467 1.467-1.467zm16.895 0c.823 0 1.468.645 1.468 1.468s-.645 1.468-1.468 1.468A1.452 1.452 0 0 1 18.98 12c0-.823.644-1.467 1.467-1.467z"/></symbol>
   <symbol id="i-b-onedrive" viewBox="0 0 24 24"><path d="M19.453 9.95q.961.058 1.787.468.826.41 1.442 1.066.615.657.966 1.512.352.856.352 1.816 0 1.008-.387 1.893-.386.885-1.049 1.547-.662.662-1.546 1.049-.885.387-1.893.387H6q-1.242 0-2.332-.475-1.09-.475-1.904-1.29-.815-.814-1.29-1.903Q0 14.93 0 13.688q0-.985.31-1.887.311-.903.862-1.658.55-.756 1.324-1.325.774-.568 1.711-.861.434-.129.85-.187.416-.06.861-.082h.012q.515-.786 1.207-1.413.691-.627 1.5-1.066.808-.44 1.705-.668.896-.229 1.845-.229 1.278 0 2.456.417 1.177.416 2.144 1.16.967.744 1.658 1.78.692 1.038 1.008 2.28zm-7.265-4.137q-1.325 0-2.52.544-1.195.545-2.04 1.565.446.117.85.299.405.181.792.416l4.78 2.86 2.731-1.15q.27-.117.545-.204.276-.088.58-.147-.293-.937-.855-1.705-.563-.768-1.319-1.318-.755-.551-1.658-.856-.902-.304-1.886-.304zM2.414 16.395l9.914-4.184-3.832-2.297q-.586-.351-1.23-.539-.645-.188-1.325-.188-.914 0-1.722.364-.809.363-1.412.978-.604.616-.955 1.436-.352.82-.352 1.723 0 .703.234 1.423.235.721.68 1.284zm16.711 1.793q.563 0 1.078-.176.516-.176.961-.516l-7.23-4.324-10.301 4.336q.527.328 1.13.504.604.175 1.237.175zm3.012-1.852q.363-.727.363-1.523 0-.774-.293-1.407t-.791-1.072q-.498-.44-1.166-.68-.668-.24-1.406-.24-.422 0-.838.1t-.815.252q-.398.152-.785.334-.386.181-.761.345Z"/></symbol>
   <symbol id="i-b-youtube" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></symbol>
@@ -1098,11 +1132,21 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <div class="stage">
         <div class="player-wrap" id="wPlayer">
           <video id="wv" preload="auto" playsinline></video>
+          <div class="sub-overlay" id="wSub" hidden></div>
           <div class="player-ov" id="wOv" hidden></div>
           <div class="wcontrols"><button class="btn btn-ghost btn-icon btn-sm" id="wPlay" type="button" aria-label="Play"><svg class="icon icon-sm"><use href="#i-play"/></svg></button><span class="mono" id="wTime">0:00.0 / 0:00.0</span></div>
         </div>
         <div class="side">
           <div class="row nowrap"><div class="seg" id="frameSeg" role="group" aria-label="Frame to render"><button type="button" data-frame="wide" aria-pressed="true">16:9</button><button type="button" data-frame="vertical" aria-pressed="false">9:16</button></div><span class="muted sm">the frame you will render</span></div>
+          <div class="vpos-row" id="wVposRow" hidden><span>Window</span><input type="range" id="wVpos" min="0" max="100" step="1" aria-label="Where the 9:16 window sits, left edge to right edge" title="Where the 9:16 window sits: left edge, centre, right edge"><b id="wVposVal">Centre</b></div>
+          <div class="frames" id="wFrames" hidden>
+            <div class="frame-preview v" id="fpBox"><canvas id="framePreview" aria-hidden="true"></canvas><span class="window" id="fpWindow" hidden></span><div class="sub-overlay" id="fpSub" hidden></div><span class="ui-band" id="fpBand">Shorts interface</span><span class="label" id="fpLabel">9:16</span></div>
+            <div class="look" id="look"></div>
+          </div>
+          <div class="card" id="wSubsCard" hidden>
+            <div class="card-head"><svg class="icon"><use href="#i-subtitles"/></svg><h3>Subtitles</h3><span class="badge">Beta</span></div>
+            <div class="card-body stack-3" id="wSubsBody"></div>
+          </div>
           <div class="card" id="wMissing" hidden>
             <div class="card-head"><h3>What is missing</h3></div>
             <div class="card-body stack">
@@ -1115,6 +1159,46 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       </div>
       <div class="lane-head"><span class="section-title" id="wAxis">Cut</span><span class="muted sm">the axis is the cut</span></div>
       <div class="timeline" id="wtl" role="slider" aria-label="Position in the cut" tabindex="-1"><div class="ticks" id="wticks"></div><div class="playhead" id="wph"></div></div>
+      <!-- since 3.12 (stage b): the lines of the cut on its axis, the one
+           that is selected, and what can be done to it -->
+      <div class="caption-lane" id="lane" role="listbox" aria-label="Subtitle lines of this cut" aria-orientation="horizontal" hidden></div>
+      <div class="line-inspector" id="inspector" hidden>
+        <div class="col">
+          <div class="row"><span class="which" id="liWhich"></span><span class="times" id="liTimes"></span></div>
+          <label class="field"><span class="sr-only">Text of the selected line</span><textarea class="input" id="lineText" rows="2" spellcheck="false"></textarea></label>
+          <div class="row">
+            <button class="btn btn-sm" type="button" id="liPlay"><svg class="icon icon-sm"><use href="#i-play"/></svg> Play line <kbd>P</kbd></button>
+            <button class="btn btn-sm" type="button" id="liSplit"><svg class="icon icon-sm"><use href="#i-split"/></svg> Split at playhead <kbd>S</kbd></button>
+            <button class="btn btn-sm" type="button" id="liMerge"><svg class="icon icon-sm"><use href="#i-merge"/></svg> Merge with next <kbd>M</kbd></button>
+            <button class="btn btn-sm btn-danger" type="button" id="liDel"><svg class="icon icon-sm"><use href="#i-trash"/></svg> Delete line <kbd>Del</kbd></button>
+          </div>
+        </div>
+        <div class="col">
+          <span class="section-title" id="liAt">Timing</span>
+          <div class="stamp">
+            <button class="btn btn-sm" type="button" id="liIn"><svg class="icon icon-sm"><use href="#i-cut-in"/></svg> Start here <kbd>I</kbd></button>
+            <button class="btn btn-sm" type="button" id="liOut"><svg class="icon icon-sm"><use href="#i-cut-out"/></svg> End here <kbd>O</kbd></button>
+          </div>
+          <div class="nudge">
+            <span>start</span><button class="btn btn-sm" type="button" data-nudge="start,-0.1" aria-label="Start 0.1 s earlier">− 0.1</button><button class="btn btn-sm" type="button" data-nudge="start,0.1" aria-label="Start 0.1 s later">+ 0.1</button>
+            <span>end</span><button class="btn btn-sm" type="button" data-nudge="end,-0.1" aria-label="End 0.1 s earlier">− 0.1</button><button class="btn btn-sm" type="button" data-nudge="end,0.1" aria-label="End 0.1 s later">+ 0.1</button>
+          </div>
+          <span class="faint xs"><kbd>Alt</kbd>+<kbd>←</kbd><kbd>→</kbd> moves the start, with <kbd>Shift</kbd> the end. Edits save by themselves.</span>
+        </div>
+        <div class="col transcript-col">
+          <div class="row nowrap"><span class="section-title grow">Whole transcript</span><span class="faint xs">click to jump</span></div>
+          <div class="transcript" id="transcript"></div>
+        </div>
+      </div>
+      <div class="sub-bar" id="subBar" hidden>
+        <svg class="icon"><use href="#i-subtitles"/></svg><b>Subtitles</b><span class="badge">Beta</span>
+        <span class="state" id="subState"></span>
+        <span class="act">
+          <button class="btn btn-sm" type="button" id="subAgain"><svg class="icon icon-sm"><use href="#i-refresh"/></svg> Transcribe again</button>
+          <a class="btn btn-sm" id="subSrt" download><svg class="icon icon-sm"><use href="#i-download"/></svg> Export SRT</a>
+          <button class="btn btn-sm btn-icon" type="button" id="subMore" aria-label="More for the subtitles" aria-haspopup="true"><svg class="icon"><use href="#i-more"/></svg></button>
+        </span>
+      </div>
       <div class="render-row" id="renderRow">
         <div class="split"><button class="btn btn-primary" id="bRender"><svg class="icon"><use href="#i-share"/></svg> Render <kbd>Enter</kbd></button><button class="btn btn-primary btn-icon" id="bRenderMenu" title="Render to another target" aria-haspopup="true">▾</button></div>
         <button class="pill" type="button" id="rFrame" aria-haspopup="true"></button>
@@ -1125,7 +1209,6 @@ ol.steps b { color: var(--fg); font-weight: normal; }
         <span class="plan" id="rPlan"></span>
       </div>
       <p class="muted sm" id="rNote" hidden></p>
-      <div id="wSubs"></div>
       <section class="stack-2">
         <div class="section-title">Outputs of this cut<span class="n" id="wOutCount"></span></div>
         <div class="outputs" id="outputs"></div>
@@ -1670,23 +1753,27 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 </div>
 
 <div class="modal" id="helpModal" hidden>
-  <div class="dialog" role="dialog" aria-modal="true">
+  <div class="dialog wide" role="dialog" aria-modal="true">
     <h2>Keyboard shortcuts</h2>
     <div class="md"><table class="keys">
-      <tr><td><kbd>Space</kbd></td><td>Play or pause</td></tr>
-      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>1 s back or forward, with <kbd>Shift</kbd> 5 s</td></tr>
-      <tr><td><kbd>,</kbd> <kbd>.</kbd></td><td>One frame back or forward</td></tr>
-      <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Start or end of the clip</td></tr>
-      <tr><td><kbd>I</kbd> <kbd>O</kbd></td><td>Set the in or out mark at the playhead</td></tr>
-      <tr><td><kbd>Alt</kbd> + <kbd>←</kbd> <kbd>→</kbd></td><td>Move the mark nearer the playhead by 0.1 s</td></tr>
-      <tr><td><kbd>P</kbd></td><td>Play the selection</td></tr>
-      <tr><td><kbd>C</kbd></td><td>Save the marks as a cut, without rendering</td></tr>
-      <tr><td><kbd>D</kbd></td><td>Mark the clip done, or bring a done clip back</td></tr>
-      <tr><td><kbd>W</kbd></td><td>Load the newest cut of this recording into the workshop; in the workshop: the next cut</td></tr>
-      <tr><td><kbd>Enter</kbd></td><td>Share the selection; in the workshop: render the cut; in the title field: save the title (empty takes the suggestion)</td></tr>
-      <tr><td><kbd>Esc</kbd></td><td>Close a dialog or a menu; in the workshop: back to the full recording; in a title field: undo the edit</td></tr>
-      <tr><td><kbd>Ctrl</kbd> + <kbd>S</kbd></td><td>On the settings page: save what you changed</td></tr>
-      <tr><td><kbd>?</kbd></td><td>This list</td></tr>
+      <tr><th></th><th>Cutting a recording</th><th>In the workshop (a cut)</th></tr>
+      <tr><td><kbd>Space</kbd></td><td colspan="2">Play or pause</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td colspan="2">1 s back or forward, with <kbd>Shift</kbd> 5 s</td></tr>
+      <tr><td><kbd>,</kbd> <kbd>.</kbd></td><td colspan="2">One frame back or forward</td></tr>
+      <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>Start or end of the clip</td><td>Start or end of the cut</td></tr>
+      <tr><td><kbd>I</kbd> <kbd>O</kbd></td><td>Set the in or out mark at the playhead</td><td>Start or end the selected line at the playhead</td></tr>
+      <tr><td><kbd>Alt</kbd> + <kbd>←</kbd> <kbd>→</kbd></td><td>Move the mark nearer the playhead by 0.1 s</td><td>Move the start of the selected line by 0.1 s; with <kbd>Shift</kbd> its end</td></tr>
+      <tr><td><kbd>P</kbd></td><td>Play the selection</td><td>Play the selected line</td></tr>
+      <tr><td><kbd>S</kbd> <kbd>M</kbd></td><td>-</td><td>Split the line at the playhead, or merge the selected line with the next</td></tr>
+      <tr><td><kbd>Delete</kbd></td><td>-</td><td>Delete the selected line (Undo in the message)</td></tr>
+      <tr><td><kbd>C</kbd></td><td>Save the marks as a cut, without rendering</td><td>-</td></tr>
+      <tr><td><kbd>D</kbd></td><td>Mark the clip done, or bring a done clip back</td><td>-</td></tr>
+      <tr><td><kbd>W</kbd></td><td>Load the newest cut of this recording into the workshop</td><td>The next cut</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Share the selection</td><td>Render the cut; on a line of the lane: edit its text</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Close a dialog or a menu</td><td>Leave the text field; close a menu; else back to the full recording</td></tr>
+      <tr><td colspan="3" class="muted sm">In a title field <kbd>Enter</kbd> saves and <kbd>Esc</kbd> undoes the edit. Letters never act while you type in a field.</td></tr>
+      <tr><td><kbd>Ctrl</kbd> + <kbd>S</kbd></td><td colspan="2">On the settings page: save what you changed</td></tr>
+      <tr><td><kbd>?</kbd></td><td colspan="2">This list</td></tr>
     </table></div>
     <div class="actions"><button class="btn" id="helpClose">Close <kbd>Esc</kbd></button></div>
   </div>
@@ -2944,7 +3031,7 @@ let watchingJob = null, shownLast = null, failures = 0, audioBuilt = '', listKey
 let updDismissed = '', failedDismissed = '', pendingNew = null, pollT = null;
 // since 3.0: the list has two sides, and the clips that were put away are
 // only fetched when someone asks for them (`?done=1`)
-let clipFilter = 'active', doneClips = [], counts = { active: 0, done: 0 }, cutsKey = '', afterChosen = false;
+let clipFilter = 'active', doneClips = [], counts = { active: 0, done: 0 }, afterChosen = false;
 // since 3.12: the address is read once, when the page comes up
 let hashTaken = false;
 let v, tl, sel, hin, hout, ph;
@@ -3121,6 +3208,7 @@ function initClips() {
   $('b-newclip-keep').onclick = () => { pendingNew = null; banner('b-newclip', false); };
 
   initWorkshop();   // since 3.12
+  initWorkshopSubs();   // since 3.12, stage b
   poll();
 }
 
@@ -3233,7 +3321,7 @@ function load(c, keepSel) {
   // nothing to cut from without the recording; the cuts below still render
   ['bShare', 'bShareMenu', 'bCut', 'bIn', 'bOut', 'bAll', 'bPrev'].forEach(id => { $(id).disabled = gone; });
   $('tl').style.display = gone ? 'none' : '';
-  ticks(c.duration); buildAudio(); render(); cutsKey = ''; renderCuts();
+  ticks(c.duration); buildAudio(); render(); renderCuts();
 }
 function unload() {
   leaveWorkshop();
@@ -3362,6 +3450,10 @@ const STAGE_TEXT = { queued: 'Queued …', cut: 'Cutting …', transcribe: 'Read
 // long ffmpeg too; until 3.11.1 its bar stood at 100 % the whole time (#54).
 const FOLLOWS_FFMPEG = ['encode', 'transcribe'];
 function showProgress(j) {
+  // since 3.12 the workshop shows a transcription of its cut beside the picture too
+  const was = progJob;
+  progJob = j && !['done', 'error', 'cancelled'].includes(j.stage) ? j : null;
+  if (mode === 'work' && wcut && (progJob || was) && ((progJob && progJob.cut === wcut.id) || (was && was.cut === wcut.id))) { wKey = ''; renderWorkshop(); }
   const p = $('prog'); if (!j || j.stage === 'done' || j.stage === 'error' || j.stage === 'cancelled') { p.hidden = true; return; }
   p.hidden = false;
   if (j.stage === 'transcribe') readFirst.add(j.id);
@@ -3369,7 +3461,7 @@ function showProgress(j) {
   const queued = j.stage === 'queued' ? (j.position ? `Queued - ${j.position} share${j.position === 1 ? '' : 's'} ahead` : 'Queued …') : null;
   if (j.kind === 'preview') $('progText').textContent = (queued || `Making the playable preview (720p H.264) of ${short(j.base)}`);
   else $('progText').textContent = (queued || (j.stage === 'encode' && j.mode === 'copy' ? 'Copying' : STAGE_TEXT[j.stage]) || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)}${j.mode === 'copy' ? ' as recorded' : (j.kbps ? ` at ${j.kbps} kbit/s` : ' at best quality')}${j.maxHeight ? `, ${j.maxHeight}p` : ''}${j.vertical ? ', vertical 9:16' : ''}, ${audioLabel(j.audio)}` : '') + (j.stage === 'transcribe' ? ` of ${fmt(j.seconds)}${j.track ? ` from the ${j.track === 'mic' ? 'microphone' : 'mix'}` : ''}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '') + (otherClip(j) ? ` · ${otherClip(j)}` : '');
-  const canCancel = ['queued', 'encode', 'upload'].includes(j.stage);
+  const canCancel = ['queued', 'encode', 'upload', 'transcribe'].includes(j.stage);
   $('progCancel').hidden = !canCancel; $('progCancel').dataset.job = j.id;
   $('progPct').textContent = pct + ' %';
   $('progBar').style.width = pct + '%';
@@ -3941,7 +4033,7 @@ function putMarks(c) {
   if (!cur) return;
   tIn = c.start; tOut = Math.min(c.end, cur.duration || c.end); edited = true;
   if (v && v.getAttribute('src')) seek(tIn);
-  render(); cutsKey = ''; renderCuts();
+  render(); renderCuts();
 }
 
 // ------------------------------------------------------------ the workshop (3.12)
@@ -3951,7 +4043,9 @@ function putMarks(c) {
 // that turns the player's time into the recording's and the cut's is `src`.
 let mode = 'cut', wcut = null, wsrc = null, wv = null, wtl = null, wAsked = new Set(), wBroken = new Set(), wKey = '', wOutKey = '';
 const W_DEFAULTS = () => ({ frame: wcut && wcut.vertical ? 'vertical' : 'wide', quality: 'h264', audio: wAudioDefault(), after: 'keep', subs: wSubsDefault() });
-let wPick = {};
+// `wPick` is what this rendering takes; a field nobody picked follows the cut
+// (lines that arrive later are burned in, #52), a picked one stays until it renders
+let wPick = {}, wTouched = new Set();
 function wAudioDefault() { const a = wcut && wcut.audio; const m = cfg.audio.find(x => x.id === a); return m && (cur.tracks || 1) >= m.need ? a : 'mix'; }
 // a cut with lines carries them (#52); "As recorded" turns burning in into the track
 function wSubsDefault() { return wcut && wcut.subtitles && wcut.subtitles.count ? 'burn' : 'none'; }
@@ -3994,6 +4088,7 @@ function wRenderTime() {
   $('wph').style.left = (len ? at / len * 100 : 0) + '%';
   $('wPlay').innerHTML = `<svg class="icon icon-sm"><use href="#i-${wv.paused ? 'play' : 'pause'}"/></svg>`;
   $('wPlay').setAttribute('aria-label', wv.paused ? 'Play' : 'Pause');
+  if (wsHas()) { wsFollow(); wsPlayhead(); wsTimingLine(); wsOverlay(); }
 }
 function wTicks() {
   const box = $('wticks'); box.innerHTML = '';
@@ -4129,7 +4224,7 @@ function nextCut() {
 function enterWorkshop(k) {
   v.pause();
   mode = 'work'; wcut = k; wsrc = null; wKey = ''; wOutKey = '';
-  wPick = W_DEFAULTS();
+  wPick = W_DEFAULTS(); wTouched = new Set();
   $('editorBody').hidden = true; $('emptyEditor').hidden = true; $('workshop').hidden = false;
   history.replaceState(null, '', '#' + encodeURIComponent(cur.base) + '/' + k.id);
   wTicks(); wLoadSource(); wRenderTime(); renderWorkshop();
@@ -4139,6 +4234,7 @@ function enterWorkshop(k) {
 /// Back to the recording, as it was left.
 function leaveWorkshop() {
   if (mode !== 'work') return;
+  wsFlush();
   mode = 'cut'; wcut = null; wsrc = null;
   if (wv) { wv.pause(); wv.removeAttribute('src'); wv.load(); }
   $('workshop').hidden = true; $('editorBody').hidden = !cur;
@@ -4211,27 +4307,9 @@ function renderWorkshop() {
     if (!outs.length) box.innerHTML = `<div class="empty compact"><div><b>Nothing rendered from this cut yet</b><br>Every file that leaves the PC is one rendering of this cut, and it stays listed here with its link and its folder.</div></div>`;
     outs.forEach(o => box.appendChild(outputRow(o, 'clip')));
   }
-  // until stage b the subtitles of 3.11 live here, unchanged
+  // the lines, the look, the other frame - or what to do to get lines
   renderWorkshopSubs();
 }
-let wSubsKey = '';
-function renderWorkshopSubs() {
-  const host = $('wSubs');
-  // what is typed and not saved holds the block still (as the cut row did in 3.11)
-  if (subsDirty()) return;
-  // an empty `cutsKey` is how the 3.11 code asks for a redraw
-  const force = cutsKey === '';
-  const key = wcut.id + (cfg.subtitles ? '+s' : '') + subsKey(wcut);
-  if (!force && key === wSubsKey) return;
-  wSubsKey = key; cutsKey = 'w';
-  host.innerHTML = '';
-  if (wcut.state !== 'ready') return;
-  renderSubs(wcut, host);
-  growSubs(host);
-}
-/// Where the subtitle block of a cut is on the page - the workshop's, when
-/// that cut is loaded there.
-function subsHost(c) { return mode === 'work' && wcut && wcut.id === c.id ? $('wSubs') : null; }
 
 /// The render row: the split button and five pills. A pill changes this
 /// rendering only and falls back to the cut's own value after it.
@@ -4248,7 +4326,11 @@ const QUALITY_LABEL = { h264: 'H.264', copy: 'As recorded' };
 const AFTER_LABEL = { keep: 'Keep everything', done: 'Mark done', recycle: 'Recycle recording' };
 const SUBS_LABEL = { none: 'None', burn: 'Burned in', track: 'As a track' };
 function renderRenderRow() {
-  const k = wcut, d = W_DEFAULTS(), p = wPick, copy = p.quality === 'copy';
+  const k = wcut, d = W_DEFAULTS(), p = wPick;
+  ['frame', 'quality', 'audio', 'after', 'subs'].forEach(f => { if (!wTouched.has(f)) p[f] = d[f]; });
+  const copy = p.quality === 'copy';
+  // a pill is marked when it was picked and differs from the cut
+  const ch = f => wTouched.has(f) && p[f] !== d[f];
   // "As recorded" copies the picture as it is: it cannot crop to 9:16, and
   // nothing can be drawn into it - subtitles ride along as a track
   if (copy) p.frame = 'wide';
@@ -4256,24 +4338,37 @@ function renderRenderRow() {
   const def = defaultTarget();
   $('bRender').innerHTML = `<svg class="icon"><use href="#i-share"/></svg> Render${def === 'file' ? '' : ' to ' + esc(targetLabel(def))} <kbd>Enter</kbd>`;
   $('bRender').disabled = k.state !== 'ready'; $('bRenderMenu').disabled = k.state !== 'ready';
-  pill('rFrame', 'Frame', FRAME_LABEL[p.frame], p.frame !== d.frame, copy, "'As recorded' keeps the frame as it was recorded - pick H.264 for 9:16");
-  // the big picture is the frame that is rendered
+  pill('rFrame', 'Frame', FRAME_LABEL[p.frame], ch('frame'), copy, "'As recorded' keeps the frame as it was recorded - pick H.264 for 9:16");
+  // the big picture is the frame that is rendered, moved by the window the
+  // cut keeps (since 3.12 stage b the slider sits by the frame choice)
   const vert = p.frame === 'vertical';
   $('wPlayer').classList.toggle('is-vertical', vert);
-  wv.style.objectPosition = vert ? `${(k.verticalPos != null ? k.verticalPos : 0.5) * 100}% 50%` : '';
-  pill('rQuality', 'Quality', QUALITY_LABEL[p.quality], p.quality !== d.quality);
-  pill('rAudio', 'Audio', audioLabel(p.audio), p.audio !== d.audio);
-  pill('rAfter', 'Afterwards', AFTER_LABEL[p.after], p.after !== d.after);
+  $('wVposRow').hidden = !vert;
+  if (document.activeElement !== $('wVpos')) $('wVpos').value = String(Math.round((k.verticalPos != null ? k.verticalPos : 0.5) * 100));
+  $('wVposVal').textContent = vposWords(wVposValue());
+  wv.style.objectPosition = vert ? `${wVposValue() * 100}% 50%` : '';
+  pill('rQuality', 'Quality', QUALITY_LABEL[p.quality], ch('quality'));
+  pill('rAudio', 'Audio', audioLabel(p.audio), ch('audio'));
+  pill('rAfter', 'Afterwards', AFTER_LABEL[p.after], ch('after'));
   $('rSubs').hidden = !cfg.subtitles;
-  if (cfg.subtitles) pill('rSubs', 'Subtitles', SUBS_LABEL[p.subs], p.subs !== d.subs);
+  // a transcription that runs has no lines to give yet: a rendering started
+  // now decides at once and carries none
+  const reading = cfg.subtitles && !wsHas() && wsReading();
+  const lang = (ws.id === k.id && ws.doc && ws.doc.language) || (k.subtitles && k.subtitles.language) || '';
+  if (cfg.subtitles && reading) pill('rSubs', 'Subtitles', 'not ready yet', false, true, 'A rendering started now carries no subtitles - they arrive when the transcription is done');
+  else if (cfg.subtitles) pill('rSubs', 'Subtitles', SUBS_LABEL[p.subs] + (p.subs !== 'none' && lang ? ' · ' + langName(lang) : ''), ch('subs'));
   document.querySelectorAll('#frameSeg button').forEach(b => { b.setAttribute('aria-pressed', b.dataset.frame === p.frame ? 'true' : 'false'); b.disabled = copy && b.dataset.frame === 'vertical'; });
   // what the rendering will cost, as the share row says it
   const len = Math.max(1, cutLen(k)), vertical = p.frame === 'vertical';
   if (copy) $('rPlan').innerHTML = cur.size && cur.duration ? `about <b>${(cur.size * len / cur.duration / 1048576).toFixed(0)} MB</b> as recorded` : 'as recorded';
   else { const pl = plan(len, vertical, limitsOf(def)); $('rPlan').innerHTML = `about <b>${pl.mb.toFixed(0)} MB</b> H.264${vertical ? ', 1080x1920' : pl.height ? `, ${pl.height}p` : ''}`; }
-  const changed = ['frame', 'quality', 'audio', 'after', 'subs'].some(f => p[f] !== d[f]);
-  $('rNote').hidden = !changed;
-  $('rNote').textContent = 'A pill changes this rendering only - the next one starts from the cut again.';
+  const changed = ['frame', 'quality', 'audio', 'after', 'subs'].some(ch);
+  // a cut with lines carries them (#52) - said once, where the choice is
+  const carries = cfg.subtitles && !changed && p.subs !== 'none' && d.subs !== 'none';
+  $('rNote').hidden = !changed && !carries;
+  $('rNote').textContent = changed ? 'A pill changes this rendering only - the next one starts from the cut again.'
+    : copy ? 'This cut has subtitles, so they ride along as a track unless you change it.'
+      : 'This cut has subtitles, so they are burned in unless you change it.';
 }
 function pillMenu(anchor, heading, options, value, set) {
   menuAt(anchor, [{ heading }].concat(options.map(o => ({ label: o.label, note: o.id === value ? 'chosen' : (o.note || ''), disabled: o.disabled, title: o.title, onclick: () => { set(o.id); wKey = ''; renderWorkshop(); } }))));
@@ -4286,6 +4381,10 @@ function menuAt(anchor, items) {
   const m = openMenuEl; if (!m || m.dataset.for !== anchor.dataset.menuId) return;
   m.classList.remove('right');
   m.style.left = anchor.offsetLeft + 'px'; m.style.right = 'auto';
+  // right under (or over) the button, not the whole holder: a look step
+  // is one row of several
+  if (m.classList.contains('up')) { m.style.top = 'auto'; m.style.bottom = (anchor.offsetParent.clientHeight - anchor.offsetTop + 4) + 'px'; }
+  else m.style.top = (anchor.offsetTop + anchor.offsetHeight + 4) + 'px';
   const over = m.getBoundingClientRect().right - (document.documentElement.clientWidth - MENU_EDGE);
   if (over > 0) m.style.left = Math.max(0, anchor.offsetLeft - over) + 'px';
 }
@@ -4299,7 +4398,7 @@ async function renderWork(target) {
   const k = wcut; if (!k || k.state !== 'ready') return;
   const p = wPick;
   const body = { mode: p.quality, audio: p.audio, after: p.after, vertical: p.frame === 'vertical' };
-  if (body.vertical) body.verticalPos = k.verticalPos != null ? k.verticalPos : 0.5;
+  if (body.vertical) body.verticalPos = wVposValue();
   if (cfg.subtitles) body.subtitles = p.subs;
   if (target) body.target = target;
   try {
@@ -4307,7 +4406,7 @@ async function renderWork(target) {
     if (!r.ok) { if (r.job) { followJob(r); toast(r.error, 'err'); } else toast(r.error, 'err'); return; }
     if (r.position > 0) toast(`Queued - ${r.position} job${r.position === 1 ? '' : 's'} ahead`);
     // the pills were for this one
-    wPick = W_DEFAULTS(); wKey = '';
+    wPick = W_DEFAULTS(); wTouched = new Set(); wKey = '';
     setBusy(true); followJob(r); renderWorkshop();
   } catch (e) { toast(e.message, 'err'); }
 }
@@ -4368,26 +4467,36 @@ function initWorkshop() {
   $('bCutMore').onclick = e => { e.stopPropagation(); menu($('bCutMore'), cutMoreMenu()); };
   $('bCutDel').onclick = () => wcut && deleteCut(wcut);
   $('bRange').onclick = showRange;
-  document.querySelectorAll('#frameSeg button').forEach(b => b.onclick = () => { if (b.disabled) return; wPick.frame = b.dataset.frame; wKey = ''; renderWorkshop(); });
-  $('rFrame').onclick = e => { e.stopPropagation(); pillMenu($('rFrame'), 'Frame', [{ id: 'wide', label: 'Landscape 16:9', note: 'as recorded' }, { id: 'vertical', label: 'Vertical 9:16', note: '1080x1920' }], wPick.frame, x => { wPick.frame = x; }); };
-  $('rQuality').onclick = e => { e.stopPropagation(); pillMenu($('rQuality'), 'Quality', [{ id: 'h264', label: 'H.264 (best quality)', note: 'plays everywhere' }, { id: 'copy', label: 'As recorded (no re-encode)', note: '16:9 only', disabled: wPick.frame === 'vertical', title: wPick.frame === 'vertical' ? 'A 9:16 rendering is always H.264 - pick Landscape 16:9 first' : '' }], wPick.quality, x => { wPick.quality = x; }); };
-  $('rAudio').onclick = e => { e.stopPropagation(); pillMenu($('rAudio'), 'Audio', cfg.audio.map(a => ({ id: a.id, label: a.label, disabled: (cur.tracks || 1) < a.need, title: (cur.tracks || 1) < a.need ? `the recording has only ${cur.tracks || 1} track(s)` : '' })), wPick.audio, x => { wPick.audio = x; }); };
-  $('rAfter').onclick = e => { e.stopPropagation(); pillMenu($('rAfter'), 'Afterwards', [{ id: 'keep', label: 'Keep everything' }, { id: 'done', label: 'Mark the recording done' }, { id: 'recycle', label: 'Recycle the recording', disabled: cur.file === null, note: 'the cut stays' }], wPick.after, x => { wPick.after = x; }); };
-  $('rSubs').onclick = e => { e.stopPropagation(); pillMenu($('rSubs'), 'Subtitles', [{ id: 'none', label: 'None' }, { id: 'burn', label: 'Burned in', disabled: wPick.quality === 'copy', title: wPick.quality === 'copy' ? "'As recorded' touches no frame - take the track" : '' }, { id: 'track', label: 'As a track' }], wPick.subs, x => { wPick.subs = x; }); };
+  document.querySelectorAll('#frameSeg button').forEach(b => b.onclick = () => { if (b.disabled) return; wPick.frame = b.dataset.frame; wTouched.add('frame'); wKey = ''; renderWorkshop(); });
+  $('rFrame').onclick = e => { e.stopPropagation(); pillMenu($('rFrame'), 'Frame', [{ id: 'wide', label: 'Landscape 16:9', note: 'as recorded' }, { id: 'vertical', label: 'Vertical 9:16', note: '1080x1920' }], wPick.frame, x => { wPick.frame = x; wTouched.add('frame'); }); };
+  $('rQuality').onclick = e => { e.stopPropagation(); pillMenu($('rQuality'), 'Quality', [{ id: 'h264', label: 'H.264 (best quality)', note: 'plays everywhere' }, { id: 'copy', label: 'As recorded (no re-encode)', note: '16:9 only', disabled: wPick.frame === 'vertical', title: wPick.frame === 'vertical' ? 'A 9:16 rendering is always H.264 - pick Landscape 16:9 first' : '' }], wPick.quality, x => { wPick.quality = x; wTouched.add('quality'); }); };
+  $('rAudio').onclick = e => { e.stopPropagation(); pillMenu($('rAudio'), 'Audio', cfg.audio.map(a => ({ id: a.id, label: a.label, disabled: (cur.tracks || 1) < a.need, title: (cur.tracks || 1) < a.need ? `the recording has only ${cur.tracks || 1} track(s)` : '' })), wPick.audio, x => { wPick.audio = x; wTouched.add('audio'); }); };
+  $('rAfter').onclick = e => { e.stopPropagation(); pillMenu($('rAfter'), 'Afterwards', [{ id: 'keep', label: 'Keep everything' }, { id: 'done', label: 'Mark the recording done' }, { id: 'recycle', label: 'Recycle the recording', disabled: cur.file === null, note: 'the cut stays' }], wPick.after, x => { wPick.after = x; wTouched.add('after'); }); };
+  $('rSubs').onclick = e => { e.stopPropagation(); pillMenu($('rSubs'), 'Subtitles', [{ id: 'none', label: 'None' }, { id: 'burn', label: 'Burned in', disabled: wPick.quality === 'copy', title: wPick.quality === 'copy' ? "'As recorded' touches no frame - take the track" : '' }, { id: 'track', label: 'As a track' }], wPick.subs, x => { wPick.subs = x; wTouched.add('subs'); }); };
   const ct = $('cutTitle');
   ct.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ct.blur(); } else if (e.key === 'Escape') { ct.value = wcut ? (wcut.title || '') : ''; ct.blur(); } });
   ct.addEventListener('blur', saveCutTitle);
 }
 // the keys of the workshop (see CUT_KEYS)
+// A letter with Ctrl, Cmd or Alt belongs to the browser (Ctrl+P prints).
+const plain = e => !e.ctrlKey && !e.metaKey && !e.altKey;
 const WORK_KEYS = {
   ' ': e => { e.preventDefault(); wToggle(); },
-  ArrowLeft: e => { e.preventDefault(); wSeek(wAt() - (e.shiftKey ? 5 : 1)); },
-  ArrowRight: e => { e.preventDefault(); wSeek(wAt() + (e.shiftKey ? 5 : 1)); },
+  // with Alt the edges of the selected line: the start, with Shift the end
+  // (Alt+Left is "Back" in the browser; preventDefault keeps the page)
+  ArrowLeft: e => { e.preventDefault(); if (e.altKey) wsNudge(e.shiftKey ? 'end' : 'start', -0.1); else wSeek(wAt() - (e.shiftKey ? 5 : 1)); },
+  ArrowRight: e => { e.preventDefault(); if (e.altKey) wsNudge(e.shiftKey ? 'end' : 'start', 0.1); else wSeek(wAt() + (e.shiftKey ? 5 : 1)); },
   ',': () => wSeek(wAt() - 1 / 60),
   '.': () => wSeek(wAt() + 1 / 60),
   Home: () => wSeek(0),
   End: () => wSeek(cutLen(wcut)),
-  w: e => { if (!e.ctrlKey && !e.metaKey && !e.altKey) nextCut(); },
+  w: e => { if (plain(e)) nextCut(); },
+  i: e => { if (plain(e)) wsStamp('start'); },
+  o: e => { if (plain(e)) wsStamp('end'); },
+  p: e => { if (plain(e)) wsPlayLine(); },
+  s: e => { if (plain(e)) wsSplit(); },
+  m: e => { if (plain(e)) wsMerge(); },
+  Delete: e => { if (wsHas()) { e.preventDefault(); wsDelete(); } },
   Enter: () => renderWork(''),
   Escape: () => { if (openMenuEl) closeMenu(); else if (!document.querySelector('.modal:not([hidden])') && $('navMenu').hidden) backToRecording(); },
 };
@@ -4399,7 +4508,7 @@ async function deleteCut(c) {
     const r = await api('/api/cuts/' + encodeURIComponent(c.id) + (remote ? '?remote=1' : ''), { method: 'DELETE' }, { retries: 0, timeout: 30000 });
     r.ok ? toast(`Cut deleted: ${r.recycled} file(s) in the ${trashName()}`, 'ok') : toast(r.error, 'err');
   } catch (e) { toast(e.message, 'err'); }
-  cutsKey = ''; poll.now();
+  poll.now();
 }
 /// Save the range as a cut and render nothing (since 3.0).
 async function saveCut() {
@@ -4409,321 +4518,621 @@ async function saveCut() {
   if ($('frame').value === 'vertical') { body.vertical = true; body.verticalPos = Number($('vpos').value) / 100; }
   try {
     const r = await api('/api/cuts', jsonOpts('POST', body), { retries: 0, timeout: 10000 });
-    if (!r.ok) { toast(r.cut ? 'This range is already a cut' : r.error, r.cut ? '' : 'err'); cutsKey = ''; poll.now(); return; }
+    if (!r.ok) { toast(r.cut ? 'This range is already a cut' : r.error, r.cut ? '' : 'err'); poll.now(); return; }
     toast(r.position > 0 ? `Queued - ${r.position} job${r.position === 1 ? '' : 's'} ahead` : 'Cutting …');
     followJob(r);
   } catch (e) { toast(e.message, 'err'); }
 }
 
 
-// ------------------------------------------------ subtitles on a cut (3.11)
-// Beta, and off unless `config.subtitles` says otherwise - then none of this
-// is built at all.
-//
-// What is being typed lives here and not in the DOM: the clip list rebuilds
-// itself whenever a job moves, and a correction has to survive that. While
-// anything is unsaved the list holds still (see `renderCuts`), so the text
-// under the cursor is never pulled away.
-const subsEdit = new Map();
-const subsOf = id => subsEdit.get(id) || null;
-const subsDirty = () => [...subsEdit.values()].some(s => s.dirty);
-function subsSet(id, patch) {
-  const s = Object.assign({ open: false, loading: false, segments: [], dirty: false }, subsEdit.get(id), patch);
-  subsEdit.set(id, s);
-  return s;
-}
-/// What makes the block redraw: the summary the list carries, and whether
-/// the editor under it is open.
-function subsKey(c) {
-  const s = subsOf(c.id), sum = c.subtitles;
-  return (sum ? `${sum.at}/${sum.count}/${sum.language}/${sum.model}/${sum.edited}` : '-')
-    + (s && s.open ? `+${s.loading ? 'loading' : 'open'}` : '');
-}
-
-/// The longest line of a segment - what the counter warns about. A subtitle
-/// wider than this runs past the picture on a phone.
-const SUB_LINE = 42;
+// ------------------------------------------------ subtitles in the workshop (3.12)
+// Beta, and only with `config.subtitles`. The lines of the loaded cut live
+// here while it is loaded: fetched once, changed in place, and saved by
+// themselves a moment after the last change - one PUT with the whole list,
+// never two at once. Times are the recording's, like `cut.start`; `wRec`
+// maps the player onto them. What the overlay looks like comes from the
+// same table the rendering burns in with (`GET /api/subtitles/looks`).
+const SUB_LINE = 42;         // a line wider than this runs past a phone's picture
+const SUB_MIN = 0.15;        // nothing shorter is a subtitle: it would flash and be gone
 const longestLine = t => Math.max(...String(t || '').split('\n').map(l => l.length), 0);
+const ws = { id: '', at: '', loading: false, segs: [], doc: null, sel: -1, rev: 0, savedRev: 0, saving: false, timer: null, error: '', savedAt: '', textFocus: false, caret: -1 };
+let LOOKS = null, wModels = null, wSubsSettings = null, wTr = null, wModelPoll = null, progJob = null;
 
-function subsSummaryText(sum) {
-  if (!sum) return 'not transcribed yet';
-  const parts = [sum.language || 'language not set', sum.model || 'typed by hand',
-    `${sum.count} segment${sum.count === 1 ? '' : 's'}`];
-  if (sum.source) parts.push(sum.source === 'mic' ? 'microphone' : 'mix');
-  if (sum.edited) parts.push('edited');
-  return parts.join(' · ');
+/// The table, the models and the defaults of Settings: asked for once when
+/// the workshop first opens with subtitles on, and again after a download.
+async function wsLoadInfo(force) {
+  if (!cfg.subtitles) return;
+  const want = [];
+  if (!LOOKS || force) want.push(api('/api/subtitles/looks', {}, { retries: 0 }).then(r => { LOOKS = r; }).catch(() => {}));
+  if (!wModels || force) want.push(api('/api/subtitles/models', {}, { retries: 0 }).then(r => { wModels = r; }).catch(() => {}));
+  if (!wSubsSettings) want.push(api('/api/settings', {}, { retries: 0 }).then(r => { wSubsSettings = r.subtitles || null; }).catch(() => {}));
+  if (!want.length) return;
+  await Promise.all(want);
+  if (mode === 'work') { wKey = ''; renderWorkshop(); }
+}
+const langName = code => { const l = wModels && (wModels.languages || []).find(x => x.id === code); return l ? l.label : (code || ''); };
+const wsLines = () => (mode === 'work' && wcut && ws.id === wcut.id) ? ws.segs : [];
+/// The cut has lines to show and correct: the split of F7, the lane and the
+/// inspector. While they are being fetched the summary answers.
+const wsHas = () => !!(cfg.subtitles && wcut && (ws.id === wcut.id ? (ws.segs.length || (ws.loading && wcut.subtitles && wcut.subtitles.count)) : false));
+
+/// Follow the loaded cut: a new cut fetches its lines, a transcription that
+/// finished (a new `at`) fetches them again - unless something is unsaved,
+/// which then wins and is saved over it.
+function wsFor(k) {
+  if (!cfg.subtitles || !k) return;
+  const sum = k.subtitles;
+  if (ws.id !== k.id) {
+    wsFlush();
+    Object.assign(ws, { id: k.id, at: '', loading: false, segs: [], doc: null, sel: -1, rev: 0, savedRev: 0, saving: false, timer: null, error: '', savedAt: '', textFocus: false, caret: -1 });
+  }
+  const at = sum ? `${sum.at}/${sum.model}` : '';
+  if (at === ws.at || ws.loading) return;
+  if (ws.rev !== ws.savedRev || ws.saving) return;
+  ws.at = at;
+  if (!sum || !sum.count) { ws.segs = []; ws.doc = null; ws.sel = -1; return; }
+  wsFetch(k);
+}
+async function wsFetch(k) {
+  ws.loading = true;
+  try {
+    const r = await api(`/api/cuts/${encodeURIComponent(k.id)}/subtitles`, {}, { retries: 0 });
+    if (ws.id !== k.id) return;
+    ws.doc = r.ok === false ? null : r;
+    // a line whisper heard in the keyframe before the range is inside the
+    // cut file but outside the cut; it is kept, moved to the cut's edge
+    ws.segs = (r.segments || []).map(s => ({ start: Math.max(s.start, k.start), end: Math.min(s.end, k.end), text: s.text }))
+      .filter(s => s.end - s.start >= 0.01);
+    ws.error = r.ok === false ? r.error : '';
+    ws.sel = ws.segs.length ? Math.max(0, wsLineAt(wRecSafe())) : -1;
+    if (ws.sel < 0 && ws.segs.length) ws.sel = 0;
+  } catch (e) { ws.error = e.message; }
+  ws.loading = false;
+  if (mode === 'work' && wcut && wcut.id === k.id) { wKey = ''; renderWorkshop(); }
+}
+const wRecSafe = () => (wv && wsrc && wsrc.url ? wRec() : (wcut ? wcut.start : 0));
+/// The line under a moment of the recording, or -1 in a gap.
+function wsLineAt(t) { return ws.segs.findIndex(s => t >= s.start && t < s.end); }
+
+// -------- saving
+/// Something changed: the lane, the transcript and the overlay follow at
+/// once, the service a moment later - 800 ms after typing, 300 ms after a
+/// button or a key.
+function wsChanged(delay) {
+  ws.rev++;
+  clearTimeout(ws.timer);
+  ws.timer = setTimeout(wsSave, delay);
+  wsDraw();
+}
+function wsBody() {
+  const segments = ws.segs.map(s => ({ start: Math.round(s.start * 1000) / 1000, end: Math.round(s.end * 1000) / 1000, text: String(s.text || '').trim() })).filter(s => s.text);
+  const body = { segments };
+  if (ws.doc && ws.doc.language) body.language = ws.doc.language;
+  return body;
+}
+async function wsSave() {
+  clearTimeout(ws.timer); ws.timer = null;
+  if (ws.saving || ws.rev === ws.savedRev || !ws.id) return;
+  const id = ws.id, rev = ws.rev;
+  ws.saving = true; wsBar();
+  try {
+    const r = await api(`/api/cuts/${encodeURIComponent(id)}/subtitles`, jsonOpts('PUT', wsBody()), { retries: 0, timeout: 10000 });
+    if (ws.id !== id) return;
+    if (!r.ok) ws.error = r.error || 'refused';
+    else {
+      ws.error = ''; ws.savedRev = rev; ws.doc = r.subtitles || null;
+      // our own save moves the summary on; that is no reason to fetch again
+      ws.at = r.subtitles ? `${r.subtitles.at}/${r.subtitles.model}` : '';
+      const d = new Date(); ws.savedAt = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
+  } catch (e) { if (ws.id === id) ws.error = e.message; }
+  if (ws.id !== id) return;
+  ws.saving = false;
+  // what changed meanwhile goes in the next one; a failure waits for the next edit
+  if (!ws.error && ws.rev !== ws.savedRev) ws.timer = setTimeout(wsSave, 300);
+  wsBar();
+}
+/// Leaving the cut or the page: what is waiting goes now. The request runs
+/// on its own; the lines it carries are the ones of the cut it was for.
+function wsFlush(keepalive) {
+  if (!ws.id || ws.rev === ws.savedRev) return;
+  clearTimeout(ws.timer); ws.timer = null;
+  if (keepalive) {
+    try { fetch(`/api/cuts/${encodeURIComponent(ws.id)}/subtitles`, Object.assign(jsonOpts('PUT', wsBody()), { keepalive: true })); } catch (e) { /* the page is going */ }
+    return;
+  }
+  if (!ws.saving) wsSave();
 }
 
-/// The block under a cut. `sum` is the summary the clip list carries; the
-/// segments themselves are fetched when the editor opens.
-function renderSubs(c, body) {
-  if (!cfg.subtitles || c.state === 'missing') return;
-  const s = subsOf(c.id), sum = c.subtitles, open = !!(s && s.open);
-  const sec = document.createElement('section'); sec.className = 'subs';
-  const head = document.createElement('div'); head.className = 'subs-head';
-  head.innerHTML = `<svg class="icon icon-sm"><use href="#i-subtitles"/></svg><b>Subtitles</b>`
-    + `<span class="badge">Beta</span><span class="muted sm summary"></span><div class="grow"></div>`;
-  head.querySelector('.summary').textContent = subsSummaryText(sum);
-  const primary = document.createElement('button'); primary.className = 'btn btn-sm';
-  if (sum) {
-    primary.textContent = open ? 'Hide' : 'Edit';
-    primary.onclick = e => { e.preventDefault(); toggleSubs(c); };
+// -------- editing
+/// The room a line has: its neighbours and the cut's range, and at least
+/// SUB_MIN of its own - so a PUT can never fail on an overlap or the range.
+function wsBounds(i) {
+  const s = ws.segs[i], prev = ws.segs[i - 1], next = ws.segs[i + 1];
+  return { lo: Math.max(wcut.start, prev ? prev.end : -Infinity), hi: Math.min(wcut.end, next ? next.start : Infinity), s };
+}
+function wsEdge(i, which, t) {
+  if (i < 0 || !ws.segs[i]) return false;
+  const { lo, hi, s } = wsBounds(i);
+  const r3 = x => Math.round(x * 1000) / 1000;
+  if (which === 'start') { const v = r3(Math.max(lo, Math.min(t, s.end - SUB_MIN))); if (v === s.start) return false; s.start = v; }
+  else { const v = r3(Math.min(hi, Math.max(t, s.start + SUB_MIN))); if (v === s.end) return false; s.end = v; }
+  return true;
+}
+function wsNudge(which, d) {
+  if (!wsHas() || ws.sel < 0) return;
+  const s = ws.segs[ws.sel];
+  if (wsEdge(ws.sel, which, s[which] + d)) { wsChanged(300); wSeek((which === 'start' ? s.start : Math.max(s.start, s.end - 0.5)) - wcut.start); }
+}
+/// `I` and `O`: the selected line's edge to the playhead. In a gap after the
+/// selected line "start here" can only mean the next line, and in a gap
+/// before it "end here" the line before - the one that is being heard out.
+function wsStamp(which) {
+  if (!wsHas()) return;
+  const t = wRec();
+  let i = ws.sel;
+  const s = ws.segs[i];
+  if (which === 'start' && (!s || t >= s.end - SUB_MIN)) i = ws.segs.findIndex(x => x.start > t - 0.001 && x.end > t);
+  if (which === 'end' && (!s || t <= s.start + SUB_MIN)) { i = -1; ws.segs.forEach((x, j) => { if (x.start < t) i = j; }); }
+  if (i < 0) { toast(`There is no line to ${which === 'start' ? 'start' : 'end'} here`); return; }
+  ws.sel = i;
+  if (wsEdge(i, which, t)) wsChanged(300); else wsDraw();
+}
+/// The line to split: the one the playhead is in, with room on both sides.
+function wsSplitAt() {
+  const t = wRecSafe(), i = wsLineAt(t);
+  if (i < 0) return null;
+  const s = ws.segs[i];
+  return t - s.start >= SUB_MIN && s.end - t >= SUB_MIN ? { i, t } : null;
+}
+function wsSplit() {
+  if (!wsHas()) return;
+  const at = wsSplitAt();
+  if (!at) { toast('Put the playhead inside a line, at least 0.15 s from its edges'); return; }
+  const s = ws.segs[at.i], text = s.text, frac = (at.t - s.start) / (s.end - s.start);
+  // the text: where the cursor was, when the field had it last; else the
+  // word boundary nearest to where the time is split
+  let cut = ws.textFocus && ws.sel === at.i && ws.caret > 0 && ws.caret < text.length ? ws.caret : -1;
+  if (cut < 0) {
+    const want = text.length * frac, gaps = [];
+    for (let j = 1; j < text.length; j++) if (/\s/.test(text[j]) && !/\s/.test(text[j - 1])) gaps.push(j);
+    cut = gaps.length ? gaps.reduce((a, b) => Math.abs(b - want) < Math.abs(a - want) ? b : a) : Math.round(want);
+  }
+  const head = text.slice(0, cut).trim(), tail = text.slice(cut).trim();
+  const t = Math.round(at.t * 1000) / 1000;
+  ws.segs.splice(at.i, 1, { start: s.start, end: t, text: head || tail }, { start: t, end: s.end, text: head ? tail || '…' : '…' });
+  ws.sel = at.i + 1; ws.caret = -1;
+  wsChanged(300);
+}
+/// Delete and merge ask nothing and offer Undo instead, like Mark done.
+function wsWithUndo(what, change) {
+  const before = ws.segs.map(s => Object.assign({}, s)), sel = ws.sel, id = ws.id;
+  change();
+  wsChanged(300);
+  toast(what, 'info', { label: 'Undo', onclick: () => { if (ws.id !== id) return; ws.segs = before; ws.sel = sel; wsChanged(300); } });
+}
+function wsMerge() {
+  if (!wsHas() || ws.sel < 0 || ws.sel >= ws.segs.length - 1) return;
+  wsWithUndo('Lines merged', () => {
+    const a = ws.segs[ws.sel], b = ws.segs[ws.sel + 1];
+    ws.segs.splice(ws.sel, 2, { start: a.start, end: b.end, text: `${a.text.trim()} ${b.text.trim()}`.trim() });
+  });
+}
+function wsDelete() {
+  if (!wsHas() || ws.sel < 0) return;
+  wsWithUndo('Line deleted', () => {
+    ws.segs.splice(ws.sel, 1);
+    ws.sel = Math.min(ws.sel, ws.segs.length - 1);
+  });
+}
+/// Play the selected line from its start and stop at its end.
+let wsStop = null;
+function wsPlayLine() {
+  if (!wsHas() || ws.sel < 0 || !wsrc || !wsrc.url) return;
+  const s = ws.segs[ws.sel];
+  if (wsStop) wv.removeEventListener('timeupdate', wsStop);
+  wSeek(s.start - wcut.start);
+  const end = s.end;
+  wsStop = () => { if (wRec() < end - 0.01) return; wv.pause(); wv.removeEventListener('timeupdate', wsStop); wsStop = null; };
+  wv.addEventListener('timeupdate', wsStop);
+  wv.play().catch(() => {});
+}
+function wsSelect(i, seek) {
+  if (i < 0 || i >= ws.segs.length) return;
+  ws.sel = i; ws.caret = -1;
+  if (seek) wSeek(ws.segs[i].start - wcut.start + 0.001);
+  wsDraw();
+}
+/// While it plays, the selection follows the line that is heard - unless
+/// somebody is typing, then the line under the cursor stays.
+function wsFollow() {
+  if (!wsHas() || ws.textFocus || !wsrc || !wsrc.url) return;
+  const i = wsLineAt(wRec());
+  if (i >= 0 && i !== ws.sel) { ws.sel = i; wsDraw(); }
+}
+
+// -------- drawing
+let wsLaneKey = '', wsListKey = '';
+/// Everything of the lines, after a change of the lines or of the selection.
+function wsDraw() {
+  if (mode !== 'work' || !wcut) return;
+  const has = wsHas();
+  const layout = $('workshop').classList.contains('has-subs');
+  if (has !== layout) { wKey = ''; renderWorkshop(); return; }
+  if (!has) return;
+  wsLane(); wsInspector(); wsTranscript(); wsBar(); wsOverlay(true); renderRenderRow();
+}
+function wsLane() {
+  const lane = $('lane'), k = wcut, len = cutLen(k) || 1;
+  const key = JSON.stringify([k.id, k.start, k.end, ws.segs, ws.sel]);
+  if (key === wsLaneKey) return;
+  wsLaneKey = key;
+  const focused = lane.contains(document.activeElement);
+  lane.innerHTML = '';
+  ws.segs.forEach((s, i) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'block' + (i === ws.sel ? ' is-selected' : '');
+    b.setAttribute('role', 'option'); b.setAttribute('aria-selected', i === ws.sel ? 'true' : 'false');
+    b.tabIndex = i === ws.sel ? 0 : -1;
+    b.style.left = ((s.start - k.start) / len * 100) + '%';
+    b.style.width = ((s.end - s.start) / len * 100) + '%';
+    b.textContent = s.text.replace(/\n/g, ' ');
+    b.setAttribute('aria-label', `${s.text.replace(/\n/g, ' ')}, ${fmt(s.start - k.start)} to ${fmt(s.end - k.start)}`);
+    b.onclick = () => wsSelect(i, true);
+    lane.appendChild(b);
+  });
+  const ph = document.createElement('div'); ph.className = 'playhead'; lane.appendChild(ph);
+  if (focused && lane.children[ws.sel]) lane.children[ws.sel].focus();
+  wsPlayhead();
+}
+function wsPlayhead() {
+  const ph = $('lane').querySelector('.playhead'); if (!ph || !wcut) return;
+  const len = cutLen(wcut) || 1;
+  ph.style.left = (Math.max(0, Math.min(len, wRecSafe() - wcut.start)) / len * 100) + '%';
+}
+function wsInspector() {
+  const s = ws.segs[ws.sel], text = $('lineText');
+  $('liWhich').textContent = s ? `Line ${ws.sel + 1} of ${ws.segs.length}` : 'No line selected';
+  if (s) {
+    const d = s.end - s.start, chars = s.text.replace(/\n/g, '').length, long = longestLine(s.text);
+    $('liTimes').textContent = `${d.toFixed(1)} s · ${chars} chars · ${(chars / Math.max(d, 0.1)).toFixed(1)} per second` + (long > SUB_LINE ? ` · longest line ${long} > ${SUB_LINE}` : '');
+    $('liTimes').classList.toggle('warn', long > SUB_LINE);
+  } else $('liTimes').textContent = '';
+  if (document.activeElement !== text) text.value = s ? s.text : '';
+  text.disabled = !s;
+  ['liPlay', 'liDel', 'liIn', 'liOut'].forEach(id => { $(id).disabled = !s; });
+  document.querySelectorAll('#inspector [data-nudge]').forEach(b => { b.disabled = !s; });
+  $('liMerge').disabled = !s || ws.sel >= ws.segs.length - 1;
+  wsTimingLine();
+}
+/// The one part of the inspector that moves with the playhead.
+function wsTimingLine() {
+  if (!wsHas()) return;
+  $('liAt').textContent = `Timing · playhead ${fmt(Math.max(0, wRecSafe() - wcut.start))}`;
+  $('liSplit').disabled = !wsSplitAt();
+}
+function wsTranscript() {
+  const box = $('transcript'), k = wcut;
+  const key = JSON.stringify([k.id, ws.segs, ws.sel]);
+  if (key === wsListKey) return;
+  wsListKey = key;
+  box.innerHTML = '';
+  ws.segs.forEach((s, i) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'tline' + (i === ws.sel ? ' is-current' : '');
+    if (i === ws.sel) b.setAttribute('aria-current', 'true');
+    b.innerHTML = '<span class="t"></span><span class="txt"></span>';
+    b.firstChild.textContent = fmt(s.start - k.start);
+    b.lastChild.textContent = s.text.replace(/\n/g, ' ');
+    b.onclick = () => wsSelect(i, true);
+    box.appendChild(b);
+  });
+  const cur = box.children[ws.sel];
+  if (cur) { const top = cur.offsetTop - box.offsetTop; if (top < box.scrollTop || top > box.scrollTop + box.clientHeight - cur.offsetHeight) box.scrollTop = top - box.clientHeight / 3; }
+}
+function wsBar() {
+  if (!wsHas()) return;
+  const d = ws.doc || {}, n = ws.segs.length;
+  const lang = d.language ? langName(d.language) : 'language not set';
+  const state = ws.saving ? 'saving …' : ws.error ? `not saved - ${ws.error}` : ws.rev !== ws.savedRev ? 'saving …' : ws.savedAt ? `saved ${ws.savedAt}` : (d.edited ? 'corrected' : `read by ${d.model || 'hand'}`);
+  $('subState').textContent = `As spoken · ${lang} · ${n} line${n === 1 ? '' : 's'} · ${state}`;
+  $('subState').classList.toggle('err', !!ws.error);
+  $('subSrt').href = `/api/cuts/${encodeURIComponent(wcut.id)}/subtitles?format=srt`;
+}
+
+// -------- the overlay and the other frame
+/// The picture inside an element that shows a video: what `object-fit`
+/// leaves of it, in the coordinates of the element's positioned parent.
+function pictureBox(el, cover) {
+  const x = el.offsetLeft + el.clientLeft, y = el.offsetTop + el.clientTop, w = el.clientWidth, h = el.clientHeight;
+  const vw = wv.videoWidth || 16, vh = wv.videoHeight || 9;
+  if (cover || !w || !h) return { x, y, w, h };
+  const s = Math.min(w / vw, h / vh), pw = vw * s, ph = vh * s;
+  return { x: x + (w - pw) / 2, y: y + (h - ph) / 2, w: pw, h: ph };
+}
+/// A `.sub-overlay` over a picture, from the look table: the font size is
+/// libass's, turned into the em a browser sizes by; outline and shadow
+/// stay inside the margin as they do in libass, a box grows out of it.
+function placeOverlay(el, look, vertical, box, text) {
+  const L = LOOKS;
+  if (!L || !look || !text || !box.w) { el.hidden = true; return; }
+  const f = L.frames[vertical ? 'vertical' : 'wide'], c = L.color[look.color] || L.color.white;
+  const size = f.size[look.size] / 100 * box.h, pos = f.position[look.position] || f.position.lower;
+  const side = f.side / 100 * box.w, margin = pos.margin / 100 * box.h;
+  const edge = c.box ? 0 : c.outline * size, drop = c.box ? 0 : c.shadow * size;
+  const s = el.style;
+  s.cssText = '';
+  Object.assign(s, {
+    position: 'absolute', left: (box.x + side) + 'px', right: 'auto', width: Math.max(0, box.w - 2 * side) + 'px',
+    fontFamily: '"RC Subs", sans-serif', fontWeight: '700', fontSize: (size * L.emPerSize) + 'px', lineHeight: size + 'px',
+    color: c.text, textAlign: 'center', whiteSpace: 'pre-line', textWrap: 'balance', background: 'none', padding: '0', textShadow: 'none',
+  });
+  if (pos.align === 'bottom') { s.top = 'auto'; s.bottom = ((el.parentElement ? el.parentElement.clientHeight : 0) - (box.y + box.h) + margin + edge + drop) + 'px'; }
+  else if (pos.align === 'top') { s.bottom = 'auto'; s.top = (box.y + margin + edge) + 'px'; }
+  else { s.bottom = 'auto'; s.top = (box.y + box.h / 2) + 'px'; s.transform = 'translateY(-50%)'; }
+  if (c.box) {
+    const pad = c.pad * size;
+    el.innerHTML = String(text).split('\n').map(l => `<span style="background:rgba(0,0,0,${c.box});padding:${pad}px;box-decoration-break:clone;-webkit-box-decoration-break:clone">${esc(l)}</span>`).join('<br>');
   } else {
-    primary.textContent = 'Transcribe';
-    primary.title = 'Read the speech of this cut on this PC';
-    primary.onclick = e => { e.preventDefault(); transcribeCut(c); };
+    el.textContent = text;
+    s.webkitTextStroke = (2 * c.outline * size) + 'px #000';
+    s.paintOrder = 'stroke fill';
+    const sh = c.shadow * size;
+    s.textShadow = `${sh}px ${sh}px 0 rgba(0,0,0,.5)`;
   }
-  head.appendChild(primary);
-  // without a transcript the menu would only repeat the button beside it
-  if (sum) head.appendChild(moreButton(() => subsMenu(c, sum)));
-  sec.appendChild(head);
-  if (open) sec.appendChild(subsEditor(c, s));
-  body.appendChild(sec);
+  el.hidden = false;
 }
+/// The look of this cut for a frame, and the one Settings gives it.
+function wsLook(frame) {
+  const own = wcut && wcut.look && wcut.look[frame];
+  const def = LOOKS && LOOKS.defaults ? LOOKS.defaults[frame] : { position: 'lower', size: 'm', color: 'white' };
+  return { look: own || def, own: !!own, def };
+}
+let wsOvKey = '';
+/// The line at the playhead over the picture. While the text field has the
+/// focus and the playhead is in a gap, the line being typed is shown, so
+/// the picture and the field are on screen together (#55).
+function wsOverlay(force) {
+  const ov = $('wSub'), fp = $('fpSub');
+  if (!wsHas() || !LOOKS) { ov.hidden = true; fp.hidden = true; return; }
+  const t = wRecSafe();
+  let i = wsLineAt(t);
+  if (i < 0 && ws.textFocus) i = ws.sel;
+  const s = ws.segs[i], vert = wPick.frame === 'vertical', el = wv;
+  const box = pictureBox(el, vert);
+  const key = JSON.stringify([i, s && s.text, wPick.frame, box, wcut.look, LOOKS.defaults, ws.textFocus && i === ws.sel]);
+  if (!force && key === wsOvKey) return;
+  wsOvKey = key;
+  placeOverlay(ov, wsLook(wPick.frame).look, vert, box, s ? s.text : '');
+  ov.classList.toggle('is-selected', !!s && ws.textFocus && i === ws.sel);
+  // the other frame: 9:16 beside a 16:9 picture gets its line too
+  if (!vert && !$('wFrames').hidden) {
+    const fb = $('fpBox');
+    placeOverlay(fp, wsLook('vertical').look, true, { x: 0, y: 0, w: fb.clientWidth, h: fb.clientHeight }, s ? s.text : '');
+  } else fp.hidden = true;
+}
+/// The other frame, drawn from the player: beside 16:9 the 9:16 window with
+/// the band a Short covers, beside 9:16 the whole picture and the window.
+let fpAt = -1;
+function wsPreview(force) {
+  const box = $('fpBox'), cv = $('framePreview');
+  if ($('wFrames').hidden || !wsrc || !wsrc.url || !wv.videoWidth) return;
+  if (!force && Math.abs(wv.currentTime - fpAt) < 0.02) return;
+  fpAt = wv.currentTime;
+  const vert = wPick.frame === 'vertical', pos = wVposValue();
+  const w = box.clientWidth, h = box.clientHeight, dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (cv.width !== Math.round(w * dpr)) cv.width = Math.round(w * dpr);
+  if (cv.height !== Math.round(h * dpr)) cv.height = Math.round(h * dpr);
+  const g = cv.getContext('2d'), vw = wv.videoWidth, vh = wv.videoHeight;
+  try {
+    if (!vert) { const cw = vh * 9 / 16; g.drawImage(wv, (vw - cw) * pos, 0, cw, vh, 0, 0, cv.width, cv.height); }
+    else g.drawImage(wv, 0, 0, vw, vh, 0, 0, cv.width, cv.height);
+  } catch (e) { /* a frame that is not there yet */ }
+  if (vert) { const share = (vh * 9 / 16) / vw * 100; const win = $('fpWindow'); win.style.width = share + '%'; win.style.left = ((100 - share) * pos) + '%'; }
+}
+const wVposValue = () => { const r = $('wVpos'); return r && !$('wVposRow').hidden ? Number(r.value) / 100 : (wcut && wcut.verticalPos != null ? wcut.verticalPos : 0.5); };
+const vposWords = p => p <= 0.02 ? 'Left edge' : p >= 0.98 ? 'Right edge' : Math.abs(p - 0.5) < 0.02 ? 'Centre' : `${Math.round(p * 100)} %`;
 
-/// The menu of a transcript: read it again, or from the other track, and
-/// take it along or away. Model and language are chosen once, in Settings;
-/// until 3.11.1 the menu offered every model and all ten languages as well,
-/// over twenty rows for a choice nobody makes twice (#54). The API still
-/// takes both.
-function subsMenu(c, sum) {
-  const items = [{ heading: 'Subtitles' }];
-  items.push({
-    label: 'Transcribe again', icon: 'i-refresh',
-    title: 'Read the speech of this cut again, with the model and language from Settings',
-    onclick: () => transcribeCut(c, sum.edited)
+// -------- the side column: frames and look, or what to do about subtitles
+const LOOK_WORDS = {
+  position: { lower: 'Lower third', middle: 'Middle', top: 'Top' },
+  size: { s: 'S', m: 'M', l: 'L' },
+  color: { white: 'White with shadow', box: 'White on a dark box', yellow: 'Yellow with shadow' },
+};
+const lookWords = l => `${LOOK_WORDS.position[l.position] || l.position} · ${LOOK_WORDS.size[l.size] || l.size} · ${(LOOK_WORDS.color[l.color] || l.color).toLowerCase()}`;
+function wsLookBox() {
+  const frame = wPick.frame, { look, own, def } = wsLook(frame), box = $('look');
+  // rebuilt only when it shows something else: an open step menu hangs in it
+  const key = JSON.stringify([frame, look, own, def]);
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.classList.toggle('is-changed', own);
+  box.innerHTML = `<div class="head"><span class="section-title grow">Look · ${FRAME_LABEL[frame]} · this cut</span>${own ? '<span class="badge warn">differs from the default</span>' : '<span class="faint xs">as in Settings</span>'}</div>`;
+  box.title = 'Named steps, because the rendering is done by libass: the overlay here is the browser\'s and will be close, not identical.';
+  ['position', 'size', 'color'].forEach(step => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'step'; b.setAttribute('aria-haspopup', 'true');
+    b.innerHTML = `${{ position: 'Position', size: 'Size', color: 'Colour' }[step]} <b>${esc(LOOK_WORDS[step][look[step]] || look[step])}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg>`;
+    b.onclick = e => { e.stopPropagation(); menuAt(b, [{ heading: `${{ position: 'Position', size: 'Size', color: 'Colour' }[step]} in ${FRAME_LABEL[frame]}` }].concat(Object.entries(LOOK_WORDS[step]).map(([id, label]) => ({ label, note: id === look[step] ? 'chosen' : id === def[step] ? 'default' : '', onclick: () => wsSetLook(frame, Object.assign({}, look, { [step]: id })) })))); };
+    box.appendChild(b);
   });
-  // the other of the two tracks speech is read from - unless the recording
-  // has only the one, or the lines were typed and came from no track
-  const other = sum.source === 'mic' ? 'mix' : sum.source === 'mix' ? 'mic' : '';
-  const tracks = cur && cur.base === c.base ? cur.tracks : 0;
-  if (other && tracks !== 1) items.push({
-    label: 'From the other track', icon: 'i-subtitles', note: other === 'mic' ? 'microphone' : 'mix',
-    title: `Read the speech of this cut again, from the ${other === 'mic' ? 'microphone' : 'mix of all tracks'}`,
-    onclick: () => transcribeCut(c, sum.edited, { source: other })
-  });
-  const name = encodeURIComponent(c.id);
-  items.push('hr');
-  items.push({ label: 'Export as SRT', icon: 'i-download', href: `/api/cuts/${name}/subtitles?format=srt`, download: '' });
-  items.push({ label: 'Export as VTT', icon: 'i-download', href: `/api/cuts/${name}/subtitles?format=vtt`, download: '' });
-  items.push('hr');
-  items.push({ label: 'Delete the subtitles', icon: 'i-trash', danger: true, onclick: () => deleteSubs(c) });
-  return items;
-}
-
-async function toggleSubs(c) {
-  const s = subsOf(c.id);
-  if (s && s.open) {
-    if (s.dirty && !confirm('Close and lose the corrections that are not saved?')) return;
-    subsEdit.delete(c.id); cutsKey = ''; renderCuts(); return;
+  if (own) {
+    const n = document.createElement('span'); n.className = 'muted xs'; n.textContent = `Default for ${FRAME_LABEL[frame]}: ${lookWords(def)}`; box.appendChild(n);
+    const r = document.createElement('button'); r.type = 'button'; r.className = 'btn btn-sm'; r.innerHTML = '<svg class="icon icon-sm"><use href="#i-refresh"/></svg> Reset to default';
+    r.onclick = () => wsSetLook(frame, null); box.appendChild(r);
   }
-  subsSet(c.id, { open: true, loading: true, error: '' });
-  cutsKey = ''; renderCuts();
+}
+/// A look is kept at once, with the cut - not with this one rendering.
+async function wsSetLook(frame, look) {
+  const k = wcut; if (!k) return;
+  const same = look && LOOKS && LOOKS.defaults && ['position', 'size', 'color'].every(x => look[x] === LOOKS.defaults[frame][x]);
   try {
-    const r = await api(`/api/cuts/${encodeURIComponent(c.id)}/subtitles`, {}, { retries: 0 });
-    if (r.ok === false) subsSet(c.id, { loading: false, error: r.error, segments: [] });
-    else subsSet(c.id, { loading: false, error: '', doc: r, segments: (r.segments || []).map(x => Object.assign({}, x)), dirty: false });
-  } catch (e) { subsSet(c.id, { loading: false, error: e.message }); }
-  cutsKey = ''; renderCuts();
-}
-
-/// Redraw the list in place. A full `renderCuts` would take the focus out of
-/// the field somebody is typing in.
-function redrawSubs(c) {
-  const row = subsHost(c);   // since 3.12 the block lives in the workshop
-  const sec = row && row.querySelector('.subs');
-  const s = subsOf(c.id);
-  if (!sec || !s) return;
-  const old = sec.querySelector('.subs-editor');
-  const next = subsEditor(c, s);
-  old ? sec.replaceChild(next, old) : sec.appendChild(next);
-  growSubs(sec);
-}
-
-function subsEditor(c, s) {
-  const box = document.createElement('div'); box.className = 'subs-editor';
-  if (s.loading) { box.innerHTML = '<div class="note"><span class="spinner"></span> reading …</div>'; return box; }
-  if (s.error) { const n = document.createElement('div'); n.className = 'note'; n.textContent = s.error; box.appendChild(n); return box; }
-
-  const list = document.createElement('div'); list.className = 'subs-list';
-  s.segments.forEach((seg, i) => list.appendChild(subsRow(c, s, seg, i)));
-  if (!s.segments.length) {
-    const n = document.createElement('div'); n.className = 'note';
-    n.textContent = 'No segments. "Transcribe again" reads the speech once more.';
-    list.appendChild(n);
-  }
-  box.appendChild(list);
-
-  const foot = document.createElement('div'); foot.className = 'subs-foot';
-  const save = document.createElement('button'); save.className = 'btn btn-sm btn-primary';
-  save.textContent = s.saving ? 'Saving …' : 'Save';
-  save.disabled = !s.dirty || s.saving;
-  save.onclick = e => { e.preventDefault(); saveSubs(c); };
-  foot.appendChild(save);
-  if (s.dirty) {
-    const undo = document.createElement('button'); undo.className = 'btn btn-sm btn-ghost';
-    undo.textContent = 'Discard';
-    undo.onclick = e => { e.preventDefault(); subsSet(c.id, { segments: (s.doc && s.doc.segments || []).map(x => Object.assign({}, x)), dirty: false }); redrawSubs(c); };
-    foot.appendChild(undo);
-  }
-  const hint = document.createElement('span'); hint.className = 'muted';
-  hint.textContent = s.dirty ? 'not saved yet' : `${s.segments.length} segment${s.segments.length === 1 ? '' : 's'}`;
-  foot.appendChild(hint);
-  box.appendChild(foot);
-  return box;
-}
-
-/// Size every subtitle field to its text. A field can only measure itself
-/// once it is on the page, so this runs after the list has been built - not
-/// from inside the builder, whose element a second rebuild may already have
-/// replaced.
-function growSubs(root) {
-  (root || document).querySelectorAll('.subs textarea').forEach(grow);
-}
-
-function subsRow(c, s, seg, i) {
-  const row = document.createElement('div'); row.className = 'subrow'; row.dataset.i = String(i);
-  const top = document.createElement('div'); top.className = 'subrow-top';
-  const time = document.createElement('button'); time.className = 'btn btn-ghost btn-sm time';
-  time.textContent = `${fmt(seg.start)} → ${fmt(seg.end)}`;
-  time.title = 'Play this segment';
-  time.onclick = e => { e.preventDefault(); playSegment(c, seg, row); };
-  top.appendChild(time);
-  const count = document.createElement('span'); count.className = 'count';
-  const setCount = t => { const n = longestLine(t); count.textContent = String(n); count.classList.toggle('warn', n > SUB_LINE); };
-  setCount(seg.text);
-  top.appendChild(count);
-  top.appendChild(moreButton(() => [
-    { heading: `Segment ${i + 1}` },
-    { label: 'Split at the cursor', icon: 'i-cut-in', onclick: () => splitSegment(c, i) },
-    { label: 'Merge with the next', icon: 'i-undo', disabled: i >= s.segments.length - 1, onclick: () => mergeSegment(c, i) },
-    'hr',
-    { label: 'Delete this segment', icon: 'i-trash', danger: true, onclick: () => removeSegment(c, i) },
-  ]));
-  row.appendChild(top);
-
-  const text = document.createElement('textarea');
-  text.className = 'input sub-text'; text.rows = 1; text.value = seg.text;
-  text.spellcheck = false;
-  text.oninput = () => { seg.text = text.value; setCount(text.value); grow(text); if (!s.dirty) { subsSet(c.id, { dirty: true }); redrawFoot(c); } };
-  row.appendChild(text);
-  return row;
-}
-
-/// A subtitle is one to three lines and the field shows all of them. A fixed
-/// height would cut the end off a long line on a phone, which is exactly
-/// where the long ones are hardest to read.
-function grow(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.max(el.scrollHeight, 34) + 'px';
-}
-
-/// Only the footer, so that the Save button lights up without the field
-/// under the cursor being rebuilt.
-function redrawFoot(c) {
-  const row = subsHost(c);   // since 3.12 the block lives in the workshop
-  const box = row && row.querySelector('.subs-editor');
-  const s = subsOf(c.id);
-  if (!box || !s) return;
-  const old = box.querySelector('.subs-foot');
-  const next = subsEditor(c, s).querySelector('.subs-foot');
-  if (old && next) box.replaceChild(next, old);
-}
-
-/// Play from the start of a segment and stop where it ends.
-let subsStop = null, subsStopOn = null;
-function playSegment(c, seg, row) {
-  // since 3.12 the block sits in the workshop and plays there, on the cut's
-  // own player; a segment's times are the recording's, `wRec` maps them
-  const work = mode === 'work' && wcut && wcut.id === c.id && wsrc && wsrc.url;
-  if (!work && (!v || !v.getAttribute('src') || !cur || cur.base !== c.base)) { toast('The recording is not on screen', 'err'); return; }
-  const p = work ? wv : v, now = () => work ? wRec() : v.currentTime;
-  document.querySelectorAll('.subrow.is-playing').forEach(r => r.classList.remove('is-playing'));
-  row.classList.add('is-playing');
-  if (subsStop) { subsStopOn.removeEventListener('timeupdate', subsStop); subsStop = null; }
-  if (work) wSeek(seg.start - wcut.start); else seek(seg.start);
-  subsStop = () => {
-    if (now() < seg.end) return;
-    p.pause(); p.removeEventListener('timeupdate', subsStop); subsStop = null;
-    row.classList.remove('is-playing');
-  };
-  subsStopOn = p;
-  p.addEventListener('timeupdate', subsStop);
-  p.play().catch(() => {});
-}
-
-function splitSegment(c, i) {
-  const s = subsOf(c.id); if (!s) return;
-  const host = subsHost(c), row = host && host.querySelector(`.subrow[data-i="${i}"] textarea`);
-  const seg = s.segments[i];
-  const at = row && row.selectionStart > 0 && row.selectionStart < seg.text.length ? row.selectionStart : Math.floor(seg.text.length / 2);
-  const head = seg.text.slice(0, at).trim(), tail = seg.text.slice(at).trim();
-  if (!head || !tail) { toast('Put the cursor where the line should break', 'err'); return; }
-  // the time is shared out the way the characters are
-  const cutAt = Math.round((seg.start + (seg.end - seg.start) * (at / seg.text.length)) * 1000) / 1000;
-  s.segments.splice(i, 1,
-    { start: seg.start, end: cutAt, text: head },
-    { start: cutAt, end: seg.end, text: tail });
-  subsSet(c.id, { dirty: true }); redrawSubs(c);
-}
-
-function mergeSegment(c, i) {
-  const s = subsOf(c.id); if (!s || i >= s.segments.length - 1) return;
-  const a = s.segments[i], b = s.segments[i + 1];
-  s.segments.splice(i, 2, { start: a.start, end: b.end, text: `${a.text.trim()} ${b.text.trim()}`.trim() });
-  subsSet(c.id, { dirty: true }); redrawSubs(c);
-}
-
-function removeSegment(c, i) {
-  const s = subsOf(c.id); if (!s) return;
-  s.segments.splice(i, 1);
-  subsSet(c.id, { dirty: true }); redrawSubs(c);
-}
-
-async function saveSubs(c) {
-  const s = subsOf(c.id); if (!s) return;
-  const segments = s.segments
-    .map(x => ({ start: x.start, end: x.end, text: String(x.text || '').trim() }))
-    .filter(x => x.text);
-  subsSet(c.id, { saving: true }); redrawFoot(c);
-  try {
-    const body = { segments };
-    if (s.doc && s.doc.language) body.language = s.doc.language;
-    const r = await api(`/api/cuts/${encodeURIComponent(c.id)}/subtitles`, jsonOpts('PUT', body), { retries: 0, timeout: 10000 });
-    if (!r.ok) { toast(r.error, 'err'); subsSet(c.id, { saving: false }); redrawFoot(c); return; }
-    const doc = r.subtitles;
-    subsSet(c.id, { saving: false, dirty: false, doc, segments: ((doc && doc.segments) || []).map(x => Object.assign({}, x)) });
-    toast(segments.length ? 'Subtitles saved' : 'Subtitles removed', 'ok');
-  } catch (e) { toast(e.message, 'err'); subsSet(c.id, { saving: false }); }
-  cutsKey = ''; poll.now();
-}
-
-async function deleteSubs(c) {
-  if (!confirm('Delete the subtitles of this cut?\n\nThe cut and everything it produced stay.')) return;
-  try {
-    const r = await api(`/api/cuts/${encodeURIComponent(c.id)}/subtitles`, { method: 'DELETE' }, { retries: 0 });
+    const r = await api('/api/cuts/' + encodeURIComponent(k.id), jsonOpts('PUT', { look: { [frame]: same ? null : look } }), { retries: 0 });
     if (!r.ok) { toast(r.error, 'err'); return; }
-    subsEdit.delete(c.id); toast('Subtitles deleted', 'ok');
+    k.look = r.cut.look; wKey = ''; renderWorkshop();
   } catch (e) { toast(e.message, 'err'); }
-  cutsKey = ''; poll.now();
 }
-
-async function transcribeCut(c, warn, how) {
-  if (warn && !confirm('Read the speech again and replace the corrections you made?')) return;
+/// The running job, when it reads the speech of this cut; and whether one
+/// waits for it.
+function wsReading() {
+  const k = wcut; if (!k) return null;
+  if (progJob && progJob.cut === k.id && (progJob.kind === 'transcribe' || progJob.stage === 'transcribe')) return progJob;
+  const waiting = ((stateDoc && stateDoc.queue) || []).find(id => queueJobs[id] && queueJobs[id].kind === 'transcribe' && queueJobs[id].cut === k.id);
+  return waiting ? Object.assign({ waiting: true }, queueJobs[waiting]) : null;
+}
+/// The side card of a cut without lines (F5, F6, F11b): transcribe it, it
+/// is being transcribed, or the model has to come first.
+function wsSubsCard() {
+  const body = $('wSubsBody'), k = wcut, job = wsReading();
+  const models = (wModels && wModels.models) || [], wanted = (wSubsSettings && wSubsSettings.model) || 'small';
+  const model = models.find(m => m.name === wanted) || models.find(m => m.state === 'ready');
+  const secs = Math.max(5, Math.round(cutLen(k) * 0.9));
+  // a running job keeps its card: the bar and the words move, the Cancel
+  // button stays the same element, so a click is not lost to a redraw
+  const key = JSON.stringify([k.id, job && [job.id, job.waiting], models.map(m => [m.name, m.state, m.percent]), wModels && wModels.available, wTr, ws.loading, ws.error]);
+  if (job) {
+    const pct = job.stage === 'transcribe' ? (job.percent || 0) : 0;
+    if (body.dataset.key !== key) {
+      body.dataset.key = key;
+      body.innerHTML = `<div class="row nowrap"><span class="spinner"></span><span class="grow"><b>${job.waiting ? 'Waiting to transcribe' : 'Transcribing'}</b> “${esc(cutName(k, cur))}”</span></div>`
+        + `<div class="bar"><i></i></div>`
+        + `<div class="row"><span class="muted sm grow" id="wTrText"></span><button class="btn btn-sm btn-ghost" type="button" id="wTrCancel"><svg class="icon icon-sm"><use href="#i-close"/></svg> Cancel</button></div>`
+        + `<p class="muted sm">The lines arrive in one piece when it is done. Until then the cut plays and renders as it is; a rendering started now carries no subtitles.</p>`;
+      $('wTrCancel').onclick = e => { e.currentTarget.disabled = true; cancelJob(job.id); };
+    }
+    body.querySelector('.bar i').style.width = pct + '%';
+    $('wTrText').textContent = job.waiting ? 'Another job runs first.' : job.stage === 'transcribe' ? `${pct} % · about ${Math.max(1, Math.round(secs * (100 - pct) / 100))} s left` : 'Starting …';
+    return;
+  }
+  if (body.dataset.key === key) return;
+  body.dataset.key = key;
+  if (ws.loading) { body.innerHTML = '<p class="muted sm"><span class="spinner"></span> reading the lines …</p>'; return; }
+  if (wModels && wModels.available === false) {
+    body.innerHTML = `<p class="muted sm">This ffmpeg cannot transcribe: it was built without the whisper filter. <a href="/diagnostics">Diagnostics</a> says what helps.</p>`;
+    return;
+  }
+  if (model && model.state !== 'ready') {
+    const mb = Math.round((model.bytes || 0) / 1048576);
+    body.innerHTML = model.state === 'downloading'
+      ? `<p class="muted sm"><b>Downloading the model ${esc(model.name)}</b> - once, into the data folder of this PC.</p><div class="bar"><i style="width:${model.percent || 0}%"></i></div><span class="faint sm">${model.percent || 0} % of ${mb} MB</span>`
+      : `<p class="muted sm">Transcribing needs a model on this PC, fetched once: <b>${esc(model.name)}</b>, ${mb} MB. Nothing else leaves the PC.</p><div class="row"><button class="btn" type="button" id="wModelGet"><svg class="icon icon-sm"><use href="#i-download"/></svg> Download ${esc(model.name)}</button><button class="btn btn-ghost" type="button" disabled>Transcribe</button></div>${model.error ? `<span class="faint sm">${esc(model.error)}</span>` : ''}`;
+    const g = $('wModelGet'); if (g) g.onclick = () => wsGetModel(model.name);
+    return;
+  }
+  const tr = wTr || { source: (wSubsSettings && wSubsSettings.source) || 'auto', language: (wSubsSettings && wSubsSettings.language) || 'auto' };
+  const trackWords = { auto: 'Automatic', mic: 'Microphone', mix: 'Mix (all)' };
+  body.innerHTML = `<p class="muted sm">This cut has none yet. Transcribing runs on this PC and takes about as long as the cut plays - <b>about ${secs} s</b> for ${esc(fmt(cutLen(k)))}. You can keep using the page while it runs.</p>`
+    + `<div class="row"><button class="btn" type="button" id="wTrGo"><svg class="icon icon-sm"><use href="#i-subtitles"/></svg> Transcribe</button><button class="pill" type="button" id="wTrTrack" aria-haspopup="true">Track <b>${esc(trackWords[tr.source] || tr.source)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button><button class="pill" type="button" id="wTrLang" aria-haspopup="true">Language <b>${esc(langName(tr.language) || tr.language)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button></div>`
+    + `<span class="faint sm">Model: ${esc(model ? model.name : wanted)}, ready on this PC</span>`;
+  $('wTrGo').onclick = () => wsTranscribe(false, { source: tr.source, language: tr.language });
+  $('wTrTrack').onclick = e => { e.stopPropagation(); menuAt($('wTrTrack'), [{ heading: 'Read the speech from' }].concat(Object.entries(trackWords).map(([id, label]) => ({ label, note: id === tr.source ? 'chosen' : '', disabled: id !== 'auto' && (cur.tracks || 1) === 1, onclick: () => { wTr = Object.assign({}, tr, { source: id }); wsSubsCard(); } })))); };
+  $('wTrLang').onclick = e => { e.stopPropagation(); menuAt($('wTrLang'), [{ heading: 'Language of the speech' }].concat(((wModels && wModels.languages) || []).map(l => ({ label: l.label, note: l.id === tr.language ? 'chosen' : '', onclick: () => { wTr = Object.assign({}, tr, { language: l.id }); wsSubsCard(); } })))); };
+}
+async function wsGetModel(name) {
   try {
-    const r = await api(`/api/cuts/${encodeURIComponent(c.id)}/transcribe`, jsonOpts('POST', how || {}), { retries: 0, timeout: 10000 });
+    const r = await api('/api/subtitles/models/' + encodeURIComponent(name), jsonOpts('POST', {}), { retries: 0 });
+    if (!r.ok) { toast(r.error, 'err'); return; }
+  } catch (e) { toast(e.message, 'err'); return; }
+  // no autostart: once it is there, "Transcribe" is one click
+  const tick = async () => { await wsLoadInfo(true); if (((wModels && wModels.models) || []).some(m => m.state === 'downloading')) wModelPoll = setTimeout(tick, 1000); };
+  clearTimeout(wModelPoll); tick();
+}
+async function wsTranscribe(again, how) {
+  const k = wcut; if (!k) return;
+  if (again && (ws.doc && ws.doc.edited || ws.rev !== ws.savedRev) && !confirm('Read the speech again and replace the corrections you made?')) return;
+  try {
+    const r = await api(`/api/cuts/${encodeURIComponent(k.id)}/transcribe`, jsonOpts('POST', how || {}), { retries: 0, timeout: 10000 });
     if (!r.ok) {
-      // the answer says what is missing, so the page can offer the way out
       if (r.reason === 'model') toast('No model on this PC yet - Settings › Subtitles', 'err');
       else if (r.reason === 'filter') toast('This ffmpeg cannot transcribe - see Diagnostics', 'err');
       else if (r.reason === 'disabled') toast('Subtitles are switched off - Settings › Subtitles', 'err');
       else toast(r.error, 'err');
       return;
     }
-    subsEdit.delete(c.id);
+    if (again) { clearTimeout(ws.timer); ws.timer = null; ws.savedRev = ws.rev; }
     toast(r.position > 0 ? `Queued - ${r.position} job${r.position === 1 ? '' : 's'} ahead` : 'Reading the speech …');
     followJob(r);
   } catch (e) { toast(e.message, 'err'); }
+}
+/// The menu of the sub-bar (as in 3.11.1, #54): read again, or from the
+/// other track, export, delete.
+function wsMenu() {
+  const k = wcut, d = ws.doc || {}, items = [{ heading: 'Subtitles' }];
+  items.push({ label: 'Transcribe again', icon: 'i-refresh', title: 'Read the speech of this cut again, with the model and language from Settings', onclick: () => wsTranscribe(true) });
+  const other = d.source === 'mic' ? 'mix' : d.source === 'mix' ? 'mic' : '';
+  if (other && cur.tracks !== 1) items.push({ label: 'From the other track', icon: 'i-subtitles', note: other === 'mic' ? 'microphone' : 'mix', onclick: () => wsTranscribe(true, { source: other }) });
+  const name = encodeURIComponent(k.id);
+  items.push('hr');
+  items.push({ label: 'Export as SRT', icon: 'i-download', href: `/api/cuts/${name}/subtitles?format=srt`, download: '' });
+  items.push({ label: 'Export as VTT', icon: 'i-download', href: `/api/cuts/${name}/subtitles?format=vtt`, download: '' });
+  items.push('hr');
+  items.push({ label: 'Delete the subtitles', icon: 'i-trash', danger: true, onclick: wsDeleteAll });
+  return items;
+}
+async function wsDeleteAll() {
+  const k = wcut; if (!k) return;
+  if (!confirm('Delete the subtitles of this cut?\n\nThe cut and everything it produced stay.')) return;
+  try {
+    const r = await api(`/api/cuts/${encodeURIComponent(k.id)}/subtitles`, { method: 'DELETE' }, { retries: 0 });
+    if (!r.ok) { toast(r.error, 'err'); return; }
+    clearTimeout(ws.timer); ws.timer = null;
+    Object.assign(ws, { segs: [], doc: null, sel: -1, rev: 0, savedRev: 0, at: '' });
+    k.subtitles = null; toast('Subtitles deleted', 'ok'); wKey = ''; renderWorkshop();
+  } catch (e) { toast(e.message, 'err'); }
+  poll.now();
+}
+/// The subtitle part of the workshop, drawn with the rest of it.
+function renderWorkshopSubs() {
+  const on = !!cfg.subtitles, k = wcut, has = wsHas(), vert = wPick.frame === 'vertical';
+  if (on) { wsFor(k); if (!LOOKS || !wModels) wsLoadInfo(); }
+  $('workshop').classList.toggle('has-subs', has);
+  $('wFrames').hidden = !has;
+  $('lane').hidden = !has; $('inspector').hidden = !has; $('subBar').hidden = !has;
+  $('wSubsCard').hidden = !on || has || k.state !== 'ready';
+  const fb = $('fpBox');
+  fb.classList.toggle('v', !vert); fb.classList.toggle('h', vert);
+  $('fpLabel').textContent = vert ? '16:9 · what 9:16 keeps' : '9:16';
+  $('fpBand').hidden = vert; $('fpWindow').hidden = !vert;
+  if (LOOKS) $('fpBand').style.height = LOOKS.frames.vertical.shortsUi.bottom + '%';
+  if (has) { wsLookBox(); wsLane(); wsInspector(); wsTranscript(); wsBar(); requestAnimationFrame(() => { wsOverlay(true); wsPreview(true); }); }
+  else { $('wSub').hidden = true; if (!$('wSubsCard').hidden) wsSubsCard(); }
+}
+function initWorkshopSubs() {
+  const text = $('lineText');
+  text.addEventListener('focus', () => { ws.textFocus = true; wsOverlay(true); });
+  text.addEventListener('blur', () => { ws.caret = text.selectionStart; ws.textFocus = false; wsOverlay(true); wsFlush(); });
+  text.addEventListener('input', () => {
+    const s = ws.segs[ws.sel]; if (!s) return;
+    s.text = text.value; ws.caret = text.selectionStart;
+    wsChanged(800);
+  });
+  text.addEventListener('keyup', () => { ws.caret = text.selectionStart; });
+  text.addEventListener('click', () => { ws.caret = text.selectionStart; });
+  text.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); text.blur(); } });
+  $('liPlay').onclick = wsPlayLine; $('liSplit').onclick = wsSplit; $('liMerge').onclick = wsMerge; $('liDel').onclick = wsDelete;
+  $('liIn').onclick = () => wsStamp('start'); $('liOut').onclick = () => wsStamp('end');
+  document.querySelectorAll('#inspector [data-nudge]').forEach(b => { const [which, d] = b.dataset.nudge.split(','); b.onclick = () => wsNudge(which, Number(d)); });
+  // the lane is one control: arrows and Tab walk its lines, Enter edits one
+  $('lane').addEventListener('keydown', e => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : e.key === 'Tab' ? (e.shiftKey ? -1 : 1) : 0;
+    if (step) {
+      const i = ws.sel + step;
+      if (i < 0 || i >= ws.segs.length) { if (e.key === 'Tab') return; e.preventDefault(); e.stopPropagation(); return; }
+      e.preventDefault(); e.stopPropagation(); wsSelect(i, true);
+      const b = $('lane').children[i]; if (b) b.focus();
+    } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); text.focus(); }
+  });
+  $('subAgain').onclick = () => wsTranscribe(true);
+  $('subMore').onclick = e => { e.stopPropagation(); menuAt($('subMore'), wsMenu()); };
+  const vp = $('wVpos');
+  vp.addEventListener('input', () => { const p = Number(vp.value) / 100; $('wVposVal').textContent = vposWords(p); wv.style.objectPosition = `${p * 100}% 50%`; wsPreview(true); });
+  vp.addEventListener('change', async () => {
+    const k = wcut; if (!k) return;
+    const p = Math.round(Number(vp.value)) / 100;
+    try { const r = await api('/api/cuts/' + encodeURIComponent(k.id), jsonOpts('PUT', { verticalPos: p }), { retries: 0 }); if (r.ok) k.verticalPos = r.cut.verticalPos; else toast(r.error, 'err'); }
+    catch (e) { toast(e.message, 'err'); }
+  });
+  ['seeked', 'loadeddata', 'timeupdate'].forEach(ev => wv.addEventListener(ev, () => { if (wsHas()) { wsOverlay(); wsPreview(ev !== 'timeupdate'); } }));
+  if (window.ResizeObserver) new ResizeObserver(() => { if (wsHas()) { wsOverlay(true); wsPreview(true); } }).observe(wv);
+  addEventListener('pagehide', () => wsFlush(true));
 }
 // ------------------------------------------------------------ the clip list (3.0)
 // One list with a filter: "Active" is what is still to do, "Done" what has

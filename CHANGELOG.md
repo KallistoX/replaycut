@@ -26,12 +26,31 @@ it was.
   changes that one rendering only, so "As recorded" is still there for a
   cut), and every output of the cut with its link and its folder. Its
   player is as big as the recording's, and with 9:16 chosen it shows the
-  window that will be rendered. While
+  window that will be rendered; the window's slider sits by the frame
+  choice and is kept with the cut (`PUT /api/cuts/<id> { verticalPos }`).
+  While
   the recording is there, its own preview plays the cut, so there is
   nothing to wait for; a cut whose recording is gone - recycled, lost, or
   on a drive that is not connected - plays from a copy of its own, made
   in a few seconds the first time. Reloading the page keeps the cut
   loaded.
+- **Subtitles are corrected in the workshop** (beta, #55). The line under
+  the playhead is on the picture as the rendering will draw it - size,
+  place and colour from the same table, in 16:9 and in the 9:16 window,
+  with a small picture of the other frame beside it. The lines lie on the
+  cut's own timeline; click one and correct it below, with the picture
+  still in view. `I` and `O` set its start and end at the playhead, `Alt`
+  with the arrows moves them by a tenth of a second (with `Shift` the
+  end), `S` splits at the playhead, `M` merges with the next, `Delete`
+  removes it with Undo in the message, `P` plays it. There is no Save
+  button: a change is kept a moment after you stop typing. Under 1000
+  pixels the picture stays at the top while the lines scroll under it.
+- **A look per cut.** Position, size and colour of the subtitles can
+  differ for one cut - a Short in the middle and large, say - with "Reset
+  to default" back to Settings.
+- **Transcribing starts from the workshop**, with the track and the
+  language for this cut, shows how far it has got and can be cancelled; a
+  missing model is downloaded from there too.
 - **Two keys for cutting**: `C` saves the marks as a cut, like the "Save
   cut" button, and `Alt`+`←`/`→` moves the mark nearer the playhead by a
   tenth of a second. Everything the keys did before they still do.
@@ -69,9 +88,10 @@ it was.
   workshop shows and what is rendered come from the same numbers.
 - **The list of cuts at the foot of the clips page is gone.** Its cuts are
   in the shelf of their recording and on its timeline now, and what the
-  list offered - render, the outputs, delete - is in the workshop.
-  Subtitles of a cut (beta) are edited there too, for now in the same
-  block as before.
+  list offered - render, the outputs, delete - is in the workshop, and so
+  is the subtitle editor that sat under each cut.
+- **The keyboard shortcuts behind `?` have a column per mode**: cutting a
+  recording, and the workshop.
 
 ### Fixed
 
