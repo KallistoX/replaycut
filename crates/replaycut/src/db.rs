@@ -715,6 +715,16 @@ impl Db {
         Ok(())
     }
 
+    /// Where the 9:16 window of this cut sits, 0 (left) to 1 (right), or
+    /// `None` for the middle (since 3.12, from the workshop).
+    pub fn set_cut_vertical_pos(&self, id: &str, pos: Option<f64>) -> Result<()> {
+        self.conn.lock().execute(
+            "UPDATE cuts SET vertical_pos = ?2 WHERE id = ?1",
+            params![id, pos],
+        )?;
+        Ok(())
+    }
+
     /// Forget one cut. The caller removes its file and its outputs.
     pub fn delete_cut(&self, id: &str) -> Result<()> {
         self.conn

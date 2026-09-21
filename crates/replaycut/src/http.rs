@@ -926,6 +926,20 @@ async fn cut_update(
             Some(look)
         }
     };
+    // `null` gives the window back to the middle
+    let vertical_pos = match fields.get("verticalPos") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(v) => match v.as_f64() {
+            Some(p) if (0.0..=1.0).contains(&p) => Some(Some((p * 1000.0).round() / 1000.0)),
+            _ => {
+                return Err(ApiError::new(
+                    StatusCode::BAD_REQUEST,
+                    "verticalPos is a number from 0 (left) to 1 (right), or null",
+                ));
+            }
+        },
+    };
 
     if let Some(title) = title {
         app.db
@@ -939,6 +953,12 @@ async fn cut_update(
             .map_err(ApiError::internal)?;
         tracing::info!("look for cut {id}: {look:?}");
     }
+    if let Some(pos) = vertical_pos {
+        app.db
+            .set_cut_vertical_pos(&id, pos)
+            .map_err(ApiError::internal)?;
+        tracing::info!("9:16 window for cut {id}: {pos:?}");
+    }
     app.tray_changed();
     let cut = app
         .cut_document(&id)
@@ -947,7 +967,7 @@ async fn cut_update(
 }
 
 /// What `PUT /api/cuts/<id>` takes (since 3.12).
-const CUT_FIELDS: [&str; 2] = ["title", "look"];
+const CUT_FIELDS: [&str; 3] = ["title", "look", "verticalPos"];
 
 /// The `look` of a `PUT /api/cuts/<id>`: per frame, a whole look or `null`
 /// for the settings' one; a frame the body leaves out keeps what it had,

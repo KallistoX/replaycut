@@ -5185,3 +5185,58 @@ fn t79_a_transcription_can_be_cancelled_while_it_runs() {
     let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
     assert_eq!(status, 200, "{v}");
 }
+
+/// A cut keeps the window of its vertical rendering (since 3.12): the
+/// workshop moves it and `PUT /api/cuts/<id>` stores it, and a 9:16
+/// rendering that names no position takes it. Without one a Short could be
+/// framed only in the one request that makes it.
+#[test]
+fn t80_a_cut_keeps_the_window_of_its_vertical_rendering() {
+    let _g = serial();
+    if !since_312() {
+        eprintln!("skipped: needs replaycut 3.12");
+        return;
+    }
+    let (base, cut) = a_ready_cut("window", 2.0, 6.0);
+    let (status, v) = put_json(&format!("/api/cuts/{cut}"), &json!({ "verticalPos": 0.2 }));
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["cut"]["verticalPos"], 0.2, "{v}");
+    let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+    assert_eq!(c["verticalPos"], 0.2, "{c}");
+
+    // outside the picture, or not a number: refused, and nothing changes
+    for bad in [json!(1.5), json!(-0.1), json!("left")] {
+        let (status, v) = put_json(&format!("/api/cuts/{cut}"), &json!({ "verticalPos": bad }));
+        assert_eq!(status, 400, "{bad}: {v}");
+    }
+    let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+    assert_eq!(c["verticalPos"], 0.2, "{c}");
+
+    // a 9:16 rendering that says nothing takes the cut's window; one that
+    // names a position has it for itself, and the cut keeps its own
+    let render = |body: serde_json::Value| -> serde_json::Value {
+        let (status, v) = post_json(&format!("/api/cuts/{cut}/render"), &body);
+        assert_eq!(status, 202, "render {body}: {v}");
+        let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+        assert_eq!(done["ok"], true, "render {body}: {done}");
+        done
+    };
+    let done = render(json!({ "target": "file", "after": "keep", "vertical": true }));
+    assert_eq!(done["verticalPos"], 0.2, "{done}");
+    let done =
+        render(json!({ "target": "file", "after": "keep", "vertical": true, "verticalPos": 0.9 }));
+    assert_eq!(done["verticalPos"], 0.9, "{done}");
+    let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+    assert_eq!(
+        c["verticalPos"], 0.2,
+        "a rendering does not move the cut's window: {c}"
+    );
+
+    // null gives it back to the middle
+    let (status, v) = put_json(&format!("/api/cuts/{cut}"), &json!({ "verticalPos": null }));
+    assert_eq!(status, 200, "{v}");
+    assert!(v["cut"]["verticalPos"].is_null(), "{v}");
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}

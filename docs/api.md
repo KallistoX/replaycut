@@ -2006,7 +2006,12 @@ the recording's title. `200 { ok: true, cut }` with the [Cut](#cut) as
   not a string. A typo is refused rather than answered with a success that
   changed nothing.
 
-The same request takes `look` ([below](#a-cut-has-a-look-the-settings-the-default)).
+The same request takes `look` ([below](#a-cut-has-a-look-the-settings-the-default))
+and `verticalPos`: where the 9:16 window of the cut sits, `0` (left) to `1`
+(right), rounded to three places, or `null` for the middle. A rendering with
+`vertical: true` that names no `verticalPos` takes the cut's; one that names
+it has it for itself, and the cut keeps its own. `400` outside `0..1` or for
+something that is not a number.
 
 ### A cut plays in the browser
 
