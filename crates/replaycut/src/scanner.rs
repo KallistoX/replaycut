@@ -526,6 +526,8 @@ async fn sweep_cuts(state: &Arc<AppState>) {
             state.tray_changed();
         }
     }
+    sweep_copies(state, &paths.play_dir(), &cuts);
+    state.refresh_cut_copies(&cuts);
     let Ok(entries) = std::fs::read_dir(&paths.cuts_dir) else {
         return;
     };
@@ -541,6 +543,45 @@ async fn sweep_cuts(state: &Arc<AppState>) {
         tracing::info!("cut file {} belongs to no cut - recycled", path.display());
         let _ = tokio::task::spawn_blocking(move || crate::platform::recycle(&path)).await;
     }
+}
+
+/// The playable copies of cuts that no longer exist (since 3.12). They are
+/// made from their cut and can be made again, so they are removed, not
+/// recycled. An unfinished one (`.part.mp4`) belongs to a copy being made
+/// right now; the start clears those that a stop left behind.
+fn sweep_copies(state: &Arc<AppState>, play_dir: &Path, cuts: &[crate::db::Cut]) {
+    let Ok(entries) = std::fs::read_dir(play_dir) else {
+        return;
+    };
+    let names: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.path().is_file())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    let ids: Vec<&str> = cuts.iter().map(|c| c.id.as_str()).collect();
+    for name in orphan_copies(&names, &ids) {
+        match std::fs::remove_file(play_dir.join(name)) {
+            Ok(()) => tracing::info!("playable copy {name} belongs to no cut - removed"),
+            Err(e) => tracing::warn!("cannot remove the playable copy {name}: {e}"),
+        }
+        let id = name.split('.').next().unwrap_or_default();
+        state.cut_copies.lock().remove(id);
+    }
+}
+
+/// The files of `.cuts\play\` whose cut is gone: `<id>.mp4` and
+/// `<id>.h264.mp4` of an id nobody knows. Unfinished ones are left to the
+/// copy that is writing them.
+fn orphan_copies<'a>(names: &'a [String], cuts: &[&str]) -> Vec<&'a str> {
+    names
+        .iter()
+        .map(String::as_str)
+        .filter(|name| !crate::share::is_part(name))
+        .filter(|name| {
+            let id = name.split('.').next().unwrap_or_default();
+            !cuts.contains(&id)
+        })
+        .collect()
 }
 
 /// `cleanup.recycleDoneAfterDays`: the recordings of clips that have been
@@ -609,7 +650,7 @@ fn stale_rows(
 
 #[cfg(test)]
 mod tests {
-    use super::{in_folder, stale_rows};
+    use super::{in_folder, orphan_copies, stale_rows};
     use std::collections::BTreeMap;
     use std::path::Path;
 
@@ -635,6 +676,28 @@ mod tests {
             dir: dir.map(str::to_string),
             lost: false,
         }
+    }
+
+    /// Since 3.12: the copies of a cut that is gone are removed, those of a
+    /// cut that is there stay, and one being written is left alone.
+    #[test]
+    fn only_the_copies_of_cuts_that_are_gone_are_swept() {
+        let names: Vec<String> = [
+            "24af8830.mp4",
+            "24af8830.h264.mp4",
+            "0dd0dd00.mp4",
+            "0dd0dd00.h264.mp4",
+            "0dd0dd01.part.mp4",
+            "24af8830.h264.part.mp4",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            orphan_copies(&names, &["24af8830"]),
+            vec!["0dd0dd00.mp4", "0dd0dd00.h264.mp4"]
+        );
+        assert!(orphan_copies(&names, &["24af8830", "0dd0dd00"]).is_empty());
     }
 
     #[test]

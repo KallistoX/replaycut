@@ -575,9 +575,12 @@ async fn serve(
         u.updated_notes = Some(j.notes);
         u.updated_url = Some(j.url);
     }
-    // before the server takes a share: every unfinished encode is a leftover
+    // before the server takes a share: every unfinished encode is a leftover,
+    // and so is every playable copy of a cut that was being made (3.12)
     share::remove_unfinished_encodes(&state.paths().shared_dir);
+    share::remove_unfinished_encodes(&state.paths().play_dir());
     state.drop_pending_cuts();
+    state.refresh_cut_copies(&state.db.cuts().unwrap_or_default());
     tokio::spawn(scanner::run(state.clone()));
     tokio::spawn(obs_ws::run(state.obs.clone()));
     tokio::spawn(obs_link::react(

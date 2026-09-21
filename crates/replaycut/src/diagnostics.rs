@@ -278,20 +278,28 @@ pub async fn run(state: &AppState) -> Report {
     // removed automatically, so the number is worth seeing.
     let cuts_check = {
         let cuts_dir = paths.cuts_dir.clone();
+        let play_dir = paths.play_dir();
         let cuts = state.db.cuts().unwrap_or_default();
         let outputs = state.db.job_count().unwrap_or(0);
         async move {
-            let (mut files, mut bytes) = (0u64, 0u64);
-            if let Ok(entries) = std::fs::read_dir(&cuts_dir) {
-                for e in entries.flatten() {
-                    if let Ok(m) = e.metadata() {
-                        if m.is_file() {
-                            files += 1;
-                            bytes += m.len();
+            let count = |dir: &std::path::Path| {
+                let (mut files, mut bytes) = (0u64, 0u64);
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for e in entries.flatten() {
+                        if let Ok(m) = e.metadata() {
+                            if m.is_file() {
+                                files += 1;
+                                bytes += m.len();
+                            }
                         }
                     }
                 }
-            }
+                (files, bytes)
+            };
+            let (files, bytes) = count(&cuts_dir);
+            // since 3.12: what was made to play cuts in the browser; it can
+            // be made again, so it is said apart from the cuts themselves
+            let (copies, copy_bytes) = count(&play_dir);
             let missing = cuts
                 .iter()
                 .filter(|c| c.state == crate::db::CUT_MISSING)
@@ -302,7 +310,7 @@ pub async fn run(state: &AppState) -> Report {
                 "Cuts",
                 if big { "warn" } else { "ok" },
                 format!(
-                    "{files} file{} · {} · {} cut{} known, {outputs} output{}{}",
+                    "{files} file{} · {} · {} cut{} known, {outputs} output{}{}{}",
                     if files == 1 { "" } else { "s" },
                     gb(bytes),
                     cuts.len(),
@@ -310,6 +318,15 @@ pub async fn run(state: &AppState) -> Report {
                     if outputs == 1 { "" } else { "s" },
                     if missing > 0 {
                         format!(" · {missing} without a file")
+                    } else {
+                        String::new()
+                    },
+                    if copies > 0 {
+                        format!(
+                            " · plus {copies} playable cop{} ({})",
+                            if copies == 1 { "y" } else { "ies" },
+                            gb(copy_bytes)
+                        )
                     } else {
                         String::new()
                     }

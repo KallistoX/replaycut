@@ -312,6 +312,40 @@ impl Paths {
     pub fn preview_h264_of(&self, base: &str) -> PathBuf {
         self.preview_dir.join(format!("{base}.h264.mp4"))
     }
+
+    /// The playable copies of cuts (since 3.12), `.cuts\play\`. A folder of
+    /// its own because the sweep of `.cuts\` recycles every file whose name
+    /// is not a cut id - an older build's sweep as well - and passes over
+    /// folders.
+    pub fn play_dir(&self) -> PathBuf {
+        self.cuts_dir.join("play")
+    }
+
+    /// The remux of a cut for the browser; `/media/cuts/<id>.mp4`.
+    pub fn cut_copy_of(&self, id: &str) -> PathBuf {
+        self.play_dir().join(format!("{id}.mp4"))
+    }
+
+    /// The 720p H.264 copy of a cut; `/media/cuts/<id>.h264.mp4`.
+    pub fn cut_copy_h264_of(&self, id: &str) -> PathBuf {
+        self.play_dir().join(format!("{id}.h264.mp4"))
+    }
+}
+
+/// What `.cuts\play\` holds for one cut (since 3.12). The status document
+/// reads this instead of the disk; the sweep puts it right after every scan.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CutCopies {
+    pub remux: bool,
+    pub h264: bool,
+    /// The remux is being made right now.
+    pub preparing: bool,
+}
+
+/// The id of a cut as it appears in a file name of `.cuts\play\`: eight hex
+/// characters, nothing that could leave the folder.
+pub fn is_cut_id(id: &str) -> bool {
+    id.len() == 8 && id.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// The file name of a cut in `.cuts\` (since 3.0).
@@ -322,6 +356,34 @@ pub fn cut_file_name(id: &str) -> String {
 /// The `/media/...` URL of the H.264 preview.
 pub fn preview_h264_url(base: &str) -> String {
     format!("/media/{}.h264.mp4", util::encode_path_segment(base))
+}
+
+/// The URL of a cut's remux for the browser (since 3.12).
+pub fn cut_copy_url(id: &str) -> String {
+    format!("/media/cuts/{id}.mp4")
+}
+
+/// The URL of a cut's 720p H.264 copy (since 3.12).
+pub fn cut_copy_h264_url(id: &str) -> String {
+    format!("/media/cuts/{id}.h264.mp4")
+}
+
+/// A cut's playable copies in the document: the URL of each that exists,
+/// and `preparing` while the remux runs (since 3.12).
+fn put_copies(v: &mut Value, id: &str, c: CutCopies) {
+    v["preview"] = if c.remux {
+        Value::String(cut_copy_url(id))
+    } else {
+        Value::Null
+    };
+    v["previewH264"] = if c.h264 {
+        Value::String(cut_copy_h264_url(id))
+    } else {
+        Value::Null
+    };
+    if c.preparing {
+        v["preparing"] = Value::Bool(true);
+    }
 }
 
 #[derive(Default)]
@@ -483,6 +545,10 @@ pub struct AppState {
     /// Model downloads in flight (since 3.11), by model name. A model is
     /// not a job: it takes no place in the queue and the UI polls the list.
     pub model_downloads: Mutex<HashMap<String, crate::subtitles::Download>>,
+    /// The playable copies of the cuts, by cut id (since 3.12).
+    pub cut_copies: Mutex<BTreeMap<String, CutCopies>>,
+    /// One remux of a cut at a time; it is disk work and waits for no job.
+    pub cut_copy_slot: tokio::sync::Semaphore,
 }
 
 #[derive(Debug)]
@@ -689,6 +755,8 @@ impl AppState {
             tray: std::sync::OnceLock::new(),
             update: Mutex::new(UpdateStatus::default()),
             model_downloads: Mutex::new(HashMap::new()),
+            cut_copies: Mutex::new(BTreeMap::new()),
+            cut_copy_slot: tokio::sync::Semaphore::new(1),
         })
     }
 
@@ -1011,6 +1079,7 @@ impl AppState {
             tracing::warn!("cannot read the subtitle summaries: {e:#}");
             BTreeMap::new()
         });
+        let copies = self.cut_copies.lock().clone();
         let mut by_base: BTreeMap<String, Vec<Value>> = BTreeMap::new();
         for cut in cuts {
             let mut v = serde_json::to_value(&cut).unwrap_or(Value::Null);
@@ -1018,9 +1087,92 @@ impl AppState {
             if let Some(s) = subtitles.remove(&cut.id) {
                 v["subtitles"] = serde_json::to_value(s).unwrap_or(Value::Null);
             }
+            put_copies(
+                &mut v,
+                &cut.id,
+                copies.get(&cut.id).copied().unwrap_or_default(),
+            );
             by_base.entry(cut.base).or_default().push(v);
         }
         by_base
+    }
+
+    /// What `.cuts\play\` holds for one cut (since 3.12).
+    pub fn cut_copies_of(&self, id: &str) -> CutCopies {
+        self.cut_copies.lock().get(id).copied().unwrap_or_default()
+    }
+
+    /// Change what is known about one cut's copies and tell the pages.
+    pub fn update_cut_copies(&self, id: &str, f: impl FnOnce(&mut CutCopies)) {
+        {
+            let mut all = self.cut_copies.lock();
+            let entry = all.entry(id.to_string()).or_default();
+            f(entry);
+            if *entry == CutCopies::default() {
+                all.remove(id);
+            }
+        }
+        self.tray_changed();
+    }
+
+    /// Look at `.cuts\play\` again for these cuts (since 3.12): on start and
+    /// after every scan, so a copy that was removed by hand or appeared with
+    /// a folder that came back is what the page is told. A remux that is
+    /// running stays `preparing`. Cuts that are gone are forgotten.
+    pub fn refresh_cut_copies(&self, cuts: &[crate::db::Cut]) {
+        let found: Vec<(String, bool, bool)> = cuts
+            .iter()
+            .map(|c| {
+                let paths = self.paths_of_cut(c);
+                (
+                    c.id.clone(),
+                    paths.cut_copy_of(&c.id).is_file(),
+                    paths.cut_copy_h264_of(&c.id).is_file(),
+                )
+            })
+            .collect();
+        let changed = {
+            let mut all = self.cut_copies.lock();
+            let before = all.clone();
+            let mut next = BTreeMap::new();
+            for (id, remux, h264) in found {
+                let preparing = before.get(&id).is_some_and(|c| c.preparing);
+                let c = CutCopies {
+                    remux,
+                    h264,
+                    preparing,
+                };
+                if c != CutCopies::default() {
+                    next.insert(id, c);
+                }
+            }
+            let changed = next != before;
+            *all = next;
+            changed
+        };
+        if changed {
+            self.tray_changed();
+        }
+    }
+
+    /// Remove a cut's playable copies, finished or not (since 3.12). They
+    /// are made from the cut, so they go with it and never to the recycle
+    /// bin.
+    pub fn remove_cut_copies(&self, paths: &Paths, id: &str) {
+        let (remux, h264) = (paths.cut_copy_of(id), paths.cut_copy_h264_of(id));
+        for f in [
+            crate::share::part_of(&remux),
+            crate::share::part_of(&h264),
+            remux,
+            h264,
+        ] {
+            if f.is_file() {
+                if let Err(e) = std::fs::remove_file(&f) {
+                    tracing::warn!("cannot remove {}: {e}", f.display());
+                }
+            }
+        }
+        self.cut_copies.lock().remove(id);
     }
 
     /// The `/api/clips` document without the clips that are done.
@@ -1178,6 +1330,7 @@ impl AppState {
         if let Ok(Some(s)) = self.db.subtitles(&cut.id).map(|s| s.map(|s| s.summary())) {
             v["subtitles"] = serde_json::to_value(s).unwrap_or(Value::Null);
         }
+        put_copies(&mut v, &cut.id, self.cut_copies_of(&cut.id));
         Some(v)
     }
 

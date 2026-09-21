@@ -4610,6 +4610,42 @@ fn since_312() -> bool {
     (major, minor) >= (3, 12)
 }
 
+/// The running time of a file as ffprobe reads its container.
+fn file_duration(path: &std::path::Path) -> f64 {
+    let ffprobe = env().ffmpeg.to_string().replace("ffmpeg", "ffprobe");
+    let out = std::process::Command::new(&ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(path)
+        .output()
+        .unwrap_or_else(|e| panic!("cannot run {ffprobe}: {e}"));
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    text.parse()
+        .unwrap_or_else(|_| panic!("no duration for {}: {text:?}", path.display()))
+}
+
+/// A cut of the fixture, made and ready. Returns the clip base and the cut.
+fn a_ready_cut(label: &str, start: f64, end: f64) -> (String, String) {
+    let base = format!("{} {label}", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let (status, v) = post_json(
+        "/api/cuts",
+        &json!({ "base": base, "start": start, "end": end, "audio": "mix", "after": "keep" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let cut = v["cut"].as_str().expect("cut").to_string();
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+    (base, cut)
+}
+
 /// A cut has a title of its own: it starts with the recording's, can be
 /// renamed apart from it, and a rendering is named after the cut. Empty, it
 /// gives the name back to the recording.
@@ -4694,6 +4730,141 @@ fn t75_a_cut_has_a_title_of_its_own() {
     assert_eq!(status, 400, "{v}");
     let (status, v) = put_json("/api/cuts/ffffffff", &json!({ "title": "x" }));
     assert_eq!(status, 404, "{v}");
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}
+
+/// A cut plays in the browser: the remux is made on request, outside the
+/// queue, with the time axis of the cut file; the H.264 copy is a preview
+/// job. Both go with the cut.
+#[test]
+fn t76_a_cut_plays_in_the_browser() {
+    let _g = serial();
+    if !since_312() {
+        eprintln!("skipped: needs replaycut 3.12");
+        return;
+    }
+    let (base, cut) = a_ready_cut("playable", 2.5, 8.0);
+    let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+    assert!(
+        c["preview"].is_null(),
+        "no copy before it is asked for: {c}"
+    );
+    assert!(c["previewH264"].is_null(), "{c}");
+    assert!(c.get("preparing").is_none(), "{c}");
+
+    let (status, v) = post_json(&format!("/api/cuts/{cut}/preview"), &json!({}));
+    assert_eq!(status, 202, "{v}");
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(v["cut"], cut.as_str(), "{v}");
+    let start = Instant::now();
+    let c = loop {
+        let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+        if !c["preview"].is_null() {
+            break c;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(30),
+            "the copy is not there yet: {c}"
+        );
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    assert!(
+        c.get("preparing").is_none(),
+        "done means not preparing: {c}"
+    );
+    let media = c["preview"].as_str().expect("preview").to_string();
+    assert_eq!(media, format!("/media/cuts/{cut}.mp4"));
+
+    // served like the preview of a recording
+    let full = get(&media);
+    assert_eq!(full.status().as_u16(), 200);
+    assert!(full
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .starts_with("video/mp4"));
+    let body = full.bytes().unwrap();
+    assert_eq!(&body[4..8], b"ftyp", "an MP4 starts with ftyp");
+    let part = client()
+        .get(url(&media))
+        .header("Range", "bytes=0-99")
+        .send()
+        .unwrap();
+    assert_eq!(part.status().as_u16(), 206);
+
+    // the time axis of the cut file: from the keyframe to the end of the range
+    let actual = c["actualStart"].as_f64().expect("actualStart");
+    let end = c["end"].as_f64().expect("end");
+    let path = env()
+        .clip_dir
+        .join(".cuts")
+        .join("play")
+        .join(format!("{cut}.mp4"));
+    let length = file_duration(&path);
+    assert!(
+        (length - (end - actual)).abs() < 0.15,
+        "the copy runs {length} s, the cut file {} s",
+        end - actual
+    );
+
+    // asked twice, it is there already
+    let (status, v) = post_json(&format!("/api/cuts/{cut}/preview"), &json!({}));
+    assert_eq!(status, 409, "{v}");
+
+    // the H.264 copy is a preview job of this cut, never in the history
+    let (status, v) = post_json(
+        &format!("/api/cuts/{cut}/preview"),
+        &json!({ "h264": true }),
+    );
+    assert_eq!(status, 202, "{v}");
+    assert_eq!(v["cut"], cut.as_str(), "{v}");
+    let job = v["job"].as_str().expect("job").to_string();
+    let (_, done) = wait_job(&job, JOB_TIMEOUT);
+    assert_eq!(done["stage"], "done", "{}", done["error"]);
+    assert_eq!(done["kind"], "preview", "{done}");
+    assert_eq!(done["cut"], cut.as_str(), "{done}");
+    let (_, c) = get_json(&format!("/api/cuts/{cut}"));
+    let h264 = c["previewH264"].as_str().expect("previewH264").to_string();
+    assert_eq!(h264, format!("/media/cuts/{cut}.h264.mp4"));
+    assert_eq!(get(&h264).status().as_u16(), 200);
+    let h264_path = env()
+        .clip_dir
+        .join(".cuts")
+        .join("play")
+        .join(format!("{cut}.h264.mp4"));
+    if let Some(size) = video_size(&h264_path) {
+        assert_eq!(size.1, 720, "the copy is 720p: {size:?}");
+    }
+    let (_, h) = get_json("/api/history");
+    assert!(
+        !h["history"]
+            .as_array()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .any(|e| e["id"] == job.as_str()),
+        "preview jobs stay out of the history"
+    );
+    let (status, v) = post_json(
+        &format!("/api/cuts/{cut}/preview"),
+        &json!({ "h264": true }),
+    );
+    assert_eq!(status, 409, "{v}");
+
+    // nobody's cut, and nothing that is not a cut id
+    let (status, v) = post_json("/api/cuts/ffffffff/preview", &json!({}));
+    assert_eq!(status, 404, "{v}");
+    assert_eq!(get("/media/cuts/ffffffff.mp4").status().as_u16(), 404);
+    assert_eq!(get("/media/cuts/nope.mp4").status().as_u16(), 404);
+
+    // the copies go with the cut
+    let (status, v) = delete(&format!("/api/cuts/{cut}"));
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(get(&media).status().as_u16(), 404);
+    assert!(!path.is_file(), "the remux goes with its cut");
+    assert!(!h264_path.is_file(), "the H.264 copy goes with its cut");
 
     let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
     assert_eq!(status, 200, "{v}");

@@ -69,6 +69,8 @@ pub fn router(state: App) -> Router {
             get(cut).put(cut_update).delete(delete_cut),
         )
         .route("/api/cuts/{id}/render", post(cut_render))
+        // since 3.12: a cut plays in the browser
+        .route("/api/cuts/{id}/preview", post(cut_preview))
         .route(
             "/api/cuts/{id}/subtitles",
             get(cut_subtitles)
@@ -84,6 +86,7 @@ pub fn router(state: App) -> Router {
         .route("/api/share", post(share))
         .route("/api/save", post(save))
         .route("/media/{file}", get(media))
+        .route("/media/cuts/{file}", get(cut_media))
         // since 2.1
         .route(
             "/api/settings",
@@ -640,6 +643,10 @@ async fn delete_clip(
         app.recording_recycled(&base);
     } else {
         let _ = std::fs::remove_file(paths.thumb_of(&base));
+        // since 3.12: the cuts go, and with them what was made to play them
+        for c in &clip.cuts {
+            app.remove_cut_copies(&paths, &c.id);
+        }
         app.forget_clip(&base);
     }
     app.scan_wake.notify_one();
@@ -751,6 +758,8 @@ async fn delete_cut(
     .await
     .map_err(ApiError::internal)?
     .map_err(ApiError::internal)?;
+    // since 3.12: the playable copies are made from the cut and go with it
+    app.remove_cut_copies(&paths, &cut.id);
     app.remove_history_of_cut(&cut.id);
     app.db.delete_cut(&cut.id).map_err(ApiError::internal)?;
     app.reset_state_without_cuts(&cut.base);
@@ -820,6 +829,7 @@ fn share_error(e: ShareError, busy: &str) -> Response {
         }
         ShareError::Invalid(msg) => ApiError::new(StatusCode::BAD_REQUEST, msg).into_response(),
         ShareError::Unmet(reason, msg) => ApiError::unmet(reason, msg).into_response(),
+        ShareError::Exists(msg) => ApiError::new(StatusCode::CONFLICT, msg).into_response(),
     }
 }
 
@@ -905,6 +915,48 @@ async fn cut_update(
         .cut_document(&id)
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown cut: {id}")))?;
     Ok(Json(json!({ "ok": true, "cut": cut })))
+}
+
+/// `POST /api/cuts/<id>/preview` (since 3.12): a copy of the cut a browser
+/// can play. `{}` makes the remux, outside the job queue; `{ "h264": true }`
+/// queues the 720p H.264 copy as a `preview` job.
+async fn cut_preview(State(app): State<App>, Path(id): Path<String>, body: Bytes) -> Response {
+    let h264 = parse_body(&body)["h264"].as_bool().unwrap_or(false);
+    if h264 {
+        return match share::start_cut_preview(&app, &id) {
+            Ok(started) => accepted(&app, started, Value::Null),
+            Err(e) => share_error(e, "the playable preview of this cut is already being made"),
+        };
+    }
+    match share::start_cut_copy(&app, &id) {
+        Ok(()) => (StatusCode::ACCEPTED, Json(json!({ "ok": true, "cut": id }))).into_response(),
+        Err(e) => share_error(e, "the playable copy of this cut is already being made"),
+    }
+}
+
+/// `GET /media/cuts/<id>.mp4` and `.h264.mp4` (since 3.12): a cut's
+/// playable copies, served like the previews of a recording.
+async fn cut_media(State(app): State<App>, Path(file): Path<String>, req: Request) -> Response {
+    let Some(stem) = file.strip_suffix(".mp4") else {
+        return not_found().await;
+    };
+    let (id, h264) = match stem.strip_suffix(".h264") {
+        Some(id) => (id, true),
+        None => (stem, false),
+    };
+    if !crate::state::is_cut_id(id) {
+        return not_found().await;
+    }
+    let Ok(Some(cut)) = app.db.cut(id) else {
+        return not_found().await;
+    };
+    let paths = app.paths_of_cut(&cut);
+    let path = if h264 {
+        paths.cut_copy_h264_of(id)
+    } else {
+        paths.cut_copy_of(id)
+    };
+    serve_mp4(&path, req).await
 }
 
 /// `POST /api/cuts/<id>/render` (since 3.0): encode a cut that exists and
@@ -1316,10 +1368,15 @@ async fn media(State(app): State<App>, Path(file): Path<String>, req: Request) -
     // 3.10.1 both are looked up in the folder that clip's recording is in
     let of_clip = base.strip_suffix(".h264").unwrap_or(base);
     let path = app.paths_for(of_clip).preview_of(base);
+    serve_mp4(&path, req).await
+}
+
+/// An MP4 with ranges, as every playable copy is served.
+async fn serve_mp4(path: &std::path::Path, req: Request) -> Response {
     if !path.is_file() {
         return not_found().await;
     }
-    match ServeFile::new(&path).oneshot(req).await {
+    match ServeFile::new(path).oneshot(req).await {
         Ok(res) => {
             let mut res = res.map(Body::new);
             res.headers_mut()

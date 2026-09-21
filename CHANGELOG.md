@@ -20,6 +20,13 @@ contract.
   recording is renamed later. Cuts from before this version follow their
   recording as before. The page to rename a cut comes with the player for
   cuts; the API has it already (`PUT /api/cuts/<id>`).
+- **A cut can be played in a browser, also when its recording is gone.**
+  On request the service makes a copy of the cut that a browser plays: a
+  remux of the picture with the mix, made in seconds and outside the job
+  queue, so it never waits behind a share - or, for a browser that cannot
+  decode AV1 or HEVC, a 720p H.264 copy. Both live in `.cuts\play\` next to
+  the cut and go with it; the diagnostics count them apart from the cuts.
+  This is the groundwork for the player for cuts on the clips page.
 
 ## [3.11.1] - 2026-09-21
 

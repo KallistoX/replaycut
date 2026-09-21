@@ -84,6 +84,9 @@ pub enum ShareError {
     Unmet(&'static str, String),
     /// `MAX_QUEUE` jobs are waiting already.
     QueueFull,
+    /// What was asked for is there already or being made, and it is no job
+    /// that could be named (since 3.12: the remux of a cut).
+    Exists(String),
 }
 
 /// ffmpeg audio mapping per mode (tracks are 0-based: a:0 mix, a:1 mic, a:2 game, a:3 voice chat).
@@ -1034,10 +1037,11 @@ fn hand_on_recycling(state: &AppState, job: &Job) -> Option<String> {
 
 /// Whether a job reads the recording itself: a share cuts its range from it
 /// and the playable preview encodes it; a render has its cut, a publish its
-/// file.
+/// file, and the preview of a cut (since 3.12) its cut.
 fn needs_recording(job: &Job) -> bool {
     let share = job.kind.is_empty() || job.kind == crate::state::KIND_SHARE;
-    job.source.is_none() && (share || job.kind == KIND_CUT || job.is_preview())
+    job.source.is_none()
+        && (share || job.kind == KIND_CUT || (job.is_preview() && job.cut.is_none()))
 }
 
 /// The file an encode writes until it is finished: `x.mp4` → `x.part.mp4`.
@@ -1229,7 +1233,7 @@ pub fn start_preview(state: &AppState, base: &str, idle: bool) -> Result<Started
         .iter()
         .chain(inner.queue.iter())
         .filter_map(|id| inner.jobs.get(id))
-        .find(|j| j.is_preview() && j.base == base)
+        .find(|j| j.is_preview() && j.cut.is_none() && j.base == base)
         .map(|j| j.id.clone());
     if let Some(id) = duplicate {
         return Err(ShareError::Busy(id));
@@ -1266,24 +1270,187 @@ pub fn start_preview(state: &AppState, base: &str, idle: bool) -> Result<Started
     })
 }
 
+/// The cut a `POST /api/cuts/<id>/preview` is about, with its file there
+/// (since 3.12).
+fn cut_with_file(state: &AppState, cut_id: &str) -> Result<Cut, ShareError> {
+    let cut = state
+        .db
+        .cut(cut_id)
+        .map_err(|e| ShareError::Invalid(format!("cannot read the cut: {e:#}")))?
+        .ok_or_else(|| ShareError::UnknownCut(cut_id.to_string()))?;
+    if !state.paths_of_cut(&cut).cut_of(&cut.id).is_file() {
+        return Err(ShareError::Invalid(format!(
+            "the file of cut {} is gone - cut the range again",
+            cut.id
+        )));
+    }
+    Ok(cut)
+}
+
+/// `POST /api/cuts/<id>/preview` (since 3.12): make the remux a browser
+/// plays, `.cuts\play\<id>.mp4`. It is disk work like the remux of a
+/// recording after the scan, so it takes no place in the job queue - behind
+/// a share of a minute, "preparing" would last a minute. One at a time.
+pub fn start_cut_copy(state: &Arc<AppState>, cut_id: &str) -> Result<(), ShareError> {
+    let cut = cut_with_file(state, cut_id)?;
+    let paths = state.paths_of_cut(&cut);
+    let out = paths.cut_copy_of(&cut.id);
+    {
+        let mut all = state.cut_copies.lock();
+        let entry = all.entry(cut.id.clone()).or_default();
+        if entry.preparing {
+            return Err(ShareError::Exists(
+                "the playable copy of this cut is being made".into(),
+            ));
+        }
+        if out.is_file() {
+            entry.remux = true;
+            return Err(ShareError::Exists(
+                "the playable copy of this cut exists already".into(),
+            ));
+        }
+        entry.preparing = true;
+    }
+    state.tray_changed();
+    let state = state.clone();
+    tokio::spawn(async move {
+        let _slot = state.cut_copy_slot.acquire().await;
+        let started = Instant::now();
+        let tmp = part_of(&out);
+        let made = async {
+            std::fs::create_dir_all(paths.play_dir())
+                .with_context(|| format!("cannot create {}", paths.play_dir().display()))?;
+            state
+                .runtime()
+                .media
+                .remux_preview(&paths.cut_of(&cut.id), &tmp)
+                .await?;
+            std::fs::rename(&tmp, &out).context("move the copy into place")
+        }
+        .await;
+        let _ = std::fs::remove_file(&tmp);
+        // a cut deleted meanwhile takes its copy along
+        let still_there = matches!(state.db.cut(&cut.id), Ok(Some(_)));
+        if !still_there {
+            let _ = std::fs::remove_file(&out);
+        }
+        match &made {
+            Ok(()) if still_there => tracing::info!(
+                "cut [{}]: playable copy ready in {:.1} s",
+                cut.id,
+                started.elapsed().as_secs_f64()
+            ),
+            Ok(()) => {}
+            Err(e) => tracing::warn!("cut [{}]: no playable copy: {e:#}", cut.id),
+        }
+        let ready = made.is_ok() && still_there;
+        state.update_cut_copies(&cut.id, |c| {
+            c.preparing = false;
+            c.remux = ready;
+        });
+    });
+    Ok(())
+}
+
+/// `POST /api/cuts/<id>/preview { h264: true }` (since 3.12): the 720p
+/// H.264 copy of a cut for a browser that cannot decode the recording's
+/// codec, as a `preview` job like the one of a recording. It encodes the
+/// whole cut file from its first frame, so it has the remux's time axis.
+pub fn start_cut_preview(state: &AppState, cut_id: &str) -> Result<Started, ShareError> {
+    let cut = cut_with_file(state, cut_id)?;
+    if state.paths_of_cut(&cut).cut_copy_h264_of(&cut.id).is_file() {
+        return Err(ShareError::Exists(
+            "the playable preview of this cut exists already".into(),
+        ));
+    }
+    let mut inner = state.inner.lock();
+    let duplicate = inner
+        .current_job
+        .iter()
+        .chain(inner.queue.iter())
+        .filter_map(|id| inner.jobs.get(id))
+        .find(|j| j.is_preview() && j.cut.as_deref() == Some(cut.id.as_str()))
+        .map(|j| j.id.clone());
+    if let Some(id) = duplicate {
+        return Err(ShareError::Busy(id));
+    }
+    if inner.queue.len() >= MAX_QUEUE {
+        return Err(ShareError::QueueFull);
+    }
+    let mut id = random_token(8);
+    while inner.jobs.contains_key(&id) {
+        id = random_token(8);
+    }
+    // the file runs from the keyframe before the range to its end; a
+    // moment more than that is harmless and loses no last frame
+    let length = cut.end - cut.actual_start.unwrap_or(cut.start) + 0.5;
+    let seconds = (length * 100.0).round() / 100.0;
+    let job = Job {
+        id: id.clone(),
+        kind: crate::state::KIND_PREVIEW.to_string(),
+        base: cut.base.clone(),
+        cut: Some(cut.id.clone()),
+        target: crate::integrations::TARGET_FILE.to_string(),
+        start: 0.0,
+        end: seconds,
+        seconds,
+        audio: "mix".into(),
+        mode: "h264".into(),
+        kbps: PREVIEW_KBPS,
+        stage: "queued".into(),
+        percent: 0,
+        at: util::now_local(),
+        ..Job::default()
+    };
+    let position = state.register_job(&mut inner, job);
+    Ok(Started {
+        job: id,
+        position,
+        cut: Some(cut.id),
+    })
+}
+
 /// The playable copy: 720p H.264 at `PREVIEW_KBPS` with audio track 1,
 /// into `.preview/<base>.h264.mp4`; the clip learns the URL when it is done.
+/// Since 3.12 a job with a cut makes that cut's copy from the cut file,
+/// into `.cuts\play\<id>.h264.mp4`.
 async fn preview_pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Result<()> {
     let job = state.job(id).ok_or_else(|| anyhow!("job vanished"))?;
     let runtime = state.runtime();
-    let clip_path = {
-        let inner = state.inner.lock();
-        let clip = inner
-            .clips
-            .get(&job.base)
-            .ok_or_else(|| anyhow!("unknown clip: {}", job.base))?;
-        PathBuf::from(&clip.path)
+    let (clip_path, out) = match job.cut.as_deref() {
+        Some(cut_id) => {
+            let cut = state
+                .db
+                .cut(cut_id)?
+                .ok_or_else(|| anyhow!("cut {cut_id} is no longer known"))?;
+            let paths = state.paths_of_cut(&cut);
+            std::fs::create_dir_all(paths.play_dir())
+                .with_context(|| format!("cannot create {}", paths.play_dir().display()))?;
+            (paths.cut_of(&cut.id), paths.cut_copy_h264_of(&cut.id))
+        }
+        None => {
+            let clip_path = {
+                let inner = state.inner.lock();
+                let clip = inner
+                    .clips
+                    .get(&job.base)
+                    .ok_or_else(|| anyhow!("unknown clip: {}", job.base))?;
+                PathBuf::from(&clip.path)
+            };
+            (
+                clip_path,
+                state.paths_for(&job.base).preview_h264_of(&job.base),
+            )
+        }
     };
-    let out = state.paths_for(&job.base).preview_h264_of(&job.base);
     let tmp = out.with_extension("part.mp4");
     tracing::info!(
-        "preview [{id}]: {} ({} s) -> {}{}",
+        "preview [{id}]: {}{} ({} s) -> {}{}",
         job.base,
+        job.cut
+            .as_deref()
+            .map(|c| format!(", cut {c}"))
+            .unwrap_or_default(),
         job.seconds,
         out.display(),
         if job.idle { " (idle priority)" } else { "" }
@@ -1324,7 +1491,10 @@ async fn preview_pipeline(state: &AppState, id: &str, token: &CancellationToken)
         j.percent = 100;
         j.size_mb = Some(size_mb);
     });
-    state.set_preview_h264(&job.base, Some(crate::state::preview_h264_url(&job.base)));
+    match job.cut.as_deref() {
+        Some(cut_id) => state.update_cut_copies(cut_id, |c| c.h264 = true),
+        None => state.set_preview_h264(&job.base, Some(crate::state::preview_h264_url(&job.base))),
+    }
     tracing::info!(
         "preview [{id}]: ready in {} s, {size_mb} MB",
         started.elapsed().as_secs()

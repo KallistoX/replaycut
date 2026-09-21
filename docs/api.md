@@ -2001,6 +2001,69 @@ the recording's title. `200 { ok: true, cut }` with the [Cut](#cut) as
   not a string. A typo is refused rather than answered with a success that
   changed nothing.
 
+### A cut plays in the browser
+
+The cut file is the recording's streams as they are, in a Matroska file with
+every audio track - which a browser does not play. A cut gets **playable
+copies** for that, made on request and kept until the cut goes:
+
+| Copy | File | URL | Made by |
+| --- | --- | --- | --- |
+| remux | `.cuts\play\<id>.mp4` | `/media/cuts/<id>.mp4` | `POST /api/cuts/<id>/preview` |
+| H.264 | `.cuts\play\<id>.h264.mp4` | `/media/cuts/<id>.h264.mp4` | `POST /api/cuts/<id>/preview { "h264": true }` |
+
+The remux is the picture as recorded plus the first audio track, the mix,
+with `faststart` - the same thing `/media/<base>.mp4` is for a recording. The
+H.264 copy is the 720p copy of the [playable preview](#playable-preview) for a
+browser that cannot decode the recording's codec. Both begin where the cut
+file begins, at `actualStart` in the recording, not at `start`: a time `t` in
+a copy is `actualStart + t` in the recording, and the range of the cut is
+`start - actualStart` to `end - actualStart` in the copy.
+
+A [Cut](#cut) gains three fields:
+
+- `preview`: the URL of the remux, `null` until it exists.
+- `previewH264`: the URL of the H.264 copy, `null` until it exists.
+- `preparing: true` while the remux is being made; absent otherwise.
+
+A cut whose recording is still there can be played from the recording's own
+preview in its range; the page asks for a copy when there is no other way.
+
+### `POST /api/cuts/<id>/preview`
+
+- `{}` (or no body): the remux. It is disk work and takes **no place in the
+  job queue** - behind a running share it would otherwise wait for that
+  share. One is made at a time. `202 { ok: true, cut }`; the cut says
+  `preparing` until the copy is there, and the event stream announces both.
+- `{ "h264": true }`: the H.264 copy, as a job of `kind: "preview"` that
+  carries `cut`, with the stages, the progress and the cancel of the preview
+  of a recording. It never enters the history and is never `last`.
+  `202 { ok: true, job, position, cut }`.
+
+`404` for a cut nobody knows, `400` for a cut without its file, `409` when the
+copy exists or is being made (with `job` for a preview job that runs or
+waits), `429` when the queue is full.
+
+### `GET /media/cuts/<id>.mp4`, `GET /media/cuts/<id>.h264.mp4`
+
+Served like `/media/<base>.mp4`: `video/mp4`, `Accept-Ranges: bytes`, `206`
+for a range, `416` for one outside the file. `404` for a copy that does not
+exist or a name that is not a cut id.
+
+### Where the copies go
+
+With the cut: `DELETE /api/cuts/<id>` and `DELETE /api/clips/<base>` with
+`scope=all` remove them. They are made from the cut and can be made again, so
+they are deleted rather than moved to the recycle bin. `scope=clip` and
+`after: recycle` leave them, because the cut stays. A copy whose cut is no
+longer known is removed by the next scan, and an unfinished one by the next
+start. The diagnostics line `cuts` counts them apart from the cut files
+("plus 2 playable copies (0.3 GB)").
+
+Why `.cuts\play\` and not `.cuts\`: the scan moves every file in `.cuts\`
+whose name is not a cut id to the recycle bin - a 3.11 does that too - and
+leaves folders alone.
+
 ## Behaviour
 
 ### Folder scan
