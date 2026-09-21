@@ -8,7 +8,34 @@ replaycut 2.0 is a rewrite of a PowerShell service (1.x) that was never
 published. The 2.0 line keeps that service's HTTP API; `docs/api.md` is the
 contract.
 
-## [Unreleased]
+## [3.13.0] - 2026-09-21
+
+**The rest of the workshop, the quick share in Settings, and the job
+strip.** Lines of your own - typed by hand, also where whisper cannot run
+or heard nothing - edges you drag on the timeline, zoom, and a workshop
+that works on a narrow screen and a phone. What `Enter` shares is set in
+Settings › Quick share, and four pills under the player change it for the
+next share only. What runs, what waits and what came out sit in one strip
+under the top bar.
+
+### Changed
+
+- **The share settings now come from Settings › Quick share** and are the
+  same on every device. What a browser remembered before - the quality
+  ("As recorded") and Afterwards, and the subtitles of the share row - is
+  forgotten once: set it there. The Subtitles select of the share row is
+  gone; a range that is a cut with lines follows the cut, and everything
+  else follows the settings.
+- **What runs, what waits and what came out sit in a strip under the top
+  bar** on the clips page, in cutting mode and in the workshop alike: the
+  progress with Cancel, the queue line with "Remove from queue" and the
+  last result, now with a button to hide it. The strip stays in view while
+  the page scrolls - on a phone it takes a third of the screen at most -
+  and the workshop's picture on a narrow screen sits below it.
+- **The Subtitles card in Settings** is laid out like the other cards:
+  language and track first, then the model, then the default look per
+  frame with a small preview drawn from the same table as the workshop's
+  overlay and the rendering.
 
 ### Added
 
@@ -58,25 +85,6 @@ contract.
   changed one is marked, and after a share they fall back. The 9:16 window
   sits next to the Frame pill. The line below says what a quick share does
   with subtitles, and warns when it would fail for want of a model.
-
-### Changed
-
-- **Share choices are settings, not browser habits.** "As recorded" and the
-  subtitle choice of the share row were kept in each browser, Afterwards in
-  each tab; the page forgets them now. If you shared "As recorded" out of
-  habit, set Quality once in Settings › Quick share. The Subtitles select
-  of the share row is gone: a range that is a cut with lines follows the
-  cut, and everything else follows the settings.
-- **What runs, what waits and what came out sit in a strip under the top
-  bar** on the clips page, in cutting mode and in the workshop alike: the
-  progress with Cancel, the queue line with "Remove from queue" and the
-  last result, now with a button to hide it. The strip stays in view while
-  the page scrolls - on a phone it takes a third of the screen at most -
-  and the workshop's picture on a narrow screen sits below it.
-- **The Subtitles card in Settings** is laid out like the other cards:
-  language and track first, then the model, then the default look per
-  frame with a small preview drawn from the same table as the workshop's
-  overlay and the rendering.
 
 ### Fixed
 
