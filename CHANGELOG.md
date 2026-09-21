@@ -34,6 +34,19 @@ contract.
   keeps the playhead in view; the page itself stays as wide as it is. A
   click between two lines puts the playhead there.
 
+- **The workshop on a narrow screen and a phone** (beta, #55). Under 1000
+  pixels the picture, a map of the lines and the timing buttons (Start
+  here, End here, ±0.1) stay at the top while the rest scrolls: the text
+  of the selected line, and the transcript as a document with the gaps
+  between the lines named. A tap on the map picks the line under it, or
+  puts the playhead into a gap. The lane, its zoom and the inspector's
+  timing column give way - a finger cannot hit a tenth of a second.
+- **The loaded-chip picks what is loaded on a narrow screen.** A tap on it
+  opens the recording's shelf as a sheet - "Full recording" and its cuts at
+  44 px a row - and "Another recording" opens the list.
+- **Keyboard hints are left out on a touch screen**, where they only make
+  the buttons wider.
+
 ### Fixed
 
 - **A clip opens into its cuts when you click it.** The row of the loaded

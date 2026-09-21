@@ -912,7 +912,7 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 #workshop .stage > .player-wrap { width: 100%; }
 /* 9:16 chosen: the picture is the window that is rendered, at the height
    the 16:9 picture has, moved by the window position */
-#workshop .stage > #wPlayer.is-vertical { width: fit-content; max-width: 100%; margin: 0 auto; }
+#workshop .stage #wPlayer.is-vertical { width: fit-content; max-width: 100%; margin: 0 auto; }
 #wPlayer.is-vertical video { width: auto; height: min(58vh, 56.25cqw); aspect-ratio: 9 / 16; object-fit: cover; }
 /* since 3.12, stage b: the subtitles in the workshop. The overlays are
    placed by script from the look table (GET /api/subtitles/looks), so the
@@ -948,24 +948,46 @@ ol.steps b { color: var(--fg); font-weight: normal; }
 #workshop { --ws-side: 360px; --ws-rest: 560px; }
 @media (min-width: 1000px) {
   #workshop.has-subs .stage { flex-direction: row; align-items: flex-start; }
-  #workshop.has-subs .stage > #wPlayer { flex: none; width: min(calc(100cqw - var(--ws-side)), calc((100vh - var(--ws-rest)) * 16 / 9)); min-width: 400px; }
-  #workshop.has-subs .stage > #wPlayer.is-vertical { width: fit-content; min-width: 0; margin: 0; }
+  #workshop.has-subs .stage #wPlayer { flex: none; width: min(calc(100cqw - var(--ws-side)), calc((100vh - var(--ws-rest)) * 16 / 9)); min-width: 400px; }
+  #workshop.has-subs .stage #wPlayer.is-vertical { width: fit-content; min-width: 0; margin: 0; }
   #workshop.has-subs #wPlayer video { max-height: none; }
   #workshop.has-subs #wPlayer.is-vertical video { height: max(240px, min(calc((100cqw - var(--ws-side)) * 9 / 16), calc(100vh - var(--ws-rest)))); }
 }
-/* Under 1000 px everything stacks, and the picture stays at the top while
-   the lane, the inspector and the transcript scroll under it. The lane and
-   the transcript stay - the document view of F16 is stage c. */
+/* Under 1000 px everything stacks (F16, F18, since 3.13): the dock - the
+   picture, a map of the lines and the timing buttons - stays at the top,
+   and the text of the selected line and the transcript as a document scroll
+   under it. The lane, the zoom and the inspector's timing and transcript
+   columns give way; a finger cannot hit 0.1 s on a lane. */
 @media (max-width: 999px) {
   #workshop.has-subs .stage { display: contents; }
-  #workshop.has-subs #wPlayer { position: sticky; top: var(--topbar-h); z-index: 3; background: var(--bg); padding-bottom: var(--space-1); }
-  #workshop.has-subs #wPlayer video { max-height: 40vh; }
-  /* what scrolls under the picture keeps its layers to itself */
-  #workshop.has-subs #wtl, #workshop.has-subs .caption-lane { z-index: 0; }
-  #workshop.has-subs .caption-lane { display: block; }
-  #workshop.has-subs .line-inspector .col.transcript-col { display: flex; }
-  .line-inspector .stamp .btn, .line-inspector .nudge .btn { min-height: var(--touch); }
+  #workshop:not(.has-subs) .player-dock { display: contents; }
+  #workshop.has-subs .player-dock { top: var(--topbar-h); z-index: 3; }
+  #workshop.has-subs #wPlayer video { max-height: 34vh; }
+  /* what scrolls under the dock keeps its layers to itself */
+  #workshop.has-subs #wtl { z-index: 0; }
+  #workshop .lane-head .zoom, #workshop .caption-lane { display: none; }
+  #workshop .line-inspector > .col + .col { display: none; }
+  .dock-timing .btn { flex: 1 1 auto; }
+  #workshop.has-subs .player-dock { gap: var(--space-1); padding: var(--space-1) var(--space-2) var(--space-2); }
 }
+@media (min-width: 1000px) { .dock-timing, .wdoc { display: none; } }
+/* the map of the lines in the dock: a tap selects the line under it, or
+   puts the playhead into a gap */
+.caption-map { cursor: pointer; touch-action: manipulation; }
+.caption-map .block.is-new { border-style: dashed; }
+@media (pointer: coarse) { .caption-map.has-label { height: 52px; } .caption-map .block, .caption-map .block.is-selected { top: 18px; bottom: 6px; } }
+/* the transcript as a document: the gaps between the lines have names */
+.wdoc .transcript .gap { min-height: 20px; }
+/* keyboard hints are no use to a finger (F17) */
+@media (pointer: coarse) { .btn kbd { display: none; } .dock-timing .btn { min-height: var(--touch); } }
+/* the loaded-chip opens the sheet on a narrow screen (F19) */
+.loaded-chip .sheet-chev { display: none; }
+@media (max-width: 999px) { .loaded-chip.can-sheet { cursor: pointer; } .loaded-chip.can-sheet .sheet-chev { display: block; margin-left: auto; flex: none; transform: rotate(90deg); color: var(--fg-muted); } .loaded-chip.can-sheet .mode { display: none; } }
+.dialog.sheet { max-width: 520px; gap: var(--space-2); }
+.dialog.sheet .cut-card { min-height: var(--touch); }
+.dialog.sheet .cut-card .thumb { width: 56px; height: 32px; }
+.dialog.sheet .shelf { margin-left: 0; padding-left: 0; border-left: 0; }
+.dialog.sheet .shelf > .section-title { display: none; }
 @media (pointer: coarse) {
   .caption-lane { height: 52px; }
   .caption-lane .block { line-height: 38px; font-size: var(--text-sm); }
@@ -1142,11 +1164,23 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       </div>
       <div class="loaded-chip is-cut" id="wLoaded" aria-live="polite"></div>
       <div class="stage">
+        <!-- since 3.13: under 1000 px the picture, a map of the lines and the
+             timing buttons stay at the top while the document scrolls;
+             above it the dock is display: contents -->
+        <div class="player-dock" id="wDock">
         <div class="player-wrap" id="wPlayer">
           <video id="wv" preload="auto" playsinline></video>
           <div class="sub-overlay" id="wSub" hidden></div>
           <div class="player-ov" id="wOv" hidden></div>
           <div class="wcontrols"><button class="btn btn-ghost btn-icon btn-sm" id="wPlay" type="button" aria-label="Play"><svg class="icon icon-sm"><use href="#i-play"/></svg></button><span class="mono" id="wTime">0:00.0 / 0:00.0</span></div>
+        </div>
+        <div class="caption-map has-label" id="capMap" role="listbox" aria-label="Subtitle lines of this cut - tap one" hidden><span class="label">tap a line</span></div>
+        <div class="row dock-timing" id="dockTiming" hidden>
+          <button class="btn btn-sm" type="button" id="dkIn"><svg class="icon icon-sm"><use href="#i-cut-in"/></svg> Start here</button>
+          <button class="btn btn-sm" type="button" id="dkOut"><svg class="icon icon-sm"><use href="#i-cut-out"/></svg> End here</button>
+          <button class="btn btn-sm" type="button" data-nudge="end,-0.1" aria-label="End 0.1 s earlier">− 0.1</button>
+          <button class="btn btn-sm" type="button" data-nudge="end,0.1" aria-label="End 0.1 s later">+ 0.1</button>
+        </div>
         </div>
         <div class="side">
           <div class="row nowrap"><div class="seg" id="frameSeg" role="group" aria-label="Frame to render"><button type="button" data-frame="wide" aria-pressed="true">16:9</button><button type="button" data-frame="vertical" aria-pressed="false">9:16</button></div><span class="muted sm">the frame you will render</span></div>
@@ -1205,6 +1239,12 @@ ol.steps b { color: var(--fg); font-weight: normal; }
           <div class="row nowrap"><span class="section-title grow">Whole transcript</span><button class="btn btn-sm btn-ghost" type="button" id="liAdd" title="A new line in the gap at the playhead"><svg class="icon icon-sm"><use href="#i-plus"/></svg> Add line <kbd>N</kbd></button></div>
           <div class="transcript" id="transcript"></div>
         </div>
+      </div>
+      <!-- since 3.13: under 1000 px the transcript is the list to work in -
+           every line with its time, and the gaps between them named -->
+      <div class="wdoc stack-2" id="wDoc" hidden>
+        <div class="row nowrap"><span class="section-title grow">Transcript</span><button class="btn btn-sm btn-ghost" type="button" id="docAdd" title="A new line in the gap at the playhead"><svg class="icon icon-sm"><use href="#i-plus"/></svg> Add line</button></div>
+        <div class="transcript is-wrapped" id="docList"></div>
       </div>
       <div class="sub-bar" id="subBar" hidden>
         <svg class="icon"><use href="#i-subtitles"/></svg><b>Subtitles</b><span class="badge">Beta</span>
@@ -1793,6 +1833,17 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <tr><td><kbd>?</kbd></td><td colspan="2">This list</td></tr>
     </table></div>
     <div class="actions"><button class="btn" id="helpClose">Close <kbd>Esc</kbd></button></div>
+  </div>
+</div>
+
+<!-- since 3.13: on a phone the loaded-chip opens what can be loaded, the
+     shelf of the recording at 44 px a row (F19) -->
+<div class="modal" id="loadSheet" hidden>
+  <div class="dialog sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="card-head"><h2 id="sheetTitle">Load</h2><button class="btn btn-ghost btn-icon" type="button" id="sheetClose" aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button></div>
+    <div id="sheetBody" class="stack-2"></div>
+    <hr>
+    <button class="btn btn-ghost" type="button" id="sheetOther"><svg class="icon"><use href="#i-chevron"/></svg> <span id="sheetOtherText">Another recording</span></button>
   </div>
 </div>
 
@@ -3226,6 +3277,7 @@ function initClips() {
 
   initWorkshop();   // since 3.12
   initWorkshopSubs();   // since 3.12, stage b
+  initSheet();   // since 3.13
   poll();
 }
 
@@ -4019,7 +4071,7 @@ function renderLoaded() {
   el.hidden = false;
   const bits = [fmt(cur.duration), cur.codec, cur.width && cur.height ? `${cur.width}×${cur.height}` : '', cur.fps ? `${Math.round(cur.fps)} fps` : '',
     `${cur.tracks || 1} track${(cur.tracks || 1) === 1 ? '' : 's'}`, cur.size ? fmtSize(cur.size) : ''].filter(Boolean);
-  el.innerHTML = `<svg class="icon"><use href="#i-film"/></svg><b>Full recording</b><span class="meta">${esc(bits.join(' · '))}</span><span class="mode">Cutting mode</span>`;
+  el.innerHTML = `<svg class="icon"><use href="#i-film"/></svg><b>Full recording</b><span class="meta">${esc(bits.join(' · '))}</span><span class="mode">Cutting mode</span><svg class="icon sheet-chev" aria-hidden="true"><use href="#i-chevron"/></svg>`;
 }
 /// The ranges of the cuts already taken, as quiet bars on the recording's
 /// timeline (from the design's concept C1). A click loads that cut.
@@ -4248,7 +4300,7 @@ function shelfOf(c, gone) {
   };
   const inCut = mode === 'cut';
   card('is-whole' + (inCut && !gone ? ' is-loaded' : '') + (gone ? ' is-unavailable' : ''),
-    `<svg class="icon"><use href="#i-film"/></svg><span class="what"><span class="name">Full recording</span><span class="meta">${gone ? 'recycled' : `${esc(fmt(c.duration))} · ${inCut ? 'loaded' : 'Esc'}`}</span></span>`,
+    `<svg class="icon"><use href="#i-film"/></svg><span class="what"><span class="name">Full recording</span><span class="meta">${gone ? 'recycled' : `${esc(fmt(c.duration))} · ${inCut ? 'loaded' : matchMedia('(pointer: coarse)').matches ? 'back to it' : 'Esc'}`}</span></span>`,
     () => { if (!gone) leaveWorkshop(); }, inCut && !gone);
   (c.cuts || []).forEach(k => {
     const loaded = mode === 'work' && wcut && wcut.id === k.id, outs = (k.outputs || []).length;
@@ -4345,7 +4397,7 @@ function renderWorkshop() {
     const cc = k.subtitles && k.subtitles.count ? `CC ${k.subtitles.language || '?'}` : '';
     const chip = [fmt(cutLen(k)), from, audioLabel(k.audio), cc].filter(Boolean).join(' · ');
     const preparing = wsrc && wsrc.need === 'remux';
-    $('wLoaded').innerHTML = `<svg class="icon"><use href="#i-subtitles"/></svg><b>Cut</b><span class="meta">${preparing ? '<span class="spinner"></span>preparing for playback · ' : ''}${esc(chip)}</span><span class="mode">Workshop mode</span>`;
+    $('wLoaded').innerHTML = `<svg class="icon"><use href="#i-subtitles"/></svg><b>Cut</b><span class="meta">${preparing ? '<span class="spinner"></span>preparing for playback · ' : ''}${esc(chip)}</span><span class="mode">Workshop mode</span><svg class="icon sheet-chev" aria-hidden="true"><use href="#i-chevron"/></svg>`;
     $('wLoaded').setAttribute('aria-label', `Cut "${cutName(k, cur)}" loaded, workshop mode`);
     $('wAxis').textContent = `Cut · 0:00 – ${fmt(cutLen(k))}`;
     renderRenderRow();
@@ -4818,7 +4870,7 @@ function wsDraw() {
   const layout = $('workshop').classList.contains('has-subs');
   if (has !== layout) { wKey = ''; renderWorkshop(); return; }
   if (!has) return;
-  wsLane(); wsInspector(); wsTranscript(); wsBar(); wsOverlay(true); renderRenderRow();
+  wsLane(); wsMap(); wsInspector(); wsTranscript(); wsDoc(); wsBar(); wsOverlay(true); renderRenderRow();
 }
 function wsLane() {
   // while an edge is dragged only it moves (wsDragPaint): rebuilding the
@@ -4902,9 +4954,10 @@ function wsDragPaint() {
   wsOverlay(true);
 }
 function wsPlayhead() {
-  const ph = $('lane').querySelector('.playhead'); if (!ph || !wcut) return;
-  const len = cutLen(wcut) || 1;
-  ph.style.left = (Math.max(0, Math.min(len, wRecSafe() - wcut.start)) / len * 100) + '%';
+  if (!wcut) return;
+  const len = cutLen(wcut) || 1, left = (Math.max(0, Math.min(len, wRecSafe() - wcut.start)) / len * 100) + '%';
+  const ph = $('lane').querySelector('.playhead'); if (ph) ph.style.left = left;
+  const mp = $('capMap').querySelector('.playhead'); if (mp) mp.style.left = left;
 }
 function wsInspector() {
   const s = ws.segs[ws.sel], text = $('lineText');
@@ -4916,8 +4969,8 @@ function wsInspector() {
   } else $('liTimes').textContent = '';
   if (document.activeElement !== text) text.value = s ? s.text : '';
   text.disabled = !s;
-  ['liPlay', 'liDel', 'liIn', 'liOut'].forEach(id => { $(id).disabled = !s; });
-  document.querySelectorAll('#inspector [data-nudge]').forEach(b => { b.disabled = !s; });
+  ['liPlay', 'liDel', 'liIn', 'liOut', 'dkIn', 'dkOut'].forEach(id => { $(id).disabled = !s; });
+  document.querySelectorAll('#inspector [data-nudge], #dockTiming [data-nudge]').forEach(b => { b.disabled = !s; });
   $('liMerge').disabled = !s || ws.sel >= ws.segs.length - 1;
   wsTimingLine();
 }
@@ -4928,9 +4981,12 @@ function wsTimingLine() {
   $('liSplit').disabled = !wsSplitAt();
   // off, not disabled: a disabled button shows no tooltip, and a click
   // should say why (the toast of wsAdd)
-  const gap = !!wsGapAt(wRecSafe()), add = $('liAdd');
-  add.setAttribute('aria-disabled', gap ? 'false' : 'true');
-  add.title = gap ? 'A new line in the gap at the playhead' : 'Put the playhead in a gap between the lines - inside a line, Split does it';
+  const gap = !!wsGapAt(wRecSafe());
+  ['liAdd', 'docAdd'].forEach(id => {
+    const add = $(id);
+    add.setAttribute('aria-disabled', gap ? 'false' : 'true');
+    add.title = gap ? 'A new line in the gap at the playhead' : 'Put the playhead in a gap between the lines - inside a line, Split does it';
+  });
 }
 
 // -------- a line of your own (since 3.13)
@@ -4984,6 +5040,104 @@ function wsTranscript() {
   });
   const cur = box.children[ws.sel];
   if (cur) { const top = cur.offsetTop - box.offsetTop; if (top < box.scrollTop || top > box.scrollTop + box.clientHeight - cur.offsetHeight) box.scrollTop = top - box.clientHeight / 3; }
+}
+// -------- the sheet (since 3.13, F19): on a narrow screen the loaded-chip
+// opens what can be loaded - the shelf of the recording at 44 px a row - so
+// a cut is two taps away without scrolling to the list
+const narrow = () => matchMedia('(max-width: 999px)').matches;
+function openSheet() {
+  if (!cur) return;
+  const body = $('sheetBody'); body.innerHTML = '';
+  $('sheetTitle').textContent = `Load from "${cur.title || short(cur.base)}"`;
+  body.appendChild(shelfOf(cur, cur.file === null));
+  const others = listedClips().filter(c => c.base !== cur.base).length;
+  $('sheetOtherText').textContent = others ? `Another recording · ${others} more` : 'The list of recordings';
+  $('loadSheet').hidden = false;
+  const first = body.querySelector('.cut-card[aria-current="true"]') || body.querySelector('.cut-card');
+  if (first) first.focus();
+}
+function closeSheet() { $('loadSheet').hidden = true; }
+function syncChips() {
+  ['loaded', 'wLoaded'].forEach(id => {
+    const chip = $(id), on = narrow();
+    chip.classList.toggle('can-sheet', on);
+    if (on) { chip.setAttribute('role', 'button'); chip.tabIndex = 0; chip.setAttribute('aria-haspopup', 'dialog'); }
+    else { chip.removeAttribute('role'); chip.removeAttribute('tabindex'); chip.removeAttribute('aria-haspopup'); }
+  });
+}
+function initSheet() {
+  ['loaded', 'wLoaded'].forEach(id => {
+    const chip = $(id);
+    chip.addEventListener('click', () => { if (narrow()) openSheet(); });
+    // Enter on the chip opens it and does not render or share
+    chip.addEventListener('keydown', e => { if (narrow() && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); openSheet(); } });
+  });
+  syncChips();
+  matchMedia('(max-width: 999px)').addEventListener('change', () => { syncChips(); if (!narrow()) closeSheet(); });
+  // a card loads what it names (its own handler) and the sheet goes
+  $('sheetBody').addEventListener('click', e => { if (e.target.closest('.cut-card')) setTimeout(closeSheet); }, true);
+  $('sheetClose').onclick = closeSheet;
+  $('loadSheet').addEventListener('click', e => { if (e.target === $('loadSheet')) closeSheet(); });
+  $('sheetOther').onclick = () => { closeSheet(); $('cliplist').open = true; scrollTo({ top: 0 }); };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('loadSheet').hidden) { e.preventDefault(); e.stopImmediatePropagation(); closeSheet(); } }, true);
+}
+
+// -------- under 1000 px (since 3.13): the map in the dock and the document
+let wsMapKey = '', wsDocKey = '';
+/// The lines as a strip on the cut's axis, in the dock: it shows where they
+/// are and which is selected; a tap selects (wsMapTap). Nothing is dragged
+/// on it - a finger cannot hit 0.1 s.
+function wsMap() {
+  const map = $('capMap'), k = wcut, len = cutLen(k) || 1;
+  const key = JSON.stringify([k.id, ws.segs, ws.sel]);
+  if (key !== wsMapKey) {
+    wsMapKey = key;
+    map.querySelectorAll('.block, .playhead').forEach(e => e.remove());
+    ws.segs.forEach((s, i) => {
+      const b = document.createElement('span');
+      b.className = 'block' + (i === ws.sel ? ' is-selected' : '') + (String(s.text || '').trim() ? '' : ' is-new');
+      b.style.left = ((s.start - k.start) / len * 100) + '%';
+      b.style.width = ((s.end - s.start) / len * 100) + '%';
+      map.appendChild(b);
+    });
+    const ph = document.createElement('span'); ph.className = 'playhead'; map.appendChild(ph);
+  }
+  const ph = map.querySelector('.playhead');
+  if (ph) ph.style.left = (Math.max(0, Math.min(len, wRecSafe() - k.start)) / len * 100) + '%';
+}
+/// A tap on the map: the line under it - or the nearest within a finger's
+/// width - is selected and played from; between lines the playhead goes there.
+function wsMapTap(e) {
+  if (!wcut) return;
+  const r = $('capMap').getBoundingClientRect(), len = cutLen(wcut) || 1;
+  const t = wcut.start + Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * len;
+  const slack = 22 / Math.max(1, r.width) * len;
+  let best = -1, dist = Infinity;
+  ws.segs.forEach((s, i) => { const d = t < s.start ? s.start - t : t > s.end ? t - s.end : 0; if (d < dist) { dist = d; best = i; } });
+  if (best >= 0 && dist <= slack) wsSelect(best, true); else wSeek(t - wcut.start);
+}
+/// The transcript as a document: every line with its time, the gaps between
+/// them named - the list a finger works in under 1000 px.
+function wsDoc() {
+  const box = $('docList'), k = wcut;
+  const key = JSON.stringify([k.id, ws.segs, ws.sel]);
+  if (key === wsDocKey) return;
+  wsDocKey = key;
+  box.innerHTML = '';
+  ws.segs.forEach((s, i) => {
+    const prev = ws.segs[i - 1];
+    const gap = s.start - (prev ? prev.end : k.start);
+    if (gap >= 0.3) { const g = document.createElement('span'); g.className = 'gap'; g.textContent = `${gap.toFixed(1)} s gap`; box.appendChild(g); }
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'tline' + (i === ws.sel ? ' is-current' : '');
+    if (i === ws.sel) b.setAttribute('aria-current', 'true');
+    b.innerHTML = '<span class="t"></span><span class="txt"></span>';
+    b.firstChild.textContent = fmt(s.start - k.start);
+    const words = s.text.replace(/\n/g, ' ').trim();
+    if (!words) b.classList.add('is-new');
+    b.lastChild.textContent = words || 'new line - type its text';
+    b.onclick = () => wsSelect(i, true);
+    box.appendChild(b);
+  });
 }
 function wsBar() {
   if (!wsHas()) return;
@@ -5268,7 +5422,8 @@ function renderWorkshopSubs() {
   if (LOOKS) $('fpBand').style.height = LOOKS.frames.vertical.shortsUi.bottom + '%';
   // at once: reading the picture's box forces the layout, and a frame
   // callback would not run in a tab that counts as hidden
-  if (has) { wsLookBox(); wsLane(); wsInspector(); wsTranscript(); wsBar(); wsOverlay(true); wsPreview(true); }
+  $('capMap').hidden = !has; $('dockTiming').hidden = !has; $('wDoc').hidden = !has;
+  if (has) { wsLookBox(); wsLane(); wsMap(); wsInspector(); wsTranscript(); wsDoc(); wsBar(); wsOverlay(true); wsPreview(true); }
   else { $('wSub').hidden = true; if (!$('wSubsCard').hidden) wsSubsCard(); }
 }
 function initWorkshopSubs() {
@@ -5286,7 +5441,13 @@ function initWorkshopSubs() {
   $('liPlay').onclick = wsPlayLine; $('liSplit').onclick = wsSplit; $('liMerge').onclick = wsMerge; $('liDel').onclick = wsDelete;
   $('liAdd').onclick = () => wsAdd();
   $('liIn').onclick = () => wsStamp('start'); $('liOut').onclick = () => wsStamp('end');
-  document.querySelectorAll('#inspector [data-nudge]').forEach(b => { const [which, d] = b.dataset.nudge.split(','); b.onclick = () => wsNudge(which, Number(d)); });
+  document.querySelectorAll('#inspector [data-nudge], #dockTiming [data-nudge]').forEach(b => { const [which, d] = b.dataset.nudge.split(','); b.onclick = () => wsNudge(which, Number(d)); });
+  // the dock under 1000 px: the timing buttons, the map, the document's Add
+  $('dkIn').onclick = () => wsStamp('start'); $('dkOut').onclick = () => wsStamp('end');
+  $('capMap').addEventListener('pointerdown', wsMapTap);
+  $('docAdd').onclick = () => wsAdd();
+  // a zoomed timeline has nothing to show on a narrow screen: back to 1x
+  matchMedia('(max-width: 999px)').addEventListener('change', e => { if (e.matches && wZoomLevel !== 1 && wcut) wSetZoom(1); });
   // the lane is one control: arrows and Tab walk its lines, Enter edits one
   $('lane').addEventListener('keydown', e => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
