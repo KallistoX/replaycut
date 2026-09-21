@@ -12,6 +12,15 @@ contract.
 
 ### Fixed
 
+- **The progress bar follows a transcription.** Reading the speech of a cut
+  is the slowest thing replaycut does - about real time, so a minute for a
+  one-minute cut - and the bar under the player stood at 100 % from the
+  first second to the last, labelled with the bare word `transcribe`. It
+  now moves with ffmpeg the way it does for an encode, says how long a cut
+  it reads and from which track, and ends at 100 % when the transcript is
+  there. The running job on Activity shows the same bar, where until now
+  it showed none. A rendering that has to read the subtitles first lists
+  "Transcribe" as a stage of its own in front of "Encode". (#54)
 - **A rendering that reads the speech first says so only while it does.**
   Asked for subtitles on a cut that had none, a rendering read them in
   front of the encode as it should - but its job said `encode`, then

@@ -2942,20 +2942,27 @@ async function deleteClip() {
 // since 2.5 the post stage is called `notify` (2.4 and earlier said `discord`); both render the same
 // since 2.7 only the quick share (a share to the default storage) posts automatically
 // since 3.0 a share cuts the range first (stage `cut`); a render works on a cut that is there
-function stageList(j) { const s = []; if (!j || (!j.source && j.kind !== 'render')) s.push(['cut', 'Cut']); if (!j || !j.source) s.push(['encode', 'Encode']); const target = j ? j.target : defaultTarget(); if (target && target !== 'file') s.push(['upload', 'Upload']); if (cfg.webhook) { if (!j || (!j.source && j.target === defaultTarget())) s.push(['notify', 'Post']); else if (target && target !== 'file') s.push(['nopost', 'no auto-post (use "Post to" afterwards)']); } return s; }
-const STAGE_TEXT = { queued: 'Queued …', cut: 'Cutting …', encode: 'Encoding', upload: 'Uploading …', discord: 'Posting …', notify: 'Posting …' };
+// since 3.11.1 a rendering that reads the speech of its cut first shows that as a stage of its own
+// (`readFirst`: the jobs seen doing so, so the stage stays in the list once it is past)
+const readFirst = new Set();
+function stageList(j) { const s = []; if (!j || (!j.source && j.kind !== 'render')) s.push(['cut', 'Cut']); if (j && readFirst.has(j.id)) s.push(['transcribe', 'Transcribe']); if (!j || !j.source) s.push(['encode', 'Encode']); const target = j ? j.target : defaultTarget(); if (target && target !== 'file') s.push(['upload', 'Upload']); if (cfg.webhook) { if (!j || (!j.source && j.target === defaultTarget())) s.push(['notify', 'Post']); else if (target && target !== 'file') s.push(['nopost', 'no auto-post (use "Post to" afterwards)']); } return s; }
+const STAGE_TEXT = { queued: 'Queued …', cut: 'Cutting …', transcribe: 'Reading the speech', encode: 'Encoding', upload: 'Uploading …', discord: 'Posting …', notify: 'Posting …' };
+// The stages whose `percent` is ffmpeg's progress. A transcription is one
+// long ffmpeg too; until 3.11.1 its bar stood at 100 % the whole time (#54).
+const FOLLOWS_FFMPEG = ['encode', 'transcribe'];
 function showProgress(j) {
   const p = $('prog'); if (!j || j.stage === 'done' || j.stage === 'error' || j.stage === 'cancelled') { p.hidden = true; return; }
   p.hidden = false;
-  const pct = j.stage === 'encode' ? (j.percent || 0) : (j.stage === 'queued' || j.stage === 'cut' ? 0 : 100);
+  if (j.stage === 'transcribe') readFirst.add(j.id);
+  const pct = FOLLOWS_FFMPEG.includes(j.stage) ? (j.percent || 0) : (j.stage === 'queued' || j.stage === 'cut' ? 0 : 100);
   const queued = j.stage === 'queued' ? (j.position ? `Queued - ${j.position} share${j.position === 1 ? '' : 's'} ahead` : 'Queued …') : null;
   if (j.kind === 'preview') $('progText').textContent = (queued || `Making the playable preview (720p H.264) of ${short(j.base)}`);
-  else $('progText').textContent = (queued || (j.stage === 'encode' && j.mode === 'copy' ? 'Copying' : STAGE_TEXT[j.stage]) || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)}${j.mode === 'copy' ? ' as recorded' : (j.kbps ? ` at ${j.kbps} kbit/s` : ' at best quality')}${j.maxHeight ? `, ${j.maxHeight}p` : ''}${j.vertical ? ', vertical 9:16' : ''}, ${audioLabel(j.audio)}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '') + (otherClip(j) ? ` · ${otherClip(j)}` : '');
+  else $('progText').textContent = (queued || (j.stage === 'encode' && j.mode === 'copy' ? 'Copying' : STAGE_TEXT[j.stage]) || j.stage) + (j.stage === 'encode' ? ` ${fmt(j.seconds)}${j.mode === 'copy' ? ' as recorded' : (j.kbps ? ` at ${j.kbps} kbit/s` : ' at best quality')}${j.maxHeight ? `, ${j.maxHeight}p` : ''}${j.vertical ? ', vertical 9:16' : ''}, ${audioLabel(j.audio)}` : '') + (j.stage === 'transcribe' ? ` of ${fmt(j.seconds)}${j.track ? ` from the ${j.track === 'mic' ? 'microphone' : 'mix'}` : ''}` : '') + (j.sizeMB ? ` · ${j.sizeMB} MB` : '') + (otherClip(j) ? ` · ${otherClip(j)}` : '');
   const canCancel = ['queued', 'encode', 'upload'].includes(j.stage);
   $('progCancel').hidden = !canCancel; $('progCancel').dataset.job = j.id;
   $('progPct').textContent = pct + ' %';
   $('progBar').style.width = pct + '%';
-  const list = j.kind === 'preview' ? [['encode', 'Encode 720p']] : (j.kind === 'cut' ? [['cut', 'Cut']] : stageList(j)), idx = list.findIndex(([id]) => id === j.stage || (id === 'notify' && j.stage === 'discord'));
+  const list = j.kind === 'preview' ? [['encode', 'Encode 720p']] : j.kind === 'cut' ? [['cut', 'Cut']] : j.kind === 'transcribe' ? [['transcribe', 'Transcribe']] : stageList(j), idx = list.findIndex(([id]) => id === j.stage || (id === 'notify' && j.stage === 'discord'));
   $('stages').innerHTML = list.map(([id, label], i) => `<span class="${id === 'nopost' ? 'st-skip' : (i < idx ? 'st-done' : (i === idx ? 'st-on' : ''))}">${id === 'nopost' ? '' : (i + 1) + ' '}${label}</span>`).join('');
 }
 // The result of the last job (3.1): a heading, the output as the same row it
@@ -3111,11 +3118,11 @@ function renderQueue() {
     const btn = row.querySelector('[data-cancel]'), label = running ? 'Cancel' : 'Remove from queue';
     if (btn.dataset.label !== label) { btn.dataset.label = label; btn.title = running ? 'Stop this job' : 'Take this job out of the queue'; btn.innerHTML = `<svg class="icon icon-sm"><use href="#i-close"/></svg> ${label}`; }
     const doing = running
-      ? (j.stage === 'queued' ? 'Starting …' : `${STAGE_TEXT[j.stage] || j.stage || 'Running'}${j.stage === 'encode' ? ` ${j.percent || 0} %` : ''}`)
+      ? (j.stage === 'queued' ? 'Starting …' : `${STAGE_TEXT[j.stage] || j.stage || 'Running'}${FOLLOWS_FFMPEG.includes(j.stage) ? ` ${j.percent || 0} %` : ''}`)
       : `Waiting - ${i} ahead`;
     row.querySelector('.meta').innerHTML = `${esc(doing)}${j.target ? ' · ' + esc(targetLabel(j.target)) : ''}${j.kind && j.kind !== 'share' ? ` · <span class="badge">${esc(j.kind)}</span>` : ''}`;
     const bar = row.querySelector('.bar');
-    bar.hidden = !(running && j.stage === 'encode');
+    bar.hidden = !(running && FOLLOWS_FFMPEG.includes(j.stage));
     bar.firstChild.style.width = (j.percent || 0) + '%';
     if (box.children[i] !== row) box.insertBefore(row, box.children[i] || null);
   });
