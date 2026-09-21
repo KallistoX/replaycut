@@ -58,6 +58,10 @@ pub struct Settings {
     pub cleanup: Cleanup,
     /// Subtitles on a cut (since 3.11, beta - off by default).
     pub subtitles: SubtitleSettings,
+    /// What a quick share takes when the request names nothing (since
+    /// 3.13) - Enter on the clips page. Afterwards and the target have their
+    /// fields already: `cleanup.afterShare`, `integrations.<id>.quickShare`.
+    pub quick_share: QuickShare,
 }
 
 /// TLS on the port (since 3.4). Off by default: in a home network HTTP is
@@ -149,6 +153,65 @@ pub struct SubtitleSettings {
     /// How burned-in subtitles look unless a cut says otherwise (since
     /// 3.12; the numbers of 3.11's `style` are gone without a successor).
     pub look: Looks,
+}
+
+/// The four choices of a quick share (since 3.13). What a new installation
+/// has is what 3.12 did: the mix, H.264, the frame as recorded, and no
+/// subtitles unless the range is a cut that has them.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct QuickShare {
+    /// An audio mode: `mix`, `gamemic`, `game` or `gamediscord` (`state::AUDIO_MODES`).
+    pub audio: String,
+    /// `h264` or `copy` ("As recorded").
+    pub mode: String,
+    /// `wide` (16:9 as recorded) or `vertical` (9:16, needs `h264`).
+    pub frame: String,
+    /// `off`, or `burn`: read the speech first and burn it in unread.
+    pub subtitles: String,
+}
+
+/// The audio modes a quick share may name. They are `state::AUDIO_MODES`,
+/// spelled out because the UI invariants build this file on its own; a test
+/// there keeps the two lists equal.
+pub const QUICK_AUDIO: [&str; 4] = ["mix", "gamemic", "game", "gamediscord"];
+const QUICK_KEYS: [&str; 4] = ["audio", "mode", "frame", "subtitles"];
+
+impl Default for QuickShare {
+    fn default() -> Self {
+        Self {
+            audio: "mix".into(),
+            mode: "h264".into(),
+            frame: "wide".into(),
+            subtitles: "off".into(),
+        }
+    }
+}
+
+impl QuickShare {
+    pub fn check(&self) -> Result<()> {
+        anyhow::ensure!(
+            QUICK_AUDIO.contains(&self.audio.as_str()),
+            "quickShare.audio must be mix, gamemic, game or gamediscord"
+        );
+        anyhow::ensure!(
+            self.mode == "h264" || self.mode == "copy",
+            "quickShare.mode must be h264 or copy"
+        );
+        anyhow::ensure!(
+            self.frame == "wide" || self.frame == "vertical",
+            "quickShare.frame must be wide or vertical"
+        );
+        anyhow::ensure!(
+            !(self.frame == "vertical" && self.mode == "copy"),
+            "quickShare: a vertical share needs h264 - \"as recorded\" keeps the frame"
+        );
+        anyhow::ensure!(
+            self.subtitles == "off" || self.subtitles == "burn",
+            "quickShare.subtitles must be off or burn"
+        );
+        Ok(())
+    }
 }
 
 /// The look of a subtitle in one frame (since 3.12): three named steps
@@ -345,6 +408,38 @@ mod subtitle_tests {
             );
         }
         assert!(s.subtitles.look.check().is_ok());
+    }
+
+    /// A new installation shares as 3.12 did, and a patch changes one field
+    /// of the quick share without resetting the others (since 3.13).
+    #[test]
+    fn the_quick_share_starts_as_3_12_and_takes_one_field_at_a_time() {
+        let s = Settings::default();
+        assert_eq!(s.quick_share, QuickShare::default());
+        assert_eq!(
+            (
+                s.quick_share.audio.as_str(),
+                s.quick_share.mode.as_str(),
+                s.quick_share.frame.as_str(),
+                s.quick_share.subtitles.as_str()
+            ),
+            ("mix", "h264", "wide", "off")
+        );
+        let p = s
+            .with_patch(&serde_json::json!({ "quickShare": { "audio": "game" } }))
+            .expect("one field");
+        assert_eq!(p.quick_share.audio, "game");
+        assert_eq!(p.quick_share.mode, "h264", "the rest stays");
+        for bad in [
+            serde_json::json!({ "quickShare": { "audio": "mic" } }),
+            serde_json::json!({ "quickShare": { "frame": "vertical", "mode": "copy" } }),
+            serde_json::json!({ "quickShare": { "subtitles": "track" } }),
+            serde_json::json!({ "quickShare": { "after": "done" } }),
+        ] {
+            assert!(s.with_patch(&bad).is_err(), "{bad} is refused");
+        }
+        assert!(patch_accepts("quickShare.frame"));
+        assert!(!patch_accepts("quickShare.after"));
     }
 }
 
@@ -679,6 +774,7 @@ impl Default for Settings {
             obs: Obs::default(),
             cleanup: Cleanup::default(),
             subtitles: SubtitleSettings::default(),
+            quick_share: QuickShare::default(),
         }
     }
 }
@@ -760,10 +856,11 @@ pub fn is_theme_name(name: &str) -> bool {
 /// half added until its name is in here (3.4.0 shipped `https` without it and
 /// the switch in the UI could not be saved). `ui_invariants` checks that
 /// every field the page binds is reachable through this list.
-pub const PATCH_KEYS: [&str; 21] = [
+pub const PATCH_KEYS: [&str; 22] = [
     "obs",
     "cleanup",
     "subtitles",
+    "quickShare",
     "https",
     "allowedHosts",
     "requireLoginOnLoopback",
@@ -945,6 +1042,7 @@ pub fn patch_accepts(path: &str) -> bool {
     match top {
         "obs" => OBS_KEYS.contains(&second),
         "cleanup" => CLEANUP_KEYS.contains(&second),
+        "quickShare" => QUICK_KEYS.contains(&second),
         "subtitles" => {
             if second != "look" {
                 return SUBTITLE_KEYS.contains(&second);
@@ -1029,6 +1127,16 @@ impl Settings {
                         return Err(format!("unknown field: cleanup.{field}"));
                     }
                     current["cleanup"][field] = v.clone();
+                }
+            } else if key == "quickShare" {
+                let Some(fields) = value.as_object() else {
+                    return Err("quickShare must be an object".into());
+                };
+                for (field, v) in fields {
+                    if !QUICK_KEYS.contains(&field.as_str()) {
+                        return Err(format!("unknown field: quickShare.{field}"));
+                    }
+                    current["quickShare"][field] = v.clone();
                 }
             } else if key == "subtitles" {
                 let Some(fields) = value.as_object() else {
@@ -1221,6 +1329,7 @@ impl Settings {
         );
         self.https.check()?;
         self.subtitles.look.check()?;
+        self.quick_share.check()?;
         anyhow::ensure!(
             SOURCE_VALUES.contains(&self.subtitles.source.as_str()),
             "subtitles.source must be auto, mic or mix"

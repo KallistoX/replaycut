@@ -5289,3 +5289,91 @@ fn t82_a_transcription_says_how_many_lines_it_read() {
     let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
     assert_eq!(status, 200, "{v}");
 }
+
+fn since_313() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split(['.', '-']).map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (3, 13)
+}
+
+/// Puts the quick share of the settings back when a test is done with it.
+struct QuickShareBack(serde_json::Value);
+
+impl Drop for QuickShareBack {
+    fn drop(&mut self) {
+        let (status, v) = put_json("/api/settings", &json!({ "quickShare": self.0 }));
+        if status != 200 {
+            eprintln!("could not put the quick share back: {v}");
+        }
+    }
+}
+
+/// The quick share takes its defaults from the settings (since 3.13): what
+/// `POST /api/share` leaves out - audio, quality, frame - comes from
+/// `settings.quickShare`, which the state document carries as
+/// `config.quickShare` for the pills of the page. A frame the quality cannot
+/// crop is refused in the settings, and a request that names "as recorded"
+/// is not turned into a vertical share by the default.
+#[test]
+fn t81_the_quick_share_takes_its_defaults_from_the_settings() {
+    let _g = serial();
+    if !since_313() {
+        eprintln!("skipped: needs replaycut 3.13");
+        return;
+    }
+    let (_, settings) = get_json("/api/settings");
+    assert!(settings["quickShare"].is_object(), "{settings}");
+    let _back = QuickShareBack(settings["quickShare"].clone());
+    let base = format!("{} quick", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+
+    let (status, v) = put_json(
+        "/api/settings",
+        &json!({ "quickShare": { "audio": "game", "frame": "vertical", "mode": "h264" } }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(state()["config"]["quickShare"]["audio"], "game");
+    assert_eq!(state()["config"]["quickShare"]["frame"], "vertical");
+
+    // left out: the settings'
+    let (status, v) = post_json(
+        "/api/share",
+        &json!({ "base": base, "start": 2.0, "end": 5.0, "target": "file", "after": "keep" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(done["audio"], "game", "{done}");
+    assert_eq!(done["mode"], "h264", "{done}");
+    assert_eq!(done["vertical"], true, "{done}");
+
+    // named: the request's; "as recorded" keeps the frame whatever the default
+    let (status, v) = post_json(
+        "/api/share",
+        &json!({ "base": base, "start": 6.0, "end": 9.0, "target": "file", "after": "keep",
+                 "audio": "mix", "mode": "copy" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(done["audio"], "mix", "{done}");
+    assert!(done["vertical"].as_bool() != Some(true), "{done}");
+
+    // the settings refuse what a share would refuse
+    for bad in [
+        json!({ "quickShare": { "frame": "vertical", "mode": "copy" } }),
+        json!({ "quickShare": { "audio": "voice" } }),
+        json!({ "quickShare": { "subtitles": "track" } }),
+    ] {
+        let (status, v) = put_json("/api/settings", &bad);
+        assert_eq!(status, 400, "{bad}: {v}");
+    }
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}

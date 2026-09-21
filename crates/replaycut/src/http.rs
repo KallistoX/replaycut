@@ -845,7 +845,7 @@ fn share_request(v: &Value) -> ShareRequest {
         audio: v["audio"].as_str().unwrap_or("").to_string(),
         mode: v["mode"].as_str().unwrap_or("").to_string(),
         target: v["target"].as_str().unwrap_or("").to_string(),
-        vertical: v["vertical"].as_bool().unwrap_or(false),
+        vertical: v["vertical"].as_bool(),
         vertical_pos: v["verticalPos"].as_f64().unwrap_or(0.5),
         after: v["after"].as_str().unwrap_or("").to_string(),
         subtitles: v["subtitles"].as_str().unwrap_or("").to_string(),

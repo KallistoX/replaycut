@@ -34,8 +34,9 @@ pub struct ShareRequest {
     /// A storage id, `file`, or empty for the default (since 2.5).
     pub target: String,
     /// A 9:16 cut for Shorts (since 2.6); `vertical_pos` 0..1 is where the
-    /// window sits, 0.5 = centre.
-    pub vertical: bool,
+    /// window sits, 0.5 = centre. Absent (since 3.13) a share takes the
+    /// frame of the quick share in the settings, a cut takes 16:9.
+    pub vertical: Option<bool>,
     pub vertical_pos: f64,
     /// What happens to the clip afterwards (since 3.0): `keep`, `done` or
     /// `recycle`; empty takes `cleanup.afterShare` from the settings.
@@ -285,8 +286,20 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<Started, ShareError>
             "selection too short ({seconds} s)"
         )));
     }
+    // since 3.13 what the request leaves out comes from the quick share of
+    // the settings - what Enter on the clips page takes
+    let quick = state.settings().quick_share;
     let audio = if req.audio.is_empty() {
-        "mix".to_string()
+        // the default of the settings, unless this recording lacks its tracks
+        let fits = AUDIO_MODES
+            .iter()
+            .find(|m| m.id == quick.audio)
+            .is_some_and(|m| clip.tracks >= m.need);
+        if fits {
+            quick.audio.clone()
+        } else {
+            "mix".to_string()
+        }
     } else {
         req.audio
     };
@@ -301,7 +314,7 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<Started, ShareError>
         )));
     }
     let share_mode = if req.mode.is_empty() {
-        "h264".to_string()
+        quick.mode.clone()
     } else if SHARE_MODES.contains(&req.mode.as_str()) {
         req.mode
     } else {
@@ -310,19 +323,22 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<Started, ShareError>
             req.mode
         )));
     };
-    if req.vertical && share_mode == "copy" {
+    // left out, the frame of the quick share - which "as recorded" cannot crop
+    let vertical = req
+        .vertical
+        .unwrap_or(quick.frame == "vertical" && share_mode != "copy");
+    if vertical && share_mode == "copy" {
         return Err(ShareError::Invalid(
             "a vertical cut needs the h264 mode (copy keeps the frame as recorded)".to_string(),
         ));
     }
-    if req.vertical && !req.vertical_pos.is_finite() {
+    if vertical && !req.vertical_pos.is_finite() {
         return Err(ShareError::Invalid(
             "verticalPos must be a number between 0 and 1".to_string(),
         ));
     }
-    let vertical_pos = req
-        .vertical
-        .then(|| (req.vertical_pos.clamp(0.0, 1.0) * 1000.0).round() / 1000.0);
+    let vertical_pos =
+        vertical.then(|| (req.vertical_pos.clamp(0.0, 1.0) * 1000.0).round() / 1000.0);
     // the same cut twice (a double click) attaches to the first one
     let duplicate = inner
         .current_job
@@ -335,7 +351,7 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<Started, ShareError>
                 && (j.end - end).abs() < 0.005
                 && j.audio == audio
                 && j.mode == share_mode
-                && j.vertical == req.vertical
+                && j.vertical == vertical
                 && j.source.is_none()
                 && !j.is_preview()
         })
@@ -371,10 +387,28 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<Started, ShareError>
         .ok()
         .flatten()
         .and_then(|c| state.db.subtitles(&c.id).ok().flatten());
+    let has_lines = existing.as_ref().is_some_and(|s| !s.segments.is_empty());
+    // Since 3.13: a range that is no cut with lines yet takes the choice of
+    // the quick share - "burn" reads the speech first and burns it in unread.
+    // With the beta off there is nothing to choose.
+    let wanted = if req.subtitles.is_empty()
+        && !has_lines
+        && quick.subtitles == "burn"
+        && state.settings().subtitles.enabled
+    {
+        if share_mode == "copy" {
+            crate::db::SUBS_TRACK
+        } else {
+            crate::db::SUBS_BURN
+        }
+        .to_string()
+    } else {
+        req.subtitles.clone()
+    };
     let subtitles = subtitles_for(
         state,
-        Some(req.subtitles.as_str()),
-        existing.as_ref().is_some_and(|s| !s.segments.is_empty()),
+        Some(wanted.as_str()),
+        has_lines,
         share_mode == "copy",
     )?;
     let mut job = Job {
@@ -395,7 +429,7 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<Started, ShareError>
         } else {
             0
         },
-        vertical: req.vertical,
+        vertical,
         vertical_pos,
         after,
         stage: "queued".into(),
@@ -486,9 +520,10 @@ pub fn start_cut(state: &AppState, req: ShareRequest) -> Result<Started, ShareEr
         end,
         seconds,
         audio,
-        vertical: req.vertical,
+        vertical: req.vertical.unwrap_or(false),
         vertical_pos: req
             .vertical
+            .unwrap_or(false)
             .then(|| (req.vertical_pos.clamp(0.0, 1.0) * 1000.0).round() / 1000.0),
         stage: "queued".into(),
         percent: 0,
@@ -852,7 +887,7 @@ pub fn publish(state: &AppState, source: &str, target: &str) -> Result<Started, 
                 audio: src.audio,
                 mode: "h264".into(),
                 target,
-                vertical: src.vertical,
+                vertical: Some(src.vertical),
                 vertical_pos: src.vertical_pos.unwrap_or(0.5),
                 // a publish never changes the state of the clip itself
                 after: crate::settings::AFTER_KEEP.to_string(),

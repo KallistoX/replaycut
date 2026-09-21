@@ -1303,6 +1303,8 @@ impl AppState {
                 // since 3.11 (beta, off by default): with this false the page
                 // shows no subtitle block and no subtitle choice at all
                 "subtitles": settings.subtitles.enabled,
+                // since 3.13: what the pills of the quick share start from
+                "quickShare": settings.quick_share,
                 // since 2.8: with `lan` and no password every device in the
                 // network may use this replaycut - the page says so
                 "network": match settings.bind.as_str() {
@@ -1900,6 +1902,14 @@ pub async fn quota_loop(state: Arc<AppState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `settings::QUICK_AUDIO` spells out the audio modes, because the UI
+    /// invariants build settings.rs on its own. They must not drift apart.
+    #[test]
+    fn the_quick_share_knows_every_audio_mode() {
+        let ids: Vec<&str> = AUDIO_MODES.iter().map(|m| m.id).collect();
+        assert_eq!(ids, crate::settings::QUICK_AUDIO.to_vec());
+    }
 
     /// The one-off repair of issue #40: what a change of the clip folder put
     /// away before 3.10.1 comes back, and nothing else does.

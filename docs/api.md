@@ -2245,6 +2245,41 @@ for noise. The job still ends `ok`, and the cut's transcript exists with
 `count: 0`, so a page can say "no speech found" instead of "not transcribed
 yet".
 
+## Since 3.13
+
+### The quick share takes its defaults from the settings
+
+What `POST /api/share` leaves out comes from `settings.quickShare` - what
+Enter on the clips page shares:
+
+```json
+"quickShare": { "audio": "mix", "mode": "h264", "frame": "wide", "subtitles": "off" }
+```
+
+| Left out | Taken from |
+| --- | --- |
+| `audio` | `quickShare.audio` - `mix` when the recording lacks its tracks |
+| `mode` | `quickShare.mode` |
+| `vertical` | `quickShare.frame == "vertical"`, never with `mode: "copy"` |
+| `verticalPos` | `0.5`, as before |
+| `after` | `cleanup.afterShare`, as before |
+| `target` | the storage with `quickShare`, else `file`, as before |
+| `subtitles` | a range that is a cut with lines follows the cut (3.12); otherwise `quickShare.subtitles`: `off` is `none`, `burn` reads the speech first and burns it in (`track` with `mode: "copy"`). With the feature switched off always `none`. |
+
+Named, a field is what the request says. A new installation has the values
+above, so its quick share does what 3.12 did. `burn` without a model or
+without the `whisper` filter makes the share fail with `412 { reason }`,
+like a rendering that asks for subtitles.
+
+`PUT /api/settings` folds a `quickShare` patch in field by field. `400` for
+an audio mode that is none of `mix`, `gamemic`, `game`, `gamediscord`, a
+mode other than `h264`/`copy`, a frame other than `wide`/`vertical`,
+`vertical` with `copy` ("as recorded" keeps the frame), or subtitles other
+than `off`/`burn`.
+
+The state document carries the same object as `config.quickShare`, the
+starting point of the pills under the player.
+
 ## Behaviour
 
 ### Folder scan
