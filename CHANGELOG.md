@@ -21,6 +21,14 @@ contract.
   has no menu at all, because it would only repeat the "Transcribe" button
   beside it. The API still takes a model and a language for a single run.
   (#54)
+- **The Subtitles card in Settings keeps the rhythm of the others.** Its
+  body had no spacing at all: the model rows ran into the note under them,
+  the language hint into the checkbox, and "How burned-in subtitles look"
+  read as part of the checkbox above it. The card is three groups now -
+  the model, how the speech is read, how burned-in lines look - each
+  heading close to what it heads, and its fields as far apart as those of
+  every other card. The note on where a model comes from moved behind the
+  "?" beside "Model", where the other cards keep their explanations. (#56)
 
 ### Fixed
 

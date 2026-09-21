@@ -1023,28 +1023,38 @@ ol.steps b { color: var(--fg); font-weight: normal; }
       <div class="card-head with-sum"><h2>Subtitles <span class="badge">Beta</span></h2><span class="card-sum" data-sum></span><button class="btn btn-ghost btn-icon card-toggle" type="button" aria-expanded="false" title="Show the settings of Subtitles"><svg class="icon"><use href="#i-chevron"/></svg></button></div>
       <div class="card-body stack-3">
         <div class="field"><label class="check"><input type="checkbox" data-f="subtitles.enabled"> Read the speech of a cut on this PC <button class="help" type="button" aria-expanded="false" aria-label="What subtitles do" data-help="Off, nothing here runs and nothing is downloaded. On, a cut can be transcribed with ffmpeg's whisper filter, corrected under the cut, and burned into a rendering or carried as a track. The speech never leaves this PC; only the model is fetched, once.">?</button></label><span class="hint" id="sSubsWhisper" hidden></span></div>
-        <div id="sSubsOn" hidden>
-          <h3>Model</h3>
-          <div id="sSubsModels" class="stack-2"></div>
-          <span class="hint">Downloaded once into the data folder and checked against its checksum. A file put there by hand is used too.</span>
-          <div class="fields-2">
-            <div class="field"><label>Language</label><select class="select" data-f="subtitles.language" id="sSubsLang"></select><span class="hint">Naming your language is worth it: "Detect" decides again for every 30 seconds it looks at, so a quiet passage can flip a clip into English mid-sentence - and a subtitle track whose language nobody recorded goes out untagged.</span></div>
-            <div class="field"><label>Track <button class="help" type="button" aria-expanded="false" aria-label="Which track the speech is read from" data-help="Automatic asks OBS which track carries the microphone and falls back to track 2 of a four-track recording. A recording with one track is always the mix.">?</button></label><select class="select" data-f="subtitles.source"><option value="auto">automatic - the microphone when there is one</option><option value="mic">microphone</option><option value="mix">mix (all)</option></select></div>
+        <!-- Three groups, each a heading close to what it heads (3.11.1, #56):
+             the fields keep the stack-3 of every card, a group keeps a
+             stack-4 from the next. -->
+        <div id="sSubsOn" class="stack-4" hidden>
+          <div class="stack-2">
+            <h3 class="help-anchor">Model <button class="help" type="button" aria-expanded="false" aria-label="Where the model comes from" data-help="Downloaded once into the data folder and checked against its checksum. A file put there by hand is used too.">?</button></h3>
+            <div id="sSubsModels" class="stack-2"></div>
           </div>
-          <div class="field"><label class="check"><input type="checkbox" data-f="subtitles.gpu"> Let whisper use the graphics card <button class="help" type="button" aria-expanded="false" aria-label="What the graphics card does here" data-help="Off by default: the card belongs to the game, and in the ffmpeg builds this was measured on the filter runs on the CPU whatever this says.">?</button></label></div>
-          <h3>How burned-in subtitles look</h3>
-          <div class="fields-2">
-            <div class="field"><label>Text colour</label><input class="input mono" data-f="subtitles.style.color" placeholder="#ffffff"></div>
-            <div class="field"><label>Outline (px at 1080p)</label><input class="input" type="number" min="0" max="20" step="0.5" data-f="subtitles.style.outline"></div>
+          <div class="stack-3">
+            <div class="fields-2">
+              <div class="field"><label>Language</label><select class="select" data-f="subtitles.language" id="sSubsLang"></select><span class="hint">Naming your language is worth it: "Detect" decides again for every 30 seconds it looks at, so a quiet passage can flip a clip into English mid-sentence - and a subtitle track whose language nobody recorded goes out untagged.</span></div>
+              <div class="field"><label>Track <button class="help" type="button" aria-expanded="false" aria-label="Which track the speech is read from" data-help="Automatic asks OBS which track carries the microphone and falls back to track 2 of a four-track recording. A recording with one track is always the mix.">?</button></label><select class="select" data-f="subtitles.source"><option value="auto">automatic - the microphone when there is one</option><option value="mic">microphone</option><option value="mix">mix (all)</option></select></div>
+            </div>
+            <div class="field"><label class="check"><input type="checkbox" data-f="subtitles.gpu"> Let whisper use the graphics card <button class="help" type="button" aria-expanded="false" aria-label="What the graphics card does here" data-help="Off by default: the card belongs to the game, and in the ffmpeg builds this was measured on the filter runs on the CPU whatever this says.">?</button></label></div>
           </div>
-          <div class="field"><label class="check"><input type="checkbox" data-f="subtitles.style.box"> Box behind the text instead of an outline</label></div>
-          <div class="fields-2">
-            <div class="field"><label>Size, 16:9 (% of the height)</label><input class="input" type="number" min="1" max="20" step="0.1" data-f="subtitles.style.wide.size"></div>
-            <div class="field"><label>From the bottom, 16:9 (%)</label><input class="input" type="number" min="0" max="80" step="0.5" data-f="subtitles.style.wide.margin"></div>
-          </div>
-          <div class="fields-2">
-            <div class="field"><label>Size, 9:16 (% of the height)</label><input class="input" type="number" min="1" max="20" step="0.1" data-f="subtitles.style.vertical.size"></div>
-            <div class="field"><label>From the bottom, 9:16 (%) <button class="help" type="button" aria-expanded="false" aria-label="Why a Short needs a larger margin" data-help="A Short carries its title, its channel and its buttons over the lower fifth of the picture. 22 % keeps the line above all of it.">?</button></label><input class="input" type="number" min="0" max="80" step="0.5" data-f="subtitles.style.vertical.margin"></div>
+          <div class="stack-2">
+            <h3>How burned-in subtitles look</h3>
+            <div class="stack-3">
+              <div class="fields-2">
+                <div class="field"><label>Text colour</label><input class="input mono" data-f="subtitles.style.color" placeholder="#ffffff"></div>
+                <div class="field"><label>Outline (px at 1080p)</label><input class="input" type="number" min="0" max="20" step="0.5" data-f="subtitles.style.outline"></div>
+              </div>
+              <div class="field"><label class="check"><input type="checkbox" data-f="subtitles.style.box"> Box behind the text instead of an outline</label></div>
+              <div class="fields-2">
+                <div class="field"><label>Size, 16:9 (% of the height)</label><input class="input" type="number" min="1" max="20" step="0.1" data-f="subtitles.style.wide.size"></div>
+                <div class="field"><label>From the bottom, 16:9 (%)</label><input class="input" type="number" min="0" max="80" step="0.5" data-f="subtitles.style.wide.margin"></div>
+              </div>
+              <div class="fields-2">
+                <div class="field"><label>Size, 9:16 (% of the height)</label><input class="input" type="number" min="1" max="20" step="0.1" data-f="subtitles.style.vertical.size"></div>
+                <div class="field"><label>From the bottom, 9:16 (%) <button class="help" type="button" aria-expanded="false" aria-label="Why a Short needs a larger margin" data-help="A Short carries its title, its channel and its buttons over the lower fifth of the picture. 22 % keeps the line above all of it.">?</button></label><input class="input" type="number" min="0" max="80" step="0.5" data-f="subtitles.style.vertical.margin"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
