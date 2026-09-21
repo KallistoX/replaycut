@@ -224,7 +224,9 @@ reach OBS is not detectable and still answers `ok: true`.
   intervals may miss intermediate stages.
 - `percent` is only meaningful during `encode`: it follows ffmpeg's progress
   and stays at most `99` until ffmpeg exits, then `100`. The UI shows `100`
-  during `upload` and `discord` regardless of the field.
+  during `upload` and `discord` regardless of the field. Since 3.11.1 the
+  same holds for `transcribe`, which is one long ffmpeg as well; a
+  rendering that transcribes first starts `encode` at `0` again.
 - `ok` is `null` while running, then `true` or `false`. `error` is `null`
   while running, `""` on success and the message on failure.
 - `start` and `end` are the clamped values; `seconds` is `end - start`
@@ -1791,7 +1793,9 @@ has one), `mic` or `mix`.
 `202 { ok: true, job, position, cut }`. Stages `queued -> transcribe ->
 done`, `kind: "transcribe"`, run with idle priority. It writes no file, is
 **no output** and never appears in the history. The finished job carries
-`model`, `language` and `track` - the track it really read.
+`model`, `language` and `track` - the track it really read. `percent`
+follows the transcription as it does an encode and is `100` once it is
+through (since 3.11.1; 3.11.0 stopped at `99`).
 
 - `404` unknown cut.
 - `400` unknown model, language or source, or the cut has no file any more.

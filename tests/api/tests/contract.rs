@@ -4552,3 +4552,48 @@ fn t73_a_rendering_reads_the_speech_before_it_encodes() {
     let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
     assert_eq!(status, 200, "{v}");
 }
+
+/// A transcription is the slowest thing replaycut does, so its job says how
+/// far it has got: `percent` follows ffmpeg during `transcribe`, never goes
+/// back, and is `100` once it is through - 3.11.0 stopped at 99 (#54).
+#[test]
+fn t74_a_transcription_says_how_far_it_has_got() {
+    let _g = serial();
+    if !since_3111() {
+        eprintln!("skipped: needs replaycut 3.11.1");
+        return;
+    }
+    let Some((base, cut, _guard)) = transcribable_cut("how far") else {
+        return;
+    };
+    let (status, v) = post_json(&format!("/api/cuts/{cut}/transcribe"), &json!({}));
+    assert_eq!(status, 202, "{v}");
+    let job = v["job"].as_str().expect("job").to_string();
+    // polled the way the page does it
+    let start = Instant::now();
+    let mut last = 0;
+    let done = loop {
+        let (status, j) = get_json(&format!("/api/jobs/{job}"));
+        assert_eq!(status, 200, "{j}");
+        let stage = j["stage"].as_str().unwrap_or("").to_string();
+        if stage == "transcribe" {
+            let pct = j["percent"].as_u64().expect("percent");
+            assert!(pct >= last, "percent went back from {last} to {pct}: {j}");
+            assert!(pct < 100, "100 is for a transcription that is through: {j}");
+            last = pct;
+        }
+        if matches!(stage.as_str(), "done" | "error" | "cancelled") {
+            break j;
+        }
+        assert!(start.elapsed() < JOB_TIMEOUT, "still running: {j}");
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(
+        done["percent"], 100,
+        "a transcription that is through says so: {done}"
+    );
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}

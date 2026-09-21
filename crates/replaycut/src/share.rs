@@ -1513,6 +1513,8 @@ async fn transcribe_pipeline(state: &AppState, id: &str, token: &CancellationTok
         token,
     )
     .await?;
+    // ffmpeg's progress stops at 99; through is 100, as after a cut
+    state.with_job(id, |j| j.percent = 100);
     Ok(())
 }
 
