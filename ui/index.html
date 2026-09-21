@@ -3516,7 +3516,13 @@ function showResult(r) {
     return;
   }
   if (r.kind === 'transcribe') {
-    head('check', 'Subtitles read');
+    // since 3.12.1 the job says how many lines it read: 0 is no speech, not a result to correct
+    if (r.lines === 0) {
+      head('info', 'No speech found in this cut');
+      note(`${fmt(r.start)} - ${fmt(r.end)} · from the ${r.track === 'mic' ? 'microphone' : 'mix'}. whisper heard nothing it could put on the picture - in the workshop you can try another track or language.`);
+      return;
+    }
+    head('check', r.lines ? `Subtitles read - ${r.lines} line${r.lines === 1 ? '' : 's'}` : 'Subtitles read');
     note(`${fmt(r.start)} - ${fmt(r.end)} · from the ${r.track === 'mic' ? 'microphone' : 'mix'}. Open the cut (in the list, or with W) to correct them.`);
     return;
   }
@@ -4986,7 +4992,7 @@ function wsSubsCard() {
   const secs = Math.max(5, Math.round(cutLen(k) * 0.9));
   // a running job keeps its card: the bar and the words move, the Cancel
   // button stays the same element, so a click is not lost to a redraw
-  const key = JSON.stringify([k.id, job && [job.id, job.waiting], models.map(m => [m.name, m.state, m.percent]), wModels && wModels.available, wTr, ws.loading, ws.error]);
+  const key = JSON.stringify([k.id, job && [job.id, job.waiting], models.map(m => [m.name, m.state, m.percent]), wModels && wModels.available, wTr, ws.loading, ws.error, k.subtitles]);
   if (job) {
     const pct = job.stage === 'transcribe' ? (job.percent || 0) : 0;
     if (body.dataset.key !== key) {
@@ -5018,8 +5024,14 @@ function wsSubsCard() {
   }
   const tr = wTr || { source: (wSubsSettings && wSubsSettings.source) || 'auto', language: (wSubsSettings && wSubsSettings.language) || 'auto' };
   const trackWords = { auto: 'Automatic', mic: 'Microphone', mix: 'Mix (all)' };
-  body.innerHTML = `<p class="muted sm">This cut has none yet. Transcribing runs on this PC and takes about as long as the cut plays - <b>about ${secs} s</b> for ${esc(fmt(cutLen(k)))}. You can keep using the page while it runs.</p>`
-    + `<div class="row"><button class="btn" type="button" id="wTrGo"><svg class="icon icon-sm"><use href="#i-subtitles"/></svg> Transcribe</button><button class="pill" type="button" id="wTrTrack" aria-haspopup="true">Track <b>${esc(trackWords[tr.source] || tr.source)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button><button class="pill" type="button" id="wTrLang" aria-haspopup="true">Language <b>${esc(langName(tr.language) || tr.language)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button></div>`
+  // read, and nothing heard (since 3.12.1): a transcript with no lines is
+  // not "none yet" - it says what was read, and how to try again
+  const sum = k.subtitles, heard = sum && !sum.count;
+  const intro = heard
+    ? `<b>No speech found.</b> ${esc(sum.model || 'whisper')} read the ${sum.source === 'mix' ? 'mix of all tracks' : 'microphone'}${sum.language ? ` in ${esc(langName(sum.language))}` : ''}${sum.at ? ` at ${esc(sum.at.slice(11, 16))}` : ''} and found nothing to put on the picture - a single short word is easily taken for noise. Another track or language may hear more.`
+    : `This cut has none yet. Transcribing runs on this PC and takes about as long as the cut plays - <b>about ${secs} s</b> for ${esc(fmt(cutLen(k)))}. You can keep using the page while it runs.`;
+  body.innerHTML = `<p class="muted sm">${intro}</p>`
+    + `<div class="row"><button class="btn" type="button" id="wTrGo"><svg class="icon icon-sm"><use href="#i-${heard ? 'refresh' : 'subtitles'}"/></svg> ${heard ? 'Transcribe again' : 'Transcribe'}</button><button class="pill" type="button" id="wTrTrack" aria-haspopup="true">Track <b>${esc(trackWords[tr.source] || tr.source)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button><button class="pill" type="button" id="wTrLang" aria-haspopup="true">Language <b>${esc(langName(tr.language) || tr.language)}</b><svg class="icon icon-sm"><use href="#i-chevron"/></svg></button></div>`
     + `<span class="faint sm">Model: ${esc(model ? model.name : wanted)}, ready on this PC</span>`;
   $('wTrGo').onclick = () => wsTranscribe(false, { source: tr.source, language: tr.language });
   $('wTrTrack').onclick = e => { e.stopPropagation(); menuAt($('wTrTrack'), [{ heading: 'Read the speech from' }].concat(Object.entries(trackWords).map(([id, label]) => ({ label, note: id === tr.source ? 'chosen' : '', disabled: id !== 'auto' && (cur.tracks || 1) === 1, onclick: () => { wTr = Object.assign({}, tr, { source: id }); wsSubsCard(); } })))); };
