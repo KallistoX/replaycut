@@ -8,6 +8,19 @@ replaycut 2.0 is a rewrite of a PowerShell service (1.x) that was never
 published. The 2.0 line keeps that service's HTTP API; `docs/api.md` is the
 contract.
 
+## [Unreleased]
+
+### Added
+
+- **A cut has a title of its own.** A new cut starts with the title its
+  recording has at that moment, and a rendering of it is named after the
+  cut - the file, the post and the YouTube title - while the recording
+  keeps its own. Two cuts of one recording can so carry two names, and a
+  cut that was already sent keeps the name it went out with when the
+  recording is renamed later. Cuts from before this version follow their
+  recording as before. The page to rename a cut comes with the player for
+  cuts; the API has it already (`PUT /api/cuts/<id>`).
+
 ## [3.11.1] - 2026-09-21
 
 **Small repairs to the subtitle beta of 3.11**: a model downloads on the

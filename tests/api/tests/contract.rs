@@ -4597,3 +4597,104 @@ fn t74_a_transcription_says_how_far_it_has_got() {
     let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
     assert_eq!(status, 200, "{v}");
 }
+
+// --------------------------------------------------------------- since 3.12
+
+fn since_312() -> bool {
+    let v = state()["config"]["version"]
+        .as_str()
+        .unwrap_or("0")
+        .to_string();
+    let mut parts = v.split(['.', '-']).map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (3, 12)
+}
+
+/// A cut has a title of its own: it starts with the recording's, can be
+/// renamed apart from it, and a rendering is named after the cut. Empty, it
+/// gives the name back to the recording.
+#[test]
+fn t75_a_cut_has_a_title_of_its_own() {
+    let _g = serial();
+    if !since_312() {
+        eprintln!("skipped: needs replaycut 3.12");
+        return;
+    }
+    let base = format!("{} titled", fixture().base);
+    make_clip(&base);
+    wait_for_clip(&base, Duration::from_secs(20));
+    let (status, v) = put_json(
+        &format!("/api/clips/{}/name", encode(&base)),
+        &json!({ "name": "Raketenwerfer Action" }),
+    );
+    assert_eq!(status, 200, "{v}");
+    let (status, v) = post_json(
+        "/api/cuts",
+        &json!({ "base": base, "start": 2.0, "end": 6.0, "audio": "mix", "after": "keep" }),
+    );
+    assert_eq!(status, 202, "{v}");
+    let cut = v["cut"].as_str().expect("cut").to_string();
+    let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+    assert_eq!(done["ok"], true, "{done}");
+
+    // it starts with the recording's title
+    let (status, c) = get_json(&format!("/api/cuts/{cut}"));
+    assert_eq!(status, 200, "{c}");
+    assert_eq!(c["title"], "Raketenwerfer Action", "{c}");
+
+    // renamed apart from the recording, which keeps its own
+    let (status, v) = put_json(
+        &format!("/api/cuts/{cut}"),
+        &json!({ "title": "Drei mit\teinem Schuss " }),
+    );
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(v["cut"]["title"], "Drei mit einem Schuss", "{v}");
+    let clip = find_clip(&base).expect("clip");
+    assert_eq!(clip["title"], "Raketenwerfer Action", "{clip}");
+    let listed = clip["cuts"]
+        .as_array()
+        .and_then(|cs| cs.iter().find(|x| x["id"] == cut.as_str()).cloned())
+        .expect("the cut is listed under its clip");
+    assert_eq!(listed["title"], "Drei mit einem Schuss", "{listed}");
+
+    // a rendering is named after the cut
+    let render = || -> serde_json::Value {
+        let (status, v) = post_json(
+            &format!("/api/cuts/{cut}/render"),
+            &json!({ "target": "file", "after": "keep" }),
+        );
+        assert_eq!(status, 202, "{v}");
+        let (_, done) = wait_job(v["job"].as_str().expect("job"), JOB_TIMEOUT);
+        assert_eq!(done["ok"], true, "{done}");
+        done
+    };
+    let named = render();
+    assert_eq!(named["title"], "Drei mit einem Schuss", "{named}");
+    let file = named["file"].as_str().expect("file");
+    assert!(file.contains("Drei-mit-einem-Schuss"), "{file}");
+
+    // empty gives the name back to the recording
+    let (status, v) = put_json(&format!("/api/cuts/{cut}"), &json!({ "title": "  " }));
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["cut"]["title"], "", "{v}");
+    let back = render();
+    assert_eq!(back["title"], "Raketenwerfer Action", "{back}");
+
+    // the rules of a clip title: 80 characters at most
+    let long = "x".repeat(81);
+    let (status, v) = put_json(&format!("/api/cuts/{cut}"), &json!({ "title": long }));
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["cut"]["title"].as_str().map(str::len), Some(80), "{v}");
+
+    // what this build does not know, and what is not there
+    let (status, v) = put_json(&format!("/api/cuts/{cut}"), &json!({ "tittle": "typo" }));
+    assert_eq!(status, 400, "{v}");
+    let (status, v) = put_json(&format!("/api/cuts/{cut}"), &json!({ "title": 5 }));
+    assert_eq!(status, 400, "{v}");
+    let (status, v) = put_json("/api/cuts/ffffffff", &json!({ "title": "x" }));
+    assert_eq!(status, 404, "{v}");
+
+    let (status, v) = delete(&format!("/api/clips/{}?scope=all", encode(&base)));
+    assert_eq!(status, 200, "{v}");
+}

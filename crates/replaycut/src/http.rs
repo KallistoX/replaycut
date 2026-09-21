@@ -64,7 +64,10 @@ pub fn router(state: App) -> Router {
         .route("/api/clips/{base}/preview", post(clip_preview))
         // since 3.0: the cut between the recording and every rendering
         .route("/api/cuts", post(cuts_create))
-        .route("/api/cuts/{id}", get(cut).delete(delete_cut))
+        .route(
+            "/api/cuts/{id}",
+            get(cut).put(cut_update).delete(delete_cut),
+        )
         .route("/api/cuts/{id}/render", post(cut_render))
         .route(
             "/api/cuts/{id}/subtitles",
@@ -858,6 +861,50 @@ async fn cut(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Valu
     app.cut_document(&id)
         .map(Json)
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown cut: {id}")))
+}
+
+/// `PUT /api/cuts/<id>` (since 3.12): what the workshop changes about a cut.
+/// Only the fields the body names change; a field this build does not know
+/// is a `400`, so a typo never passes as a success.
+async fn cut_update(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Json<Value>, ApiError> {
+    let v = parse_body(&body);
+    let Some(fields) = v.as_object() else {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "the body is a JSON object",
+        ));
+    };
+    if app.db.cut(&id).map_err(ApiError::internal)?.is_none() {
+        return Err(ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("unknown cut: {id}"),
+        ));
+    }
+    if let Some(unknown) = fields.keys().find(|k| k.as_str() != "title") {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("unknown field: {unknown} (title)"),
+        ));
+    }
+    if let Some(title) = fields.get("title") {
+        let Some(title) = title.as_str() else {
+            return Err(ApiError::new(StatusCode::BAD_REQUEST, "title is a string"));
+        };
+        let title = crate::util::normalize_title(title);
+        app.db
+            .set_cut_title(&id, &title)
+            .map_err(ApiError::internal)?;
+        tracing::info!("title for cut {id}: {title:?}");
+    }
+    app.tray_changed();
+    let cut = app
+        .cut_document(&id)
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, format!("unknown cut: {id}")))?;
+    Ok(Json(json!({ "ok": true, "cut": cut })))
 }
 
 /// `POST /api/cuts/<id>/render` (since 3.0): encode a cut that exists and

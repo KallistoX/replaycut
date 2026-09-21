@@ -1968,6 +1968,39 @@ One more line, `subtitles`, which names whichever of the three is missing:
 the ffmpeg filter (`fail`/`warn` with the fix for this platform), the switch,
 or a model.
 
+## Since 3.12
+
+### A cut has a title of its own
+
+A [Cut](#cut) gains `title`: the cut's own title, or `""` when it has none
+and the recording's title applies. Cuts made before 3.12 have none.
+
+- A new cut starts with the title its recording has at that moment - `POST
+  /api/share` and `POST /api/cuts` alike. It is a copy, not a reference:
+  renaming the recording afterwards leaves the cut's title alone, so two cuts
+  of one recording can be told apart, and a cut that was already sent keeps
+  the name it went out with.
+- A rendering of a cut takes the cut's title, else the recording's: the file
+  name in `shared\`, the post and the YouTube title, and `title` on the job
+  say which one was used. The recording keeps its own title either way.
+
+### `PUT /api/cuts/<id>`
+
+```json
+{ "title": "Drei mit einem Schuss" }
+```
+
+Changes what the body names and nothing else. `title` follows the rules of
+`PUT /api/clips/<base>/name` - CR, LF and TAB become spaces, the result is
+trimmed and cut to 80 characters - and an empty one gives the cut back to
+the recording's title. `200 { ok: true, cut }` with the [Cut](#cut) as
+`GET /api/cuts/<id>` returns it.
+
+- `404` for a cut nobody knows.
+- `400` for a field this service does not know, and for a `title` that is
+  not a string. A typo is refused rather than answered with a success that
+  changed nothing.
+
 ## Behaviour
 
 ### Folder scan

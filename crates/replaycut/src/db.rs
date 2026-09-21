@@ -35,7 +35,7 @@ pub const BACKUP_DIR: &str = "backup-2.x";
 /// The state files of 1.4 and 2.x, in the order they are imported.
 pub const STATE_FILES: [&str; 3] = ["clip-names.json", "clip-seen.json", "clip-history.json"];
 
-const SCHEMA: i64 = 4;
+const SCHEMA: i64 = 5;
 
 /// Schema 2 (R11c): a clip keeps what the scanner knew about it, so a clip
 /// whose recording is gone can still be listed for its cuts.
@@ -55,6 +55,17 @@ const UPGRADE_3: [&str; 2] = [
 /// names the columns it writes, so an older build editing a cut leaves the
 /// transcript where it is instead of dropping it.
 const UPGRADE_4: [&str; 1] = ["ALTER TABLE cuts ADD COLUMN subtitles TEXT"];
+
+/// Schema 5 (since 3.12): a cut has a title of its own and a look for its
+/// subtitles. Two nullable columns, for the same way back as schema 4: a
+/// 3.11.x lists its columns one by one, never sees these two, and its
+/// `ON CONFLICT DO UPDATE` leaves them where they are. The look lives here
+/// and not in the subtitle document, because a 3.11.x writes that document
+/// back after every rendering and would lose a field it does not know.
+const UPGRADE_5: [&str; 2] = [
+    "ALTER TABLE cuts ADD COLUMN title TEXT",
+    "ALTER TABLE cuts ADD COLUMN look TEXT",
+];
 
 const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (
@@ -97,7 +108,12 @@ CREATE TABLE IF NOT EXISTS cuts (
     state        TEXT NOT NULL DEFAULT 'pending',
     -- the transcript as one JSON document (schema 4, since 3.11);
     -- NULL means this cut has none
-    subtitles    TEXT
+    subtitles    TEXT,
+    -- the cut's own title (schema 5, since 3.12); NULL: the recording's
+    title        TEXT,
+    -- the look of its subtitles per frame as JSON (schema 5); NULL: the
+    -- settings decide
+    look         TEXT
 );
 CREATE INDEX IF NOT EXISTS cuts_by_base ON cuts (base);
 -- Every finished job: `entry` is the history document of the contract.
@@ -206,6 +222,13 @@ impl Db {
             for sql in UPGRADE_4 {
                 if let Err(e) = self.conn.lock().execute(sql, []) {
                     tracing::debug!("schema 4: {e}");
+                }
+            }
+        }
+        if from < 5 {
+            for sql in UPGRADE_5 {
+                if let Err(e) = self.conn.lock().execute(sql, []) {
+                    tracing::debug!("schema 5: {e}");
                 }
             }
         }
@@ -667,6 +690,16 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Give a cut a title of its own, or take it away with an empty one -
+    /// then the recording's applies again (since 3.12).
+    pub fn set_cut_title(&self, id: &str, title: &str) -> Result<()> {
+        self.conn.lock().execute(
+            "UPDATE cuts SET title = NULLIF(?2, '') WHERE id = ?1",
+            params![id, title],
+        )?;
+        Ok(())
+    }
+
     /// Forget one cut. The caller removes its file and its outputs.
     pub fn delete_cut(&self, id: &str) -> Result<()> {
         self.conn
@@ -842,6 +875,7 @@ impl Db {
                     file: None,
                     actual_start: None,
                     state: CUT_MISSING.into(),
+                    title: String::new(),
                     created: text(entry, "at").unwrap_or_default(),
                 };
                 insert_cut(&tx, &row)?;
@@ -997,6 +1031,10 @@ pub struct Cut {
     pub created: String,
     /// `pending`, `ready` or `missing`.
     pub state: String,
+    /// The cut's own title (since 3.12), taken from the recording when the
+    /// cut was made; empty means the recording's title applies.
+    #[serde(default)]
+    pub title: String,
 }
 
 pub const CUT_PENDING: &str = "pending";
@@ -1078,7 +1116,7 @@ impl Subtitles {
 const TOLERANCE: f64 = 0.005;
 
 const CUT_COLUMNS: &str = "SELECT id, base, start, \"end\", audio, vertical, vertical_pos,
-                                  file, actual_start, created, state FROM cuts";
+                                  file, actual_start, created, state, title FROM cuts";
 
 fn cut_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Cut> {
     Ok(Cut {
@@ -1093,14 +1131,18 @@ fn cut_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Cut> {
         actual_start: r.get(8)?,
         created: r.get(9)?,
         state: r.get(10)?,
+        title: r.get::<_, Option<String>>(11)?.unwrap_or_default(),
     })
 }
 
+/// A new cut row, or what the cut stage learned about an existing one. The
+/// title is written with a new row only: once there, it changes through
+/// [`Db::set_cut_title`] and nothing else (since 3.12).
 fn insert_cut(tx: &rusqlite::Transaction<'_>, cut: &Cut) -> rusqlite::Result<()> {
     tx.execute(
         "INSERT INTO cuts (id, base, start, \"end\", audio, vertical, vertical_pos,
-                           file, actual_start, created, state)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                           file, actual_start, created, state, title)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULLIF(?12, ''))
          ON CONFLICT(id) DO UPDATE SET
             start = excluded.start, \"end\" = excluded.\"end\", audio = excluded.audio,
             vertical = excluded.vertical, vertical_pos = excluded.vertical_pos,
@@ -1117,7 +1159,8 @@ fn insert_cut(tx: &rusqlite::Transaction<'_>, cut: &Cut) -> rusqlite::Result<()>
             cut.file,
             cut.actual_start,
             cut.created,
-            cut.state
+            cut.state,
+            cut.title
         ],
     )?;
     // A clip with at least one cut is `active` (the state is served from R11c).
@@ -1520,6 +1563,7 @@ mod tests {
             actual_start: None,
             created: "2026-09-08T20:00:30".into(),
             state: CUT_PENDING.into(),
+            title: String::new(),
         })
         .unwrap();
         db.put_cut(&Cut {
@@ -1534,6 +1578,7 @@ mod tests {
             actual_start: Some(0.5),
             created: "2026-09-08T20:01:00".into(),
             state: CUT_READY.into(),
+            title: String::new(),
         })
         .unwrap();
         assert_eq!(db.clip("Replay A").unwrap().unwrap().state, CLIP_ACTIVE);
@@ -1735,6 +1780,7 @@ mod tests {
             actual_start: Some(5.0),
             created: "2026-09-20T13:00:00".into(),
             state: CUT_READY.into(),
+            title: String::new(),
         }
     }
 
@@ -1816,6 +1862,94 @@ mod tests {
         let back = db.subtitles("5ub7174f").unwrap().expect("still there");
         assert_eq!(back.segments.len(), 2);
         assert_eq!(db.cut("5ub7174f").unwrap().unwrap().audio, "game");
+    }
+
+    /// A cut starts with the title it is given and keeps it: writing the cut
+    /// again - what the cut stage does, and what a 3.11.x does with its own
+    /// column list - leaves the title and the look alone (since 3.12).
+    #[test]
+    fn writing_a_cut_again_leaves_title_and_look_alone() {
+        let db = Db::memory().unwrap();
+        let mut cut = a_cut("717e0001");
+        cut.title = "Drei mit einem Schuss".into();
+        db.put_cut(&cut).unwrap();
+        assert_eq!(
+            db.cut("717e0001").unwrap().unwrap().title,
+            "Drei mit einem Schuss"
+        );
+        db.conn
+            .lock()
+            .execute(
+                "UPDATE cuts SET look = '{\"wide\":null}' WHERE id = '717e0001'",
+                [],
+            )
+            .unwrap();
+
+        let mut again = a_cut("717e0001");
+        again.state = CUT_MISSING.into();
+        db.put_cut(&again).unwrap();
+        assert_eq!(
+            db.cut("717e0001").unwrap().unwrap().title,
+            "Drei mit einem Schuss"
+        );
+        let look: Option<String> = db
+            .conn
+            .lock()
+            .query_row("SELECT look FROM cuts WHERE id = '717e0001'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(look.as_deref(), Some("{\"wide\":null}"));
+
+        // an empty title gives the cut back to the recording's
+        db.set_cut_title("717e0001", "").unwrap();
+        assert_eq!(db.cut("717e0001").unwrap().unwrap().title, "");
+        db.set_cut_title("717e0001", "Second angle").unwrap();
+        assert_eq!(db.cut("717e0001").unwrap().unwrap().title, "Second angle");
+    }
+
+    /// A store written by 3.11 (schema 4) gains the two columns of schema 5
+    /// on the first start and loses nothing: its cuts read with an empty
+    /// title, and the transcript is where it was.
+    #[test]
+    fn a_store_of_schema_4_gains_title_and_look() {
+        let dir = scratch("schema4");
+        let file = dir.join(FILE);
+        {
+            let conn = Connection::open(&file).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 INSERT INTO meta VALUES ('schema', '4');
+                 CREATE TABLE cuts (
+                     id TEXT PRIMARY KEY, base TEXT NOT NULL, start REAL NOT NULL DEFAULT 0,
+                     \"end\" REAL NOT NULL DEFAULT 0, audio TEXT NOT NULL DEFAULT '',
+                     vertical INTEGER NOT NULL DEFAULT 0, vertical_pos REAL, file TEXT,
+                     actual_start REAL, created TEXT NOT NULL DEFAULT '',
+                     state TEXT NOT NULL DEFAULT 'pending', subtitles TEXT);
+                 INSERT INTO cuts (id, base, start, \"end\", audio, file, state, subtitles)
+                   VALUES ('717e0002', 'Replay S', 6, 12, 'mix', '717e0002.mkv', 'ready', '{}');",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&file).unwrap();
+        assert_eq!(db.meta("schema").unwrap().as_deref(), Some("5"));
+        let cut = db.cut("717e0002").unwrap().expect("the cut is still there");
+        assert_eq!(cut.title, "");
+        assert_eq!(cut.end, 12.0);
+        db.set_cut_title("717e0002", "Clutch 1v3").unwrap();
+        assert_eq!(db.cut("717e0002").unwrap().unwrap().title, "Clutch 1v3");
+        let subtitles: Option<String> = db
+            .conn
+            .lock()
+            .query_row(
+                "SELECT subtitles FROM cuts WHERE id = '717e0002'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(subtitles.as_deref(), Some("{}"));
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A transcript belongs to its cut and goes with it.

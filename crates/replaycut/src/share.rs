@@ -230,7 +230,12 @@ pub struct Started {
 /// The cut of this job's range: the one that is already there, whatever
 /// state it is in, or a new pending row. The file itself is made by the
 /// `cut` stage of the job (since 3.0).
-fn cut_for(state: &AppState, job: &Job) -> Result<Cut, ShareError> {
+///
+/// A new cut starts with `title`, the recording's title of this moment
+/// (since 3.12): a copy, so renaming the recording afterwards and cutting
+/// again gives two cuts two names. The caller holds the state lock and
+/// passes it in.
+fn cut_for(state: &AppState, job: &Job, title: &str) -> Result<Cut, ShareError> {
     let existing = state
         .db
         .cut_of_range(&job.base, job.start, job.end)
@@ -250,6 +255,7 @@ fn cut_for(state: &AppState, job: &Job) -> Result<Cut, ShareError> {
         actual_start: None,
         created: util::now_local(),
         state: CUT_PENDING.to_string(),
+        title: title.to_string(),
     };
     state
         .db
@@ -395,7 +401,8 @@ pub fn start(state: &AppState, req: ShareRequest) -> Result<Started, ShareError>
         ..Job::default()
     };
     // since 3.0 every share goes through a cut; the page has its id at once
-    let cut = cut_for(state, &job)?;
+    let title = inner.names.get(&job.base).cloned().unwrap_or_default();
+    let cut = cut_for(state, &job, &title)?;
     job.cut = Some(cut.id.clone());
     let position = state.register_job(&mut inner, job);
     Ok(Started {
@@ -485,7 +492,8 @@ pub fn start_cut(state: &AppState, req: ShareRequest) -> Result<Started, ShareEr
         at: util::now_local(),
         ..Job::default()
     };
-    let cut = cut_for(state, &job)?;
+    let title = inner.names.get(&job.base).cloned().unwrap_or_default();
+    let cut = cut_for(state, &job, &title)?;
     job.cut = Some(cut.id.clone());
     let position = state.register_job(&mut inner, job);
     Ok(Started {
@@ -1709,11 +1717,23 @@ async fn pipeline(state: &AppState, id: &str, token: &CancellationToken) -> Resu
     // A publish job (since 2.5) re-uses the file of its source; a share cuts
     // one and renders it, a render (since 3.0) finds its cut ready.
     let republish = job.source.is_some();
+    // since 3.12 the cut's own title, else the recording's; the file name,
+    // the post and the YouTube title all take it from here
     let title = if republish {
         job.title.clone().unwrap_or_default()
     } else {
-        let inner = state.inner.lock();
-        inner.names.get(&job.base).cloned().unwrap_or_default()
+        let of_cut = job
+            .cut
+            .as_deref()
+            .and_then(|id| state.db.cut(id).ok().flatten())
+            .map(|c| c.title)
+            .unwrap_or_default();
+        if of_cut.is_empty() {
+            let inner = state.inner.lock();
+            inner.names.get(&job.base).cloned().unwrap_or_default()
+        } else {
+            of_cut
+        }
     };
     let file_name = match &job.file {
         Some(f) if republish => f.clone(),
